@@ -18,7 +18,7 @@ else
 POLY_BASE="https://github.com/polyml/polyml"
 
 # Defaults:
-POLY_VERSION=${POLY_VERSION:-v5.7.1}
+POLY_VERSION=${POLY_VERSION:-v5.8}
 POLY_GIT=${POLY_GIT:-F}
 POLY_ROOT=${POLY_ROOT:-F}
 
