@@ -6,7 +6,7 @@ env:
   global:
     - PATH=$PATH:$HOME/bin LD_LIBRARY_PATH=$HOME/lib SML=poly BUILDOPTS=
 
-before_script: .travis-scripts/install-poly.sh && ./travis-scripts/acquire-hol.sh
+before_script: .travis-scripts/install-poly.sh && .travis-scripts/acquire-hol.sh
 
 script: HOL/bin/Holmake
 
