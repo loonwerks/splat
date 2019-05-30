@@ -1,11 +1,37 @@
 sudo: false
 dist: xenial
 language: c
-before_script: .travis-scripts/install-poly.sh
 
 env:
   global:
     - PATH=$PATH:$HOME/bin LD_LIBRARY_PATH=$HOME/lib SML=poly BUILDOPTS=
 
-script: .travis-scripts/acquire-hol.sh && HOL/bin/Holmake
+before_script: .travis-scripts/install-poly.sh && ./travis-scripts/acquire-hol.sh
 
+script: HOL/bin/Holmake
+
+deploy:
+  # Deploy tagged releases
+  - provider: releases
+    api-key: $GH_TOKEN
+    skip_cleanup: true
+    file:
+      - splat
+      - $HOME/lib/libpolyml.so.10
+    on:
+      tags: true
+  # Deploy daily build
+  - provider: releases
+    api-key: $GH_TOKEN
+    name: Daily development build
+    body: Automated CI/CD build via Travis
+    prerelease: true
+    overwrite: true
+    skip_cleanup: true
+    target_commitish: $TRAVIS_COMMIT
+    file:
+      - splat
+      - $HOME/lib/libpolyml.so.10
+    on:
+      branch: master
+      condition: $TRAVIS_EVENT_TYPE = cron
