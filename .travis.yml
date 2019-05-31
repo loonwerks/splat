@@ -2,6 +2,11 @@ sudo: false
 dist: xenial
 language: c
 
+branches:
+  only:
+  - master
+  - /^\d+\.\d+\.\d+-release$/
+
 env:
   global:
     - PATH=$PATH:$HOME/bin LD_LIBRARY_PATH=$HOME/lib SML=poly BUILDOPTS=
