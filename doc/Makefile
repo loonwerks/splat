@@ -1,6 +1,6 @@
 update-footer := cat footer-head > footer; date >> footer; cat footer-tail >> footer
 mypandoc      := pandoc
-
+mathjax_provider := "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"
 
 all: html pdf
 # all: html
@@ -16,7 +16,7 @@ splat.html: splat.txt
                -A footer\
                --toc\
                --toc-depth=6\
-               --mathjax\
+               --mathjax=$(mathjax_provider)\
                splat.txt\
                -o splat.html 
 

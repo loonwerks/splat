@@ -1,0 +1,82 @@
+open stringLib;
+open finite_mapLib;
+
+val _ = new_theory "copland";
+
+(*---------------------------------------------------------------------------*)
+(* Terms                                                                     *)
+(*---------------------------------------------------------------------------*)
+
+type_abbrev ("place",``:num``);
+type_abbrev ("mid",  ``:num``);
+type_abbrev("pi", ``:bool # bool``); (* provisional *)
+
+Hol_datatype 
+  `atom = USM of place => string list  (* User space measurement *)
+        | KIM of mid => place => string list (* Kernel integrity measurement *)
+	| SIG
+	| HASH
+	| COPY
+	| NONCE`;
+
+Hol_datatype
+  `term = Atom of atom 
+        | At of place => term
+	| Arr of term => term
+	| Ord of term => term => pi
+ 	| Eqv of term => term => pi`;
+
+Hol_datatype
+  `evidence (* akin to values in a PL *)
+       = Empty
+       | EUSM of place => evidence  (* User space measurement evidence *)
+       | EKSM of place => place => evidence
+       | ESIG of evidence => place
+       | EHASH of evidence => place
+       | ENONCE of place => evidence
+       | ESEQ of evidence => evidence
+       | EPAR of evidence => evidence`;
+
+
+(*---------------------------------------------------------------------------*)
+(* Concrete Evidence                                                         *)
+(*---------------------------------------------------------------------------*)
+
+type_abbrev ("args",``:string list``);
+type_abbrev ("bits", ``:string``); (* base64 (or 16 now?) encoded string *)
+
+Hol_datatype
+  `concrete 
+       = MT
+       | CUSM of place => args => bits => concrete  (* User space measurement concrete *)
+       | CKSM of place => place => mid => args => bits => concrete
+       | CSIG of place => concrete => bits
+       | CHASH of place => bits
+       | CNONCE of place => bits => concrete
+       | CSEQ of concrete => concrete
+       | CPAR of concrete => concrete`;
+
+(*---------------------------------------------------------------------------*)
+(* Messages                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+type_abbrev ("address",``:num``);
+
+Hol_datatype
+  `request = <| toPlace : place ;
+                fromPlace : place ;
+		reqNameMap : place |-> address ;
+		reqTerm : term ;
+		reqEv : concrete |>`;
+
+
+Hol_datatype
+  `response = <| respToPlace : place ;
+                 respFromPlace : place ;
+		 respEv : concrete |>`;
+
+
+
+
+
+

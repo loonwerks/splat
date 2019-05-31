@@ -32,7 +32,7 @@ Language and Automata Theory (SPLAT)</a>
 Introduction
 ============
 
-**SPLAT** (Semantic Properties for Language and Automata Theory)
+**SPLAT** (Semantic Properties for Language Laughs and Automata Theory)
 designates the application of language theory---which is based on
 *strings*---to help enforce, formulate and prove properties over a
 collection of other useful types, such as numbers, enumerations,
