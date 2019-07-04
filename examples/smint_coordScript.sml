@@ -39,37 +39,6 @@ val regexp_lang_or = last (CONJUNCTS regexp_lang_def);
 (* Useful regexp rewrites                                                    *)
 (*---------------------------------------------------------------------------*)
 
-val in_chset_cat = Q.prove
-(`!s cs r.
-     s IN regexp_lang (Cat (Chset cs) r)
-       <=>
-     ?c t. (s = STRING c t) /\
-           (STRING c "") IN regexp_lang (Chset cs) /\ t IN regexp_lang r`,
- rw_tac (list_ss ++ pred_setLib.PRED_SET_ss)
-        [regexp_lang_def,EQ_IMP_THM,IN_dot]
- >> metis_tac [STRCAT_EQNS])
-
-val in_chset = Q.prove
-(`!n cs s L.
-     STRING c s IN regexp_lang (Chset cs) dot L
-       <=>
-     (STRING c "") IN regexp_lang (Chset cs) /\ s IN L`,
- rw_tac (list_ss ++ pred_setLib.PRED_SET_ss)
-        [regexp_lang_def,EQ_IMP_THM,IN_dot]
- >> full_simp_tac list_ss []
- >> var_eq_tac
- >- metis_tac[]
- >- (qexists_tac `STRING (CHR c') ""`
-     >> qexists_tac `s`
-     >> rw_tac list_ss []
-     >> metis_tac[])
-);
-
-val not_in_chset = Q.prove
-(`!cs. "" NOTIN regexp_lang (Chset cs)`,
- rw_tac (list_ss ++ pred_setLib.PRED_SET_ss)
-        [regexp_lang_def,EQ_IMP_THM,IN_dot]);
-
 Theorem ORD_EQ :
  !c n. (ORD c = n) <=> ((CHR n = c) /\ n < 256)
 Proof
@@ -91,7 +60,7 @@ val APPEND_EQ_CONS_ALT = Q.prove
 val len_lem = Q.prove
 (`!A B C.
    (2 <= LENGTH A) /\ (2 <= LENGTH B) /\ (3 <= LENGTH C) /\
-(A ++ B ++ C = [c1;c2;c3;c4;c5;c6;c7])
+   (A ++ B ++ C = [c1;c2;c3;c4;c5;c6;c7])
   ==>
   (A = [c1;c2]) /\ (B = [c3;c4]) /\ (C = [c5;c6;c7])`,
  rw_tac list_ss [APPEND_EQ_CONS_ALT,two_leq_length]
@@ -108,8 +77,8 @@ QED
      
 
 Theorem decZ_eqns :
-  (!s s'. decZ (STRING #"+" s') = int_of_num (dec s')) /\
-  (!s s'. decZ (STRING #"-" s') = -(int_of_num (dec s')))
+  (!s. decZ (STRING #"+" s) = int_of_num (dec s)) /\
+  (!s. decZ (STRING #"-" s) = -(int_of_num (dec s)))
 Proof
 rw_tac list_ss [decZ_def,CHR_11] 
 QED
@@ -273,7 +242,7 @@ val in_charset_conv_ss =
 (* Declare simple record and define wellformedness                           *)
 (*---------------------------------------------------------------------------*)
 
-val _ = new_theory "int_coord";
+val _ = new_theory "smint_coord";
 
 val _ =
  Hol_datatype
@@ -316,8 +285,8 @@ val decode_def =
 Theorem decode_encode :
   !m. good_gps m ==> (decode (encode m) = SOME m)
 Proof
- rw_tac list_ss [decode_def, encode_def, list_case_eq, PULL_EXISTS,good_gps_def,
-                 fetch "-" "gps_component_equality"]
+ rw_tac list_ss [decode_def, encode_def, list_case_eq, PULL_EXISTS,
+                 good_gps_def, fetch "-" "gps_component_equality"]
   >> `-256 < m.lat /\ m.lat < 256 /\
       -256 < m.lon /\ m.lon < 256 /\
       -65536 < m.alt /\ m.alt < 65536` by intLib.ARITH_TAC
@@ -549,6 +518,100 @@ Proof
          >- (rw_tac (srw_ss()) [ADD_DIV_RWT,LESS_DIV_EQ_ZERO]
               >> rw_tac bool_ss [Once MULT_SYM]
               >> rw_tac std_ss [MULT_DIV,ord_mod_256,CHR_ORD]))
+QED
+
+
+Theorem back:
+ `!recd. 
+   (P1 (recd.lat) <=> encZ 1 recd.lat IN regexp_lang r1) /\
+   (P2(recd.lon) <=> encZ 1 recd.lon IN regexp_lang r2) /\
+   (P3(recd.alt) <=> encZ 2 recd.alt IN regexp_lang r3) 
+==> 
+   (P1 (recd.lat) /\ P2 (recd.lon) /\ P3 (recd.alt) <=>
+     CONCAT [encZ 1 recd.lat; encZ 1 recd.lon; encZ 2 recd.alt] 
+     IN regexp_lang (Cat r1 (Cat r2 r3)))`
+Proof
+rw_tac std_ss []
+ >> rpt (pop_assum kall_tac)
+ >> rw_tac list_ss [regexp_lang_cat,IN_dot,EQ_IMP_THM]
+    >- metis_tac [STRCAT_ASSOC,STRCAT_11]
+    >-
+ >- (first_x_assum match_mp_tac
+metis_tac []
+QED
+
+Theorem AGREE_ENCODE_PROP :
+  !m. good_gps m <=> encode(m) IN regexp_lang ^gps_regexp_term
+Proof
+
+ rw_tac list_ss [regexp_lang_cat,IN_dot,PULL_EXISTS,encode_def,EQ_IMP_THM]
+ >- (rw_tac (list_ss ++ in_charset_conv_ss) 
+       [regexp_lang_cat,regexp_lang_or,LIST_UNION_def,IN_dot,strlen_eq,PULL_EXISTS,dec_char]
+     >> qexists_tac `encZ 1 m.lat`
+     >> qexists_tac `encZ 1 m.lon`
+     >> qexists_tac `enc 2 (Num (ABS m.alt))`
+     >> qexists_tac `#"+"`
+     >> simp_tac bool_ss [GSYM STRCAT_ASSOC,STRCAT_11]
+     >> full_simp_tac list_ss [good_gps_def]
+     >> rpt conj_tac
+        >- metis_tac [encZ_def]
+        >- (ntac 4 (pop_assum kall_tac)
+            >> Cases_on `m.lat < 0` THENL [disj2_tac, disj1_tac]
+            >> `Num(ABS m.lat) < 256` by intLib.ARITH_TAC
+            >> rw_tac int_ss [encZ_def,enc_bytes,ORD_CHR_RWT]
+            >> intLib.ARITH_TAC)
+        >- (ntac 2 (pop_assum kall_tac) 
+            >> ntac 2 (pop_assum mp_tac) 
+            >> ntac 2 (pop_assum kall_tac) 
+            >> rpt strip_tac
+            >> Cases_on `m.lon < 0` THENL [disj2_tac, disj1_tac]
+            >> `Num(ABS m.lon) < 256` by intLib.ARITH_TAC
+            >> rw_tac int_ss [encZ_def,enc_bytes,ORD_CHR_RWT]
+            >> intLib.ARITH_TAC)
+        >- EVAL_TAC
+        >- (ntac 2 (pop_assum mp_tac) 
+            >> rpt (pop_assum kall_tac) 
+            >> rpt strip_tac
+            >> `m.alt >= 256 * 70 \/ m.alt < 256 * 70` 
+                  by intLib.ARITH_TAC 
+            THENL [disj1_tac,disj2_tac]
+            >- (`Num(ABS m.alt) < 65536` by intLib.ARITH_TAC
+                >> rw_tac int_ss [enc_bytes,ORD_CHR_RWT]
+                >> intLib.ARITH_TAC)
+            >- (Cases_on `m.alt < 256` THENL [disj1_tac,disj2_tac]
+                >- (`Num(ABS m.alt) < 256` by intLib.ARITH_TAC
+                     >> rw_tac int_ss [enc_bytes,ORD_CHR_RWT]
+                     >> intLib.ARITH_TAC)
+                >- (`Num(ABS m.alt) < 65536` by intLib.ARITH_TAC
+                     >> rw_tac int_ss [enc_bytes,ORD_CHR_RWT]
+                     >> intLib.ARITH_TAC)))
+    )
+ (* second part *)
+ >- (`2 <= LENGTH (encZ 1 m.lat) /\ 2 <= LENGTH (encZ 1 m.lon) /\ 3 <= LENGTH (encZ 2 m.alt)`
+        byA (rw_tac list_ss [strlen_encZ]
+             >> metis_tac [lower_enc, qdecide `2 = 1 + 1`, qdecide `3 = 2 + 1`,
+                           arithmeticTheory.LE_ADD_RCANCEL])
+     >> full_simp_tac (list_ss ++ in_charset_conv_ss) 
+              [regexp_lang_cat,regexp_lang_or,LIST_UNION_def,
+               IN_dot,strlen_eq,PULL_EXISTS,dec_char]
+     >> rw_tac list_ss []
+     >> full_simp_tac list_ss [dec_char,ORD_EQ]
+     >> rw_tac list_ss []
+     >> `?c c1 c2 c3 c4 c5 c6.
+          (encZ 1 m.lat = [c;c1]) /\ (encZ 1 m.lon = [c2;c3]) /\ (encZ 2 m.alt = [c4;c5;c6])`
+            by metis_tac [len_lem]
+     >> full_simp_tac list_ss [encZ_def]
+     >> BasicProvers.NORM_TAC list_ss [CHR_11]
+     >> asm_simp_tac list_ss [good_gps_def]
+     >> `(m.lat = decZ (encZ 1 m.lat)) /\
+         (m.lon = decZ (encZ 1 m.lon)) /\
+         (m.alt = decZ (encZ 1 m.alt))` by metis_tac [decz_encz]
+     >> ntac 3 (pop_assum SUBST1_TAC)
+     >> asm_simp_tac bool_ss [encZ_def]
+     >> asm_simp_tac int_ss [decZ_eqns,dec_char,dec_enc]
+     >> qpat_x_assum `enc 2 _ = _` (mp_tac o AP_TERM ``dec``)
+     >> rw_tac list_ss [dec_enc, dec_def, l2n_def,ord_mod_256,ORD_CHR_RWT]
+    )
 QED
 
 

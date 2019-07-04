@@ -7,10 +7,11 @@ struct
 
 open HolKernel Parse boolLib bossLib MiscLib;
 
-open regexpSyntax pred_setSyntax Regexp_Type
+open regexpMisc regexpSyntax pred_setSyntax 
      arithmeticTheory listTheory stringTheory
      charsetTheory regexpTheory splatTheory
-     pred_setLib numLib stringLib regexpLib;
+     pred_setLib numLib stringLib 
+     Regexp_Type Regexp_Numerics regexpLib Enum_Encode;
 
 
 fun listrel R [] [] = true
@@ -40,322 +41,129 @@ type ('a, 'b) fmap = ('a, 'b) Finmap.dict;
 (* Width of a message field, in bits or in word8s                            *)
 (*---------------------------------------------------------------------------*)
 
-datatype width
-  = BITWIDTH of int
-  | BYTEWIDTH of int
-
-(*---------------------------------------------------------------------------*)
-(* Endianess, signedness for binary numbers                                  *)
-(*---------------------------------------------------------------------------*)
-
-datatype endian = MSB | LSB;
-
-datatype sign
-   = SIGNED of endian 
-   | UNSIGNED of endian;
-
-(*---------------------------------------------------------------------------*)
-(* Digits used for text representation of numbers                            *)
-(*---------------------------------------------------------------------------*)
-
-datatype textrep = BIT | OCT | HEX | DEC;
-
-(*---------------------------------------------------------------------------*)
-(* A number (or interval) can be formatted in binary or text. If in binary,  *)
-(* considerations of sign and endianess are important.                       *)
-(*---------------------------------------------------------------------------*)
-
-datatype format
-  = BINARY of sign * width
-  | TEXT of textrep * width
-  | ENUM of hol_type;
-
-(*---------------------------------------------------------------------------*)
-(* Tedious construction of comparison functions for finite map keys          *)
-(*---------------------------------------------------------------------------*)
-
-fun compare_width (BITWIDTH i, BITWIDTH j) = Int.compare(i,j)
-  | compare_width (BYTEWIDTH i, BYTEWIDTH j) = Int.compare(i,j)
-  | compare_width (BYTEWIDTH _, BITWIDTH _) = LESS
-  | compare_width (BITWIDTH _, BYTEWIDTH _) = GREATER;
-
-fun compare_sign (SIGNED LSB, SIGNED MSB) = LESS
-  | compare_sign (SIGNED MSB, SIGNED LSB) = GREATER
-  | compare_sign (UNSIGNED LSB, UNSIGNED MSB) = LESS
-  | compare_sign (UNSIGNED MSB, UNSIGNED LSB) = GREATER
-  | compare_sign (UNSIGNED _, SIGNED _) = LESS
-  | compare_sign (SIGNED _, UNSIGNED _) = GREATER
-  | compare_sign otherwise = EQUAL;
-
-val compare_textrep =
- let fun ord BIT = 0
-       | ord OCT = 1
-       | ord HEX = 2
-       | ord DEC = 3
- in 
-   fn (tr1,tr2) => Int.compare (ord tr1, ord tr2)
-end;
-
-fun compare_format (nf1,nf2) =
-    case (nf1,nf2)
-     of (BINARY (s1,w1), BINARY(s2,w2)) =>
-          (case compare_sign(s1,s2)
-	    of EQUAL => compare_width(w1,w2)
-	     | other => other)
-      | (TEXT (tr1,w1),TEXT (tr2,w2)) =>
-          (case compare_textrep(tr1,tr2)
-	    of EQUAL => compare_width(w1,w2)
-	     | other => other)
-      | (ENUM ty1, ENUM ty2)  => Type.compare (ty1,ty2)
-      | (BINARY _, _) => LESS
-      | (TEXT _,BINARY _) => GREATER
-      | (TEXT _,ENUM _) => LESS
-      | (ENUM _, _) => GREATER
-;
-  
-(*---------------------------------------------------------------------------*)
-(* Possible field values in a message                                        *)
-(*---------------------------------------------------------------------------*)
-
-datatype fieldval
-  = Num of Arbint.int * format 
-  | Interval of Arbint.int * Arbint.int * format
-  | Char of char * format
-  | Enumset of string * term list * format
-  | Raw of string * width (* uninterpreted sequence of bytes *)
-  | Padding of width
-  | Packed of fieldval list;
-
-fun format_of field =
- case field
-  of Num(_,f) => f
-   | Interval(_,_,f) => f
-   | Char (_,f) => f
-   | Enumset(tyname,constrs,f) => ENUM (mk_type(tyname,[]))
-   | Raw _ => raise ERR "format_of" "Raw not handled"
-   | Padding _ => raise ERR "format_of" "Padding not handled"
-   | Packed _ => raise ERR "format_of" "Packed not handled"
-
-(*---------------------------------------------------------------------------*)
-(* Width of (un)signed number in bits and bytes                              *)
-(*---------------------------------------------------------------------------*)
-
-fun width b =
- let val base = Arbint.fromInt b
-     fun W (i:Arbint.int) = 
-        if Arbint.<(i,base) then (1:Int.int) else 1 + W (Arbint.div(i,base))
- in W 
- end;
-
-val ubit_width = width 2;
-val ubyte_width = width 256;
-
-fun sbit_width i =
- let open Arbint
-     fun W bits =
-       let val N = twoE (Int.-(bits,1))
-       in if Arbint.~(N) <= i andalso i < N then bits else W (Int.+(bits,1))
-       end
- in W 0
- end;
+datatype width = BITWIDTH of int | BYTEWIDTH of int;
 
 val bits2bytes = 
  let fun roundup (q,r) = q + (if r > 0 then 1 else 0)
  in fn n => roundup(n div 8,n mod 8)
  end
 
-fun sbyte_width i = bits2bytes(sbit_width i)
+fun width2bits (BYTEWIDTH n) = n*8
+  | width2bits (BITWIDTH n) = n
 
-
-fun fieldval_width fval =
- case format_of fval
-  of BINARY (_,width) => width
-   | TEXT   (_,width) => width
-   | ENUM   _ => BYTEWIDTH 1;
-
-fun fieldval_byte_width fval =
- case fieldval_width fval
-  of BYTEWIDTH i => i
-   | BITWIDTH i => bits2bytes i;
-
-fun fieldval_bit_width fval =
- case fieldval_width fval
-  of BYTEWIDTH i => 8 * i 
-   | BITWIDTH i => i;
-
-fun dtrans LSB = Regexp_Type.LSB
-  | dtrans MSB = Regexp_Type.MSB;
-
-fun a2i ai = 
-    Option.valOf (IntInf.fromString (Arbint.toString ai));
-    
-type enumMap = (string, (term*int) list) fmap;
+fun width2bytes (BYTEWIDTH n) = n
+  | width2bytes (BITWIDTH n) = 
+     let fun roundup (q,r) = q + (if r > 0 then 1 else 0)
+     in roundup(n div 8,n mod 8)
+     end
 
 (*---------------------------------------------------------------------------*)
-(* An enum type needs a formatting map from the enum constants to numbers.   *)
-(* The domain of the map is the name of the enum type.                       *)
+(* A format contains enough information to bridge between a byte array and   *)
+(* a higher-level which the byte array is a representation of.               *)
 (*---------------------------------------------------------------------------*)
 
-val base_enumMap : enumMap =
-  let open boolSyntax
-  in 
-    Finmap.fromList String.compare [("bool", [(F,0), (T,1)])]
-  end;
-
-local
-    val emap = ref base_enumMap
-in 
- fun the_enumMap() = !emap
- fun insert_enum (k,v) =
-     emap := Finmap.insert (the_enumMap(), k,v)
-end
-
-fun insert_enum_type (tyname,cnames) =
-  let val ty = mk_type(tyname,[])
-      val constrs = map (fn s => mk_const(s,ty)) cnames
-      val econstrs = map swap (enumerate 0 constrs)
-  in 
-     insert_enum(tyname,econstrs)
-  end
-
-fun fieldval_to_tree enumMap fv =
- case fv
-  of Num (i,BINARY(UNSIGNED dir,BYTEWIDTH bw)) =>
-       Regexp_Type.Const(a2i i, dtrans dir)
-   | Num (i,BINARY(SIGNED dir,BYTEWIDTH bw)) => 
-       Regexp_Type.Const(a2i i, dtrans dir)
-   | Num otherwise => raise ERR "fieldval_to_tree" "Unexpected Num subcase"
-   | Interval(i,j,BINARY(UNSIGNED dir,BYTEWIDTH bw)) =>
-       Regexp_Type.Interval (a2i i, a2i j, dtrans dir)
-   | Interval(i,j,BINARY(SIGNED dir,BYTEWIDTH bw)) =>
-       Regexp_Type.Interval (a2i i, a2i j, dtrans dir)
-   | Interval otherwise => raise ERR "fieldval_to_tree" "Unexpected Interval subcase"
-   | Enumset (tyname,elts,ENUM ty) =>
-      (case Finmap.peek (enumMap,tyname)
-        of SOME clist =>
-            let val ilist = List.map (fn e => op_assoc aconv e clist) elts
-                val chars = List.map Char.chr ilist
-            in
-	     Regexp_Type.Cset (Regexp_Type.charset_of chars)
-	    end
-      | NONE => raise ERR "fieldval_to_tree" 
-                    ("enumerated type "^Lib.quote tyname^" not registered"))
-   | Enumset otherwise => raise ERR "fieldval_to_tree" "Unexpected Enumset format"
-   | Char _ => raise ERR "fieldval_to_tree" "Char not implemented"
-   | Raw _ => raise ERR "fieldval_to_tree" "Raw not implemented"
-   | Padding _ => raise ERR "fieldval_to_tree" "Padding not implemented"
-   | Packed _ => raise ERR "fieldval_to_tree" "Packed not implemented"
+datatype atomic =
+   Interval of 
+     {span : IntInf.int * IntInf.int,
+      encoding : encoding,
+      endian : endian,
+      width  : width,
+      encoder : IntInf.int -> string,
+      decoder : string -> IntInf.int,
+      recog  : Regexp_Type.regexp}
+  | Enumset of 
+     {enum_type : hol_type,
+      constr_codes : (term * int) list,
+      logic : Enum_Encode.logic_info,
+      recog : Regexp_Type.regexp}
+  | StringLit of string
+  | Raw of width
 ;
 
+fun width_of atm =
+ case atm
+  of Interval{width,...} => width
+   | Enumset _ => BYTEWIDTH 1
+   | other => raise ERR "width_of" "";
+
+fun recog_of atm =
+ case atm
+  of Interval{recog,...} => recog
+   | Enumset{recog,...} => recog
+   | other => raise ERR "recog_of" "";
+
 (*---------------------------------------------------------------------------*)
-(* A map from formats (especially format) to encoders/decoders               *)
+(* Defaulting to LSB for the moment                                          *)
 (*---------------------------------------------------------------------------*)
 
-type coding = {enc : term, 
-               dec : term,
-               enc_def : thm, 
-               dec_def : thm,
-               dec_enc : thm};
+fun term_encoder(encoding,endian,width) =
+ case encoding
+  of Unsigned  => ``splat$enc ^(numSyntax.term_of_int (width2bytes width))``
+   | Twos_comp => ``splat$enci ^(numSyntax.term_of_int (width2bytes width))``
+   | Zigzag    => ``splat$encZigZag ^(numSyntax.term_of_int (width2bytes width))``
+   | Sign_mag  => ``splat$encSignMag ^(numSyntax.term_of_int (width2bytes width))``
 
-type codingMap = (format, coding) fmap;
+fun encoder_of atm =
+ case atm
+  of Interval{encoding,endian, width,...} => term_encoder(encoding,endian,width)
+   | Enumset{logic,...} => #enc logic
+   | other => raise ERR "encoder_of" "";
 
-val base_codingMap = 
-  Finmap.fromList compare_format
-   [ (BINARY(UNSIGNED LSB,BYTEWIDTH 1),
-        {enc = ``splat$enc 1``, 
-         dec = ``splat$dec``,
-         enc_def = splatTheory.enc_def,
-         dec_def = splatTheory.dec_def,
-         dec_enc = splatTheory.dec_enc}),
-     (BINARY(UNSIGNED LSB,BYTEWIDTH 2),
-        {enc = ``splat$enc 2``, 
-         dec = ``splat$dec``,
-         enc_def = splatTheory.enc_def,
-         dec_def = splatTheory.dec_def,
-         dec_enc = splatTheory.dec_enc}),
-     (BINARY(SIGNED LSB,BYTEWIDTH 1),
-        {enc = ``splat$encZ 1``, 
-         dec = ``splat$decZ``,
-         enc_def = splatTheory.encZ_def,
-         dec_def = splatTheory.decZ_def,
-         dec_enc = splatTheory.decz_encz}),
-     (BINARY(SIGNED LSB,BYTEWIDTH 2),
-        {enc = ``splat$encZ 2``, 
-         dec = ``splat$decZ``,
-         enc_def = splatTheory.encZ_def,
-         dec_def = splatTheory.decZ_def,
-         dec_enc = splatTheory.decz_encz}),
-     (BINARY(SIGNED LSB,BYTEWIDTH 8),
-        {enc = ``splat$encZ 8``, 
-         dec = ``splat$decZ``,
-         enc_def = splatTheory.encZ_def,
-         dec_def = splatTheory.decZ_def,
-         dec_enc = splatTheory.decz_encz}),
-     (ENUM Type.bool,
-        {enc = ``splat$enc_bool``, 
-         dec = ``splat$dec_bool``,
-         enc_def = splatTheory.enc_bool_def,
-         dec_def = splatTheory.dec_bool_def,
-         dec_enc = splatTheory.dec_enc_bool})
-   ];
+fun term_decoder(encoding,endian,width) =
+ case encoding
+  of Unsigned  => ``splat$dec``
+   | Twos_comp => ``splat$deci ^(numSyntax.term_of_int (width2bytes width))``
+   | Zigzag    => ``splat$decZigZag``
+   | Sign_mag  => ``splat$decSignMag``
 
-local
-    val codingmap = ref base_codingMap
-in 
- fun the_codingMap() = !codingmap
- fun insert_coding (k,v) =
-     codingmap := Finmap.insert (the_codingMap(), k,v)
-end
+fun decoder_of atm =
+ case atm
+  of Interval{encoding,endian,width,...} => term_decoder(encoding,endian,width)
+   | Enumset {logic,...} => #dec logic
+   | other => raise ERR "decoder_of" "";
 
-fun define_enum_encoding ety =
- let val etyName = fst(dest_type ety)
-     val clist = TypeBase.constructors_of ety
-     val eclist = map swap (enumerate 0 clist)
-     val teclist = map (I##numSyntax.term_of_int) eclist
-     val ename = "num_of_"^etyName
-     val dname = etyName^"_of_num"
-     val efnvar = mk_var(ename,ety --> numSyntax.num)
-     val dfnvar = mk_var(dname,numSyntax.num --> ety)
-     fun enc_clause (constr,itm) = mk_eq(mk_comb(efnvar,constr),itm)
-     val enc_clauses = map enc_clause teclist
-     val num_of_enum = TotalDefn.Define `^(list_mk_conj enc_clauses)`
-     val argvar = mk_var("n",numSyntax.num)
-     fun cond_of (c,n) x = mk_cond(mk_eq(argvar,n),c,x)
-     val (L,(b,_)) = front_last teclist
-     val body = itlist cond_of L b
-     val enum_of_num = TotalDefn.Define `^(mk_comb(dfnvar,argvar)) = ^body`
-     val n_of_e_const = mk_const(dest_var(efnvar))
-     val e_of_n_const = mk_const(dest_var(dfnvar))
-     val enumvar = mk_var("c",ety)
-     val stringvar = mk_var("s",stringSyntax.string_ty)
-     val encoderName = "enc_"^etyName
-     val decoderName = "dec_"^etyName
-     val encvar = mk_var(encoderName,ety --> stringSyntax.string_ty)
-     val decvar = mk_var(decoderName,stringSyntax.string_ty --> ety)
-     val encoder = TotalDefn.Define `^(mk_comb(encvar,enumvar)) = enc 1 (^n_of_e_const ^enumvar)`
-     val decoder = TotalDefn.Define `^(mk_comb(decvar,stringvar)) = ^e_of_n_const (dec ^stringvar)`
-     val encoder_const = mk_const(dest_var(encvar))
-     val decoder_const = mk_const(dest_var(decvar))
-     val inversion_goal = 
-       mk_forall(enumvar, 
-		 mk_eq(mk_comb(decoder_const,mk_comb(encoder_const, enumvar)),
-		       enumvar))
-     val inversion = 
-       prove (inversion_goal, 
-           Cases >> rw_tac std_ss 
-                      [encoder, decoder,splatTheory.dec_enc,
-                       num_of_enum, enum_of_num])
-     val coding = 
-        {enc = encoder_const,
-         dec = decoder_const,
-         enc_def = encoder,
-         dec_def = decoder,
-         dec_enc = inversion}
- in
-   insert_enum_type (etyName,map (fst o dest_const) clist)
- ; insert_coding (ENUM ety,coding)
- end
- handle e => raise wrap_exn "splatLib" "define_enum_encoding" e
+
+fun mk_interval enc dir (lo,hi) = 
+ let open Regexp_Numerics
+     val byte_width = interval_width enc (lo,hi)
+ in Interval{span = (lo,hi),
+             encoding = enc,
+             endian = dir, 
+             width = BYTEWIDTH byte_width,
+             encoder = iint2string enc dir byte_width,
+             decoder = string2iint enc dir,
+             recog = interval_regexp enc dir byte_width (lo,hi)}
+ end;
+
+fun mk_enumset (ety,elts) = 
+  case Finmap.peek (Enum_Encode.the_enumMap(),ety)
+   of SOME (clist,logic) =>
+        let val ilist = List.map (fn e => op_assoc aconv e clist) elts
+            val chars = List.map Char.chr ilist
+            val cset = Regexp_Type.charset_of chars
+        in
+          Enumset{enum_type = ety,
+                  constr_codes = clist,
+                  logic = logic,
+                  recog = Chset cset}
+        end
+    | NONE => raise ERR "mk_enumset" 
+                ("enumerated type "^Lib.quote (fst(dest_type ety))^" not registered")
+
+
+(*---------------------------------------------------------------------------*)
+(* Intended to be easily mapped to and from Robby's bitcodec representation  *)
+(*---------------------------------------------------------------------------*)
+
+datatype format
+  = ATOM of atomic
+  | CONCAT of format list
+  | LIST of format
+  | ARRAY of format * int
+  | UNION of format * format
+  | PACKED of format list * width
+;
+
 
 (*---------------------------------------------------------------------------*)
 (* Translate formula coming from AGREE specs to regexp. Create encoder and   *)
@@ -425,19 +233,12 @@ fun all_paths recdvar =
  end;
 
 (*---------------------------------------------------------------------------*)
-(* mk_interval is a convoluted mapping (to eventually be made simpler by     *)
-(* merging fieldval and Regexp_Type.tree) fron intervals to regexps:         *)
-(*                                                                           *)
-(*       (lo,hi) : term * term                                               *)
-(*	  -->                                                                *)
-(*	  Interval(lo,hi,format)  ; splatLib.fieldval                        *)
-(*	  -->                                                                *)
-(*	  Interval(lo,hi,dir)     ; Regexp_Type.tree                         *)
-(*	  -->                                                                *)
-(*        regexp                  ; Regexp_Type.tree_to_regexp               *)
-(*	  -->                                                                *)
-(*	  term                    ; regexpSyntax.regexp_to_term              *)
-(*                                                                           *)
+(* Takes the expanded wellformedness definition and extracts the per-field   *)
+(* constraints on the underlying record type. The constraints are then       *)
+(* translated to regular expressions. (Actually, one big one.) Also,         *)
+(* encoders and decoders are created, along with a suite of theorems showing *)
+(* the relationships between the encoder, decoder, and filter (generated     *)
+(* from the big regular expression).                                         *) 
 (*---------------------------------------------------------------------------*)
 
 fun filter_correctness (fname,thm) =
@@ -469,14 +270,17 @@ fun filter_correctness (fname,thm) =
 	 else
          let fun unconstrained proj = (* Done for integers and enums currently *)
               let val ty = type_of proj
-                  open intSyntax
+                  open intSyntax 
+                  val ii2term = intSyntax.term_of_int o Arbint.fromLargeInt
               in if ty = int_ty
-                    then [mk_leq(term_of_int (Arbint.~(twoE 63)),proj),
-                          mk_less(proj,term_of_int (twoE 63))]
-	         else case Finmap.peek (the_enumMap(),fst(dest_type (type_of proj)))
+                    then [mk_leq(ii2term(IntInf.~(twoE 63)),proj),
+                          mk_less(proj,ii2term (twoE 63))]
+	         else case Finmap.peek (the_enumMap(),type_of proj)
                        of NONE => raise ERR "mk_correctness_goals" 
-                                ("following field is not in the_enumMap(): "^term_to_string proj)
-		        | SOME plist => [list_mk_disj (map (curry mk_eq proj o fst) plist)]
+                                ("following field is not in the_enumMap(): "
+                                 ^term_to_string proj)
+		        | SOME (plist,_) => 
+                            [list_mk_disj (map (curry mk_eq proj o fst) plist)]
               end
              fun supplement (proj,[]) = (proj,unconstrained proj)
                | supplement other = other
@@ -509,7 +313,7 @@ fun filter_correctness (fname,thm) =
         interval {i | lo <= i <= hi} so there is some fiddling to translate
         all relations to <=.
      *)
-     fun mk_interval ctr =  (* elements of c expected to have form relop t1 t2 *)
+     fun constraint_interval ctr =  (* elements of c expected to have form relop t1 t2 *)
       let fun elim_gtr tm = (* elim > and >= *)
             case strip_comb tm
 	      of (rel,[a,b]) =>
@@ -525,8 +329,8 @@ fun filter_correctness (fname,thm) =
                           [intSyntax.leq_tm,numSyntax.leq_tm,
                            intSyntax.less_tm,numSyntax.less_tm]
                      then (rel,a,b)
-                  else raise ERR "mk_interval" "unknown numeric relation"
-	       | other => raise ERR "mk_interval" "expected term of form `relop a b`"
+                  else raise ERR "constraint_interval" "unknown numeric relation"
+	       | other => raise ERR "constraint_interval" "expected term of form `relop a b`"
           val ctr' = map elim_gtr ctr
           fun sort [c1 as (_,a,b), c2 as (_,c,d)] = 
               let val fva = free_vars a
@@ -539,9 +343,9 @@ fun filter_correctness (fname,thm) =
 	         else
 	         if op_mem aconv recdvar fvd andalso op_mem aconv recdvar fva andalso aconv a d
                    then (c2,c1)
-	         else raise ERR "mk_interval(sort)" "unexpected format"
+	         else raise ERR "constraint_interval(sort)" "unexpected format"
               end
-            | sort otherwise = raise ERR "mk_interval(sort)" "unexpected format"
+            | sort otherwise = raise ERR "constraint_interval(sort)" "unexpected format"
           val ((rel1,lo_tm,_),(rel2,_,hi_tm)) = sort ctr'
 	  fun dest_literal t = 
              (if type_of t = numSyntax.num
@@ -554,48 +358,50 @@ fun filter_correctness (fname,thm) =
           val hi' = if op_mem same_const rel2 [numSyntax.less_tm,intSyntax.less_tm]
                       then Arbint.-(hi,Arbint.one) else hi
           val ctype = type_of lo_tm
-	  val sign = if ctype = numSyntax.num then UNSIGNED LSB else SIGNED LSB
-          val byte_width = if ctype = numSyntax.num then ubyte_width else sbyte_width
-	  val width = BYTEWIDTH (Int.max(byte_width lo', byte_width hi'))
+	  val encoding = if ctype = numSyntax.num then Unsigned else Twos_comp
+          val dir = LSB
       in  
-        Interval(lo',hi', BINARY (sign,width))
+        mk_interval encoding dir (Arbint.toLargeInt lo',Arbint.toLargeInt hi')
       end
 
-     fun mk_enumset [g] =   (* Should be extended to finite sets of numbers *)
+     fun constraint_enumset [g] =   (* Should be extended to finite sets of numbers *)
          let val eqns = strip_disj g
              val constlike = null o free_vars
              fun elt_of eqn = 
                 let val (l,r) = dest_eq eqn 
                 in if constlike l then l else 
                    if constlike r then r else 
-                   raise ERR "mk_enumset (elt_of)" "expected a projection"
+                   raise ERR "constraint_enumset (elt_of)" "expected a projection"
 		end
 	     val elts = map elt_of eqns
-             val _ = if null elts then raise ERR "mk_enumset" "no elements" else ()
+             val _ = if null elts then raise ERR "constraint_enumset" "no elements" else ()
 	     val enumty = type_of (hd elts)
 	     val etyname = fst(dest_type enumty)
              val _ = if 256 < length (TypeBase.constructors_of enumty) 
-                       then raise ERR "mk_enumset" 
-                         ("enumerated type "^Lib.quote etyname^" has > 256 elements: too many") 
+                       then raise ERR "constraint_enumset" 
+                         ("enumerated type "^Lib.quote etyname
+                          ^" has > 256 elements: too many") 
                        else ()
-          in Enumset (etyname,elts,ENUM enumty)
+          in mk_enumset(enumty,elts)
 	  end
-       | mk_enumset other = raise ERR "mk_enumset" "expected a disjunction of equations"
+       | constraint_enumset other = 
+           raise ERR "constraint_enumset" "expected a disjunction of equations"
 
-				  
-     fun mk_fieldval x = mk_interval (snd x) handle HOL_ERR _ => mk_enumset (snd x);
+     fun mk_atomic x = 
+        constraint_interval (snd x) 
+         handle HOL_ERR _ 
+          => constraint_enumset (snd x);
 
-     val fvals = map mk_fieldval groups'
-     val fwidths = map fieldval_byte_width fvals
+     val atomics = map mk_atomic groups'
 
      (* Compute regexps for the fields *)
 
-     val treevals = List.map (fieldval_to_tree (the_enumMap())) fvals
-     val regexps = map Regexp_Type.tree_to_regexp treevals
+     val regexps = map recog_of atomics
      val the_regexp = Regexp_Match.normalize (catlist regexps)
      val the_regexp_tm = regexpSyntax.regexp_to_term the_regexp
      
-     val codings = List.map (curry Finmap.find (the_codingMap()) o format_of) fvals
+     val codings = 
+       List.map (fn atm => {enc = encoder_of atm, dec = decoder_of atm}) atomics
 
      (* Define encoder *)
      val encs = map #enc codings
@@ -625,6 +431,7 @@ fun filter_correctness (fname,thm) =
      val fvar = mk_var("s",stringSyntax.string_ty)
      val decodeFn_lhs = mk_comb(decodeFn_var, fvar)
 
+     val fwidths = List.map (width2bytes o width_of) atomics
      val vars = map (fn i => mk_var("v"^Int.toString i, stringSyntax.char_ty))
                     (upto 0 (List.foldl (op+) 0 fwidths - 1))
      val decs = map #dec codings
@@ -742,7 +549,7 @@ fun filter_correctness (fname,thm) =
       receiver_correctness = receiver_correctness_goal,
       implicit_constraints = iconstraints_opt}
  end
- handle e => raise wrap_exn "splatLib" "mk_correctness_goals" e;
+ handle e => raise wrap_exn "splatLib" "filter_correctness" e;
 
 (*---------------------------------------------------------------------------*)
 (* Proves goals of the form                                                  *)

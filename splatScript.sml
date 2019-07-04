@@ -771,29 +771,86 @@ val deci_encis = save_thm
 
 
 (*---------------------------------------------------------------------------*)
-(* sign+magnitude representation of ints                                     *)
+(* ZigZag encoding                                                           *)
 (*---------------------------------------------------------------------------*)
 
-val encZ_def = 
- Define 
-  `encZ w i =
-     if 0 <= i then 
-        #"+" :: enc w (Num (ABS i))
-     else #"-" :: enc w (Num (ABS i))`
-;
+Definition encZigZag_def :
+  encZigZag w (i:int) =
+    if i >= 0 then
+      enc w (2 * Num i)
+    else 
+      enc w ((2 * Num (ABS i)) - 1)
+End
 
-val decZ_def =
- Define 
-   `decZ s = 
+Definition decZigZag_def :
+  decZigZag s =
+    let n = dec s
+    in if EVEN n then 
+         int_of_num (n DIV 2)
+       else 
+         -int_of_num ((n+1) DIV 2)
+End
+
+Theorem dec_encZigZag : 
+ !w i. decZigZag (encZigZag w i) = i
+Proof
+  BasicProvers.NORM_TAC int_ss [decZigZag_def, encZigZag_def,LET_THM,dec_enc]
+  >> full_simp_tac int_ss [EVEN_EXISTS] 
+  >> intLib.ARITH_TAC
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Sign+Magnitude encoding ... similar to ZigZag, but has the  disadvantage  *)
+(* of having two zeros (0 --> +0 and 1 --> -0)                               *)
+(*---------------------------------------------------------------------------*)
+
+Definition encSignMag_def :
+  encSignMag w (i:int) =
+   if 0 <= i then
+     enc w (2 * Num i)
+   else 
+     enc w (2 * Num (ABS i) + 1)
+End
+
+Definition decSignMag_def :
+  decSignMag s =
+   let n = dec s
+   in if EVEN n then 
+         int_of_num (n DIV 2)
+      else 
+         -int_of_num (n DIV 2)
+End
+
+Theorem dec_encSignMag : 
+ !w i. decSignMag (encSignMag w i) = i
+Proof
+  BasicProvers.NORM_TAC int_ss [decSignMag_def, encSignMag_def,LET_THM,dec_enc]
+  >> full_simp_tac int_ss [EVEN_EXISTS] 
+  >> intLib.ARITH_TAC
+QED
+      
+(*---------------------------------------------------------------------------*)
+(* hybrid sign+magnitude representation of ints                              *)
+(*---------------------------------------------------------------------------*)
+
+Definition encHSM_def :
+  encHSM w i =
+     if 0 <= i then 
+        #"+" :: enc w (Num i)
+     else #"-" :: enc w (Num (ABS i))
+End
+
+Definition decHSM_def :
+  decHSM s = 
      case s of 
        | #"+" :: t => int_of_num(dec t)
-       | #"-" :: t => -int_of_num(dec t)`
-;
+       | #"-" :: t => -int_of_num(dec t)
+End
 
 Theorem decz_encz : 
-  !w i. decZ (encZ w i) = i
+  !w i. decHSM (encHSM w i) = i
 Proof
-  BasicProvers.NORM_TAC (srw_ss()) [decZ_def, encZ_def,dec_enc] 
+  BasicProvers.NORM_TAC (srw_ss()) [decHSM_def, encHSM_def,dec_enc] 
   >> intLib.ARITH_TAC
 QED
   
@@ -801,173 +858,174 @@ val lem =
   intLib.ARITH_PROVE 
     ``-i < j /\ j < i <=> ((-i < j /\ j < 0) \/ (0 <= j /\ j < i))``;
 
-val encZ_byte_1A = Q.prove
-(`!i:int. -256 < i /\ i < 0 ==> ?a. encZ 1 i = [#"-"; a]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
+val encHSM_byte_1A = Q.prove
+(`!i:int. -256 < i /\ i < 0 ==> ?a. encHSM 1 i = [#"-"; a]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
  >- intLib.ARITH_TAC
  >- (`Num(ABS i)  < 256` by intLib.ARITH_TAC >> metis_tac [enc_bytes'])
 );
 
-val encZ_byte_1B = Q.prove
-(`!i:int. 0 <= i /\ i < 256 ==> ?a. encZ 1 i = [#"+"; a]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
- >> `Num(ABS i)  < 256` by intLib.ARITH_TAC 
+val encHSM_byte_1B = Q.prove
+(`!i:int. 0 <= i /\ i < 256 ==> ?a. encHSM 1 i = [#"+"; a]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
+ >> `Num i  < 256` by intLib.ARITH_TAC 
  >> metis_tac [enc_bytes']
 );
 
-val encZ_byte_1 = Q.prove
+val encHSM_byte_1 = Q.prove
 (`!i:int. 
      -256 < i /\ i < 256 
      ==> 
-     (?a. encZ 1 i = [#"-";a]) \/ 
-     (?a. encZ 1 i = [#"+";a])`,
- metis_tac [encZ_byte_1A, encZ_byte_1B,lem]);
+     (?a. encHSM 1 i = [#"-";a]) \/ 
+     (?a. encHSM 1 i = [#"+";a])`,
+ metis_tac [encHSM_byte_1A, encHSM_byte_1B,lem]);
 
-val encZ_byte_2A = Q.prove
-(`!i:int. -65536 < i /\ i < 0 ==> ?a b. encZ 2 i = [#"-"; a; b]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
+val encHSM_byte_2A = Q.prove
+(`!i:int. -65536 < i /\ i < 0 ==> ?a b. encHSM 2 i = [#"-"; a; b]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
  >- intLib.ARITH_TAC
  >- (`Num(ABS i)  < 65536` by intLib.ARITH_TAC >> metis_tac [enc_bytes'])
 );
 
-val encZ_byte_2B = Q.prove
-(`!i:int. 0 <= i /\ i < 65536 ==> ?a b. encZ 2 i = [#"+"; a; b]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
- >> `Num(ABS i)  < 65536` by intLib.ARITH_TAC 
+val encHSM_byte_2B = Q.prove
+(`!i:int. 0 <= i /\ i < 65536 ==> ?a b. encHSM 2 i = [#"+"; a; b]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
+ >> `Num i  < 65536` by intLib.ARITH_TAC 
  >> metis_tac [enc_bytes']
 );
 
-val encZ_byte_2 = Q.prove
+val encHSM_byte_2 = Q.prove
 (`!i:int. 
      -65536 < i /\ i < 65536
     ==> 
-      (?a b. encZ 2 i = [#"-";a;b]) \/ 
-      (?a b. encZ 2 i = [#"+";a;b])`,
- metis_tac [encZ_byte_2A, encZ_byte_2B, lem]);
+      (?a b. encHSM 2 i = [#"-";a;b]) \/ 
+      (?a b. encHSM 2 i = [#"+";a;b])`,
+ metis_tac [encHSM_byte_2A, encHSM_byte_2B, lem]);
 
-val encZ_byte_3A = Q.prove
+val encHSM_byte_3A = Q.prove
 (`!i:int. 
      -16777216 < i /\ i < 0 
     ==> 
-     ?a b c. encZ 3 i = [#"-"; a; b; c]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
+     ?a b c. encHSM 3 i = [#"-"; a; b; c]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
  >- intLib.ARITH_TAC
  >- (`Num(ABS i)  < 16777216` by intLib.ARITH_TAC >> metis_tac [enc_bytes'])
 );
 
-val encZ_byte_3B = Q.prove
+val encHSM_byte_3B = Q.prove
 (`!i:int. 
     0 <= i /\ i < 16777216
    ==> 
-   ?a b c. encZ 3 i = [#"+"; a; b; c]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
- >> `Num(ABS i)  < 16777216` by intLib.ARITH_TAC 
+   ?a b c. encHSM 3 i = [#"+"; a; b; c]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
+ >> `Num i  < 16777216` by intLib.ARITH_TAC 
  >> metis_tac [enc_bytes']
 );
 
-val encZ_byte_3 = Q.prove
+val encHSM_byte_3 = Q.prove
 (`!i:int. 
      -16777216 < i /\ i < 16777216
     ==> 
-    (?a b c. encZ 3 i = [#"-";a;b;c]) \/ 
-    (?a b c. encZ 3 i = [#"+";a;b;c])`,
- metis_tac [encZ_byte_3A, encZ_byte_3B, lem]);
+    (?a b c. encHSM 3 i = [#"-";a;b;c]) \/ 
+    (?a b c. encHSM 3 i = [#"+";a;b;c])`,
+ metis_tac [encHSM_byte_3A, encHSM_byte_3B, lem]);
 
-val encZ_byte_4A = Q.prove
+val encHSM_byte_4A = Q.prove
 (`!i:int. 
      -4294967296 < i /\ i < 0 
     ==> 
-    ?a b c d. encZ 4 i = [#"-"; a; b; c; d]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
+    ?a b c d. encHSM 4 i = [#"-"; a; b; c; d]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
  >- intLib.ARITH_TAC
  >- (`Num(ABS i)  < 4294967296` by intLib.ARITH_TAC >> metis_tac [enc_bytes'])
 );
 
-val encZ_byte_4B = Q.prove
+val encHSM_byte_4B = Q.prove
 (`!i:int. 
     0 <= i /\ i < 4294967296 
    ==> 
-   ?a b c d. encZ 4 i = [#"+"; a; b; c; d]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
- >> `Num(ABS i)  < 4294967296` by intLib.ARITH_TAC 
+   ?a b c d. encHSM 4 i = [#"+"; a; b; c; d]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
+ >> `Num i  < 4294967296` by intLib.ARITH_TAC 
  >> metis_tac [enc_bytes']
 );
 
-val encZ_byte_4 = Q.prove
+val encHSM_byte_4 = Q.prove
 (`!i:int. 
      -4294967296 < i /\ i < 4294967296 
     ==> 
-    (?a b c d. encZ 4 i = [#"-";a;b;c;d]) \/ 
-    (?a b c d. encZ 4 i = [#"+";a;b;c;d])`,
- metis_tac [encZ_byte_4A, encZ_byte_4B, lem]);
+    (?a b c d. encHSM 4 i = [#"-";a;b;c;d]) \/ 
+    (?a b c d. encHSM 4 i = [#"+";a;b;c;d])`,
+ metis_tac [encHSM_byte_4A, encHSM_byte_4B, lem]);
 
-val encZ_byte_8A = Q.prove
+val encHSM_byte_8A = Q.prove
 (`!i:int. 
     -18446744073709551616 < i /\ i < 0 
     ==> 
     ?a b c d e f g h. 
-    encZ 8 i = [#"-"; a; b; c; d; e; f; g; h]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
+    encHSM 8 i = [#"-"; a; b; c; d; e; f; g; h]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
  >- intLib.ARITH_TAC
  >- (`Num(ABS i) < 18446744073709551616` 
        by intLib.ARITH_TAC 
      >> metis_tac [enc_bytes'])
 );
 
-val encZ_byte_8B = Q.prove
+val encHSM_byte_8B = Q.prove
 (`!i:int. 
     0 <= i /\ i < 18446744073709551616 
    ==> 
     ?a b c d e f g h. 
-    encZ 8 i = [#"+"; a;b;c;d;e;f;g;h]`,
- BasicProvers.NORM_TAC (srw_ss()) [encZ_def]
- >> `Num(ABS i)  < 18446744073709551616` by intLib.ARITH_TAC 
+    encHSM 8 i = [#"+"; a;b;c;d;e;f;g;h]`,
+ BasicProvers.NORM_TAC (srw_ss()) [encHSM_def]
+ >> `Num i  < 18446744073709551616` by intLib.ARITH_TAC 
  >> metis_tac [enc_bytes']
 );
 
-val encZ_byte_8 = Q.prove
+val encHSM_byte_8 = Q.prove
 (`!i:int. 
     -18446744073709551616 < i /\ i < 18446744073709551616 
     ==> 
-    (?a b c d e f g h. encZ 8 i = [#"+"; a;b;c;d;e;f;g;h]) \/
-    (?a b c d e f g h. encZ 8 i = [#"-"; a;b;c;d;e;f;g;h])`,
- metis_tac [encZ_byte_8A, encZ_byte_8B, lem]);
+    (?a b c d e f g h. encHSM 8 i = [#"+"; a;b;c;d;e;f;g;h]) \/
+    (?a b c d e f g h. encHSM 8 i = [#"-"; a;b;c;d;e;f;g;h])`,
+ metis_tac [encHSM_byte_8A, encHSM_byte_8B, lem]);
 
-val encZ_bytes = save_thm
- ("encZ_bytes",
-  LIST_CONJ [encZ_byte_1,encZ_byte_2,encZ_byte_3,encZ_byte_4,encZ_byte_8]);
+val encHSM_bytes = save_thm
+ ("encHSM_bytes",
+  LIST_CONJ [encHSM_byte_1,encHSM_byte_2,encHSM_byte_3,encHSM_byte_4,encHSM_byte_8]);
 
 
 (*---------------------------------------------------------------------------*)
 (* Length directed string destructor                                         *)
 (*---------------------------------------------------------------------------*)
 
-val split_at_aux_def =
- Define
-     `(split_at_aux 0 s acc = SOME(REVERSE acc,s)) /\
-      (split_at_aux (SUC n) s acc = 
+Definition split_at_aux_def :
+   (split_at_aux 0 s acc = SOME(REVERSE acc,s)) /\
+   (split_at_aux (SUC n) s acc = 
         case DEST_STRING s
          of NONE => NONE
-          | SOME(c,t) => split_at_aux n t (c::acc))`;
+          | SOME(c,t) => split_at_aux n t (c::acc))
+End
+   
+Definition split_at_def :
+  split_at n s = split_at_aux n s []
+End
 
-val split_at_def =
-    Define `split_at n s = split_at_aux n s []`;
-
-val chop_aux_def =
- Define
-  `(chop_aux [] s acc = SOME(REVERSE acc,s)) /\
-   (chop_aux (n::t) s acc =
+Definition chop_aux_def :
+  (chop_aux [] s acc = SOME(REVERSE acc,s)) /\
+  (chop_aux (n::t) s acc =
      case split_at n s
       of NONE => NONE
-       | SOME(pref,suff) => chop_aux t suff (pref::acc))`;
+       | SOME(pref,suff) => chop_aux t suff (pref::acc))
+End
 
-val chop_def =
- Define
-  `chop nlist s =
-      case chop_aux nlist s []
-       of NONE => NONE
-        | SOME(lists, suff) => 
-          if suff = ""  then SOME lists else NONE`;
+Definition chop_def :
+ chop nlist s =
+    case chop_aux nlist s []
+     of NONE => NONE
+      | SOME(lists, suff) => 
+         if suff = ""  then SOME lists else NONE
+End
 						 
 val split_at_aux_some = Q.prove
 (`!n s acc racc_pref suff. 
@@ -1083,19 +1141,20 @@ val chop_aux_lem = Q.prove
           >> rw_tac list_ss [])))
 ;
 
-val chop_thm = Q.store_thm
-("chop_thm",
- `!nlist s lists. 
+Theorem chop_thm :
+ !nlist s lists. 
     (chop nlist s = SOME lists)
     ==> 
     (LENGTH lists = LENGTH nlist) /\
     LIST_REL (\n list. n = LENGTH list) nlist lists /\
-    (s = FLAT lists)`,
+    (s = FLAT lists)
+Proof
  rw_tac list_ss [chop_def]
  >> EVERY_CASE_TAC
  >> rw_tac list_ss []
  >> imp_res_tac chop_aux_lem
- >> full_simp_tac list_ss []);
+ >> full_simp_tac list_ss []
+QED
 
 
 (*---------------------------------------------------------------------------*)

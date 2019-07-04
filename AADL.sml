@@ -767,9 +767,12 @@ fun declare_hol_enum ((pkgName,ename),cnames) =
     else 
     let open Datatype ParseDatatype
         val _ = astHol_datatype [(ename,Constructors (map (C pair []) cnames))]
-        val () = splatLib.define_enum_encoding (mk_type (ename,[]))
+        val ety = mk_type(ename,[])
+        val clist = TypeBase.constructors_of ety
+        val ety_encoding = Enum_Encode.define_enum_encoding ety
     in
-     stdErr_print ("Declared enumeration "^Lib.quote ename^"\n")
+	Enum_Encode.insert_enum_type(ety,clist,ety_encoding);
+        stdErr_print ("Declared enumeration "^Lib.quote ename^"\n")
     end;
 
 (*---------------------------------------------------------------------------*)

@@ -33,7 +33,8 @@ fun parse_args args =
 fun shortcut g = ACCEPT_TAC (mk_thm([],snd g)) g;
 
 fun prove_filter_props {name,regexp,encode_def,decode_def,
-                        inversion, correctness, receiver_correctness, implicit_constraints} =
+                        inversion, correctness, receiver_correctness, 
+                        implicit_constraints} =
  let in
      store_thm(name^"_inversion",inversion,shortcut);
      store_thm(name^"_correctness",correctness,shortcut);
@@ -41,9 +42,32 @@ fun prove_filter_props {name,regexp,encode_def,decode_def,
      ()
  end;
 
+fun deconstruct {certificate, final, matchfn, start, table} =
+ let fun toList V = List.map (curry Vector.sub V) (upto 0 (Vector.length V - 1))
+ in (certificate,start, toList final, toList (Vector.map toList table))
+ end;
+
+fun export_dfa {name,regexp,encode_def,decode_def,
+                inversion, correctness, receiver_correctness, implicit_constraints} = 
+ let val (result as (_,_,finals,table)) = 
+                 deconstruct (regexpLib.matcher regexpLib.SML regexp)
+     val rstring = PP.pp_to_string 72 Regexp_Type.pp_regexp regexp 
+(*     val rstring = "<generated from AADL property>" *)
+     val dfa = {name=name,src_regexp=rstring, finals=finals,table=table}
+     val ostrm1 = TextIO.openOut (name^".c")
+     val ostrm2 = TextIO.openOut (name^".java")
+ in
+    DFA_Codegen.C dfa ostrm1
+  ; TextIO.closeOut ostrm1
+
+  ; DFA_Codegen.Java dfa ostrm2
+  ; TextIO.closeOut ostrm2
+ end
+
 fun main () =
  let val _ = stdErr_print "splat: \n"
-     val _ = stdErr_print (String.concat ["working directory is ", FileSys.getDir(), "\n"])
+     val _ = stdErr_print 
+               (String.concat ["working directory is ", FileSys.getDir(), "\n"])
      val jsonfile = parse_args(CommandLine.arguments())
      val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonfile
 	   ("Parsing "^jsonfile^" ... ") "succeeded.\n"
@@ -51,7 +75,7 @@ fun main () =
 	   ("Converting Json to AST ... ") "succeeded.\n"
      val thyName = fst (last pkgs)
      val _ = new_theory thyName
-     val logic_defs = apply_with_chatter (pkgs2hol thyName) pkgs
+     val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs
 	   ("Converting AST to logic ...\n") "---> succeeded.\n"
      fun filters_of (a,b,c,d) = d
      val filter_spec_thms = filters_of logic_defs
@@ -61,8 +85,9 @@ fun main () =
            "succeeded.\n"
      val _ = apply_with_chatter (List.app prove_filter_props) filter_defs_and_props
 	   ("Proving filter properties ... ") "succeeded.\n"
+     val _ = Theory.export_theory()
+     val _ = List.app export_dfa filter_defs_and_props
+     val _ = stdErr_print "Finished.\n"
   in 
-      Theory.export_theory()
-    ; stdErr_print "Finished.\n"
-    ; MiscLib.succeed()
+    MiscLib.succeed()
  end;
