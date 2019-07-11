@@ -14,7 +14,7 @@ WORKDIR /
 RUN git clone https://github.com/HOL-Theorem-Prover/HOL.git
 WORKDIR /HOL
 # RUN git checkout kananaskis-12
-RUN git checkout 1557f72fc9a7a80bc5ce2e4df30afd51803c8b75
+RUN git checkout develop
 RUN /polyml-bin/bin/poly < tools/smart-configure.sml
 RUN bin/build
 
