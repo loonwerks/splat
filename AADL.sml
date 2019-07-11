@@ -497,15 +497,6 @@ fun scrape_pkgs json =
       | AList alist => run (dropList (assoc "modelUnits" alist))
       | otherwise => raise ERR "scrape_pkgs" "unexpected format"
  end
-x
-(*
-val  AList
-    [("project", String "Filter_Test"),
-     ("implementation", String "SW::SW.Impl"),
-     ("date", Number (Int 1562794332995)),
-     ("hash",_),
-     ("modelUnits", List pkgs)] = jpkg;
-*)
      
 (*---------------------------------------------------------------------------*)
 (* AST to HOL                                                                *)

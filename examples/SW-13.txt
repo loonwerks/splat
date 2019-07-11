@@ -1,0 +1,131 @@
+The example builds on the a sequence of declarations, resulting in a
+filter on a connection of type RF_Msg. Following are the record
+declarations (not in any particular notation).
+
+  RF_Msg = 
+    {header : CASE_MsgHeader, 
+     payload : Command}
+	   
+  CASE_MsgHeader = 
+    {src : sint, 
+     dst : sint, 
+     trusted : bool,
+     HMAC : bool}
+
+  Command = 
+    {map : Map, 
+     pattern : FlightPattern}
+
+  FlightPattern = /* enumeration */
+      ZigZag 
+    | StraightLine 
+    | Perimeter   
+
+  Map = Coordinate [4]  /* array of 4 coordinates */
+
+  Coordinate = 
+    {latitude : sint, 
+     longitude : sint,  
+     altitude : sint}
+ 
+
+Wellformedness.
+---------------
+
+ Here are the relevant definitions:
+ 
+  CASE_UAV_ID = 42sint
+ 
+  VALID_MESSAGE (msg: RF_Msg) =
+      msg.header.src > 0sint and 
+      msg.header.dst = CASE_UAV_ID and
+      msg.header.HMAC
+
+  /* forall wp in map: good_coordinate (wp)  */
+  good_map (map: Map) = Array_Forall(wp,map,good_coordinate(wp)) 
+
+  good_pattern (pattern : FlightPattern) =
+    (pattern = FlightPattern'ZigZag) or
+    (pattern = FlightPattern'StraightLine) or
+    (pattern = FlightPattern'Perimeter)
+
+  good_coordinate (coord:Coordinate) = 
+    coord.latitude >= -90sint and coord.latitude <= 90sint  and
+    coord.longitude >= -180sint and coord.longitude <= 180sint and
+    coord.altitude >= 0sint and coord.altitude <= 15000sint
+
+The filter.
+-----------
+
+ The filter specification is a predicate on the output connection
+ (filter_out) of the filter:
+
+   VALID_MESSAGE (filter_out) and
+   good_map (filter_out.payload.map) and 
+   good_pattern (filter_out.payload.pattern)
+
+When looking at the message as a sequence of bytes, the fields will be
+laid out in order as the header fields followed by the payload fields, namely
+
+  [src,dest,trusted,HMAC,map,pattern]
+
+where
+
+  - src is a signed int > 0
+  - dest is a signed int = 42
+  - trusted is boolean but not specified, so could be true or false
+  - HMAC is boolean and must be true
+  - map is a 4 element array of good coordinates
+  - pattern is any of the three possible patterns
+
+and a good coordinate is a triple
+
+  - latitude  (signed int between -90 and 90)
+  - longitude (signed int between -180 and 180)
+  - altitude  (signed int between 0 and 15000)
+
+The default signed ints are 32 bits wide (4 bytes, little-endian) and
+enumerations fit into a byte.  The encoding fits intervals into the
+smallest possible number of bytes. Thus the layout skeleton is 28
+bytes in length:
+
+  - src     : 4
+  - dest    : 1
+  - trusted : 1
+  - HMAC    : 1
+  - map     : 4 elements * 5 bytes per element 
+               (latitude fits in 1 byte, longitude and altitude each fit in 2)
+  - pattern : 1
+
+Yet more detail:
+
+  - the boolean encoding: false = 0, true = 1
+
+The regexp.
+------------
+
+Here's the regexp, annotated as a sequence of lines of the form
+  
+   field-name (width) regexp-fragment
+
+The unannotated regexp also appears at the head of the generated .c file
+
+===================================================================
+
+src  (4) ([\001-\255][\000][\000][\000] | .[\001-\255][\000][\000] | ..[\001-\255][\000] | ...[\001-\127])
+dest (1)   [*]
+trusted(1) [\000-\001]
+HMAC   (1) [\001]
+map[0] (1) [\000-Z\166-\255]
+       (2) ([L-\255][\255] | [\000-\180][\000]) 
+       (2) ([\000-\152][:] | .[\000] | .[\001-9])
+map[1] (1) [\000-Z\166-\255]
+       (2) ([L-\255][\255] | [\000-\180][\000])
+       (2) ([\000-\152][:] | .[\000] | .[\001-9])
+map[2] (1) [\000-Z\166-\255]
+       (2) ([L-\255][\255] | [\000-\180][\000])
+       (2) ([\000-\152][:] | .[\000] | .[\001-9])
+map[3] (1) [\000-Z\166-\255]
+       (2) ([L-\255][\255] | [\000-\180][\000])
+       (2) ([\000-\152][:] | .[\000] | .[\001-9])
+pattern(1) [\000-\002]
