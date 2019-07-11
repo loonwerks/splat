@@ -71,4 +71,5 @@ sig
    val sort_on_qid_key : ((string * string) * 'a) list -> ((string * string) * 'a) list
 
    val mapfilter : ('a -> 'b) -> 'a list -> 'b list
+   val shortcut : tactic
 end

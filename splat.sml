@@ -30,8 +30,6 @@ fun parse_args args =
       | otherwise => fail()
  end
 
-fun shortcut g = ACCEPT_TAC (mk_thm([],snd g)) g;
-
 fun prove_filter_props {name,regexp,encode_def,decode_def,
                         inversion, correctness, receiver_correctness, 
                         implicit_constraints} =
@@ -52,16 +50,11 @@ fun export_dfa {name,regexp,encode_def,decode_def,
  let val (result as (_,_,finals,table)) = 
                  deconstruct (regexpLib.matcher regexpLib.SML regexp)
      val rstring = PP.pp_to_string 72 Regexp_Type.pp_regexp regexp 
-(*     val rstring = "<generated from AADL property>" *)
      val dfa = {name=name,src_regexp=rstring, finals=finals,table=table}
      val ostrm1 = TextIO.openOut (name^".c")
-     val ostrm2 = TextIO.openOut (name^".java")
  in
     DFA_Codegen.C dfa ostrm1
   ; TextIO.closeOut ostrm1
-
-  ; DFA_Codegen.Java dfa ostrm2
-  ; TextIO.closeOut ostrm2
  end
 
 fun main () =

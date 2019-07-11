@@ -1,7 +1,9 @@
-INCLUDES = $(HOLDIR)/examples/balanced_bst \
-           $(HOLDIR)/examples/formal-languages \
-           $(HOLDIR)/examples/formal-languages/context-free \
-           $(HOLDIR)/examples/formal-languages/regular \
+# INCLUDES = $(HOLDIR)/examples/balanced_bst \
+#            $(HOLDIR)/examples/formal-languages \
+#            $(HOLDIR)/examples/formal-languages/context-free \
+#            $(HOLDIR)/examples/formal-languages/regular
+
+INCLUDES = $(HOLDIR)/examples/formal-languages/regular
 
 THYFILES = $(patsubst %Script.sml,%Theory.uo,$(wildcard *.sml))
 TARGETS = $(patsubst %.sml,%.uo,$(THYFILES))
@@ -13,12 +15,10 @@ mustbuild: splat
 
 EXTRA_CLEANS = splat.o splat
 
-# Not really sure why this is needed
+# Not really sure why this is needed given the INCLUDES above
 localregexpLib :
 	cp $(HOLDIR)/examples/formal-languages/regular/regexpLib.ui .
 	cp $(HOLDIR)/examples/formal-languages/regular/regexpLib.uo .
-	cp $(HOLDIR)/examples/formal-languages/regular/DFA_Codegen.ui .
-	cp $(HOLDIR)/examples/formal-languages/regular/DFA_Codegen.uo .
 
-splat : AST.uo Json.uo splatLib.ui splatLib.uo localregexpLib splat.sml 
-	$(protect $(HOLDIR)/bin/buildheap) MiscLib AST Json integer_wordLib stringSimps regexpLib splatLib AADL DFA_Codegen splat.sml -o $@ --exe main
+splat : splatLib.uo localregexpLib splat.sml 
+	$(protect $(HOLDIR)/bin/buildheap) integer_wordLib stringSimps regexpLib splatLib AADL splat.sml -o $@ --exe main

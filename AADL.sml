@@ -26,7 +26,8 @@ in end;
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp;
 
- datatype filter = FilterDec of qid * (string * ty * string * string) list * (string * exp)
+ datatype filter
+    = FilterDec of qid * (string * ty * string * string) list * (string * exp) list
 								      
  type decls = 
   (* pkgName *)  string * 
@@ -138,13 +139,15 @@ fun mk_bool_const str =
   of SOME b => ConstExp (BoolLit b)
    | NONE => raise ERR "mk_bool_const" "expected true or false";
 
-fun mk_fncall(fname, args) = Fncall(dest_qid fname,args);
+fun mk_fncall(pkgname, fname, args) = Fncall((pkgname,fname),args);
 
 fun mk_nullary_constr(cname, ty) =
  case ty
   of NamedTy tyqid => ConstrExp(tyqid,cname,NONE)
    |  otherwise => raise ERR "mk_nullary_constr"
        ("unable to determine type of constructor "^Lib.quote cname)
+
+fun mk_and a b = mk_binop("and",a,b);
 
 (*---------------------------------------------------------------------------*)
 (* AADL scraping.                                                            *)
@@ -184,9 +187,11 @@ fun dest_exp e =
    | AList [("kind", String "Selection"), ("target", target), ("field", String fname)]
        => RecdProj (dest_exp target, fname)
    | AList [("kind", String "CallExpr"),
-             ("function", AList [("kind", String _), ("name", String fname)]),
+             ("function", AList [("kind", String _), 
+                                 ("packageName", String pkg),
+                                 ("name", String fname)]),
              ("args", List args)]
-       => mk_fncall(fname,map dest_exp args)
+       => mk_fncall(pkg,fname,map dest_exp args)
    | AList [("kind", String "AadlEnumerator"),
             ("type", AList tyinfo), ("value", String constrname)]
        => mk_nullary_constr (constrname,get_tyinfo tyinfo)
@@ -194,7 +199,7 @@ fun dest_exp e =
             ("binding", String bvarname),
             ("array", jarr),
             ("expr", jexp)]
-       => mk_fncall ("Array_Forall",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
+       => mk_fncall ("","Array_Forall",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
    | other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);
@@ -208,6 +213,7 @@ fun dest_param param =
 fun mk_fun_def pkgName json =
  case json
   of AList [("kind", String "FnDef"),
+            ("packageName",pkg),
             ("name", String fname),
             ("args", List params),
             ("type", ty),
@@ -230,11 +236,14 @@ fun mk_def pkgName json =
 
 fun mk_defs pkgName annex =  (* package annex *)
  case annex
-  of AList [("name", String agree),
+  of AList [("name", String "agree"),
             ("kind", String "AnnexLibrary"), 
             ("parsedAnnexLibrary",
 	     AList [("statements", List decls)])] => mapfilter (mk_def pkgName) decls
    | otherwise => raise ERR "get_fndefs" "unexpected annex format";
+(*
+val [d1,d2,d3,d4,d5,d6,d7,d8,d9,d10] = decls;
+*)
 
 fun fldty tystr =
  case dest_qid tystr
@@ -248,27 +257,31 @@ fun dest_field pkgName subcomp =
   of AList [("name", String fldname), 
             ("kind", String "Subcomponent"),
             ("category", String "data"),
-            ("classifier", String tystr)] => (fldname,fldty tystr)
+            ("classifier", String tystr)] => (fldname, SOME (fldty tystr))
+   | AList [("name", String fldname), 
+            ("kind", String "Subcomponent"),
+            ("category", String "data")] => (fldname, NONE)
    | otherwise => raise ERR "dest_field" "expected a record field";
 
 fun recd_decl pkgName names decl =
  case decl
-  of AList (("name", String name_impl) ::
+  of AList (("packageName", String pkg) ::
+            ("name", String name_impl) ::
+            ("localName", _) ::
             ("kind",String "ComponentImplementation") ::
             ("category", String "data") ::
 	    ("subcomponents", List subcomps)::_)
-     => (case dropImpl name_impl
-	  of NONE => raise ERR "recd_decl" "expected .Impl suffix"
-           | SOME name =>
-	      if mem name names andalso not(null subcomps)
-              then RecdDec(dest_qid name, map (dest_field pkgName) subcomps)
-              else raise ERR "recd_decl" "expected a record implementation"
-	)
-   | AList [("name", String name_impl),
-            ("kind", String "ComponentImplementation"), 
-            ("category", String "data"),
-            ("extends", AList orig_recd_spec),
-            ("subcomponents", substs)]
+     => if mem name_impl names andalso not(null subcomps)
+        then RecdDec(dest_qid (Option.valOf (dropImpl name_impl)), 
+                     map ((I##Option.valOf) o dest_field pkgName) subcomps)
+        else raise ERR "recd_decl" "expected a record implementation"
+   | AList (("packageName", String pkg) ::
+            ("name", String name_impl) ::
+            ("localName",_) ::
+            ("kind", String "ComponentImplementation") ::
+            ("category", String "data") ::
+            ("extends", AList orig_recd_spec) ::
+            ("subcomponents", substs) :: _)
      => (case dropImpl name_impl
 	  of NONE => raise ERR "recd_decl" "expected .Impl suffix"
            | SOME name =>
@@ -276,10 +289,11 @@ fun recd_decl pkgName names decl =
 		 val orig_fields = map (dest_field pkgName) orig_subcomps
                  val List field_substs = substs
 		 val new_fields = map (dest_field pkgName) field_substs
-                 fun replace_field (name,ty) =
-		    case assoc1 name new_fields
-                     of NONE => (name,ty)
-                      | SOME field => field
+                 fun replace_field (name, SOME ty) = (name,ty)
+                   | replace_field (name, NONE) = 
+		    case assoc name new_fields
+                     of NONE => raise ERR "recd_decl" "replace_field"
+                      | SOME field => (name,field)
                  val fields = map replace_field orig_fields
              in RecdDec(dest_qid name,fields)
 	     end)
@@ -287,24 +301,26 @@ fun recd_decl pkgName names decl =
 
 fun enum_decl decl =
  case decl
-  of AList [("name", String ename), 
-            ("kind",String "ComponentType"),
-            ("category", String "data"), 
+  of AList (("name", String ename) ::
+            ("localName",_) ::
+            ("kind",String "ComponentType") ::
+            ("category", String "data") :: 
             ("properties",
              List [AList [("name", String "Data_Model::Data_Representation"),
                           ("kind", String "PropertyAssociation"),
                           ("value", String "Enum")],
                    AList [("name", String "Data_Model::Enumerators"),
                           ("kind", String "PropertyAssociation"),
-                          ("value", List names)]])]
+                          ("value", List names)]]) :: _)
       => EnumDec(dest_qid ename, map dropString names)
   | other => raise ERR "enum_decl" "expected an enum declaration";
 
 fun array_decl decl =
  case decl
-  of AList [("name", String name),
-            ("kind",String "ComponentType"),
-            ("category", String "data"),
+  of AList (("name", String name)::
+            ("localName",_) ::
+            ("kind",String "ComponentType") ::
+            ("category", String "data") ::
 	    ("properties", List
              [AList [("name", String "Data_Model::Data_Representation"),
                      ("kind", String "PropertyAssociation"), 
@@ -314,16 +330,18 @@ fun array_decl decl =
                      ("value", List [String baseTyName])],
               AList [("name", String "Data_Model::Dimension"),
                      ("kind", String "PropertyAssociation"),
-                     ("value", List [String dimString])]])]
+                     ("value", List [Number (Int d)])]]) :: _) 
      => let val basety = get_tyinfo [("kind", String "typeId"), 
                                      ("name", String baseTyName)]
-            val dim = mk_uintLit(valOf(Int.fromString dimString))
+            val dim = mk_uintLit d
         in ArrayDec(dest_qid name, ArrayTy(basety,[dim]))
         end
   | other => raise ERR "array_decl" "expected an array declaration";
 
-fun data_decl_name (AList(("name", String dname) ::
-                          ("kind", String "ComponentType") ::
+fun data_decl_name (AList(("packageName", String pkg) ::
+                          ("name", String dname) ::
+                          ("localName", _) ::
+                          ("kind", String "ComponentImplementation") ::
                           ("category", String "data") :: _)) = dname
 
 fun get_tydecl pkgName names thing =
@@ -345,44 +363,66 @@ fun get_port port =
       => (pname,dest_tyqid tyqidstring,flowdir,conn_style)
     | otherwise => raise ERR "get_port" "unexpected port format"
 
-fun get_filter_guarantee rname g =
-    case g
+(*---------------------------------------------------------------------------*)
+(* This enables "Req001_Filter" to be equal to "Req001_RadioDriver_Filter"   *)
+(*---------------------------------------------------------------------------*)
+
+fun filter_req_name_eq s1 s2 =
+ let fun is_underscore ch = (ch = #"_")
+     val s1_tokens = String.tokens is_underscore s1
+     val s2_tokens = String.tokens is_underscore s2
+ in not (null s1_tokens) andalso not(null s2_tokens) andalso
+    hd s1_tokens = hd s2_tokens andalso
+    last s1_tokens = last s2_tokens
+ end;
+
+fun get_filter_guarantee (String rname) g =
+   (case g
      of AList [("kind", String "GuaranteeStatement"),
                ("name", String gname),
                ("label", String gdoc),
                ("expr", gprop)]
-        => if rname = gname
+        => if filter_req_name_eq rname gname
             then (gdoc, dest_exp gprop)
            else raise ERR "get_filter_guarantee" 
 		   (String.concat["expected named filter guarantee ", Lib.quote rname,
 				  " but encountered ", Lib.quote gname])
      | otherwise => raise ERR "get_filter_guarantee" "unexpected input format"
+   )
+  | get_filter_guarantee _ _ = raise ERR "get_filter_guarantee" 
+                                "expected a String in first argument"
 ;
-  
-fun mk_filter_guarantee [x] = x
-  | mk_filter_guarantee otherwise = 
-    raise ERR "mk_filter_guarantee" "expected only one guarantee";
-	  
+
+fun get_named_guarantees rnames guarantees =
+ let fun gtees_of rname = mapfilter (get_filter_guarantee rname) guarantees
+ in
+    List.concat (map gtees_of rnames)
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Note that a single filter can have multiple properties attached.          *)
+(*---------------------------------------------------------------------------*)
+
 fun get_filter decl =
  case decl
   of AList
       [("name", String fname), 
+       ("localName",String _),
        ("kind",String "ComponentType"),
        ("category", String "thread"),
        ("features", List ports),
-       ("properties",
+       ("properties", 
           List [AList [("name", String "CASE_Properties::COMP_TYPE"), _, 
                        ("value", String "FILTER")],
-                AList [("name", String "CASE_Properties::COMP_IMPL"), _,
-                       ("value", String "CakeML")],
                 AList [("name", String "CASE_Properties::COMP_SPEC"), _, 
-                       ("value", String rname)]]),
+                       ("value", List rnames)]]),
        ("annexes", List [AList [("name", String "agree"),
                                 ("kind", String "AnnexSubclause"),
                                 ("parsedAnnexSubclause",
                                  AList [("statements", List guarantees)])]])]
-      => FilterDec(dest_qid fname, map get_port ports,
-          mk_filter_guarantee (mapfilter (get_filter_guarantee rname) guarantees))
+      => (case get_named_guarantees rnames guarantees
+           of [] => raise ERR "get_filter" "no properties!"
+            | glist => FilterDec(dest_qid fname, map get_port ports, glist))
    | otherwise => raise ERR "get_filter" "not a filter thread";
 
 fun dest_publist plist =
@@ -409,11 +449,17 @@ fun get_data_model pkg =
   |  otherwise => raise ERR "get_data_model" "unexpected format"
 ;
 	    
+(*
+val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, 
+     c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28,
+     c29, c30, c31, c32] = complist;
+*)
+
 fun scrape pkg =
  case pkg
-  of AList [("name", String pkgName),
-            ("kind", String "AadlPackage"),
-            ("public", AList publist)]
+  of AList (("name", String pkgName) ::
+            ("kind", String "AadlPackage") ::
+            ("public", AList publist) :: _)
      => let val (withs, renamings, complist,annexlist) = dest_publist publist
             val tydecls = get_tydecls pkgName complist
 	    val fndecls = List.concat (mapfilter (mk_defs pkgName) annexlist)
@@ -427,16 +473,16 @@ fun dest_with ("with", List wlist) = map dropString wlist
   | dest_with other = raise ERR "dest_with" "";
 
 fun scrape_pkgs (List pkgs) =
-    let fun uses (A as AList [("name", String AName),
-                              ("kind", String "AadlPackage"),
-                              ("public", AList publist)],
-                  B as AList [("name", String BName),
-                              ("kind", String "AadlPackage"),_]) = 
+    let fun uses (A as AList (("name", String AName) ::
+                              ("kind", String "AadlPackage")::
+                              ("public", AList publist):: _))
+                 (B as AList (("name", String BName) ::
+                              ("kind", String "AadlPackage") :: _)) = 
              let val Auses = List.concat (mapfilter dest_with publist)
              in mem BName Auses
              end
-          | uses otherwise = false
-        val opkgs = topsort (curry uses) pkgs
+          | uses other wise = false
+        val opkgs = topsort uses pkgs
         val declist = mapfilter scrape opkgs
 (*        val datalist = mapfilter get_data_model opkgs *)
     in
@@ -853,7 +899,7 @@ fun declare_hol_term tyEnv (ConstDec (qid,ty,exp)) = declare_hol_fn tyEnv (qid,[
 fun underscore(a,b) = String.concat[a,"_",b];
 
 fun mk_filter_spec (thyName,tyEnv,fn_defs) 
-		   (FilterDec ((pkgName,fname), ports, (comment,prop))) = 
+		   (FilterDec ((pkgName,fname), ports, cprops)) = 
     let val outport = Lib.first (fn (_,_,dir,_) => (dir = "out")) ports
 	val inport = Lib.first (fn (_,_,dir,_) => (dir = "in")) ports
         val iname = #1 inport
@@ -861,6 +907,7 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
         val ty = transTy tyEnv (#2 outport)
         val varIn = (iname,mk_var(iname,ty))
         val varOut = (oname,mk_var(oname,ty))
+        val prop = end_itlist mk_and (map #2 cprops)
         val spec = transExp thyName [varIn,varOut] (Expected bool) prop
         val wf_message_thm = PURE_REWRITE_CONV fn_defs spec
         val array_forall_expanded = 

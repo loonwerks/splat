@@ -241,10 +241,44 @@ fun all_paths recdvar =
 (* from the big regular expression).                                         *) 
 (*---------------------------------------------------------------------------*)
 
+val ii2term = intSyntax.term_of_int o Arbint.fromLargeInt;
+
+val default_int_bits = 31;
+
+val SMAX_INT = twoE default_int_bits;  (* successor of maxint *)
+val MIN_INT = IntInf.~SMAX_INT;
+val SMAX_NUM = twoE (default_int_bits + 1); (* successor of maxnum *)
+
+val smaxint_tm = ii2term SMAX_INT;
+val minint_tm = ii2term MIN_INT;
+val smaxnum_tm = numSyntax.mk_numeral (Arbnum.fromLargeInt SMAX_NUM);
+
+fun max_const ty =
+  if ty = numSyntax.num then smaxnum_tm else 
+  if ty = intSyntax.int_ty then smaxint_tm 
+  else raise ERR "max_const" "";
+
+fun min_const ty =
+  if ty = numSyntax.num then numSyntax.zero_tm else 
+  if ty = intSyntax.int_ty then minint_tm 
+  else raise ERR "min_const" "";
+
+fun mk_lt ty = 
+  if ty = numSyntax.num then numSyntax.less_tm else 
+  if ty = intSyntax.int_ty then intSyntax.less_tm
+  else raise ERR "mk_lt" "";
+fun mk_le ty = 
+  if ty = numSyntax.num then numSyntax.leq_tm else 
+  if ty = intSyntax.int_ty then intSyntax.leq_tm
+  else raise ERR "mk_le" "";
+
+
 fun filter_correctness (fname,thm) =
- let val (wfpred_app,expansion) = dest_eq(concl thm)
-     val (wfpred,recdvar) = dest_comb wfpred_app
-     val (wfpred_name,wfpred_ty) = dest_const wfpred
+ let val (wfpred_apps, expansion) = dest_eq(concl thm)
+     val recdvar = 
+        (case free_vars wfpred_apps
+          of [x] => x
+           | otherwise => raise ERR "filter_correctness" "expected 1 free var")
      val recdty = type_of recdvar
      val {Thy,Tyop=rtyname,Args} = dest_thy_type recdty
      val constraints = strip_conj expansion
@@ -252,11 +286,11 @@ fun filter_correctness (fname,thm) =
      val allprojs = all_paths recdvar
      fun proj_of t =
        filter has_recd_var
-	(if is_comparison t 
+	(if is_comparison t orelse is_eq t
         then snd (strip_comb t)
         else if is_disj t  (* disjunction of equalities *)
             then flatten (map (snd o strip_comb) (strip_disj t))
-            else if is_eq t then snd (strip_comb t)
+            else if type_of t = Type.bool then [t]
                  else raise ERR "proj_of" 
                    "expected a disjunction of equalities or an arithmetic inequality")
      val projs = mk_set_lr (flatten (map proj_of constraints))
@@ -271,11 +305,13 @@ fun filter_correctness (fname,thm) =
          let fun unconstrained proj = (* Done for integers and enums currently *)
               let val ty = type_of proj
                   open intSyntax 
-                  val ii2term = intSyntax.term_of_int o Arbint.fromLargeInt
               in if ty = int_ty
-                    then [mk_leq(ii2term(IntInf.~(twoE 63)),proj),
-                          mk_less(proj,ii2term (twoE 63))]
-	         else case Finmap.peek (the_enumMap(),type_of proj)
+                    then [mk_leq(minint_tm,proj), mk_less(proj,smaxint_tm)]
+	         else 
+                 if ty = numSyntax.num 
+                    then [numSyntax.mk_leq(numSyntax.zero_tm,proj),
+                          numSyntax.mk_less(proj,smaxnum_tm)]
+                 else case Finmap.peek (the_enumMap(),type_of proj)
                        of NONE => raise ERR "mk_correctness_goals" 
                                 ("following field is not in the_enumMap(): "
                                  ^term_to_string proj)
@@ -291,30 +327,31 @@ fun filter_correctness (fname,thm) =
      (* Add implicit constraints to the wfpred *)
 
      val implicit_constraints = List.mapPartial (C (op_assoc1 aconv) groups') omitted_projs
-     val (wfpred_app',iconstraints_opt) = 
+     val (wfpred_apps',iconstraints_opt) = 
 	 if null implicit_constraints
-	 then (wfpred_app,NONE)
+	 then (wfpred_apps,NONE)
 	 else 
          let val implicit_constraints_tm =
                  list_mk_conj (map list_mk_conj implicit_constraints)
-(*                 list_mk_conj (map (list_mk_conj o snd) implicit_constraints) *)
-	     val iconstr_name = wfpred_name^"_implicit_constraints"
-	     val iconstr_app = mk_comb(mk_var(iconstr_name,wfpred_ty),recdvar)
+	     val iconstr_name = fname^"_implicit_constraints"
+	     val iconstr_app = mk_comb(mk_var(iconstr_name,recdty --> Type.bool),recdvar)
 	     val iconstr_def_tm = mk_eq(iconstr_app, implicit_constraints_tm)
 	     val implicit_constraints_def = TotalDefn.Define `^iconstr_def_tm`
 	     val implicit_constraints_const = 
                   mk_const(dest_var(fst(dest_comb iconstr_app)))
          in
-            (mk_conj(wfpred_app,mk_comb(implicit_constraints_const,recdvar)),
+            (mk_conj(wfpred_apps,mk_comb(implicit_constraints_const,recdvar)),
              SOME implicit_constraints_def)
          end
 
      (* map constraints to an interval. The (lo,hi) pair denotes the inclusive
-        interval {i | lo <= i <= hi} so there is some fiddling to translate
-        all relations to <=.
+        interval {i | lo <= i <= hi} so there is some fiddling to translate        all relations to <=.
      *)
      fun constraint_interval ctr =  (* elements of c expected to have form relop t1 t2 *)
-      let fun elim_gtr tm = (* elim > and >= *)
+      let val domtys = fst (strip_fun (type_of (fst (strip_comb (hd ctr)))))
+          val _ = if Lib.all (fn ty => ty = numSyntax.num orelse ty = intSyntax.int_ty) domtys
+                   then () else raise ERR "constraint_interval" "not a numeric constraint"
+          fun elim_gtr tm = (* elim > and >= *)
             case strip_comb tm
 	      of (rel,[a,b]) =>
                   if same_const rel numSyntax.greater_tm
@@ -324,14 +361,29 @@ fun filter_correctness (fname,thm) =
                   if same_const rel intSyntax.great_tm
 		    then (intSyntax.less_tm,b,a) else 
                   if same_const rel intSyntax.geq_tm 
-		    then (intSyntax.leq_tm,b,a) 
-                  else if op_mem same_const rel
+		    then (intSyntax.leq_tm,b,a) else 
+                  if op_mem same_const rel
                           [intSyntax.leq_tm,numSyntax.leq_tm,
-                           intSyntax.less_tm,numSyntax.less_tm]
+                           intSyntax.less_tm,numSyntax.less_tm,boolSyntax.equality]
                      then (rel,a,b)
                   else raise ERR "constraint_interval" "unknown numeric relation"
 	       | other => raise ERR "constraint_interval" "expected term of form `relop a b`"
           val ctr' = map elim_gtr ctr
+          fun has_recdvar t = op_mem aconv recdvar (free_vars t)
+          fun add_constraint [ctr as (rel,a,b)] = 
+                 let val ty = type_of a
+                 in if same_const boolSyntax.equality rel then
+                       [ctr, (rel,b,a)]
+                    else
+                    if has_recdvar b then 
+                         [ctr, (mk_lt ty, b,max_const ty)] else 
+                    if has_recdvar a then
+                         [(mk_le ty, min_const ty, a),ctr] 
+                    else raise ERR "constraint_interval" "add_constraint"
+                 end
+            | add_constraint (x as [_,_]) = x
+            | add_constraint other = raise ERR "constraint_interval" "add_constraint"
+          val ctr'' = add_constraint ctr'
           fun sort [c1 as (_,a,b), c2 as (_,c,d)] = 
               let val fva = free_vars a
                   val fvb = free_vars b
@@ -346,7 +398,7 @@ fun filter_correctness (fname,thm) =
 	         else raise ERR "constraint_interval(sort)" "unexpected format"
               end
             | sort otherwise = raise ERR "constraint_interval(sort)" "unexpected format"
-          val ((rel1,lo_tm,_),(rel2,_,hi_tm)) = sort ctr'
+          val ((rel1,lo_tm,_),(rel2,_,hi_tm)) = sort ctr''
 	  fun dest_literal t = 
              (if type_of t = numSyntax.num
 	        then Arbint.fromNat o numSyntax.dest_numeral
@@ -364,8 +416,18 @@ fun filter_correctness (fname,thm) =
         mk_interval encoding dir (Arbint.toLargeInt lo',Arbint.toLargeInt hi')
       end
 
-     fun constraint_enumset [g] =   (* Should be extended to finite sets of numbers *)
-         let val eqns = strip_disj g
+     (*---------------------------------------------------------------------*)
+     (* Expects (x = C1) \/ (x = C2) \/ ...                                 *)
+     (* There are some special cases when the enumerated type is bool       *)
+     (*---------------------------------------------------------------------*)
+
+     fun constraint_enumset [ctr] =   (* Should be extended to finite sets of numbers *)
+         let val eqns = 
+              if not (is_disj ctr) then 
+                  (if is_neg ctr then 
+                     [mk_eq (dest_neg ctr,boolSyntax.F)] else
+                     [mk_eq (ctr,boolSyntax.T)])
+              else strip_disj ctr
              val constlike = null o free_vars
              fun elt_of eqn = 
                 let val (l,r) = dest_eq eqn 
@@ -389,8 +451,10 @@ fun filter_correctness (fname,thm) =
 
      fun mk_atomic x = 
         constraint_interval (snd x) 
-         handle HOL_ERR _ 
-          => constraint_enumset (snd x);
+         handle HOL_ERR _ => 
+        constraint_enumset (snd x)
+
+     val [g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15, g16, g17] = groups';
 
      val atomics = map mk_atomic groups'
 
@@ -419,7 +483,7 @@ fun filter_correctness (fname,thm) =
           Ty = regexpSyntax.regexp_ty --> stringSyntax.string_ty --> Type.bool}
 
      val correctness_goal = mk_forall(recdvar,
-        mk_eq(wfpred_app',
+        mk_eq(wfpred_apps',
           pred_setSyntax.mk_in
             (mk_comb(encodeFn,recdvar),
 	     mk_comb(regexp_lang_tm,the_regexp_tm))))
@@ -528,15 +592,20 @@ fun filter_correctness (fname,thm) =
 
     (* Construct the formula of the receiver correctness theorem *)
     val svar = mk_var("s",stringSyntax.string_ty)
+    val decoded_tm = optionSyntax.mk_the(mk_comb(decodeFn,svar))
+    val wf_tm = if is_conj wfpred_apps
+		then let val v = mk_var("vvv",type_of decoded_tm)
+                     in pairSyntax.mk_anylet
+                         ([(v,decoded_tm)],subst [recdvar |-> v] wfpred_apps)
+                     end
+                else subst [recdvar |-> decoded_tm] wfpred_apps
     val receiver_correctness_goal = mk_forall(svar,
         mk_imp
          (pred_setSyntax.mk_in
-             (svar, mk_comb(regexp_lang_tm,the_regexp_tm)),
-          mk_comb(wfpred,
-                  optionSyntax.mk_the(mk_comb(decodeFn,svar)))))
+             (svar, mk_comb(regexp_lang_tm,the_regexp_tm)),wf_tm))
     (* Construct the formula of the inversion theorem *)
     val inversion_goal = mk_forall(recdvar,
-        mk_imp(wfpred_app',
+        mk_imp(wfpred_apps',
                mk_eq(mk_comb(decodeFn,mk_comb(encodeFn,recdvar)),
                      optionSyntax.mk_some recdvar)))
  in

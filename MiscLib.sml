@@ -597,4 +597,6 @@ fun mapfilter f list =
    mapf list []
   end;
 
+val shortcut = W (ACCEPT_TAC o mk_thm)
+
 end (* MiscLib *)
