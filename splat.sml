@@ -51,10 +51,10 @@ fun export_dfa {name,regexp,encode_def,decode_def,
                  deconstruct (regexpLib.matcher regexpLib.SML regexp)
      val rstring = PP.pp_to_string 72 Regexp_Type.pp_regexp regexp 
      val dfa = {name=name,src_regexp=rstring, finals=finals,table=table}
-     val ostrm1 = TextIO.openOut (name^".c")
+     val ostrm = TextIO.openOut (name^".c")
  in
-    DFA_Codegen.C dfa ostrm1
-  ; TextIO.closeOut ostrm1
+    DFA_Codegen.C dfa ostrm
+  ; TextIO.closeOut ostrm
  end
 
 fun main () =

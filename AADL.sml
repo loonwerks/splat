@@ -472,25 +472,41 @@ fun scrape pkg =
 fun dest_with ("with", List wlist) = map dropString wlist
   | dest_with other = raise ERR "dest_with" "";
 
-fun scrape_pkgs (List pkgs) =
-    let fun uses (A as AList (("name", String AName) ::
-                              ("kind", String "AadlPackage")::
-                              ("public", AList publist):: _))
-                 (B as AList (("name", String BName) ::
-                              ("kind", String "AadlPackage") :: _)) = 
-             let val Auses = List.concat (mapfilter dest_with publist)
-             in mem BName Auses
-             end
-          | uses other wise = false
-        val opkgs = topsort uses pkgs
-        val declist = mapfilter scrape opkgs
-(*        val datalist = mapfilter get_data_model opkgs *)
-    in
+fun dropList (List list) = list
+  | dropList otherwise = raise ERR "dropList" "";
+
+fun scrape_pkgs json =
+ let fun uses (A as AList (("name", String AName) ::
+                           ("kind", String "AadlPackage")::
+                           ("public", AList publist):: _))
+              (B as AList (("name", String BName) ::
+                           ("kind", String "AadlPackage") :: _)) = 
+          let val Auses = List.concat (mapfilter dest_with publist)
+          in mem BName Auses
+          end
+       | uses other wise = false
+    fun run pkgs = 
+      let val opkgs = topsort uses pkgs
+          val declist = mapfilter scrape opkgs
+      in
 	rev declist
-    end
-  | scrape_pkgs otherwise = raise ERR "scrape_pkgs" "unexpected format";
-
-
+      end
+ in
+    case json 
+     of List pkgs => run pkgs
+      | AList alist => run (dropList (assoc "modelUnits" alist))
+      | otherwise => raise ERR "scrape_pkgs" "unexpected format"
+ end
+x
+(*
+val  AList
+    [("project", String "Filter_Test"),
+     ("implementation", String "SW::SW.Impl"),
+     ("date", Number (Int 1562794332995)),
+     ("hash",_),
+     ("modelUnits", List pkgs)] = jpkg;
+*)
+     
 (*---------------------------------------------------------------------------*)
 (* AST to HOL                                                                *)
 (*---------------------------------------------------------------------------*)
