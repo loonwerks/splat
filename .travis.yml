@@ -39,4 +39,4 @@ deploy:
       - $HOME/lib/libpolyml.so.10
     on:
       branch: master
-      condition: $TRAVIS_EVENT_TYPE = cron
+      condition: $TRAVIS_EVENT_TYPE =~ ^(api|cron)$
