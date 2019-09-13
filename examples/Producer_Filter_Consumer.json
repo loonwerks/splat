@@ -1,0 +1,4291 @@
+[
+  {
+    "name": "Producer_Filter_Consumer",
+    "kind": "AadlPackage",
+    "public": {
+      "with": [
+        "Base_Types",
+        "CASE_Properties"
+      ],
+      "components": [
+        {
+          "name": "Producer_Filter_Consumer::CASE_Filter",
+          "localName": "CASE_Filter",
+          "kind": "ComponentType",
+          "category": "thread",
+          "features": [
+            {
+              "name": "filter_in",
+              "kind": "EventDataPort",
+              "classifier": "Producer_Filter_Consumer::Coordinate.Impl",
+              "direction": "in"
+            },
+            {
+              "name": "filter_out",
+              "kind": "EventDataPort",
+              "classifier": "Producer_Filter_Consumer::Coordinate.Impl",
+              "direction": "out"
+            }
+          ],
+          "properties": [
+            {
+              "name": "CASE_Properties::COMP_TYPE",
+              "kind": "PropertyAssociation",
+              "value": "FILTER"
+            },
+            {
+              "name": "CASE_Properties::COMP_SPEC",
+              "kind": "PropertyAssociation",
+              "value": [
+                "Req_Filter_LatLong"
+              ]
+            }
+          ],
+          "annexes": [
+            {
+              "name": "agree",
+              "kind": "AnnexSubclause",
+              "parsedAnnexSubclause": {
+                "statements": [
+                  {
+                    "kind": "GuaranteeStatement",
+                    "name": "Req_Filter_LatLong",
+                    "label": "The Consumer shall only receive well-formed lat-long values",
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "Producer_Filter_Consumer",
+                        "name": "WELL_FORMED_LAT_LONG"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "filter_out"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "packageName": "Producer_Filter_Consumer",
+          "name": "Producer_Filter_Consumer::CASE_Filter.Impl",
+          "localName": "CASE_Filter.Impl",
+          "kind": "ComponentImplementation",
+          "category": "thread",
+          "properties": [
+            {
+              "name": "CASE_Properties::COMP_IMPL",
+              "kind": "PropertyAssociation",
+              "value": "CakeML"
+            }
+          ]
+        },
+        {
+          "name": "Producer_Filter_Consumer::Coordinate",
+          "localName": "Coordinate",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "Producer_Filter_Consumer",
+          "name": "Producer_Filter_Consumer::Coordinate.Impl",
+          "localName": "Coordinate.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "latitude",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            },
+            {
+              "name": "longitude",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            },
+            {
+              "name": "altitude",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            }
+          ]
+        },
+        {
+          "name": "Producer_Filter_Consumer::Producer",
+          "localName": "Producer",
+          "kind": "ComponentType",
+          "category": "thread",
+          "features": [
+            {
+              "name": "trigger",
+              "kind": "EventDataPort",
+              "classifier": "Base_Types::Boolean",
+              "direction": "in"
+            },
+            {
+              "name": "msg_out",
+              "kind": "EventDataPort",
+              "classifier": "Producer_Filter_Consumer::Coordinate.Impl",
+              "direction": "out"
+            }
+          ]
+        },
+        {
+          "packageName": "Producer_Filter_Consumer",
+          "name": "Producer_Filter_Consumer::Producer.Impl",
+          "localName": "Producer.Impl",
+          "kind": "ComponentImplementation",
+          "category": "thread"
+        },
+        {
+          "name": "Producer_Filter_Consumer::Consumer",
+          "localName": "Consumer",
+          "kind": "ComponentType",
+          "category": "thread",
+          "features": [
+            {
+              "name": "msg_in",
+              "kind": "EventDataPort",
+              "classifier": "Producer_Filter_Consumer::Coordinate.Impl",
+              "direction": "in"
+            },
+            {
+              "name": "status",
+              "kind": "EventDataPort",
+              "classifier": "Base_Types::Boolean",
+              "direction": "out"
+            }
+          ],
+          "annexes": [
+            {
+              "name": "agree",
+              "kind": "AnnexSubclause",
+              "parsedAnnexSubclause": {
+                "statements": [
+                  {
+                    "kind": "AssumeStatement",
+                    "name": "Req_Wellformed_LatLong",
+                    "label": "The Consumer shall only receive well-formed lat-long values",
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "Producer_Filter_Consumer",
+                        "name": "WELL_FORMED_LAT_LONG"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "msg_in"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "AssumeStatement",
+                    "name": "Req_Wellformed_Alt",
+                    "label": "The Consumer shall only receive well-formed alt values",
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "Producer_Filter_Consumer",
+                        "name": "WELL_FORMED_ALT"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "msg_in"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "GuaranteeStatement",
+                    "label": "Consumer status shall never be false",
+                    "expr": {
+                      "kind": "NamedElmExpr",
+                      "name": "status"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "packageName": "Producer_Filter_Consumer",
+          "name": "Producer_Filter_Consumer::Consumer.Impl",
+          "localName": "Consumer.Impl",
+          "kind": "ComponentImplementation",
+          "category": "thread"
+        },
+        {
+          "name": "Producer_Filter_Consumer::SW",
+          "localName": "SW",
+          "kind": "ComponentType",
+          "category": "process",
+          "features": [
+            {
+              "name": "input",
+              "kind": "EventDataPort",
+              "classifier": "Base_Types::Boolean",
+              "direction": "in"
+            },
+            {
+              "name": "output",
+              "kind": "EventDataPort",
+              "classifier": "Base_Types::Boolean",
+              "direction": "out"
+            }
+          ],
+          "annexes": [
+            {
+              "name": "agree",
+              "kind": "AnnexSubclause",
+              "parsedAnnexSubclause": {
+                "statements": [
+                  {
+                    "kind": "GuaranteeStatement",
+                    "label": "Consumer status is never false",
+                    "expr": {
+                      "kind": "NamedElmExpr",
+                      "name": "output"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "packageName": "Producer_Filter_Consumer",
+          "name": "Producer_Filter_Consumer::SW.Impl",
+          "localName": "SW.Impl",
+          "kind": "ComponentImplementation",
+          "category": "process",
+          "subcomponents": [
+            {
+              "name": "Producer",
+              "kind": "Subcomponent",
+              "category": "thread",
+              "classifier": "Producer_Filter_Consumer::Producer.Impl"
+            },
+            {
+              "name": "Consumer",
+              "kind": "Subcomponent",
+              "category": "thread",
+              "classifier": "Producer_Filter_Consumer::Consumer.Impl"
+            },
+            {
+              "name": "FLT",
+              "kind": "Subcomponent",
+              "category": "thread",
+              "classifier": "Producer_Filter_Consumer::CASE_Filter.Impl"
+            }
+          ],
+          "connections": [
+            {
+              "name": "c0",
+              "kind": "port",
+              "source": "input",
+              "destination": "Producer.trigger",
+              "bidirectional": false
+            },
+            {
+              "name": "c1",
+              "kind": "port",
+              "source": "Producer.msg_out",
+              "destination": "FLT.filter_in",
+              "bidirectional": false
+            },
+            {
+              "name": "c3",
+              "kind": "port",
+              "source": "FLT.filter_out",
+              "destination": "Consumer.msg_in",
+              "bidirectional": false
+            },
+            {
+              "name": "c2",
+              "kind": "port",
+              "source": "Consumer.status",
+              "destination": "output",
+              "bidirectional": false
+            }
+          ],
+          "annexes": [
+            {
+              "name": "resolute",
+              "kind": "AnnexSubclause",
+              "sourceText": "{**\n\t\t\tprove Req_Wellformed_LatLong(this.Consumer, \\\"Req_Wellformed_LatLong\\\", this.FLT, \\\"c3\\\", Coordinate.Impl)\n\t\t\tprove Req_Wellformed_Alt(this.Consumer, \\\"Req_Wellformed_Alt\\\", this.FLT, \\\"c3\\\", Coordinate.Impl)\n\t\t**}"
+            }
+          ]
+        }
+      ],
+      "annexes": [
+        {
+          "name": "agree",
+          "kind": "AnnexLibrary",
+          "parsedAnnexLibrary": {
+            "statements": [
+              {
+                "kind": "FnDef",
+                "packageName": "Producer_Filter_Consumer",
+                "name": "WELL_FORMED_LAT_LONG",
+                "args": [
+                  {
+                    "name": "coord",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "Coordinate.Impl"
+                    }
+                  }
+                ],
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "bool"
+                },
+                "expr": {
+                  "kind": "BinaryExpr",
+                  "left": {
+                    "kind": "BinaryExpr",
+                    "left": {
+                      "kind": "BinaryExpr",
+                      "left": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "Selection",
+                          "target": {
+                            "kind": "NamedElmExpr",
+                            "name": "coord"
+                          },
+                          "field": "latitude"
+                        },
+                        "op": ">=",
+                        "right": {
+                          "kind": "UnaryExpr",
+                          "operand": {
+                            "kind": "IntLitExpr",
+                            "value": "90"
+                          },
+                          "op": "-"
+                        }
+                      },
+                      "op": "and",
+                      "right": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "Selection",
+                          "target": {
+                            "kind": "NamedElmExpr",
+                            "name": "coord"
+                          },
+                          "field": "latitude"
+                        },
+                        "op": "<=",
+                        "right": {
+                          "kind": "IntLitExpr",
+                          "value": "90"
+                        }
+                      }
+                    },
+                    "op": "and",
+                    "right": {
+                      "kind": "BinaryExpr",
+                      "left": {
+                        "kind": "Selection",
+                        "target": {
+                          "kind": "NamedElmExpr",
+                          "name": "coord"
+                        },
+                        "field": "longitude"
+                      },
+                      "op": ">=",
+                      "right": {
+                        "kind": "UnaryExpr",
+                        "operand": {
+                          "kind": "IntLitExpr",
+                          "value": "180"
+                        },
+                        "op": "-"
+                      }
+                    }
+                  },
+                  "op": "and",
+                  "right": {
+                    "kind": "BinaryExpr",
+                    "left": {
+                      "kind": "Selection",
+                      "target": {
+                        "kind": "NamedElmExpr",
+                        "name": "coord"
+                      },
+                      "field": "longitude"
+                    },
+                    "op": "<=",
+                    "right": {
+                      "kind": "IntLitExpr",
+                      "value": "180"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "FnDef",
+                "packageName": "Producer_Filter_Consumer",
+                "name": "WELL_FORMED_ALT",
+                "args": [
+                  {
+                    "name": "coord",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "Coordinate.Impl"
+                    }
+                  }
+                ],
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "bool"
+                },
+                "expr": {
+                  "kind": "BinaryExpr",
+                  "left": {
+                    "kind": "BinaryExpr",
+                    "left": {
+                      "kind": "Selection",
+                      "target": {
+                        "kind": "NamedElmExpr",
+                        "name": "coord"
+                      },
+                      "field": "altitude"
+                    },
+                    "op": ">=",
+                    "right": {
+                      "kind": "IntLitExpr",
+                      "value": "0"
+                    }
+                  },
+                  "op": "and",
+                  "right": {
+                    "kind": "BinaryExpr",
+                    "left": {
+                      "kind": "Selection",
+                      "target": {
+                        "kind": "NamedElmExpr",
+                        "name": "coord"
+                      },
+                      "field": "altitude"
+                    },
+                    "op": "<=",
+                    "right": {
+                      "kind": "IntLitExpr",
+                      "value": "15000"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "private": {
+      "with": [
+        "CASE_Model_Transformations"
+      ],
+      "annexes": [
+        {
+          "name": "resolute",
+          "kind": "AnnexLibrary",
+          "sourceText": "{**\n\t\tReq_Wellformed_LatLong(comp_context : component, property_id : string, filter : component, connection_name : string, message_type : data) <=\n\t\t\t** \\\"[well_formed] The Consumer shall only receive well-formed latitude-longitude coordinates\\\" **\n\t\t\tagree_prop_checked(comp_context, property_id) and add_filter(comp_context, filter, connection_name, message_type)\n\t\t\n\t\tReq_Wellformed_Alt(comp_context : component, property_id : string, filter : component, connection_name : string, message_type : data) <=\n\t\t\t** \\\"[well_formed] The Consumer shall only receive well-formed altitude coordinates\\\" **\n\t\t\tagree_prop_checked(comp_context, property_id) and add_filter(comp_context, filter, connection_name, message_type)\n\n\t**}"
+        }
+      ]
+    }
+  },
+  {
+    "name": "CASE_Model_Transformations",
+    "kind": "AadlPackage",
+    "public": {
+      "with": [
+        "Base_Types",
+        "CASE_Properties"
+      ],
+      "components": [
+        {
+          "name": "CASE_Model_Transformations::CASE_MsgHeader",
+          "localName": "CASE_MsgHeader",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_MsgHeader.Impl",
+          "localName": "CASE_MsgHeader.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "src",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            },
+            {
+              "name": "dst",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            },
+            {
+              "name": "trusted",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Boolean"
+            },
+            {
+              "name": "HMAC",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Boolean"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_RF_Msg",
+          "localName": "CASE_RF_Msg",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_RF_Msg.Impl",
+          "localName": "CASE_RF_Msg.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "header",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_MsgHeader.Impl"
+            },
+            {
+              "name": "payload",
+              "kind": "Subcomponent",
+              "category": "data"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_UART_Msg",
+          "localName": "CASE_UART_Msg",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_UART_Msg.Impl",
+          "localName": "CASE_UART_Msg.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "crc",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Boolean"
+            },
+            {
+              "name": "message",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::String"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_WIFI_Msg",
+          "localName": "CASE_WIFI_Msg",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_WIFI_Msg.Impl",
+          "localName": "CASE_WIFI_Msg.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "crc",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Boolean"
+            },
+            {
+              "name": "message",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::String"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_AttestationRequestMsg",
+          "localName": "CASE_AttestationRequestMsg",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_AttestationRequestMsg.Impl",
+          "localName": "CASE_AttestationRequestMsg.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "header",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_MsgHeader.Impl"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_AttestationResponseMsg",
+          "localName": "CASE_AttestationResponseMsg",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_AttestationResponseMsg.Impl",
+          "localName": "CASE_AttestationResponseMsg.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "header",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_MsgHeader.Impl"
+            },
+            {
+              "name": "status",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Boolean"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_AttestationCacheRecord",
+          "localName": "CASE_AttestationCacheRecord",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl",
+          "localName": "CASE_AttestationCacheRecord.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "src",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            },
+            {
+              "name": "trusted",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            },
+            {
+              "name": "timeout",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "Base_Types::Integer"
+            }
+          ]
+        },
+        {
+          "name": "CASE_Model_Transformations::CASE_AttestationCache",
+          "localName": "CASE_AttestationCache",
+          "kind": "ComponentType",
+          "category": "data"
+        },
+        {
+          "packageName": "CASE_Model_Transformations",
+          "name": "CASE_Model_Transformations::CASE_AttestationCache.Impl",
+          "localName": "CASE_AttestationCache.Impl",
+          "kind": "ComponentImplementation",
+          "category": "data",
+          "subcomponents": [
+            {
+              "name": "src1",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl"
+            },
+            {
+              "name": "src2",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl"
+            },
+            {
+              "name": "src3",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl"
+            },
+            {
+              "name": "src4",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl"
+            },
+            {
+              "name": "src5",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl"
+            },
+            {
+              "name": "src6",
+              "kind": "Subcomponent",
+              "category": "data",
+              "classifier": "CASE_Model_Transformations::CASE_AttestationCacheRecord.Impl"
+            }
+          ]
+        }
+      ],
+      "annexes": [
+        {
+          "name": "Agree",
+          "kind": "AnnexLibrary",
+          "parsedAnnexLibrary": {
+            "statements": [
+              {
+                "kind": "ConstStatement",
+                "name": "NULL_ID",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "0"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "NULL_HEADER",
+                "type": {
+                  "kind": "DoubleDotRef",
+                  "name": "CASE_MsgHeader.Impl"
+                },
+                "expr": {
+                  "kind": "RecordLitExpr",
+                  "recordType": {
+                    "kind": "DoubleDotRef",
+                    "name": "CASE_MsgHeader.Impl"
+                  },
+                  "value": {
+                    "src": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_ID"
+                    },
+                    "dst": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_ID"
+                    },
+                    "trusted": {
+                      "kind": "BoolLitExpr",
+                      "value": "false"
+                    },
+                    "HMAC": {
+                      "kind": "BoolLitExpr",
+                      "value": "false"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "FnDef",
+                "packageName": "CASE_Model_Transformations",
+                "name": "NULL_MESSAGE",
+                "args": [
+                  {
+                    "name": "header",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_MsgHeader.Impl"
+                    }
+                  }
+                ],
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "bool"
+                },
+                "expr": {
+                  "kind": "BinaryExpr",
+                  "left": {
+                    "kind": "NamedElmExpr",
+                    "name": "header"
+                  },
+                  "op": "=",
+                  "right": {
+                    "kind": "NamedElmExpr",
+                    "name": "NULL_HEADER"
+                  }
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "NULL_MSG_TYPE",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "0"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "AM_REQUEST_MSG_TYPE",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "1"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "AM_RESPONSE_MSG_TYPE",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "2"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "FREE_MSG_TYPE",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "3"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "NULL_AM_REQUEST_MESSAGE",
+                "type": {
+                  "kind": "DoubleDotRef",
+                  "name": "CASE_AttestationRequestMsg.Impl"
+                },
+                "expr": {
+                  "kind": "RecordLitExpr",
+                  "recordType": {
+                    "kind": "DoubleDotRef",
+                    "name": "CASE_AttestationRequestMsg.Impl"
+                  },
+                  "value": {
+                    "header": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_HEADER"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "NULL_CACHE",
+                "type": {
+                  "kind": "DoubleDotRef",
+                  "name": "CASE_AttestationCache.Impl"
+                },
+                "expr": {
+                  "kind": "RecordLitExpr",
+                  "recordType": {
+                    "kind": "DoubleDotRef",
+                    "name": "CASE_AttestationCache.Impl"
+                  },
+                  "value": {
+                    "src1": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_RECORD"
+                    },
+                    "src2": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_RECORD"
+                    },
+                    "src3": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_RECORD"
+                    },
+                    "src4": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_RECORD"
+                    },
+                    "src5": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_RECORD"
+                    },
+                    "src6": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_RECORD"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "NULL_RECORD",
+                "type": {
+                  "kind": "DoubleDotRef",
+                  "name": "CASE_AttestationCacheRecord.Impl"
+                },
+                "expr": {
+                  "kind": "RecordLitExpr",
+                  "recordType": {
+                    "kind": "DoubleDotRef",
+                    "name": "CASE_AttestationCacheRecord.Impl"
+                  },
+                  "value": {
+                    "src": {
+                      "kind": "NamedElmExpr",
+                      "name": "NULL_ID"
+                    },
+                    "trusted": {
+                      "kind": "NamedElmExpr",
+                      "name": "AM_FAIL"
+                    },
+                    "timeout": {
+                      "kind": "IntLitExpr",
+                      "value": "0"
+                    }
+                  }
+                }
+              },
+              {
+                "kind": "NodeDef",
+                "name": "CACHE",
+                "args": [
+                  {
+                    "name": "new_cache",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCache.Impl"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "cache",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCache.Impl"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "cache",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCache.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "NamedElmExpr",
+                          "name": "new_cache"
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_CACHE"
+                        }
+                      },
+                      "then": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_CACHE"
+                        },
+                        "op": "->",
+                        "right": {
+                          "kind": "PreExpr",
+                          "expr": {
+                            "kind": "NamedElmExpr",
+                            "name": "cache"
+                          }
+                        }
+                      },
+                      "else": {
+                        "kind": "NamedElmExpr",
+                        "name": "new_cache"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "FnDef",
+                "packageName": "CASE_Model_Transformations",
+                "name": "TRUSTED",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "Integer"
+                    }
+                  }
+                ],
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "bool"
+                },
+                "expr": {
+                  "kind": "BinaryExpr",
+                  "left": {
+                    "kind": "BinaryExpr",
+                    "left": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "IN_CACHE"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      ]
+                    },
+                    "op": "and",
+                    "right": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "PASS_ATTESTATION"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      ]
+                    }
+                  },
+                  "op": "and",
+                  "right": {
+                    "kind": "UnaryExpr",
+                    "operand": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "IS_STALE"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      ]
+                    },
+                    "op": "not"
+                  }
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "AM_FAIL",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "0"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "AM_PASS",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "1"
+                }
+              },
+              {
+                "kind": "ConstStatement",
+                "name": "AM_REQUESTING",
+                "type": {
+                  "kind": "PrimType",
+                  "primType": "int"
+                },
+                "expr": {
+                  "kind": "IntLitExpr",
+                  "value": "2"
+                }
+              },
+              {
+                "kind": "NodeDef",
+                "name": "IN_CACHE",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "result",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "bool"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "result",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "bool"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "UnaryExpr",
+                      "operand": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "CallExpr",
+                          "function": {
+                            "kind": "DoubleDotRef",
+                            "packageName": "CASE_Model_Transformations",
+                            "name": "GET_RECORD_BY_NAME"
+                          },
+                          "args": [
+                            {
+                              "kind": "NamedElmExpr",
+                              "name": "src"
+                            }
+                          ]
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_RECORD"
+                        }
+                      },
+                      "op": "not"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "GET_STATUS",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "result",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "record",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCacheRecord.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "GET_RECORD_BY_NAME"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "result",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "int"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "Selection",
+                      "target": {
+                        "kind": "NamedElmExpr",
+                        "name": "record"
+                      },
+                      "field": "trusted"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "PASS_ATTESTATION",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "result",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "bool"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "record",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCacheRecord.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "GET_RECORD_BY_NAME"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "result",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "bool"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "BinaryExpr",
+                      "left": {
+                        "kind": "Selection",
+                        "target": {
+                          "kind": "NamedElmExpr",
+                          "name": "record"
+                        },
+                        "field": "trusted"
+                      },
+                      "op": "=",
+                      "right": {
+                        "kind": "NamedElmExpr",
+                        "name": "AM_PASS"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "IS_STALE",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "result",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "bool"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "record",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCacheRecord.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "GET_RECORD_BY_NAME"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "result",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "bool"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "BoolLitExpr",
+                      "value": "false"
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "CREATE_RECORD",
+                "args": [
+                  {
+                    "name": "new_src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  },
+                  {
+                    "name": "new_trusted",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  },
+                  {
+                    "name": "new_timeout",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "new_record",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCacheRecord.Impl"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "new_record",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCacheRecord.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "RecordLitExpr",
+                      "recordType": {
+                        "kind": "DoubleDotRef",
+                        "name": "CASE_AttestationCacheRecord.Impl"
+                      },
+                      "value": {
+                        "src": {
+                          "kind": "NamedElmExpr",
+                          "name": "new_src"
+                        },
+                        "trusted": {
+                          "kind": "NamedElmExpr",
+                          "name": "new_trusted"
+                        },
+                        "timeout": {
+                          "kind": "NamedElmExpr",
+                          "name": "new_timeout"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "ADD_RECORD",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  },
+                  {
+                    "name": "trusted",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  },
+                  {
+                    "name": "timeout",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  },
+                  {
+                    "name": "max_idx",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "success",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "bool"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "free_idx",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "int"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "GET_FREE_IDX"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "max_idx"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "success",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "bool"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "CallExpr",
+                        "function": {
+                          "kind": "DoubleDotRef",
+                          "packageName": "CASE_Model_Transformations",
+                          "name": "IN_CACHE"
+                        },
+                        "args": [
+                          {
+                            "kind": "NamedElmExpr",
+                            "name": "src"
+                          }
+                        ]
+                      },
+                      "then": {
+                        "kind": "UnaryExpr",
+                        "operand": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "CallExpr",
+                            "function": {
+                              "kind": "DoubleDotRef",
+                              "packageName": "CASE_Model_Transformations",
+                              "name": "WRITE_CACHE"
+                            },
+                            "args": [
+                              {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "GET_IDX_BY_NAME"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "NamedElmExpr",
+                                    "name": "src"
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "CREATE_RECORD"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "NamedElmExpr",
+                                    "name": "src"
+                                  },
+                                  {
+                                    "kind": "NamedElmExpr",
+                                    "name": "trusted"
+                                  },
+                                  {
+                                    "kind": "NamedElmExpr",
+                                    "name": "timeout"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          "op": "=",
+                          "right": {
+                            "kind": "NamedElmExpr",
+                            "name": "NULL_CACHE"
+                          }
+                        },
+                        "op": "not"
+                      },
+                      "else": {
+                        "kind": "IfThenElseExpr",
+                        "if": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "NamedElmExpr",
+                            "name": "free_idx"
+                          },
+                          "op": ">",
+                          "right": {
+                            "kind": "IntLitExpr",
+                            "value": "0"
+                          }
+                        },
+                        "then": {
+                          "kind": "UnaryExpr",
+                          "operand": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "CallExpr",
+                              "function": {
+                                "kind": "DoubleDotRef",
+                                "packageName": "CASE_Model_Transformations",
+                                "name": "WRITE_CACHE"
+                              },
+                              "args": [
+                                {
+                                  "kind": "NamedElmExpr",
+                                  "name": "free_idx"
+                                },
+                                {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "CREATE_RECORD"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "NamedElmExpr",
+                                      "name": "src"
+                                    },
+                                    {
+                                      "kind": "NamedElmExpr",
+                                      "name": "trusted"
+                                    },
+                                    {
+                                      "kind": "NamedElmExpr",
+                                      "name": "timeout"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "NamedElmExpr",
+                              "name": "NULL_CACHE"
+                            }
+                          },
+                          "op": "not"
+                        },
+                        "else": {
+                          "kind": "BoolLitExpr",
+                          "value": "false"
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "GET_FREE_IDX",
+                "args": [
+                  {
+                    "name": "max",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "idx",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "c",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCache.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "CACHE"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_CACHE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "idx",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "int"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "NamedElmExpr",
+                              "name": "c"
+                            },
+                            "field": "src1"
+                          },
+                          "op": "=",
+                          "right": {
+                            "kind": "NamedElmExpr",
+                            "name": "NULL_RECORD"
+                          }
+                        },
+                        "op": "and",
+                        "right": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "NamedElmExpr",
+                            "name": "max"
+                          },
+                          "op": ">=",
+                          "right": {
+                            "kind": "IntLitExpr",
+                            "value": "1"
+                          }
+                        }
+                      },
+                      "then": {
+                        "kind": "IntLitExpr",
+                        "value": "1"
+                      },
+                      "else": {
+                        "kind": "IfThenElseExpr",
+                        "if": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "NamedElmExpr",
+                                "name": "c"
+                              },
+                              "field": "src2"
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "NamedElmExpr",
+                              "name": "NULL_RECORD"
+                            }
+                          },
+                          "op": "and",
+                          "right": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "NamedElmExpr",
+                              "name": "max"
+                            },
+                            "op": ">=",
+                            "right": {
+                              "kind": "IntLitExpr",
+                              "value": "2"
+                            }
+                          }
+                        },
+                        "then": {
+                          "kind": "IntLitExpr",
+                          "value": "2"
+                        },
+                        "else": {
+                          "kind": "IfThenElseExpr",
+                          "if": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "c"
+                                },
+                                "field": "src3"
+                              },
+                              "op": "=",
+                              "right": {
+                                "kind": "NamedElmExpr",
+                                "name": "NULL_RECORD"
+                              }
+                            },
+                            "op": "and",
+                            "right": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "NamedElmExpr",
+                                "name": "max"
+                              },
+                              "op": ">=",
+                              "right": {
+                                "kind": "IntLitExpr",
+                                "value": "3"
+                              }
+                            }
+                          },
+                          "then": {
+                            "kind": "IntLitExpr",
+                            "value": "3"
+                          },
+                          "else": {
+                            "kind": "IfThenElseExpr",
+                            "if": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "c"
+                                  },
+                                  "field": "src4"
+                                },
+                                "op": "=",
+                                "right": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "NULL_RECORD"
+                                }
+                              },
+                              "op": "and",
+                              "right": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "max"
+                                },
+                                "op": ">=",
+                                "right": {
+                                  "kind": "IntLitExpr",
+                                  "value": "4"
+                                }
+                              }
+                            },
+                            "then": {
+                              "kind": "IntLitExpr",
+                              "value": "4"
+                            },
+                            "else": {
+                              "kind": "IfThenElseExpr",
+                              "if": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "Selection",
+                                    "target": {
+                                      "kind": "NamedElmExpr",
+                                      "name": "c"
+                                    },
+                                    "field": "src5"
+                                  },
+                                  "op": "=",
+                                  "right": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "NULL_RECORD"
+                                  }
+                                },
+                                "op": "and",
+                                "right": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "max"
+                                  },
+                                  "op": ">=",
+                                  "right": {
+                                    "kind": "IntLitExpr",
+                                    "value": "5"
+                                  }
+                                }
+                              },
+                              "then": {
+                                "kind": "IntLitExpr",
+                                "value": "5"
+                              },
+                              "else": {
+                                "kind": "IfThenElseExpr",
+                                "if": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "BinaryExpr",
+                                    "left": {
+                                      "kind": "Selection",
+                                      "target": {
+                                        "kind": "NamedElmExpr",
+                                        "name": "c"
+                                      },
+                                      "field": "src6"
+                                    },
+                                    "op": "=",
+                                    "right": {
+                                      "kind": "NamedElmExpr",
+                                      "name": "NULL_RECORD"
+                                    }
+                                  },
+                                  "op": "and",
+                                  "right": {
+                                    "kind": "BinaryExpr",
+                                    "left": {
+                                      "kind": "NamedElmExpr",
+                                      "name": "max"
+                                    },
+                                    "op": ">=",
+                                    "right": {
+                                      "kind": "IntLitExpr",
+                                      "value": "6"
+                                    }
+                                  }
+                                },
+                                "then": {
+                                  "kind": "IntLitExpr",
+                                  "value": "6"
+                                },
+                                "else": {
+                                  "kind": "IntLitExpr",
+                                  "value": "0"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "GET_RECORD_BY_IDX",
+                "args": [
+                  {
+                    "name": "idx",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "record",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCacheRecord.Impl"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "c",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCache.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "CACHE"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_CACHE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "record",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCacheRecord.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "NamedElmExpr",
+                          "name": "idx"
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "IntLitExpr",
+                          "value": "1"
+                        }
+                      },
+                      "then": {
+                        "kind": "Selection",
+                        "target": {
+                          "kind": "NamedElmExpr",
+                          "name": "c"
+                        },
+                        "field": "src1"
+                      },
+                      "else": {
+                        "kind": "IfThenElseExpr",
+                        "if": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "NamedElmExpr",
+                            "name": "idx"
+                          },
+                          "op": "=",
+                          "right": {
+                            "kind": "IntLitExpr",
+                            "value": "2"
+                          }
+                        },
+                        "then": {
+                          "kind": "Selection",
+                          "target": {
+                            "kind": "NamedElmExpr",
+                            "name": "c"
+                          },
+                          "field": "src2"
+                        },
+                        "else": {
+                          "kind": "IfThenElseExpr",
+                          "if": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "NamedElmExpr",
+                              "name": "idx"
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "IntLitExpr",
+                              "value": "3"
+                            }
+                          },
+                          "then": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "NamedElmExpr",
+                              "name": "c"
+                            },
+                            "field": "src3"
+                          },
+                          "else": {
+                            "kind": "IfThenElseExpr",
+                            "if": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "NamedElmExpr",
+                                "name": "idx"
+                              },
+                              "op": "=",
+                              "right": {
+                                "kind": "IntLitExpr",
+                                "value": "4"
+                              }
+                            },
+                            "then": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "NamedElmExpr",
+                                "name": "c"
+                              },
+                              "field": "src4"
+                            },
+                            "else": {
+                              "kind": "IfThenElseExpr",
+                              "if": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "idx"
+                                },
+                                "op": "=",
+                                "right": {
+                                  "kind": "IntLitExpr",
+                                  "value": "5"
+                                }
+                              },
+                              "then": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "c"
+                                },
+                                "field": "src5"
+                              },
+                              "else": {
+                                "kind": "IfThenElseExpr",
+                                "if": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "idx"
+                                  },
+                                  "op": "=",
+                                  "right": {
+                                    "kind": "IntLitExpr",
+                                    "value": "6"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "c"
+                                  },
+                                  "field": "src6"
+                                },
+                                "else": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "NULL_RECORD"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "GET_RECORD_BY_NAME",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "record",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCacheRecord.Impl"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "c",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCache.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "CACHE"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_CACHE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "record",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCacheRecord.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "Selection",
+                          "target": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "NamedElmExpr",
+                              "name": "c"
+                            },
+                            "field": "src1"
+                          },
+                          "field": "src"
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      },
+                      "then": {
+                        "kind": "Selection",
+                        "target": {
+                          "kind": "NamedElmExpr",
+                          "name": "c"
+                        },
+                        "field": "src1"
+                      },
+                      "else": {
+                        "kind": "IfThenElseExpr",
+                        "if": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "NamedElmExpr",
+                                "name": "c"
+                              },
+                              "field": "src2"
+                            },
+                            "field": "src"
+                          },
+                          "op": "=",
+                          "right": {
+                            "kind": "NamedElmExpr",
+                            "name": "src"
+                          }
+                        },
+                        "then": {
+                          "kind": "Selection",
+                          "target": {
+                            "kind": "NamedElmExpr",
+                            "name": "c"
+                          },
+                          "field": "src2"
+                        },
+                        "else": {
+                          "kind": "IfThenElseExpr",
+                          "if": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "c"
+                                },
+                                "field": "src3"
+                              },
+                              "field": "src"
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "NamedElmExpr",
+                              "name": "src"
+                            }
+                          },
+                          "then": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "NamedElmExpr",
+                              "name": "c"
+                            },
+                            "field": "src3"
+                          },
+                          "else": {
+                            "kind": "IfThenElseExpr",
+                            "if": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "c"
+                                  },
+                                  "field": "src4"
+                                },
+                                "field": "src"
+                              },
+                              "op": "=",
+                              "right": {
+                                "kind": "NamedElmExpr",
+                                "name": "src"
+                              }
+                            },
+                            "then": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "NamedElmExpr",
+                                "name": "c"
+                              },
+                              "field": "src4"
+                            },
+                            "else": {
+                              "kind": "IfThenElseExpr",
+                              "if": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "Selection",
+                                    "target": {
+                                      "kind": "NamedElmExpr",
+                                      "name": "c"
+                                    },
+                                    "field": "src5"
+                                  },
+                                  "field": "src"
+                                },
+                                "op": "=",
+                                "right": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "src"
+                                }
+                              },
+                              "then": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "c"
+                                },
+                                "field": "src5"
+                              },
+                              "else": {
+                                "kind": "IfThenElseExpr",
+                                "if": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "Selection",
+                                    "target": {
+                                      "kind": "Selection",
+                                      "target": {
+                                        "kind": "NamedElmExpr",
+                                        "name": "c"
+                                      },
+                                      "field": "src6"
+                                    },
+                                    "field": "src"
+                                  },
+                                  "op": "=",
+                                  "right": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "src"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "c"
+                                  },
+                                  "field": "src6"
+                                },
+                                "else": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "NULL_RECORD"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "GET_IDX_BY_NAME",
+                "args": [
+                  {
+                    "name": "src",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "idx",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "c",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCache.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "CallExpr",
+                      "function": {
+                        "kind": "DoubleDotRef",
+                        "packageName": "CASE_Model_Transformations",
+                        "name": "CACHE"
+                      },
+                      "args": [
+                        {
+                          "kind": "NamedElmExpr",
+                          "name": "NULL_CACHE"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "idx",
+                        "type": {
+                          "kind": "PrimType",
+                          "primType": "int"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "Selection",
+                          "target": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "NamedElmExpr",
+                              "name": "c"
+                            },
+                            "field": "src1"
+                          },
+                          "field": "src"
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "NamedElmExpr",
+                          "name": "src"
+                        }
+                      },
+                      "then": {
+                        "kind": "IntLitExpr",
+                        "value": "1"
+                      },
+                      "else": {
+                        "kind": "IfThenElseExpr",
+                        "if": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "Selection",
+                            "target": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "NamedElmExpr",
+                                "name": "c"
+                              },
+                              "field": "src2"
+                            },
+                            "field": "src"
+                          },
+                          "op": "=",
+                          "right": {
+                            "kind": "NamedElmExpr",
+                            "name": "src"
+                          }
+                        },
+                        "then": {
+                          "kind": "IntLitExpr",
+                          "value": "2"
+                        },
+                        "else": {
+                          "kind": "IfThenElseExpr",
+                          "if": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "Selection",
+                              "target": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "c"
+                                },
+                                "field": "src3"
+                              },
+                              "field": "src"
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "NamedElmExpr",
+                              "name": "src"
+                            }
+                          },
+                          "then": {
+                            "kind": "IntLitExpr",
+                            "value": "3"
+                          },
+                          "else": {
+                            "kind": "IfThenElseExpr",
+                            "if": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "Selection",
+                                "target": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "c"
+                                  },
+                                  "field": "src4"
+                                },
+                                "field": "src"
+                              },
+                              "op": "=",
+                              "right": {
+                                "kind": "NamedElmExpr",
+                                "name": "src"
+                              }
+                            },
+                            "then": {
+                              "kind": "IntLitExpr",
+                              "value": "4"
+                            },
+                            "else": {
+                              "kind": "IfThenElseExpr",
+                              "if": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "Selection",
+                                  "target": {
+                                    "kind": "Selection",
+                                    "target": {
+                                      "kind": "NamedElmExpr",
+                                      "name": "c"
+                                    },
+                                    "field": "src5"
+                                  },
+                                  "field": "src"
+                                },
+                                "op": "=",
+                                "right": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "src"
+                                }
+                              },
+                              "then": {
+                                "kind": "IntLitExpr",
+                                "value": "5"
+                              },
+                              "else": {
+                                "kind": "IfThenElseExpr",
+                                "if": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "Selection",
+                                    "target": {
+                                      "kind": "Selection",
+                                      "target": {
+                                        "kind": "NamedElmExpr",
+                                        "name": "c"
+                                      },
+                                      "field": "src6"
+                                    },
+                                    "field": "src"
+                                  },
+                                  "op": "=",
+                                  "right": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "src"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "IntLitExpr",
+                                  "value": "6"
+                                },
+                                "else": {
+                                  "kind": "IntLitExpr",
+                                  "value": "0"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "NodeDef",
+                "name": "WRITE_CACHE",
+                "args": [
+                  {
+                    "name": "idx",
+                    "type": {
+                      "kind": "PrimType",
+                      "primType": "int"
+                    }
+                  },
+                  {
+                    "name": "record",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCacheRecord.Impl"
+                    }
+                  }
+                ],
+                "returns": [
+                  {
+                    "name": "new_cache",
+                    "type": {
+                      "kind": "DoubleDotRef",
+                      "name": "CASE_AttestationCache.Impl"
+                    }
+                  }
+                ],
+                "body": [
+                  {
+                    "kind": "NodeEq",
+                    "left": [
+                      {
+                        "name": "new_cache",
+                        "type": {
+                          "kind": "DoubleDotRef",
+                          "name": "CASE_AttestationCache.Impl"
+                        }
+                      }
+                    ],
+                    "expr": {
+                      "kind": "IfThenElseExpr",
+                      "if": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "NamedElmExpr",
+                          "name": "idx"
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "IntLitExpr",
+                          "value": "1"
+                        }
+                      },
+                      "then": {
+                        "kind": "CallExpr",
+                        "function": {
+                          "kind": "DoubleDotRef",
+                          "packageName": "CASE_Model_Transformations",
+                          "name": "CACHE"
+                        },
+                        "args": [
+                          {
+                            "kind": "RecordLitExpr",
+                            "recordType": {
+                              "kind": "DoubleDotRef",
+                              "name": "CASE_AttestationCache.Impl"
+                            },
+                            "value": {
+                              "src1": {
+                                "kind": "NamedElmExpr",
+                                "name": "record"
+                              },
+                              "src2": {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "GET_RECORD_BY_IDX"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "IntLitExpr",
+                                    "value": "2"
+                                  }
+                                ]
+                              },
+                              "src3": {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "GET_RECORD_BY_IDX"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "IntLitExpr",
+                                    "value": "3"
+                                  }
+                                ]
+                              },
+                              "src4": {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "GET_RECORD_BY_IDX"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "IntLitExpr",
+                                    "value": "4"
+                                  }
+                                ]
+                              },
+                              "src5": {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "GET_RECORD_BY_IDX"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "IntLitExpr",
+                                    "value": "5"
+                                  }
+                                ]
+                              },
+                              "src6": {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "GET_RECORD_BY_IDX"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "IntLitExpr",
+                                    "value": "6"
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        ]
+                      },
+                      "else": {
+                        "kind": "IfThenElseExpr",
+                        "if": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "NamedElmExpr",
+                            "name": "idx"
+                          },
+                          "op": "=",
+                          "right": {
+                            "kind": "IntLitExpr",
+                            "value": "2"
+                          }
+                        },
+                        "then": {
+                          "kind": "CallExpr",
+                          "function": {
+                            "kind": "DoubleDotRef",
+                            "packageName": "CASE_Model_Transformations",
+                            "name": "CACHE"
+                          },
+                          "args": [
+                            {
+                              "kind": "RecordLitExpr",
+                              "recordType": {
+                                "kind": "DoubleDotRef",
+                                "name": "CASE_AttestationCache.Impl"
+                              },
+                              "value": {
+                                "src1": {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "GET_RECORD_BY_IDX"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "IntLitExpr",
+                                      "value": "1"
+                                    }
+                                  ]
+                                },
+                                "src2": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "record"
+                                },
+                                "src3": {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "GET_RECORD_BY_IDX"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "IntLitExpr",
+                                      "value": "3"
+                                    }
+                                  ]
+                                },
+                                "src4": {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "GET_RECORD_BY_IDX"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "IntLitExpr",
+                                      "value": "4"
+                                    }
+                                  ]
+                                },
+                                "src5": {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "GET_RECORD_BY_IDX"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "IntLitExpr",
+                                      "value": "5"
+                                    }
+                                  ]
+                                },
+                                "src6": {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "GET_RECORD_BY_IDX"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "IntLitExpr",
+                                      "value": "6"
+                                    }
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        "else": {
+                          "kind": "IfThenElseExpr",
+                          "if": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "NamedElmExpr",
+                              "name": "idx"
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "IntLitExpr",
+                              "value": "3"
+                            }
+                          },
+                          "then": {
+                            "kind": "CallExpr",
+                            "function": {
+                              "kind": "DoubleDotRef",
+                              "packageName": "CASE_Model_Transformations",
+                              "name": "CACHE"
+                            },
+                            "args": [
+                              {
+                                "kind": "RecordLitExpr",
+                                "recordType": {
+                                  "kind": "DoubleDotRef",
+                                  "name": "CASE_AttestationCache.Impl"
+                                },
+                                "value": {
+                                  "src1": {
+                                    "kind": "CallExpr",
+                                    "function": {
+                                      "kind": "DoubleDotRef",
+                                      "packageName": "CASE_Model_Transformations",
+                                      "name": "GET_RECORD_BY_IDX"
+                                    },
+                                    "args": [
+                                      {
+                                        "kind": "IntLitExpr",
+                                        "value": "1"
+                                      }
+                                    ]
+                                  },
+                                  "src2": {
+                                    "kind": "CallExpr",
+                                    "function": {
+                                      "kind": "DoubleDotRef",
+                                      "packageName": "CASE_Model_Transformations",
+                                      "name": "GET_RECORD_BY_IDX"
+                                    },
+                                    "args": [
+                                      {
+                                        "kind": "IntLitExpr",
+                                        "value": "2"
+                                      }
+                                    ]
+                                  },
+                                  "src3": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "record"
+                                  },
+                                  "src4": {
+                                    "kind": "CallExpr",
+                                    "function": {
+                                      "kind": "DoubleDotRef",
+                                      "packageName": "CASE_Model_Transformations",
+                                      "name": "GET_RECORD_BY_IDX"
+                                    },
+                                    "args": [
+                                      {
+                                        "kind": "IntLitExpr",
+                                        "value": "4"
+                                      }
+                                    ]
+                                  },
+                                  "src5": {
+                                    "kind": "CallExpr",
+                                    "function": {
+                                      "kind": "DoubleDotRef",
+                                      "packageName": "CASE_Model_Transformations",
+                                      "name": "GET_RECORD_BY_IDX"
+                                    },
+                                    "args": [
+                                      {
+                                        "kind": "IntLitExpr",
+                                        "value": "5"
+                                      }
+                                    ]
+                                  },
+                                  "src6": {
+                                    "kind": "CallExpr",
+                                    "function": {
+                                      "kind": "DoubleDotRef",
+                                      "packageName": "CASE_Model_Transformations",
+                                      "name": "GET_RECORD_BY_IDX"
+                                    },
+                                    "args": [
+                                      {
+                                        "kind": "IntLitExpr",
+                                        "value": "6"
+                                      }
+                                    ]
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "else": {
+                            "kind": "IfThenElseExpr",
+                            "if": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "NamedElmExpr",
+                                "name": "idx"
+                              },
+                              "op": "=",
+                              "right": {
+                                "kind": "IntLitExpr",
+                                "value": "4"
+                              }
+                            },
+                            "then": {
+                              "kind": "CallExpr",
+                              "function": {
+                                "kind": "DoubleDotRef",
+                                "packageName": "CASE_Model_Transformations",
+                                "name": "CACHE"
+                              },
+                              "args": [
+                                {
+                                  "kind": "RecordLitExpr",
+                                  "recordType": {
+                                    "kind": "DoubleDotRef",
+                                    "name": "CASE_AttestationCache.Impl"
+                                  },
+                                  "value": {
+                                    "src1": {
+                                      "kind": "CallExpr",
+                                      "function": {
+                                        "kind": "DoubleDotRef",
+                                        "packageName": "CASE_Model_Transformations",
+                                        "name": "GET_RECORD_BY_IDX"
+                                      },
+                                      "args": [
+                                        {
+                                          "kind": "IntLitExpr",
+                                          "value": "1"
+                                        }
+                                      ]
+                                    },
+                                    "src2": {
+                                      "kind": "CallExpr",
+                                      "function": {
+                                        "kind": "DoubleDotRef",
+                                        "packageName": "CASE_Model_Transformations",
+                                        "name": "GET_RECORD_BY_IDX"
+                                      },
+                                      "args": [
+                                        {
+                                          "kind": "IntLitExpr",
+                                          "value": "2"
+                                        }
+                                      ]
+                                    },
+                                    "src3": {
+                                      "kind": "CallExpr",
+                                      "function": {
+                                        "kind": "DoubleDotRef",
+                                        "packageName": "CASE_Model_Transformations",
+                                        "name": "GET_RECORD_BY_IDX"
+                                      },
+                                      "args": [
+                                        {
+                                          "kind": "IntLitExpr",
+                                          "value": "3"
+                                        }
+                                      ]
+                                    },
+                                    "src4": {
+                                      "kind": "NamedElmExpr",
+                                      "name": "record"
+                                    },
+                                    "src5": {
+                                      "kind": "CallExpr",
+                                      "function": {
+                                        "kind": "DoubleDotRef",
+                                        "packageName": "CASE_Model_Transformations",
+                                        "name": "GET_RECORD_BY_IDX"
+                                      },
+                                      "args": [
+                                        {
+                                          "kind": "IntLitExpr",
+                                          "value": "5"
+                                        }
+                                      ]
+                                    },
+                                    "src6": {
+                                      "kind": "CallExpr",
+                                      "function": {
+                                        "kind": "DoubleDotRef",
+                                        "packageName": "CASE_Model_Transformations",
+                                        "name": "GET_RECORD_BY_IDX"
+                                      },
+                                      "args": [
+                                        {
+                                          "kind": "IntLitExpr",
+                                          "value": "6"
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              ]
+                            },
+                            "else": {
+                              "kind": "IfThenElseExpr",
+                              "if": {
+                                "kind": "BinaryExpr",
+                                "left": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "idx"
+                                },
+                                "op": "=",
+                                "right": {
+                                  "kind": "IntLitExpr",
+                                  "value": "5"
+                                }
+                              },
+                              "then": {
+                                "kind": "CallExpr",
+                                "function": {
+                                  "kind": "DoubleDotRef",
+                                  "packageName": "CASE_Model_Transformations",
+                                  "name": "CACHE"
+                                },
+                                "args": [
+                                  {
+                                    "kind": "RecordLitExpr",
+                                    "recordType": {
+                                      "kind": "DoubleDotRef",
+                                      "name": "CASE_AttestationCache.Impl"
+                                    },
+                                    "value": {
+                                      "src1": {
+                                        "kind": "CallExpr",
+                                        "function": {
+                                          "kind": "DoubleDotRef",
+                                          "packageName": "CASE_Model_Transformations",
+                                          "name": "GET_RECORD_BY_IDX"
+                                        },
+                                        "args": [
+                                          {
+                                            "kind": "IntLitExpr",
+                                            "value": "1"
+                                          }
+                                        ]
+                                      },
+                                      "src2": {
+                                        "kind": "CallExpr",
+                                        "function": {
+                                          "kind": "DoubleDotRef",
+                                          "packageName": "CASE_Model_Transformations",
+                                          "name": "GET_RECORD_BY_IDX"
+                                        },
+                                        "args": [
+                                          {
+                                            "kind": "IntLitExpr",
+                                            "value": "2"
+                                          }
+                                        ]
+                                      },
+                                      "src3": {
+                                        "kind": "CallExpr",
+                                        "function": {
+                                          "kind": "DoubleDotRef",
+                                          "packageName": "CASE_Model_Transformations",
+                                          "name": "GET_RECORD_BY_IDX"
+                                        },
+                                        "args": [
+                                          {
+                                            "kind": "IntLitExpr",
+                                            "value": "3"
+                                          }
+                                        ]
+                                      },
+                                      "src4": {
+                                        "kind": "CallExpr",
+                                        "function": {
+                                          "kind": "DoubleDotRef",
+                                          "packageName": "CASE_Model_Transformations",
+                                          "name": "GET_RECORD_BY_IDX"
+                                        },
+                                        "args": [
+                                          {
+                                            "kind": "IntLitExpr",
+                                            "value": "4"
+                                          }
+                                        ]
+                                      },
+                                      "src5": {
+                                        "kind": "NamedElmExpr",
+                                        "name": "record"
+                                      },
+                                      "src6": {
+                                        "kind": "CallExpr",
+                                        "function": {
+                                          "kind": "DoubleDotRef",
+                                          "packageName": "CASE_Model_Transformations",
+                                          "name": "GET_RECORD_BY_IDX"
+                                        },
+                                        "args": [
+                                          {
+                                            "kind": "IntLitExpr",
+                                            "value": "6"
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  }
+                                ]
+                              },
+                              "else": {
+                                "kind": "IfThenElseExpr",
+                                "if": {
+                                  "kind": "BinaryExpr",
+                                  "left": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "idx"
+                                  },
+                                  "op": "=",
+                                  "right": {
+                                    "kind": "IntLitExpr",
+                                    "value": "6"
+                                  }
+                                },
+                                "then": {
+                                  "kind": "CallExpr",
+                                  "function": {
+                                    "kind": "DoubleDotRef",
+                                    "packageName": "CASE_Model_Transformations",
+                                    "name": "CACHE"
+                                  },
+                                  "args": [
+                                    {
+                                      "kind": "RecordLitExpr",
+                                      "recordType": {
+                                        "kind": "DoubleDotRef",
+                                        "name": "CASE_AttestationCache.Impl"
+                                      },
+                                      "value": {
+                                        "src1": {
+                                          "kind": "CallExpr",
+                                          "function": {
+                                            "kind": "DoubleDotRef",
+                                            "packageName": "CASE_Model_Transformations",
+                                            "name": "GET_RECORD_BY_IDX"
+                                          },
+                                          "args": [
+                                            {
+                                              "kind": "IntLitExpr",
+                                              "value": "1"
+                                            }
+                                          ]
+                                        },
+                                        "src2": {
+                                          "kind": "CallExpr",
+                                          "function": {
+                                            "kind": "DoubleDotRef",
+                                            "packageName": "CASE_Model_Transformations",
+                                            "name": "GET_RECORD_BY_IDX"
+                                          },
+                                          "args": [
+                                            {
+                                              "kind": "IntLitExpr",
+                                              "value": "2"
+                                            }
+                                          ]
+                                        },
+                                        "src3": {
+                                          "kind": "CallExpr",
+                                          "function": {
+                                            "kind": "DoubleDotRef",
+                                            "packageName": "CASE_Model_Transformations",
+                                            "name": "GET_RECORD_BY_IDX"
+                                          },
+                                          "args": [
+                                            {
+                                              "kind": "IntLitExpr",
+                                              "value": "3"
+                                            }
+                                          ]
+                                        },
+                                        "src4": {
+                                          "kind": "CallExpr",
+                                          "function": {
+                                            "kind": "DoubleDotRef",
+                                            "packageName": "CASE_Model_Transformations",
+                                            "name": "GET_RECORD_BY_IDX"
+                                          },
+                                          "args": [
+                                            {
+                                              "kind": "IntLitExpr",
+                                              "value": "4"
+                                            }
+                                          ]
+                                        },
+                                        "src5": {
+                                          "kind": "CallExpr",
+                                          "function": {
+                                            "kind": "DoubleDotRef",
+                                            "packageName": "CASE_Model_Transformations",
+                                            "name": "GET_RECORD_BY_IDX"
+                                          },
+                                          "args": [
+                                            {
+                                              "kind": "IntLitExpr",
+                                              "value": "5"
+                                            }
+                                          ]
+                                        },
+                                        "src6": {
+                                          "kind": "NamedElmExpr",
+                                          "name": "record"
+                                        }
+                                      }
+                                    }
+                                  ]
+                                },
+                                "else": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "NULL_CACHE"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "Resolute",
+          "kind": "AnnexLibrary",
+          "sourceText": "{**\n\t\t\n\t\t---------------------------\n\t\t-- MODEL TRANSFORMATIONS --\n\t\t---------------------------\n\t\t\n\t\t-- Top-level claim for proper insertion of a filter\n\t\tadd_filter(context : component, filter : component, conn_name : string, msg_type : data) <=\n\t\t\t** \\\"Filter \\\" filter \\\" is properly added to component \\\" context **\n\t\t\tfilter_exists(filter, context, conn_name) and filter_not_bypassed(filter, context, msg_type) and filter_prop_checked()\n\t\t\t\n\t\t-- Top-level claim for proper insertion of attestation manager\n\t\tadd_attestation_manager(comm_driver : component, attestation_manager : component) <=\n\t\t\t** \\\"Attestation Manager added for communications driver \\\" comm_driver **\n\t\t\tattestation_manager_exists(comm_driver, attestation_manager) and attestation_manager_not_bypassed(comm_driver, attestation_manager) and attestation_manager_prop_checked()\t\t\t\n\t\t\n\t\t-- Top-level claim for proper insertion of a router\n\t\tadd_router(c : component) <=\n\t\t\t** \\\"Router inserted after \\\" c **\n\t\t\ttrue\n\t\n\t\t-- Top-level claim for proper insertion of a monitor\n\t\tadd_monitor(c : component) <=\n\t\t\t** \\\"Monitor inserted on \\\" c **\n\t\t\ttrue\n\t\t\n\t\t-- Top-level claim for proper insertion of an isolator\n\t\tadd_isolator(c : component) <=\n\t\t\t** \\\"Isolator added to \\\" c **\n\t\t\ttrue\n\t\t\t\n\t\t--------------------------\n\t\t-- PROJECT-LEVEL CLAIMS --\n\t\t--------------------------\n\t\t\n\t\taadl_linter() <=\n\t\t\t** \\\"Static model analysis was performed\\\" **\n\t\t\tanalysis(\\\"ToolCheck\\\", \\\"Resolint\\\")\n\t\t\n\t\tlegacy_component_verification(c : component) <=\n\t\t\t** \\\"Implementation of component \\\" c \\\" was verified\\\" **\n\t\t\tanalysis(\\\"ToolCheck\\\", \\\"Ivaldi\\\")\n\t\t\n\t\t----------------\n\t\t-- SUB CLAIMS --\n\t\t----------------\n\t\n\t\t-- This connects to evidence that AGREE was previously run on the current version of the design.\n\t\tagree_prop_checked(c : component, property_id : string) <=\n\t\t\t** \\\"AGREE properties passed\\\" **\n\t\t\tAgreeLib.hasAgreeProperty(c, property_id) and analysis(\\\"AgreeCheck\\\")\t\n\t\t\n\t\t-- Check to see if there is a filter immediately before \n\t\t-- the component on the communication pathway.\n\t\tfilter_exists(filter : component, context : component, conn_name : string) <=\n\t\t\t** \\\"Filter \\\" filter \\\" is connected to component \\\" context \\\" by connection \\\" conn_name **\n\t\t\tlet conns : {connection} = {c for (c : connections(context)) | destination_component(c) = context and source_component(c) = filter};\n\t\t\tis_filter(filter) and exists(c : conns) . name(c) = conn_name\n\t\n\t\t-- Make sure there is no communication pathway that avoids the filter\n\t\tfilter_not_bypassed(filter : component, context : component, msg_type : data) <=\n\t\t\t** \\\"Filter \\\" filter \\\" cannot be bypassed\\\" **\n\t\t\tlet filter_srcs : {component} = get_filter_sources(context, filter, msg_type); \n\t\t\tlet non_filter_srcs : {component} = get_non_filter_sources(context, filter, msg_type); \n\t\t\tlength(intersect(filter_srcs, non_filter_srcs)) = 0\n\t\t\n\t\tget_non_filter_sources(target : component, filter : component, msg_type : data) : {component} = \n\t\t\tlet srcs : {component} = {c for (conn : connections (target)) (c : source_component(conn)) | has_type(conn) and type(conn) = msg_type and not (name(source_component(conn)) = name (filter))}; \n\t\t\trecursive_backwards_reach(srcs)\n\t\t\n\t\tget_filter_sources(target : component, filter : component, msg_type : data) : {component} = \n\t\t\tlet srcs : {component} = { c for (conn : connections(target)) (c : source_component(conn)) | has_type(conn) and type(conn) = msg_type and name(source_component(conn)) = name(filter)};\n\t\t\tprev_reach(srcs)\n\t\t\n\t\trecursive_backwards_reach(curr : {component}) : {component} = \n\t\t\tlet prev : {component} = union(curr, prev_reach(curr)); \n\t\t\tif prev = curr then \n\t\t\t\tcurr\n\t\t\telse \n\t\t\t\trecursive_backwards_reach(prev)\n\t\t\n\t\tprev_reach(curr : {component}) : {component} = \n\t\t\t{y for (x : curr) (y : backwards_reachable_components(x))}\n\t\t\n\t\tbackwards_reachable_components(comp : component) : {component} = \n\t\t\t{c for (conn : connections (comp)) (c : backwards_reachable_components_via_connection(comp, conn))}\n\t\t\n\t\tbackwards_reachable_components_via_connection(comp : component, conn : connection) : {component} = \n\t\t\tif is_port_connection(conn) then \n\t\t\t\tif destination_component(conn) = comp then \n\t\t\t\t\t{source_component(conn)} \n\t\t\t\telse \n\t\t\t\t\t{} \n\t\t\telse \n\t\t\t\t{}\n\t\n\t    -- This should connect to some evidence that the filter was correctly generated\n\t    -- and that the proof was emitted and checked.\n\t    -- However, this funcionality has not yet been implemented\n\t    filter_prop_checked() <=\n\t\t    ** \\\"Filter property implemented by CakeML\\\" **\n\t\t    forall (c : component) . is_filter(c)\n\t\t       => has_property(c, CASE_Properties::COMP_IMPL) and property(c, CASE_Properties::COMP_IMPL) = \\\"CAKEML\\\"\n\t\t       and filter_proof_checked()\n\t\t       \n\t\t-- Checks if the specified component is a filter\n\t\tis_filter(c : component) : bool =\n\t\t\thas_property(c, CASE_Properties::COMP_TYPE) and property(c, CASE_Properties::COMP_TYPE) = \\\"FILTER\\\"\n\t\t\t\n\t\t-- Checks that a proof has been generated showing the filter regular expression\n\t\t-- matches the AGREE contract\n\t\tfilter_proof_checked() <=\n\t\t\t** \\\"Filter proof checked\\\" **\n\t\t\tanalysis(\\\"ToolCheck\\\", \\\"SPLAT\\\")\n\t\t\t\t\t\t\n\t\t-- Evidence that an attestation manager component exists for a given communication driver\n\t\tattestation_manager_exists(comm_driver : component, attestation_manager : component) <=\n\t\t\t** \\\"An attestation manager on \\\" comm_driver \\\" exists\\\" **\n\t\t\t-- check that the attestation manager only has attestation request/response connections to the comm driver\n\t\t\tis_comm_driver(comm_driver) and is_attestation_manager(attestation_manager) and\n\t\t\tforall (conn : connections(attestation_manager)) . \n\t\t\t\t\t(has_type(conn) and name(type(conn)) = \\\"CASE_AttestationRequestMsg.Impl\\\") => destination_component(conn) = comm_driver and\n\t\t\t\t\t(has_type(conn) and name(type(conn)) = \\\"CASE_AttestationResponseMsg.Impl\\\") => source_component(conn) = comm_driver\n\t\t\t\n\t\t-- Evidence that communication from the comm driver cannot bypass attestation manager\n\t\tattestation_manager_not_bypassed(comm_driver : component, attestation_manager : component) <=\n\t\t\t** \\\"Attestation Manager cannot be bypassed\\\" **\n\t\t\t-- all outgoing connections from the comm driver to components inside the \n\t\t\t-- parent of the comm driver connect to the attestation manager\n\t\t\tlet out_conns : {connection} = {conn for (conn : connections(comm_driver)) | source_component(conn) = comm_driver and not (destination_component(conn) = parent(comm_driver))};\n\t\t\tforall(conn : out_conns) . destination_component(conn) = attestation_manager\t\t\n\t\t\t\n\t\t-- This should connect to some evidence that the attestation manager was correctly generated\n\t    -- and that the proof was emitted and checked.\n\t    -- However, this funcionality has not yet been implemented\n\t    attestation_manager_prop_checked() <=\n\t\t    ** \\\"Attestation Manager property implemented by CakeML\\\" **\n\t\t    forall (c : component). is_attestation_manager(c)\n\t\t       => has_property(c, CASE_Properties::COMP_IMPL) and property(c, CASE_Properties::COMP_IMPL) = \\\"CAKEML\\\"\n\t\t       and attestation_manager_proof_checked()\n\t\t       \n\t\t-- Checks that a proof has been generated showing the attestation manager has been implemented correctly\n\t\tattestation_manager_proof_checked() : bool =\n\t\ttrue\n--\t\t\tanalysis(\\\"ToolCheck\\\", \\\"SPLAT\\\")\n\t\t\t\n\t\t-- Checks if the specified component is an attestation manager\n\t\tis_attestation_manager(c : component) : bool =\n\t\t\thas_property(c, CASE_Properties::COMP_TYPE) and property(c, CASE_Properties::COMP_TYPE) = \\\"ATTESTATION\\\"\n\t\n\t\t-- Checks if the specified component is a communications driver\n\t\tis_comm_driver(c : component) : bool =\n\t\t\thas_property(c, CASE_Properties::COMP_TYPE) and property(c, CASE_Properties::COMP_TYPE) = \\\"COMM_DRIVER\\\"\n\t\n\t**}"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Base_Types",
+    "kind": "AadlPackage",
+    "public": {
+      "with": [
+        "Data_Model"
+      ],
+      "components": [
+        {
+          "name": "Base_Types::Boolean",
+          "localName": "Boolean",
+          "kind": "ComponentType",
+          "category": "data",
+          "properties": [
+            {
+              "name": "Data_Model::Data_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Boolean"
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Integer",
+          "localName": "Integer",
+          "kind": "ComponentType",
+          "category": "data",
+          "properties": [
+            {
+              "name": "Data_Model::Data_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Integer"
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Integer_8",
+          "localName": "Integer_8",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Signed"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Integer_16",
+          "localName": "Integer_16",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Signed"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Integer_32",
+          "localName": "Integer_32",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Signed"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Integer_64",
+          "localName": "Integer_64",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Signed"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Unsigned_8",
+          "localName": "Unsigned_8",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Unsigned"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Unsigned_16",
+          "localName": "Unsigned_16",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Unsigned"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Unsigned_32",
+          "localName": "Unsigned_32",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Unsigned"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Unsigned_64",
+          "localName": "Unsigned_64",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Number_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Unsigned"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Natural",
+          "localName": "Natural",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Integer"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::Integer_Range",
+              "kind": "PropertyAssociation",
+              "value": {
+                "kind": "RangeValue",
+                "min": 0,
+                "max": {
+                  "kind": "PropertyConstant",
+                  "name": "Max_Target_Integer"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Float",
+          "localName": "Float",
+          "kind": "ComponentType",
+          "category": "data",
+          "properties": [
+            {
+              "name": "Data_Model::Data_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Float"
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Float_32",
+          "localName": "Float_32",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Float",
+            "localName": "Float",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Float"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::IEEE754_Precision",
+              "kind": "PropertyAssociation",
+              "value": "Simple"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Float_64",
+          "localName": "Float_64",
+          "kind": "ComponentType",
+          "category": "data",
+          "extends": {
+            "name": "Base_Types::Float",
+            "localName": "Float",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": "Float"
+              }
+            ]
+          },
+          "properties": [
+            {
+              "name": "Data_Model::IEEE754_Precision",
+              "kind": "PropertyAssociation",
+              "value": "Double"
+            },
+            {
+              "name": "Memory_Properties::Data_Size",
+              "kind": "PropertyAssociation",
+              "value": 8
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::Character",
+          "localName": "Character",
+          "kind": "ComponentType",
+          "category": "data",
+          "properties": [
+            {
+              "name": "Data_Model::Data_Representation",
+              "kind": "PropertyAssociation",
+              "value": "Character"
+            }
+          ]
+        },
+        {
+          "name": "Base_Types::String",
+          "localName": "String",
+          "kind": "ComponentType",
+          "category": "data",
+          "properties": [
+            {
+              "name": "Data_Model::Data_Representation",
+              "kind": "PropertyAssociation",
+              "value": "String"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "Data_Model",
+    "kind": "PropertySet",
+    "properties": [
+      {
+        "name": "Data_Model::Base_Type",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "ClassifierType",
+            "name": [
+              "data"
+            ]
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Code_Set",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlInteger"
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Data_Digits",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlInteger"
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Data_Scale",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlInteger"
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Data_Representation",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "Array",
+            "Boolean",
+            "Character",
+            "Enum",
+            "Float",
+            "Fixed",
+            "Integer",
+            "String",
+            "Struct",
+            "Union"
+          ]
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::MyDimension",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlInteger"
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Dimension",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "AadlInteger"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "data port",
+          "event data port",
+          "data access"
+        ]
+      },
+      {
+        "name": "Data_Model::Element_Names",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "AadlString"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Enumerators",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "AadlString"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::IEEE754_Precision",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "Simple",
+            "Double"
+          ]
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Initial_Value",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "AadlString"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Integer_Range",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "RangeType",
+          "numberType": {
+            "kind": "AadlInteger"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Measurement_Unit",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlString"
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Number_Representation",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "Signed",
+            "Unsigned"
+          ]
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Real_Range",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "RangeType",
+          "numberType": {
+            "kind": "AadlReal"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      },
+      {
+        "name": "Data_Model::Representation",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "AadlString"
+          }
+        },
+        "appliesTo": [
+          "data",
+          "feature"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "CASE_Properties",
+    "kind": "PropertySet",
+    "properties": [
+      {
+        "name": "CASE_Properties::COMP_TYPE",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "FILTER",
+            "ATTESTATION",
+            "MONITOR",
+            "ROUTER",
+            "ISOLATOR",
+            "COMM_DRIVER",
+            "SWITCH",
+            "SAFETY_CONTROLLER"
+          ]
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::COMP_IMPL",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlString"
+        },
+        "appliesTo": [
+          "system",
+          "thread",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::COMP_SPEC",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "AadlString"
+          }
+        },
+        "appliesTo": [
+          "system",
+          "thread",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::CACHE_TIMEOUT",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlInteger"
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::CACHE_SIZE",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "AadlInteger"
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::BOUNDARY",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "ListType",
+          "elementType": {
+            "kind": "EnumerationType",
+            "values": [
+              "TRUSTED",
+              "PHYSICAL"
+            ]
+          }
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::CONFIDENTIALITY",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::INTEGRITY",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::AVAILABILITY",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "HIGH",
+            "MEDIUM",
+            "LOW"
+          ]
+        },
+        "appliesTo": [
+          "system",
+          "process",
+          "thread",
+          "device",
+          "abstract"
+        ]
+      },
+      {
+        "name": "CASE_Properties::COMM_MODALITY",
+        "kind": "Property",
+        "inherit": false,
+        "propertyType": {
+          "kind": "EnumerationType",
+          "values": [
+            "RF",
+            "WIFI",
+            "WIRED_ETHERNET",
+            "SERIAL",
+            "BT"
+          ]
+        },
+        "appliesTo": [
+          "bus"
+        ]
+      }
+    ]
+  }
+]

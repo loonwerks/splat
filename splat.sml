@@ -3,7 +3,8 @@
 (* aimed at extracting filter properties, plus support definitions.          *)
 (*---------------------------------------------------------------------------*)
 
-open Lib Feedback HolKernel boolLib MiscLib AADL;
+open Lib Feedback HolKernel boolLib MiscLib;
+open AADL;
 
 val ERR = Feedback.mk_HOL_ERR "splat";
 

@@ -103,18 +103,18 @@ fun term_encoder(encoding,endian,width) =
    | Zigzag    => ``splat$encZigZag ^(numSyntax.term_of_int (width2bytes width))``
    | Sign_mag  => ``splat$encSignMag ^(numSyntax.term_of_int (width2bytes width))``
 
-fun encoder_of atm =
- case atm
-  of Interval{encoding,endian, width,...} => term_encoder(encoding,endian,width)
-   | Enumset{logic,...} => #enc logic
-   | other => raise ERR "encoder_of" "";
-
 fun term_decoder(encoding,endian,width) =
  case encoding
   of Unsigned  => ``splat$dec``
    | Twos_comp => ``splat$deci ^(numSyntax.term_of_int (width2bytes width))``
    | Zigzag    => ``splat$decZigZag``
    | Sign_mag  => ``splat$decSignMag``
+
+fun encoder_of atm =
+ case atm
+  of Interval{encoding,endian, width,...} => term_encoder(encoding,endian,width)
+   | Enumset{logic,...} => #enc logic
+   | other => raise ERR "encoder_of" "";
 
 fun decoder_of atm =
  case atm
@@ -128,7 +128,7 @@ fun mk_interval enc dir (lo,hi) =
      val byte_width = interval_width enc (lo,hi)
  in Interval{span = (lo,hi),
              encoding = enc,
-             endian = dir, 
+             endian   = dir, 
              width = BYTEWIDTH byte_width,
              encoder = iint2string enc dir byte_width,
              decoder = string2iint enc dir,
@@ -246,11 +246,11 @@ val ii2term = intSyntax.term_of_int o Arbint.fromLargeInt;
 val default_int_bits = 31;
 
 val SMAX_INT = twoE default_int_bits;  (* successor of maxint *)
-val MIN_INT = IntInf.~SMAX_INT;
+val MIN_INT  = IntInf.~SMAX_INT;
 val SMAX_NUM = twoE (default_int_bits + 1); (* successor of maxnum *)
 
 val smaxint_tm = ii2term SMAX_INT;
-val minint_tm = ii2term MIN_INT;
+val minint_tm  = ii2term MIN_INT;
 val smaxnum_tm = numSyntax.mk_numeral (Arbnum.fromLargeInt SMAX_NUM);
 
 fun max_const ty =
@@ -454,7 +454,10 @@ fun filter_correctness (fname,thm) =
          handle HOL_ERR _ => 
         constraint_enumset (snd x)
 
-     val [g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, g11, g12, g13, g14, g15, g16, g17] = groups';
+(*
+   val [g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, 
+        g11, g12, g13, g14, g15, g16, g17] = groups';
+*)
 
      val atomics = map mk_atomic groups'
 
