@@ -8,31 +8,27 @@ sig
     = BITWIDTH of int
     | BYTEWIDTH of int
   
-  datatype atomic =
+  datatype fieldrep =
      Interval of 
-       {span : IntInf.int * IntInf.int,
+       {span     : IntInf.int * IntInf.int,
         encoding : Regexp_Numerics.encoding,
-        endian : Regexp_Numerics.endian,
-        width  : width,
-        encoder : IntInf.int -> string,
-        decoder : string -> IntInf.int,
-        recog  : Regexp_Type.regexp}
+        endian   : Regexp_Numerics.endian,
+        width    : width,
+        encoder  : IntInf.int -> string,
+        decoder  : string -> IntInf.int,
+        regexp   : regexp}
     | Enumset of 
-       {enum_type : hol_type,
+       {enum_type    : hol_type,
         constr_codes : (term * int) list,
-        logic : Enum_Encode.logic_info,
-        recog : Regexp_Type.regexp}
-    | StringLit of string
-    | Raw of width
-
-
-  datatype format
-    = ATOM of atomic
-    | CONCAT of format list
-    | LIST of format
-    | ARRAY of format * int
-    | UNION of format * format
-    | PACKED of format list * width
+        elts         : term list,
+        codec        : Enum_Encode.enum_codec,
+        regexp       : regexp}
+    | StringLit of 
+       {strlit : string,
+        regexp : regexp}
+    | Raw of 
+       {width  : width,
+        regexp : regexp}
 
 
   type filter_info
@@ -43,9 +39,14 @@ sig
       inversion : term,
       correctness : term,
       receiver_correctness : term,
-      implicit_constraints : thm option};
+      implicit_constraints : thm option,
+      manifest : (term * fieldrep) list};
 
-  val filter_correctness : string * thm -> filter_info
+  datatype shrink = Optimize of int | Uniform of int
+
+  type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
+						      
+  val gen_filter_artifacts : int_format -> string * thm -> filter_info
 
   val IN_CHARSET_NUM_TAC : tactic
 

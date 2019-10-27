@@ -1,0 +1,9 @@
+CAKEMLDIR=/home/guardol/Projects/cakeml
+
+INCLUDES = $(HOLDIR)/examples/formal-languages/regular\
+	$(CAKEMLDIR)/developers $(CAKEMLDIR)/misc\
+	$(CAKEMLDIR)/semantics $(CAKEMLDIR)/basis/pure $(CAKEMLDIR)/basis\
+	$(CAKEMLDIR)/translator $(CAKEMLDIR)/characteristic
+
+# all: $(DEFAULT_TARGETS)
+# .PHONY: all

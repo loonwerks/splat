@@ -1,0 +1,94 @@
+Invocation (unix only)
+-----------------------
+
+  $ ./splat
+
+Usage message
+--------------
+
+   splat: 
+   Usage: splat [basic | cake | hol | full]
+                [-checkprops]
+                [-outdir <dirname>]
+                [-intwidth <int> [optimize]]
+                [-endian (LSB | MSB)]
+                [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)
+                <name>.json
+
+Default invocation 
+-------------------
+
+   ./splat <path>/<name>.json
+
+in <splat-dir> results in the following defaults being used
+
+  - assurance level = basic
+  - checkprops = false
+  - outdir = invocation/splat_outputs
+  - intwidth = 32, no optimizing field widths
+  - endian = LSB
+  - encoding = twos complement
+
+Assurance levels [basic | cake | hol | full]
+---------------------------------------------
+
+  basic: PolyML regexp compiler (which was generated from HOL model)
+       builds DFA, from which {C,Ada,Java,SML} can be
+       generated. Currently produces C source.
+
+  cake: Input regexp constructed by splat frontend; then passed via
+       hol2deep sexp interface. Then off-the-shelf cake binary loaded
+       with compiled regexp compiler applied to regexp to get DFA and
+       then binary. Produces .o file for linking with other C code.
+
+  hol: HOL regexp compiler run inside logic to get DFA. DFA then pushed
+       through hol2deep, generating DFA.sexp, then CakeML binary invoked,
+       as for the cake option.
+
+  full: As in hol option, except that the CakeML compiler is applied
+       inside- the-logic so that correctness of regexp compilation can
+       be joined to the ML compiler correctness theorem to get an
+       end-to-end correctness theorem. Thus no invocation of hol2deep
+       or generation of .sexp version or invocation of off-the-shelf
+       compilers. Produces .o file for linking with other C code and proofs.
+
+Assurance level "basic" will be fast, and "cake" should be decent as
+well. Level "hol" can be slow on larger messages, and "full" will
+definitely take the most time.
+
+
+Checking properties [-checkprops]
+---------------------------------
+
+Automated proofs are conducted in order to check that the generated
+regexp indeed implements the well-formedness specifications that it
+was generated from. 
+
+Output directory [-outdir <dirname>]
+-------------------------------------
+
+Splat outputs go in the specified directory. This will include code,
+proof artifacts, and also files specifying the exact message formats.
+The outputs for each filter will go in a separate sub-directory of the
+outdir.
+
+Integer width [-intwidth <int> [optimize]]
+------------------------------------------
+
+Splat input specifications need not constrain the widths of integers,
+so this can be specified (in bits). If option "optimize" is specified,
+then the width of each field will be the least number of bytes needed
+to express the numbers allowed by the AGREE specification of the
+field. Otherwise, each integer field is of the specified width.
+
+Integer endianess [-endian (LSB | MSB)]
+---------------------------------------
+
+Multibyte integer representations need endianess to be specified.
+
+Integer encoding [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)]
+------------------------------------------------------------------------
+
+The representation for integers can be specified to a fixed number of choices.
+
+

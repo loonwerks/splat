@@ -1,0 +1,339 @@
+Declarations of CASE messages.
+------------------------------
+
+ The top-level message type is RF_Msg
+ 
+  RF_Msg = 
+    {header : CASE_MsgHeader, 
+     payload : Command}
+	   
+  CASE_MsgHeader = 
+    {src : sint, 
+     dst : sint, 
+     trusted : bool,
+     HMAC : bool}
+
+  Command = 
+    {map : Map, 
+     pattern : FlightPattern}
+
+  FlightPattern = /* enumeration */
+      ZigZag 
+    | StraightLine 
+    | Perimeter   
+
+  Map = Coordinate [4]  /* array of 4 coordinates */
+
+  Coordinate = 
+    {latitude : sint, 
+     longitude : sint,  
+     altitude : sint}
+
+Wellformedness.
+---------------
+
+Top-level correctness assertion for filter with ports filter_in and filter_out:
+
+   VALID_MESSAGE filter_out and
+   good_map filter_out.payload.map and
+   good_pattern filter_out.payload.pattern
+   
+
+Supporting definitions:
+
+  VALID_MESSAGE (msg: RF_Msg) =
+      msg.header.src > 0sint and 
+      msg.header.dst = CASE_UAV_ID and
+      msg.header.HMAC
+ 
+  CASE_UAV_ID = 42sint
+
+  /* forall wp in map: good_coordinate (wp)  */
+  good_map (map: Map) = Array_Forall(wp,map,good_coordinate(wp)) 
+
+  good_coordinate (coord:Coordinate) = 
+    coord.latitude  >= -90sint and  coord.latitude  <= 90sint  and
+    coord.longitude >= -180sint and coord.longitude <= 180sint and
+    coord.altitude  >= 0sint and    coord.altitude  <= 15000sint
+
+  good_pattern (pattern : FlightPattern) =
+    (pattern = FlightPattern'ZigZag) or
+    (pattern = FlightPattern'StraightLine) or
+    (pattern = FlightPattern'Perimeter)
+
+
+Fully expanded well-formedness (in HOL)
+---------------------------------------
+
+   |- VALID_MESSAGE filter_out /\ good_map filter_out.payload.map /\
+        good_pattern filter_out.payload.pattern <=>
+        filter_out.header.src > 0 /\ 
+        filter_out.header.dst = 42 /\
+        filter_out.header.HMAC /\
+        (filter_out.payload.map ' 3).latitude ≥ -90 /\
+        (filter_out.payload.map ' 3).latitude ≤ 90 /\
+        (filter_out.payload.map ' 3).longitude ≥ -180 /\
+        (filter_out.payload.map ' 3).longitude ≤ 180 /\
+        (filter_out.payload.map ' 3).altitude ≥ 0 /\
+        (filter_out.payload.map ' 3).altitude ≤ 15000 /\
+        (filter_out.payload.map ' 2).latitude ≥ -90 /\
+        (filter_out.payload.map ' 2).latitude ≤ 90 /\
+        (filter_out.payload.map ' 2).longitude ≥ -180 /\
+        (filter_out.payload.map ' 2).longitude ≤ 180 /\
+        (filter_out.payload.map ' 2).altitude ≥ 0 /\
+        (filter_out.payload.map ' 2).altitude ≤ 15000 /\
+        (filter_out.payload.map ' 1).latitude ≥ -90 /\
+        (filter_out.payload.map ' 1).latitude ≤ 90 /\
+        (filter_out.payload.map ' 1).longitude ≥ -180 /\
+        (filter_out.payload.map ' 1).longitude ≤ 180 /\
+        (filter_out.payload.map ' 1).altitude ≥ 0 /\
+        (filter_out.payload.map ' 1).altitude ≤ 15000 /\
+        (filter_out.payload.map ' 0).latitude ≥ -90 /\
+        (filter_out.payload.map ' 0).latitude ≤ 90 /\
+        (filter_out.payload.map ' 0).longitude ≥ -180 /\
+        (filter_out.payload.map ' 0).longitude ≤ 180 /\
+        (filter_out.payload.map ' 0).altitude ≥ 0 /\
+        (filter_out.payload.map ' 0).altitude ≤ 15000 /\ 
+        (filter_out.payload.pattern = ZigZag \/
+         filter_out.payload.pattern = StraightLine \/
+         filter_out.payload.pattern = Perimeter)
+
+Mapping to byte-string format requires
+
+  - mappings from enum constructors (bool and pattern) to natural numbers
+  - specifying width and encoding style for "sints"
+
+
+Generated Filter Regexp
+------------------------
+  
+    ([\001-\255][\000][\000][\000] 
+      | .[\001-\255][\000][\000]
+      | ..[\001-\255][\000] 
+      | ...[\001-\127])
+     [*]
+     [\000-\001]
+     [\001]
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-\002]
+*)
+
+datatype iexp 
+  = FldName of string
+  | ConstName of string
+  | EnumName of string
+  | intLit of int
+  | Add of iexp * iexp
+  | Mult of iexp * iexp
+  | Diff of iexp * iexp
+
+type fldEnv = string -> iexp
+type constEnv = string -> iexp
+type tyEnv = string -> iexp;
+
+type env = fldEnv * constEnv * enumEnv;
+
+fun Eval (E as (fEnv,cEnv,eEnv)) e =
+ case e
+  of intLit i    => i
+   | FldName s   => Eval E (fEnv s)
+   | ConstName s => Eval E (cEnv s)
+   | TyName s    => Eval E (tyEnv s)
+   | Add(e1,e2)  => Eval E e1 + Eval E e2 
+   | Mult(e1,e2) => Eval E e1 * Eval E e2 
+   | Diff(e1,e2) => Eval E e1 - Eval E e2 ;
+  
+datatype segments
+  = Segs of (string * iexp) list
+  | Union of iexp * (int -> segments);
+
+fun 
+datatype segments
+  = Esegs of string list
+  | Cseg of (string * iexp) * segments
+  | Union of iexp * (int -> segments);
+
+fun trans_segment E segs = 
+ let fun trans acc segs =
+      case segs 
+       of Esegs slist => map (I##C assoc acc) list
+        | Cseg ((s,iexp),t) = trans ((s,Eval E iexp)::acc) t
+        | Union (iexp,sFn) => trans acc (sFn (Eval E iexp))
+ in 
+   trans [] segs
+ end;
+
+
+(*===========================================================================*)
+
+ RF_Msg = 
+  [header.src              : sint]
+  [header.dst              : sint]
+  [header.trusted          : bool]
+  [header.HMAC             : bool]
+  [payload.map.latitude.0  : sint]
+  [payload.map.longitude.0 : sint]
+  [payload.map.altitude.0  : sint]
+  [payload.map.latitude.1  : sint]
+  [payload.map.longitude.1 : sint]
+  [payload.map.altitude.1  : sint]
+  [payload.map.latitude.2  : sint]
+  [payload.map.longitude.2 : sint]
+  [payload.map.altitude.2  : sint]
+  [payload.map.latitude.3  : sint]
+  [payload.map.longitude.3 : sint]
+  [payload.map.altitude.3  : sint]
+  [payload.pattern         : FlightPattern]
+	   
+
+tyInfo : string -> {sizeof,dir,encoding}
+tyInfo (sint) = {sizeof=4,dir=LSB, encoding=Twos_comp,map=[]}
+tyInfo (bool) = {sizeof=1,dir=LSB, encoding=Unsigned, 
+                 map = [("False",0),("True",1)]}
+tyInfo(FlightPattern) =
+  {sizeof=1,dir=LSB, encoding=Unsigned, 
+   map = [("ZigZag",0),("StraightLine",1), ("Perimeter",2)]}
+
+constInfo (
+
+so
+
+fun Bytes n = intLit (8*n);
+fun Bits n = intLit n;
+
+(*---------------------------------------------------------------------------*)
+(* Final segments                                                            *)
+(*---------------------------------------------------------------------------*)
+
+val RF_Msg_segments =
+ Cseg (("header.src",             Bytes 4),
+ Cseg (("header.dst",             Bytes 4),
+ Cseg (("header.trusted",         Bytes 1),
+ Cseg (("header.HMAC",            Bytes 1),
+ Cseg (("payload.map.latitude.0", Bytes 4),
+ Cseg (("payload.map.longitude.0",Bytes 4),
+ Cseg (("payload.map.altitude.0", Bytes 4),
+ Cseg (("payload.map.latitude.1", Bytes 4),
+ Cseg (("payload.map.longitude.1",Bytes 4),
+ Cseg (("payload.map.altitude.1", Bytes 4),
+ Cseg (("payload.map.latitude.2", Bytes 4),
+ Cseg (("payload.map.longitude.2",Bytes 4),
+ Cseg (("payload.map.altitude.2", Bytes 4),
+ Cseg (("payload.map.latitude.3", Bytes 4),
+ Cseg (("payload.map.longitude.3",Bytes 4),
+ Cseg (("payload.map.altitude.3", Bytes 4),
+ Cseg (("payload.pattern",        Bytes 1),
+ Esegs 
+  ["header.src",
+   "header.dst",
+   "header.trusted",
+   "header.HMAC",
+   "payload.map.latitude.0",
+   "payload.map.longitude.0",
+   "payload.map.altitude.0",
+   "payload.map.latitude.1", 
+   "payload.map.longitude.1", 
+   "payload.map.altitude.1", 
+   "payload.map.latitude.2", 
+   "payload.map.longitude.2", 
+   "payload.map.altitude.2",
+   "payload.map.latitude.3", 
+   "payload.map.longitude.3", 
+   "payload.map.altitude.3",
+   "payload.pattern"])))))))))))))))));
+
+(*---------------------------------------------------------------------------*)
+(* Decorated segments                                                        *)
+(*---------------------------------------------------------------------------*)
+
+val RF_Msg_segments =
+ Cseg (("header.src", Bytes 4, 
+        LSB, Twos_comp, [],``\x:int. x > 0``),
+ Cseg (("header.dst", Bytes 4, 
+       LSB, Twos_comp,[],``\x. x = CASE_UAV_ID``),
+ Cseg (("header.trusted", Bytes 1, 
+        LSB, Unsigned, [("False",0),("True",1)],``\x:num. x <= 1``),
+ Cseg (("header.HMAC", Bytes 1, 
+       LSB, Unsigned, [("False",0),("True",1)],``\x:num. x = 1``),
+ Cseg (("payload.map.latitude.0", Bytes 4, 
+        LSB, Twos_comp, [],``\i:int. ~90 <= i /\ i <= 90``),
+ Cseg (("payload.map.longitude.0",Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~180 <= i /\ i <= 180``),
+ Cseg (("payload.map.altitude.0", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. 0 <= i /\ i <= 17999``),
+ Cseg (("payload.map.latitude.1", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~90 <= i /\ i <= 90``),
+ Cseg (("payload.map.longitude.1",Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~180 <= i /\ i <= 180``),
+ Cseg (("payload.map.altitude.1", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. 0 <= i /\ i <= 17999``),
+ Cseg (("payload.map.latitude.2", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~90 <= i /\ i <= 90``),
+ Cseg (("payload.map.longitude.2",Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~180 <= i /\ i <= 180``),
+ Cseg (("payload.map.altitude.2", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. 0 <= i /\ i <= 17999``),
+ Cseg (("payload.map.latitude.3", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~90 <= i /\ i <= 90``),
+ Cseg (("payload.map.longitude.3",Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. ~180 <= i /\ i <= 180``),
+ Cseg (("payload.map.altitude.3", Bytes 4,
+        LSB, Twos_comp, [], ``\i:int. 0 <= i /\ i <= 15000``),
+ Cseg (("payload.pattern", Bytes 1,
+        LSB, Unsigned, [("ZigZag",0),("StraightLine",1),("Perimeter",2)],
+        ``\x:num. x <= 2``),
+ Esegs 
+  ["header.src",
+   "header.dst",
+   "header.trusted",
+   "header.HMAC",
+   "payload.map.latitude.0",
+   "payload.map.longitude.0",
+   "payload.map.altitude.0",
+   "payload.map.latitude.1", 
+   "payload.map.longitude.1", 
+   "payload.map.altitude.1", 
+   "payload.map.latitude.2", 
+   "payload.map.longitude.2", 
+   "payload.map.altitude.2",
+   "payload.map.latitude.3", 
+   "payload.map.longitude.3", 
+   "payload.map.altitude.3",
+   "payload.pattern"])))))))))))))))));
+
+ RF_Msg = 
+  [header.src              : BYTES 4, sint]
+  [header.dst              : BYTES 4, sint]
+  [header.trusted          : BYTES 1, bool]
+  [header.HMAC             : BYTES 1, bool]
+  [payload.map.latitude.0  : BYTES 4, sint]
+  [payload.map.longitude.0 : BYTES 4, sint]
+  [payload.map.altitude.0  : BYTES 4, sint]
+  [payload.map.latitude.1  : BYTES 4, sint]
+  [payload.map.longitude.1 : BYTES 4, sint]
+  [payload.map.altitude.1  : BYTES 4, sint]
+  [payload.map.latitude.2  : BYTES 4, sint]
+  [payload.map.longitude.2 : BYTES 4, sint]
+  [payload.map.altitude.2  : BYTES 4, sint]
+  [payload.map.latitude.3  : BYTES 4, sint]
+  [payload.map.longitude.3 : BYTES 4, sint]
+  [payload.map.altitude.3  : BYTES 4, sint]
+  [payload.pattern         : BYTES 1, FlightPattern]
+
+(*---------------------------------------------------------------------------*)
+(* Generated from translations                                               *)
+(*---------------------------------------------------------------------------*)
+
+RF_msg_encode
+RF_msg_decode

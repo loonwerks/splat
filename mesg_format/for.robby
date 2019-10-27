@@ -1,0 +1,137 @@
+Example CASE message.
+---------------------
+
+The top-level message type is RF_Msg:
+ 
+  RF_Msg = 
+    {header : CASE_MsgHeader, 
+     payload : Command}
+	   
+  CASE_MsgHeader = 
+    {src : sint, 
+     dst : sint, 
+     trusted : bool,
+     HMAC : bool}
+
+  Command = 
+    {map : Map, 
+     pattern : FlightPattern}
+
+  FlightPattern = /* enumeration */
+      ZigZag 
+    | StraightLine 
+    | Perimeter   
+
+  Map = Coordinate [4]  /* array of 4 coordinates */
+
+  Coordinate = 
+    {latitude : sint, 
+     longitude : sint,  
+     altitude : sint}
+
+Wellformedness.
+---------------
+
+ Top-level correctness assertion for a filter with ports filter_in and
+filter_out (the predicates are only on the output!):
+
+   VALID_MESSAGE filter_out and
+   good_map filter_out.payload.map and
+   good_pattern filter_out.payload.pattern
+   
+
+Supporting definitions:
+
+  VALID_MESSAGE (msg: RF_Msg) =
+      msg.header.src > 0sint and 
+      msg.header.dst = CASE_UAV_ID and
+      msg.header.HMAC
+ 
+  CASE_UAV_ID = 42sint
+
+  /* forall wp in map: good_coordinate (wp)  */
+  good_map (map: Map) = Array_Forall(wp,map,good_coordinate(wp)) 
+
+  good_coordinate (coord:Coordinate) = 
+    coord.latitude  >= -90sint and  coord.latitude  <= 90sint  and
+    coord.longitude >= -180sint and coord.longitude <= 180sint and
+    coord.altitude  >= 0sint and    coord.altitude  <= 15000sint
+
+  good_pattern (pattern : FlightPattern) =
+    (pattern = FlightPattern'ZigZag) or
+    (pattern = FlightPattern'StraightLine) or
+    (pattern = FlightPattern'Perimeter)
+
+
+Fully expanded well-formedness (HOL formula).
+---------------------------------------------
+
+   |- VALID_MESSAGE filter_out /\ 
+      good_map filter_out.payload.map /\
+      good_pattern filter_out.payload.pattern 
+      <=>
+        filter_out.header.src > 0 /\ 
+        filter_out.header.dst = 42 /\
+        filter_out.header.HMAC /\
+        (filter_out.payload.map ' 3).latitude ≥ -90 /\
+        (filter_out.payload.map ' 3).latitude ≤ 90 /\
+        (filter_out.payload.map ' 3).longitude ≥ -180 /\
+        (filter_out.payload.map ' 3).longitude ≤ 180 /\
+        (filter_out.payload.map ' 3).altitude ≥ 0 /\
+        (filter_out.payload.map ' 3).altitude ≤ 15000 /\
+        (filter_out.payload.map ' 2).latitude ≥ -90 /\
+        (filter_out.payload.map ' 2).latitude ≤ 90 /\
+        (filter_out.payload.map ' 2).longitude ≥ -180 /\
+        (filter_out.payload.map ' 2).longitude ≤ 180 /\
+        (filter_out.payload.map ' 2).altitude ≥ 0 /\
+        (filter_out.payload.map ' 2).altitude ≤ 15000 /\
+        (filter_out.payload.map ' 1).latitude ≥ -90 /\
+        (filter_out.payload.map ' 1).latitude ≤ 90 /\
+        (filter_out.payload.map ' 1).longitude ≥ -180 /\
+        (filter_out.payload.map ' 1).longitude ≤ 180 /\
+        (filter_out.payload.map ' 1).altitude ≥ 0 /\
+        (filter_out.payload.map ' 1).altitude ≤ 15000 /\
+        (filter_out.payload.map ' 0).latitude ≥ -90 /\
+        (filter_out.payload.map ' 0).latitude ≤ 90 /\
+        (filter_out.payload.map ' 0).longitude ≥ -180 /\
+        (filter_out.payload.map ' 0).longitude ≤ 180 /\
+        (filter_out.payload.map ' 0).altitude ≥ 0 /\
+        (filter_out.payload.map ' 0).altitude ≤ 15000 /\ 
+        (filter_out.payload.pattern = ZigZag \/
+         filter_out.payload.pattern = StraightLine \/
+         filter_out.payload.pattern = Perimeter)
+
+Mapping to byte-string format further requires
+
+  - mappings from enum constructors (bool and pattern) to natural numbers
+    (an enum can have max 256 constructors, so the encoding fits in a byte).
+
+      * bool: {False <-> 0, True <-> 1}
+      * FlightPattern: {ZigZag <-> 0, StraightLine <-> 1, Perimeter <-> 2}
+
+  - specifying width and encoding style for "sints" (32 bits, LSB, Twos_comp)
+
+
+Generated Filter Regexp
+------------------------
+  
+    ([\001-\255][\000][\000][\000] 
+      | .[\001-\255][\000][\000]
+      | ..[\001-\255][\000] 
+      | ...[\001-\127])
+     [*]
+     [\000-\001]
+     [\001]
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-Z\166-\255]
+     ([L-\255][\255] | [\000-\180][\000])
+     ([\000-\152][:] | .[\000] | .[\001-9])
+     [\000-\002]

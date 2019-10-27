@@ -14,28 +14,17 @@ open regexpMisc regexpSyntax pred_setSyntax
      Regexp_Type Regexp_Numerics regexpLib Enum_Encode;
 
 
+val ERR = Feedback.mk_HOL_ERR "splatLib";
+
+structure Finmap = Redblackmap;
+
+type ('a, 'b) fmap = ('a, 'b) Finmap.dict;
+
 fun listrel R [] [] = true
   | listrel R (a::t1) (b::t2) = R a b andalso listrel R t1 t2
   | listrel _ _ _ = false;
 
 fun pairrel R1 R2 (x,y) (u,v) = R1 x u andalso R2 y v;
-
-val ERR = Feedback.mk_HOL_ERR "splatLib";
-
-type filter_info
-   = {name : string,
-      regexp : Regexp_Type.regexp,
-      encode_def : thm, 
-      decode_def : thm,
-      inversion : term,
-      correctness : term,
-      receiver_correctness : term,
-      implicit_constraints : thm option};
-
-     
-structure Finmap = Redblackmap;
-
-type ('a, 'b) fmap = ('a, 'b) Finmap.dict;
 
 (*---------------------------------------------------------------------------*)
 (* Width of a message field, in bits or in word8s                            *)
@@ -58,11 +47,26 @@ fun width2bytes (BYTEWIDTH n) = n
      end
 
 (*---------------------------------------------------------------------------*)
+(* Unconstrained ints in the input spec (those not given an interval in the  *)
+(* wellformedness specification) need to be given a width in the message.    *)
+(* Optimize i means that the width of an int field is computed to be the     *)
+(* minimum width needed to represent the specified interval; if no interval  *)
+(* is specified, then i bits is the width. Uniform i means that all int      *)
+(* fields (constrained or not) are set to be of width i.                     *)
+(*---------------------------------------------------------------------------*)
+
+datatype shrink = Optimize of int | Uniform of int
+
+fun shrinkVal (Optimize i) = i
+  | shrinkVal (Uniform i) = i;
+
+
+(*---------------------------------------------------------------------------*)
 (* A format contains enough information to bridge between a byte array and   *)
 (* a higher-level which the byte array is a representation of.               *)
 (*---------------------------------------------------------------------------*)
 
-datatype atomic =
+datatype fieldrep =
    Interval of 
      {span : IntInf.int * IntInf.int,
       encoding : encoding,
@@ -70,15 +74,113 @@ datatype atomic =
       width  : width,
       encoder : IntInf.int -> string,
       decoder : string -> IntInf.int,
-      recog  : Regexp_Type.regexp}
+      regexp  : Regexp_Type.regexp}
   | Enumset of 
      {enum_type : hol_type,
       constr_codes : (term * int) list,
-      logic : Enum_Encode.logic_info,
-      recog : Regexp_Type.regexp}
-  | StringLit of string
-  | Raw of width
+      elts : term list,
+      codec : Enum_Encode.enum_codec,
+      regexp : Regexp_Type.regexp}
+  | StringLit of 
+     {strlit : string,
+      regexp : Regexp_Type.regexp}
+  | Raw of 
+     {width : width,
+      regexp : Regexp_Type.regexp}
 ;
+
+fun encoding2string Unsigned  = "Unsigned"
+  | encoding2string Twos_comp = "Twos_comp"
+  | encoding2string Zigzag    = "Zigzag"
+  | encoding2string Sign_mag  = "Sign_mag";
+
+fun endian2string LSB  = "LSB"
+  | endian2string MSB  = "MSB";
+
+val pp_fieldrep =
+ let open Portable PP
+     fun paren i j s1 s2 ps =
+       if i < j then block CONSISTENT 0 ps
+       else block INCONSISTENT (size s1) 
+                  (add_string s1 :: ps @ [add_string s2])
+     fun pp_constr_code (constr,code) = 
+       paren 0 0 "(" ")" 
+          [add_string(fst(dest_const constr)),
+           add_string",", add_string(Int.toString code)]
+     fun pp i fieldrep =
+      case fieldrep
+       of Interval{span,encoding,endian,width,encoder,decoder,regexp} =>
+           paren i 0 "(" ")"
+            [add_string "Interval",
+             add_break(1,0), 
+             paren i 0 "(" ")" 
+               [add_string(IntInf.toString (fst span)),
+                add_string",",
+                add_string(IntInf.toString (snd span))],
+             add_break(1,0), 
+             paren i 0 "(" ")" 
+               (case width 
+                 of BITWIDTH i => [add_string "BITS", add_break (1,0), 
+                                   add_string (Int.toString i)]
+                 |  BYTEWIDTH i => [add_string "BYTES", add_break (1,0), 
+                                   add_string (Int.toString i)]),
+             add_break(1,0), 
+	     add_string (encoding2string encoding),
+             add_break(1,0), 
+	     add_string (endian2string endian)]
+        | Enumset{enum_type,constr_codes,elts,codec,regexp} => 
+            paren i 0 "(" ")"
+            [add_string "Enumset",
+             add_break(1,0), 
+             let val {Tyop,Thy,Args} = dest_thy_type enum_type
+             in paren i 0 "[" "]" 
+               [add_string Thy, add_string",", add_string Tyop]
+             end,
+             add_break(1,0), 
+             add_string "(BYTES 1)",
+             add_break(1,0), 
+             paren i 0 "[" "]" 
+               (pr_list pp_constr_code 
+                   [add_string ",", add_break(0,0)] constr_codes),
+             add_break(1,0), 
+             paren i 0 "[" "]" 
+               (pr_list (fn t => add_string (fst(dest_const t)))
+                        [add_string ",", add_break(0,0)] elts)]
+        | StringLit{strlit,regexp} => raise ERR "" "" 
+        | Raw {width,regexp} => raise ERR "" "" 
+ in pp 0 
+ end
+
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn fr => pp_fieldrep fr);
+
+fun dump_manifest ostrm manif =
+  let open Portable PP
+      val writer = curry TextIO.output ostrm
+      fun paren i j s1 s2 ps =
+       if i < j then block CONSISTENT 0 ps
+       else block INCONSISTENT (size s1) 
+                  (add_string s1 :: ps @ [add_string s2])
+       fun pp_manif_elt i (t,fieldrep) = 
+          paren i 0 "(" ")"
+             [add_string (Parse.term_to_string t), 
+              add_break(1,0), pp_fieldrep fieldrep]
+       val ob = block CONSISTENT 0
+                   (pr_list (pp_manif_elt 0) [NL] manif)
+  in 
+     PP.prettyPrint (writer,75) ob
+  end
+
+type filter_info
+   = {name : string,
+      regexp : Regexp_Type.regexp,
+      encode_def : thm, 
+      decode_def : thm,
+      inversion : term,
+      correctness : term,
+      receiver_correctness : term,
+      implicit_constraints : thm option,
+      manifest : (term * fieldrep) list};
+
 
 fun width_of atm =
  case atm
@@ -86,11 +188,11 @@ fun width_of atm =
    | Enumset _ => BYTEWIDTH 1
    | other => raise ERR "width_of" "";
 
-fun recog_of atm =
+fun regexp_of atm =
  case atm
-  of Interval{recog,...} => recog
-   | Enumset{recog,...} => recog
-   | other => raise ERR "recog_of" "";
+  of Interval{regexp,...} => regexp
+   | Enumset{regexp,...} => regexp
+   | other => raise ERR "regexp_of" "";
 
 (*---------------------------------------------------------------------------*)
 (* Defaulting to LSB for the moment                                          *)
@@ -113,48 +215,67 @@ fun term_decoder(encoding,endian,width) =
 fun encoder_of atm =
  case atm
   of Interval{encoding,endian, width,...} => term_encoder(encoding,endian,width)
-   | Enumset{logic,...} => #enc logic
+   | Enumset{codec,...} => #enc codec
    | other => raise ERR "encoder_of" "";
 
 fun decoder_of atm =
  case atm
   of Interval{encoding,endian,width,...} => term_decoder(encoding,endian,width)
-   | Enumset {logic,...} => #dec logic
+   | Enumset {codec,...} => #dec codec
    | other => raise ERR "decoder_of" "";
 
+(*---------------------------------------------------------------------------*)
+(* Checks that the intwidth is a multiple of eight and is adequately large   *)
+(* to encode the interval.                                                   *)
+(*---------------------------------------------------------------------------*)
 
-fun mk_interval enc dir (lo,hi) = 
+fun mk_interval shrink enc dir (lo,hi) = 
  let open Regexp_Numerics
-     val byte_width = interval_width enc (lo,hi)
+     val min_ivl_width = interval_width enc (lo,hi)
+     val width = 
+       (case shrink
+         of Optimize i => min_ivl_width
+         |  Uniform i => 
+             let val bytewidth = i div 8
+             in if min_ivl_width <= bytewidth 
+                then bytewidth
+                else raise ERR "mk_interval"
+                      (String.concat ["interval (",
+                        IntInf.toString lo,",",IntInf.toString hi,
+                        ") not representable in ",
+                        Int.toString i, " bits"])
+             end)
  in Interval{span = (lo,hi),
              encoding = enc,
              endian   = dir, 
-             width = BYTEWIDTH byte_width,
-             encoder = iint2string enc dir byte_width,
-             decoder = string2iint enc dir,
-             recog = interval_regexp enc dir byte_width (lo,hi)}
+             width    = BYTEWIDTH width,
+             encoder  = iint2string enc dir width,
+             decoder  = string2iint enc dir,
+             regexp    = interval_regexp enc dir width (lo,hi)}
  end;
 
 fun mk_enumset (ety,elts) = 
   case Finmap.peek (Enum_Encode.the_enumMap(),ety)
-   of SOME (clist,logic) =>
+   of SOME (clist,codec) =>
         let val ilist = List.map (fn e => op_assoc aconv e clist) elts
             val chars = List.map Char.chr ilist
             val cset = Regexp_Type.charset_of chars
         in
           Enumset{enum_type = ety,
                   constr_codes = clist,
-                  logic = logic,
-                  recog = Chset cset}
+                  elts = elts,
+                  codec = codec,
+                  regexp = Chset cset}
         end
     | NONE => raise ERR "mk_enumset" 
-                ("enumerated type "^Lib.quote (fst(dest_type ety))^" not registered")
+         ("enumerated type "^Lib.quote (fst(dest_type ety))^" not registered")
 
 
 (*---------------------------------------------------------------------------*)
 (* Intended to be easily mapped to and from Robby's bitcodec representation  *)
+(* Not currently used.                                                       *)
 (*---------------------------------------------------------------------------*)
-
+(*
 datatype format
   = ATOM of atomic
   | CONCAT of format list
@@ -163,7 +284,7 @@ datatype format
   | UNION of format * format
   | PACKED of format list * width
 ;
-
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Translate formula coming from AGREE specs to regexp. Create encoder and   *)
@@ -233,52 +354,86 @@ fun all_paths recdvar =
  end;
 
 (*---------------------------------------------------------------------------*)
-(* Takes the expanded wellformedness definition and extracts the per-field   *)
-(* constraints on the underlying record type. The constraints are then       *)
-(* translated to regular expressions. (Actually, one big one.) Also,         *)
-(* encoders and decoders are created, along with a suite of theorems showing *)
-(* the relationships between the encoder, decoder, and filter (generated     *)
-(* from the big regular expression).                                         *) 
+(* Default parameters for representation of ints.                            *)
 (*---------------------------------------------------------------------------*)
 
 val ii2term = intSyntax.term_of_int o Arbint.fromLargeInt;
-
-val default_int_bits = 31;
-
-val SMAX_INT = twoE default_int_bits;  (* successor of maxint *)
-val MIN_INT  = IntInf.~SMAX_INT;
-val SMAX_NUM = twoE (default_int_bits + 1); (* successor of maxnum *)
-
-val smaxint_tm = ii2term SMAX_INT;
-val minint_tm  = ii2term MIN_INT;
-val smaxnum_tm = numSyntax.mk_numeral (Arbnum.fromLargeInt SMAX_NUM);
-
-fun max_const ty =
-  if ty = numSyntax.num then smaxnum_tm else 
-  if ty = intSyntax.int_ty then smaxint_tm 
-  else raise ERR "max_const" "";
-
-fun min_const ty =
-  if ty = numSyntax.num then numSyntax.zero_tm else 
-  if ty = intSyntax.int_ty then minint_tm 
-  else raise ERR "min_const" "";
 
 fun mk_lt ty = 
   if ty = numSyntax.num then numSyntax.less_tm else 
   if ty = intSyntax.int_ty then intSyntax.less_tm
   else raise ERR "mk_lt" "";
+
 fun mk_le ty = 
   if ty = numSyntax.num then numSyntax.leq_tm else 
   if ty = intSyntax.int_ty then intSyntax.leq_tm
   else raise ERR "mk_le" "";
 
+(*---------------------------------------------------------------------------*)
+(* max_const expected to be used in constraints of form t < max_const, so    *)
+(* will actually be one larger than the max *expressible* const for given    *)
+(* bits and encoding                                                         *)
+(*---------------------------------------------------------------------------*)
 
-fun filter_correctness (fname,thm) =
- let val (wfpred_apps, expansion) = dest_eq(concl thm)
+fun max_constFn (bits:int) encoding =
+ let val maxnum =
+      (case encoding
+        of Unsigned  => twoE bits
+         | otherwise => twoE (bits - 1))
+ in fn ty =>
+     if ty = numSyntax.num then 
+         numSyntax.mk_numeral (Arbnum.fromLargeInt maxnum)
+     else 
+     if ty = intSyntax.int_ty then 
+         ii2term maxnum
+     else raise ERR "max_const" ""
+ end;
+
+fun min_constFn bits encoding =
+ let val minnum =
+      (case encoding
+        of Unsigned  => 0
+         | Sign_mag  => IntInf.~(IntInf.-(twoE (bits - 1), 1))
+         | otherwise => IntInf.~(twoE (bits - 1)))
+ in fn ty =>
+     if ty = numSyntax.num then 
+         numSyntax.zero_tm
+     else 
+     if ty = intSyntax.int_ty then 
+         ii2term minnum
+     else raise ERR "min_const" ""
+ end;
+
+fun fpath s = 
+  let open FileSys
+      fun fail() = raise ERR "fpath" 
+             ("unable to create or access directory "^Lib.quote s)
+      val path = fullPath s handle _ => (mkDir s ; fullPath s) 
+                            handle _ => fail()
+      in if isDir path andalso access(path,[A_EXEC,A_READ,A_WRITE])
+         then path else fail()
+      end
+	  
+(*---------------------------------------------------------------------------*)
+(* gen_filter_artifacts takes the expanded wellformedness definition and     *)
+(* extracts the per-field constraints on the underlying record type. The     *)
+(* constraints are then translated to regular expressions (actually, one big *)
+(* one.) Also, encoders and decoders are created, along with a suite of      *)
+(* theorems showing the relationships between the encoder, decoder, and      *)
+(* filter (generated from the big regular expression).                       *) 
+(*---------------------------------------------------------------------------*)
+
+type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
+
+fun gen_filter_artifacts (shrink,endian,encoding) (fname,thm) =
+ let val intwidth = shrinkVal shrink
+     val max_const = max_constFn intwidth encoding
+     val min_const = min_constFn intwidth encoding
+     val (wfpred_apps, expansion) = dest_eq(concl thm)
      val recdvar = 
         (case free_vars wfpred_apps
           of [x] => x
-           | otherwise => raise ERR "filter_correctness" "expected 1 free var")
+           | otherwise => raise ERR "gen_filter_artifacts" "expected 1 free var")
      val recdty = type_of recdvar
      val {Thy,Tyop=rtyname,Args} = dest_thy_type recdty
      val constraints = strip_conj expansion
@@ -306,11 +461,11 @@ fun filter_correctness (fname,thm) =
               let val ty = type_of proj
                   open intSyntax 
               in if ty = int_ty
-                    then [mk_leq(minint_tm,proj), mk_less(proj,smaxint_tm)]
+                    then [mk_leq(min_const ty,proj), mk_less(proj,max_const ty)]
 	         else 
                  if ty = numSyntax.num 
                     then [numSyntax.mk_leq(numSyntax.zero_tm,proj),
-                          numSyntax.mk_less(proj,smaxnum_tm)]
+                          numSyntax.mk_less(proj,max_const ty)]
                  else case Finmap.peek (the_enumMap(),type_of proj)
                        of NONE => raise ERR "mk_correctness_goals" 
                                 ("following field is not in the_enumMap(): "
@@ -326,7 +481,8 @@ fun filter_correctness (fname,thm) =
 
      (* Add implicit constraints to the wfpred *)
 
-     val implicit_constraints = List.mapPartial (C (op_assoc1 aconv) groups') omitted_projs
+     val implicit_constraints = 
+          List.mapPartial (C (op_assoc1 aconv) groups') omitted_projs
      val (wfpred_apps',iconstraints_opt) = 
 	 if null implicit_constraints
 	 then (wfpred_apps,NONE)
@@ -334,7 +490,8 @@ fun filter_correctness (fname,thm) =
          let val implicit_constraints_tm =
                  list_mk_conj (map list_mk_conj implicit_constraints)
 	     val iconstr_name = fname^"_implicit_constraints"
-	     val iconstr_app = mk_comb(mk_var(iconstr_name,recdty --> Type.bool),recdvar)
+	     val iconstr_app = 
+                    mk_comb(mk_var(iconstr_name,recdty --> Type.bool),recdvar)
 	     val iconstr_def_tm = mk_eq(iconstr_app, implicit_constraints_tm)
 	     val implicit_constraints_def = TotalDefn.Define `^iconstr_def_tm`
 	     val implicit_constraints_const = 
@@ -345,12 +502,14 @@ fun filter_correctness (fname,thm) =
          end
 
      (* map constraints to an interval. The (lo,hi) pair denotes the inclusive
-        interval {i | lo <= i <= hi} so there is some fiddling to translate        all relations to <=.
+        interval {i | lo <= i <= hi} so there is some fiddling to translate 
+        all relations to <=.
      *)
-     fun constraint_interval ctr =  (* elements of c expected to have form relop t1 t2 *)
+     fun constraint_interval ctr = (* elts of c expected to have form relop t1 t2 *)
       let val domtys = fst (strip_fun (type_of (fst (strip_comb (hd ctr)))))
-          val _ = if Lib.all (fn ty => ty = numSyntax.num orelse ty = intSyntax.int_ty) domtys
-                   then () else raise ERR "constraint_interval" "not a numeric constraint"
+          fun is_numeric ty = (ty = numSyntax.num orelse ty = intSyntax.int_ty) 
+          val _ = if Lib.all is_numeric domtys then () 
+                  else raise ERR "constraint_interval" "not a numeric constraint"
           fun elim_gtr tm = (* elim > and >= *)
             case strip_comb tm
 	      of (rel,[a,b]) =>
@@ -367,7 +526,8 @@ fun filter_correctness (fname,thm) =
                            intSyntax.less_tm,numSyntax.less_tm,boolSyntax.equality]
                      then (rel,a,b)
                   else raise ERR "constraint_interval" "unknown numeric relation"
-	       | other => raise ERR "constraint_interval" "expected term of form `relop a b`"
+	       | other => raise ERR "constraint_interval" 
+                                    "expected term of form `relop a b`"
           val ctr' = map elim_gtr ctr
           fun has_recdvar t = op_mem aconv recdvar (free_vars t)
           fun add_constraint [ctr as (rel,a,b)] = 
@@ -390,14 +550,17 @@ fun filter_correctness (fname,thm) =
                   val fvc = free_vars c
                   val fvd = free_vars d
               in 
-                 if op_mem aconv recdvar fvb andalso op_mem aconv recdvar fvc andalso aconv b c
+                 if op_mem aconv recdvar fvb andalso 
+                    op_mem aconv recdvar fvc andalso aconv b c
                    then (c1,c2)
 	         else
-	         if op_mem aconv recdvar fvd andalso op_mem aconv recdvar fva andalso aconv a d
+	         if op_mem aconv recdvar fvd andalso 
+                    op_mem aconv recdvar fva andalso aconv a d
                    then (c2,c1)
 	         else raise ERR "constraint_interval(sort)" "unexpected format"
               end
-            | sort otherwise = raise ERR "constraint_interval(sort)" "unexpected format"
+            | sort otherwise = raise ERR "constraint_interval(sort)" 
+                                         "unexpected format"
           val ((rel1,lo_tm,_),(rel2,_,hi_tm)) = sort ctr''
 	  fun dest_literal t = 
              (if type_of t = numSyntax.num
@@ -409,19 +572,20 @@ fun filter_correctness (fname,thm) =
                       then Arbint.+(lo, Arbint.one) else lo
           val hi' = if op_mem same_const rel2 [numSyntax.less_tm,intSyntax.less_tm]
                       then Arbint.-(hi,Arbint.one) else hi
-          val ctype = type_of lo_tm
-	  val encoding = if ctype = numSyntax.num then Unsigned else Twos_comp
-          val dir = LSB
       in  
-        mk_interval encoding dir (Arbint.toLargeInt lo',Arbint.toLargeInt hi')
+        mk_interval shrink encoding endian 
+                       (Arbint.toLargeInt lo',Arbint.toLargeInt hi')
       end
 
      (*---------------------------------------------------------------------*)
      (* Expects (x = C1) \/ (x = C2) \/ ...                                 *)
      (* There are some special cases when the enumerated type is bool       *)
+     (*                                                                     *)
+     (* This could be applied to finite sets of numbers, rather than fin.   *)
+     (* sets of enumerated constructors.                                    *)
      (*---------------------------------------------------------------------*)
 
-     fun constraint_enumset [ctr] =   (* Should be extended to finite sets of numbers *)
+     fun constraint_enumset [ctr] = 
          let val eqns = 
               if not (is_disj ctr) then 
                   (if is_neg ctr then 
@@ -436,7 +600,8 @@ fun filter_correctness (fname,thm) =
                    raise ERR "constraint_enumset (elt_of)" "expected a projection"
 		end
 	     val elts = map elt_of eqns
-             val _ = if null elts then raise ERR "constraint_enumset" "no elements" else ()
+             val _ = if null elts then 
+                       raise ERR "constraint_enumset" "no elements" else ()
 	     val enumty = type_of (hd elts)
 	     val etyname = fst(dest_type enumty)
              val _ = if 256 < length (TypeBase.constructors_of enumty) 
@@ -449,26 +614,30 @@ fun filter_correctness (fname,thm) =
        | constraint_enumset other = 
            raise ERR "constraint_enumset" "expected a disjunction of equations"
 
-     fun mk_atomic x = 
-        constraint_interval (snd x) 
+     fun mk_segment a = 
+        constraint_interval a
          handle HOL_ERR _ => 
-        constraint_enumset (snd x)
+	constraint_enumset a;
 
-(*
-   val [g1, g2, g3, g4, g5, g6, g7, g8, g9, g10, 
-        g11, g12, g13, g14, g15, g16, g17] = groups';
-*)
+     val manifest = map (I##mk_segment) groups'
 
-     val atomics = map mk_atomic groups'
+     val _ = (let open FileSys TextIO
+                  val ostrm = openOut(getDir() ^"/"^ fname^".segments")
+              in dump_manifest ostrm manifest; 
+                 closeOut ostrm
+              end
+              handle e => raise ERR "gen_filter_artifacts" 
+                                  "unable to write segments file")
 
      (* Compute regexps for the fields *)
 
-     val regexps = map recog_of atomics
+     val regexps = map (regexp_of o snd) manifest
      val the_regexp = Regexp_Match.normalize (catlist regexps)
      val the_regexp_tm = regexpSyntax.regexp_to_term the_regexp
      
      val codings = 
-       List.map (fn atm => {enc = encoder_of atm, dec = decoder_of atm}) atomics
+       List.map (fn atm => {enc = encoder_of atm, dec = decoder_of atm}) 
+                (map snd manifest);
 
      (* Define encoder *)
      val encs = map #enc codings
@@ -498,7 +667,7 @@ fun filter_correctness (fname,thm) =
      val fvar = mk_var("s",stringSyntax.string_ty)
      val decodeFn_lhs = mk_comb(decodeFn_var, fvar)
 
-     val fwidths = List.map (width2bytes o width_of) atomics
+     val fwidths = List.map (width2bytes o width_of o snd) manifest
      val vars = map (fn i => mk_var("v"^Int.toString i, stringSyntax.char_ty))
                     (upto 0 (List.foldl (op+) 0 fwidths - 1))
      val decs = map #dec codings
@@ -619,9 +788,10 @@ fun filter_correctness (fname,thm) =
       inversion   = inversion_goal,
       correctness = correctness_goal,
       receiver_correctness = receiver_correctness_goal,
-      implicit_constraints = iconstraints_opt}
+      implicit_constraints = iconstraints_opt,
+      manifest = manifest}
  end
- handle e => raise wrap_exn "splatLib" "filter_correctness" e;
+ handle e => raise wrap_exn "splatLib" "gen_filter_artifacts" e;
 
 (*---------------------------------------------------------------------------*)
 (* Proves goals of the form                                                  *)

@@ -1,8 +1,3 @@
-# INCLUDES = $(HOLDIR)/examples/balanced_bst \
-#            $(HOLDIR)/examples/formal-languages \
-#            $(HOLDIR)/examples/formal-languages/context-free \
-#            $(HOLDIR)/examples/formal-languages/regular
-
 INCLUDES = $(HOLDIR)/examples/formal-languages/regular
 
 THYFILES = $(patsubst %Script.sml,%Theory.uo,$(wildcard *.sml))
@@ -13,7 +8,7 @@ all: $(TARGETS) mustbuild
 mustbuild: splat
 .PHONY: mustbuild all
 
-EXTRA_CLEANS = splat.o splat
+EXTRA_CLEANS = splat.o splat 
 
 # Not really sure why this is needed given the INCLUDES above
 localregexpLib :

@@ -5,7 +5,7 @@ open HolKernel Parse boolLib bossLib MiscLib
 
 local open splatTheory in end;
 
- type logic_info 
+ type enum_codec
     = {enc : term,
        dec : term,
        enc_def : thm,
@@ -16,14 +16,14 @@ local open splatTheory in end;
 
 structure Finmap = Redblackmap;
 
-type enumMap = (hol_type, ((term*int) list * logic_info)) fmap;
+type enumMap = (hol_type, ((term*int) list * enum_codec)) fmap;
 
 (*---------------------------------------------------------------------------*)
 (* An enum type needs a formatting map from the enum constants to numbers.   *)
 (* The domain of the map is the name of the enum type.                       *)
 (*---------------------------------------------------------------------------*)
 
-val bool_logic_info = 
+val bool_codec = 
     {enc = ``splat$enc_bool``,
      dec = ``splat$dec_bool``,
      enc_def = splatTheory.enc_bool_def,
@@ -33,7 +33,7 @@ val bool_logic_info =
 val base_enumMap : enumMap =
   let open boolSyntax
   in 
-    Finmap.fromList Type.compare [(Type.bool, ([(F,0), (T,1)], bool_logic_info))]
+    Finmap.fromList Type.compare [(Type.bool, ([(F,0), (T,1)], bool_codec))]
   end;
 
 local

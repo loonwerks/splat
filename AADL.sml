@@ -239,28 +239,46 @@ fun mk_defs pkgName annex =  (* package annex *)
   of AList [("name", String "agree"),
             ("kind", String "AnnexLibrary"), 
             ("parsedAnnexLibrary",
-	     AList [("statements", List decls)])] => mapfilter (mk_def pkgName) decls
+                 AList [("statements", List decls)]),
+            ("sourceText",_)] 
+      => mapfilter (mk_def pkgName) decls
    | otherwise => raise ERR "get_fndefs" "unexpected annex format";
 (*
 val [d1,d2,d3,d4,d5,d6,d7,d8,d9,d10] = decls;
 *)
 
-fun fldty tystr =
+fun fldty tystr =  (* replace with dest_ty? *)
  case dest_qid tystr
   of ("Base_Types","Integer") => BaseTy(IntTy (!defaultNumKind))
    | ("Base_Types","Boolean") => BaseTy(BoolTy)
    | ("Base_Types","String") => BaseTy(StringTy)
    | (pkg,tyname) => NamedTy(pkg,tyname);
 
-fun dest_field pkgName subcomp =
+(*---------------------------------------------------------------------------*)
+(* Support for detecting and implementing record type extension              *)
+(*---------------------------------------------------------------------------*)
+
+val null_ty = NamedTy("","Missing Field");
+
+fun mk_extender orig_name = ("--Extends--", NamedTy(dest_qid orig_name))
+fun dest_extender (RecdDec (qid, ("--Extends--", NamedTy orig_qid)::t)) = 
+      (qid,orig_qid,t)
+  | dest_extender otherwise = raise ERR "dest_extender" "";
+
+
+fun dest_field subcomp =
  case subcomp
   of AList [("name", String fldname), 
             ("kind", String "Subcomponent"),
             ("category", String "data"),
-            ("classifier", String tystr)] => (fldname, SOME (fldty tystr))
+            ("classifier", typ)] => 
+               (case typ
+                 of String tystr => (fldname, fldty tystr)
+                  | Null => (fldname, null_ty)
+                  | other => raise ERR "dest_field" "unexpected field classifier")
    | AList [("name", String fldname), 
             ("kind", String "Subcomponent"),
-            ("category", String "data")] => (fldname, NONE)
+            ("category", String "data")] => (fldname, null_ty)
    | otherwise => raise ERR "dest_field" "expected a record field";
 
 fun recd_decl pkgName names decl =
@@ -273,30 +291,30 @@ fun recd_decl pkgName names decl =
 	    ("subcomponents", List subcomps)::_)
      => if mem name_impl names andalso not(null subcomps)
         then RecdDec(dest_qid (Option.valOf (dropImpl name_impl)), 
-                     map ((I##Option.valOf) o dest_field pkgName) subcomps)
+                     map dest_field subcomps)
         else raise ERR "recd_decl" "expected a record implementation"
    | AList (("packageName", String pkg) ::
             ("name", String name_impl) ::
             ("localName",_) ::
             ("kind", String "ComponentImplementation") ::
             ("category", String "data") ::
-            ("extends", AList orig_recd_spec) ::
-            ("subcomponents", substs) :: _)
-     => (case dropImpl name_impl
-	  of NONE => raise ERR "recd_decl" "expected .Impl suffix"
-           | SOME name =>
-	     let val List orig_subcomps = assoc "subcomponents" orig_recd_spec
-		 val orig_fields = map (dest_field pkgName) orig_subcomps
-                 val List field_substs = substs
-		 val new_fields = map (dest_field pkgName) field_substs
-                 fun replace_field (name, SOME ty) = (name,ty)
-                   | replace_field (name, NONE) = 
-		    case assoc name new_fields
-                     of NONE => raise ERR "recd_decl" "replace_field"
-                      | SOME field => (name,field)
-                 val fields = map replace_field orig_fields
-             in RecdDec(dest_qid name,fields)
-	     end)
+            ("extends", extension) ::
+            ("subcomponents", List subcomps) :: _)
+     => (case extension 
+          of String partial_recd_impl =>
+              (case dropImpl name_impl
+	        of NONE => raise ERR "recd_decl" "expected .Impl suffix"
+                 | SOME name => 
+               case dropImpl partial_recd_impl
+                of NONE => raise ERR "recd_decl" "expected .Impl suffix"
+                 | SOME orig_name => 
+                     RecdDec(dest_qid name, 
+                         mk_extender orig_name :: map dest_field subcomps))
+           | AList orig_recd_spec => 
+              (case dropImpl name_impl
+                of NONE => raise ERR "recd_decl" "expected .Impl suffix"
+                 | SOME name => RecdDec(dest_qid name,[]))
+           | other => raise ERR "recd_decl" "unexpected extension syntax")
    | other => raise ERR "recd_decl" "expected a record declaration";
 
 fun enum_decl decl =
@@ -347,7 +365,7 @@ fun data_decl_name (AList(("packageName", String pkg) ::
 fun get_tydecl pkgName names thing =
    enum_decl thing handle HOL_ERR _ => 
    recd_decl pkgName names thing handle HOL_ERR _ => 
-   array_decl thing;
+   array_decl thing handle HOL_ERR _ => raise ERR "get_tydecl" "";
 
 fun get_tydecls pkgName complist =
  let val data_tynames = mapfilter data_decl_name complist
@@ -416,10 +434,12 @@ fun get_filter decl =
                        ("value", String "FILTER")],
                 AList [("name", String "CASE_Properties::COMP_SPEC"), _, 
                        ("value", List rnames)]]),
-       ("annexes", List [AList [("name", String "agree"),
-                                ("kind", String "AnnexSubclause"),
-                                ("parsedAnnexSubclause",
-                                 AList [("statements", List guarantees)])]])]
+       ("annexes", 
+         List [AList [("name", String "agree"),
+                      ("kind", String "AnnexSubclause"),
+                      ("parsedAnnexSubclause",
+                           AList [("statements", List guarantees)]),
+                      ("sourceText",_)]])]
       => (case get_named_guarantees rnames guarantees
            of [] => raise ERR "get_filter" "no properties!"
             | glist => FilterDec(dest_qid fname, map get_port ports, glist))
@@ -453,6 +473,9 @@ fun get_data_model pkg =
 val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, 
      c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28,
      c29, c30, c31, c32] = complist;
+
+val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16] 
+   = complist;
 *)
 
 fun scrape pkg =
@@ -460,7 +483,7 @@ fun scrape pkg =
   of AList (("name", String pkgName) ::
             ("kind", String "AadlPackage") ::
             ("public", AList publist) :: _)
-     => let val (withs, renamings, complist,annexlist) = dest_publist publist
+     => let val (withs,renamings,complist,annexlist) = dest_publist publist
             val tydecls = get_tydecls pkgName complist
 	    val fndecls = List.concat (mapfilter (mk_defs pkgName) annexlist)
             val filters = mapfilter get_filter complist
@@ -475,6 +498,52 @@ fun dest_with ("with", List wlist) = map dropString wlist
 fun dropList (List list) = list
   | dropList otherwise = raise ERR "dropList" "";
 
+(*---------------------------------------------------------------------------*)
+(* For any declaration of a partial record type there should be a later      *)
+(* declaration of an extension to that type, giving the supplementary fields *)
+(* to be added. We remove the first declaration and add its fields to the    *)
+(* given extension fields.                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun dest_recd_dec (RecdDec args) = args
+  | dest_recd_dec other = raise ERR "dest_recd_dec" ""
+
+fun refine_recd_decs declist = 
+ let fun is_extensible tydec = 
+      case tydec
+       of RecdDec (qid,flds) => exists (fn (s,ty) => eqTy(ty,null_ty)) flds
+        | otherwise => false
+     fun lift_extensibles (s, (tydecs,tmdecs,filters)) = 
+       let val (extensibles,tydecs') = partition is_extensible tydecs
+       in (extensibles, (s,(tydecs',tmdecs,filters)))
+       end
+ 
+     val itner = map lift_extensibles declist
+     val partial_decs = map dest_recd_dec (List.concat (map fst itner))
+     val modlist = map snd itner
+     fun refine pdec module =
+       let val (oqid,oflds) = pdec
+           val (pkgName, (tydecs,tmdecs,filters)) = module
+           fun try_extension eflds (s,ty) = 
+               case assoc1 s eflds 
+                of NONE => (s,ty)
+                 | SOME fld => fld
+           fun augment tydec = 
+             case Lib.total dest_extender tydec
+              of NONE => tydec
+               | SOME (qid,base_qid,eflds) => 
+                  if base_qid = oqid
+                  then RecdDec(qid,map (try_extension eflds) oflds)
+                 else tydec
+	   val tydecs' = map augment tydecs
+       in
+         (pkgName, (tydecs',tmdecs,filters))
+       end
+     fun refine_modules pdec modlist = map (refine pdec) modlist
+ in 
+   itlist refine_modules partial_decs modlist
+ end;
+
 fun scrape_pkgs json =
  let fun uses (A as AList (("name", String AName) ::
                            ("kind", String "AadlPackage")::
@@ -485,11 +554,12 @@ fun scrape_pkgs json =
           in mem BName Auses
           end
        | uses other wise = false
-    fun run pkgs = 
-      let val opkgs = topsort uses pkgs
-          val declist = mapfilter scrape opkgs
+     fun run pkgs = 
+      let val opkgs = rev (topsort uses pkgs)
+          val modlist = mapfilter scrape opkgs
+          val modlist' = refine_recd_decs modlist
       in
-	rev declist
+	modlist'
       end
  in
     case json 
@@ -497,7 +567,42 @@ fun scrape_pkgs json =
       | AList alist => run (dropList (assoc "modelUnits" alist))
       | otherwise => raise ERR "scrape_pkgs" "unexpected format"
  end
-     
+
+(* val List pkgs = jpkg;
+
+fun uses (A as AList (("name", String AName) ::
+                           ("kind", String "AadlPackage")::
+                           ("public", AList publist):: _))
+              (B as AList (("name", String BName) ::
+                           ("kind", String "AadlPackage") :: _)) = 
+          let val Auses = List.concat (mapfilter dest_with publist)
+          in mem BName Auses
+          end
+       | uses other wise = false;
+
+val AList alist = jpkg;
+val pkgs = dropList (assoc "modelUnits" alist);
+
+val (opkgs as [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7, 
+               pkg8, pkg9, pkg10, pkg11, pkg12, pkg13]) = rev (topsort uses pkgs);
+
+val declist = mapfilter scrape opkgs;
+
+scrape pkg1;
+scrape pkg2;
+scrape pkg3;
+scrape pkg4;
+scrape pkg5;
+scrape pkg6;
+scrape pkg7;
+scrape pkg8;
+scrape pkg9;
+scrape pkg10;
+scrape pkg11;
+scrape pkg12;
+scrape pkg13;
+*)
+
 (*---------------------------------------------------------------------------*)
 (* AST to HOL                                                                *)
 (*---------------------------------------------------------------------------*)
@@ -508,6 +613,10 @@ fun list_mk_array_type(bty,dims) =
  in rev_itlist mk_arr dims bty
  end
 
+(*---------------------------------------------------------------------------*)
+(* Translate AGREE types to HOL types                                        *)
+(*---------------------------------------------------------------------------*)
+     
 fun transTy tyEnv ty =
  let open AST
  in case ty 
@@ -528,17 +637,19 @@ fun transTy tyEnv ty =
    | BaseTy FloatTy  => raise ERR "transTy" "FloatTy: not implemented"
    | BaseTy (IntTy(Nat NONE)) => numSyntax.num
    | BaseTy (IntTy(Int NONE)) => intSyntax.int_ty
-   | BaseTy (IntTy(Nat(SOME w))) => wordsSyntax.mk_word_type 
-                                     (fcpSyntax.mk_numeric_type (Arbnum.fromInt w))
+   | BaseTy (IntTy(Nat(SOME w))) => 
+         wordsSyntax.mk_word_type 
+           (fcpSyntax.mk_numeric_type (Arbnum.fromInt w))
    | BaseTy (IntTy(Int(SOME w))) => wordsSyntax.mk_int_word_type w
    | ArrayTy(ty,dims) =>
-       let fun transDim (ConstExp(IntLit{value,kind})) = fcpSyntax.mk_int_numeric_type value
-             | transDim (VarExp id) = mk_vartype id
-             | transDim otherwise = raise ERR "transTy" 
-                  "array bound must be a variable or number constant"
-       in
-          list_mk_array_type(transTy tyEnv ty, map transDim dims)
-       end
+      let fun transDim (ConstExp(IntLit{value,kind})) = 
+                fcpSyntax.mk_int_numeric_type value
+            | transDim (VarExp id) = mk_vartype id
+            | transDim otherwise = raise ERR "transTy" 
+                 "array bound must be a variable or number constant"
+      in
+        list_mk_array_type(transTy tyEnv ty, map transDim dims)
+      end
    | otherwise => raise ERR "transTy" "unknown kind of ty"
  end
 
@@ -883,6 +994,10 @@ fun declare_hol_type (EnumDec enum) tyEnv = (declare_hol_enum enum; tyEnv)
       in (NamedTy qid, ty') :: (NamedTy anon_pkg_qid,ty') :: tyEnv
       end
 
+(*---------------------------------------------------------------------------*)
+(* Includes declaration of HOL constants                                     *)
+(*---------------------------------------------------------------------------*)
+	  
 fun declare_hol_fn tyEnv ((_,name),params,ty,body) =
     let fun mk_hol_param (s,ty) = (s, mk_var(s,transTy tyEnv ty))
         val varE = map mk_hol_param params
@@ -900,10 +1015,12 @@ fun declare_hol_fn tyEnv ((_,name),params,ty,body) =
      ; def
     end
 
-fun declare_hol_term tyEnv (ConstDec (qid,ty,exp)) = declare_hol_fn tyEnv (qid,[],ty,exp)
+fun declare_hol_term tyEnv (ConstDec (qid,ty,exp)) = 
+        declare_hol_fn tyEnv (qid,[],ty,exp)
   | declare_hol_term tyEnv (FnDec fninfo) = declare_hol_fn tyEnv fninfo;
 
 fun underscore(a,b) = String.concat[a,"_",b];
+fun underscore2(a,b) = String.concat[a,"__",b];
 
 fun mk_filter_spec (thyName,tyEnv,fn_defs) 
 		   (FilterDec ((pkgName,fname), ports, cprops)) = 
@@ -921,8 +1038,9 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
              wf_message_thm
                |> SIMP_RULE (srw_ss()) [splatTheory.fcp_every_thm]
                |> SIMP_RULE arith_ss 
-                    [arithmeticTheory.BOUNDED_FORALL_THM, GSYM CONJ_ASSOC,GSYM DISJ_ASSOC]
-        val full_name = underscore(pkgName,fname)
+                    [arithmeticTheory.BOUNDED_FORALL_THM, 
+                     GSYM CONJ_ASSOC,GSYM DISJ_ASSOC]
+        val full_name = underscore2(pkgName,fname)
     in
        (full_name, 
         save_thm (full_name,array_forall_expanded))
