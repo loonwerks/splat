@@ -1,0 +1,5 @@
+#CAKEMLDIR = /home/cic/jobb/cakeml
+
+CAKEMLDIR = /home/guardol/Projects/cakeml
+
+INCLUDES = $(CAKEMLDIR)/translator $(CAKEMLDIR)/basis $(HOLDIR)/examples/balanced_bst ../ $(CAKEMLDIR)/compiler/parsing $(CAKEMLDIR)/unverified/sexpr-bootstrap $(CAKEMLDIR)/compiler

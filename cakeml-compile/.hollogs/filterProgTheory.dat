@@ -1,0 +1,16 @@
+/home/guardol/Projects/HOL/examples/formal-languages/regular/regexpLib.sml:273: warning: Pattern is not exhaustive. Found near val [t1, t2, t3] = strip_pair triple
+/home/guardol/Projects/HOL/examples/formal-languages/regular/regexpLib.sml:315: warning: Pattern is not exhaustive.
+Found near val (_, [final, ...]) = strip_comb (boolSyntax.lhs eq_tm)
+/home/guardol/Projects/HOL/examples/formal-languages/regular/regexpLib.sml:350: warning: Pattern is not exhaustive. Found near val SOME thm = certificate
+/home/guardol/Projects/HOL/examples/formal-languages/regular/regexpLib.sml:352: warning: Pattern is not exhaustive.
+Found near val (exec_dfa, [finals, ...]) = strip_comb (lhs eqn)
+<<HOL message: mk_functional: 
+  pattern completion has added 1 clause to the original specification.>>
+<<HOL message: mk_functional: 
+  pattern completion has added 1 clause to the original specification.>>
+/home/guardol/Projects/cakeml/unverified/sexpr-bootstrap/astToSexprLib.sml:3: error: Structure (fromSexpTheory) has not been declared
+Found near open preamble fromSexpTheory
+error in quse /home/guardol/Projects/cakeml/unverified/sexpr-bootstrap/astToSexprLib.sml : Fail "Static Errors"
+error in load $(CAKEMLDIR)/unverified/sexpr-bootstrap/astToSexprLib : Fail "Static Errors"
+error in load filterProgScript : Fail "Static Errors"
+Uncaught exception: Fail "Static Errors"

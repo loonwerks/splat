@@ -8,6 +8,8 @@ open preamble basis MapProgTheory ml_translatorLib ml_progLib
      basisFunctionsLib ml_translatorTheory cfTacticsBaseLib cfDivTheory cfDivLib
      charsetTheory regexpTheory regexp_compilerTheory;
 
+local open fromSexpTheory astToSexprLib in end;
+
 val _ = new_theory "filterProg";
 
 (*---------------------------------------------------------------------------*)
@@ -15,7 +17,7 @@ val _ = new_theory "filterProg";
 (* frontend but is hardcoded for now.                                        *)
 (*---------------------------------------------------------------------------*)
 
-val the_regexp = Regexp_Type.fromQuote "foobar\^@";
+val the_regexp = Regexp_Type.fromQuote `foobar\^@`;
 
 val _ = translation_extends"MapProg";
 
@@ -30,22 +32,23 @@ val matcher_certificate = save_thm
       |> CONV_RULE(QUANT_CONV(LHS_CONV (REWRITE_CONV [MAP])))
 );
 
+val (svar,eq) = matcher_certificate |> concl |> dest_forall;
+val (exec_dfa_call,lang_memb) = dest_eq eq;
+val the_regexp_lang = rator lang_memb;
+
 (*---------------------------------------------------------------------------*)
 (* Define a named matcher function                                           *)
 (*---------------------------------------------------------------------------*)
 
-val matcher_def =
- Define `matcher ^(matcher_certificate |> concl |> dest_forall |> fst) =
-                 ^(matcher_certificate |> concl |> dest_forall |> snd |> lhs)`
+val matcher_def = Define `matcher ^svar = ^exec_dfa_call`;
 
-val match_string_def = Define `match_string s = matcher(explode s)`
+val match_string_def = Define `match_string s = matcher(explode s)`;
 
-val language_def =
- Define `language =
-                 ^(matcher_certificate |> concl |> dest_forall |> snd |> rhs |> rator)`
+val language_def = Define `language = ^the_regexp_lang`;
 
-val match_string_eq = Q.prove(`match_string = language o explode`,
-  `!s. match_string s = (language o explode) s` suffices_by metis_tac[]
+val match_string_eq = Q.prove
+(`match_string = language o explode`,
+ `!s. match_string s = (language o explode) s` suffices_by metis_tac[]
   >> rw[match_string_def,language_def,matcher_def,matcher_certificate]);
 
 (*---------------------------------------------------------------------------*)
@@ -92,7 +95,8 @@ val length_tolist_cancel = Q.prove(
   >> Cases_on `n`
   >> fs[mlvectorTheory.length_toList]);
 
-val EL_map_toList = Q.prove(`!n. n < LENGTH l ==> EL n' (EL n (MAP toList l)) = sub (EL n l) n'`,
+val EL_map_toList = Q.prove
+(`!n. n < LENGTH l ==> EL n' (EL n (MAP toList l)) = sub (EL n l) n'`,
   Induct_on `l`
   >> fs[]
   >> rpt strip_tac
@@ -457,7 +461,8 @@ QED
 (* This is not a HOL function so is not being pushed through translate.      *)
 (*---------------------------------------------------------------------------*)
 
-val dummyarr_e = ``(App Aw8alloc [Lit (IntLit 0); Lit (Word8 0w)])``
+val dummyarr_e = ``(App Aw8alloc [Lit (IntLit 0); Lit (Word8 0w)])``;
+
 val eval_thm = let
   val env = get_ml_prog_state () |> ml_progLib.get_env
   val st = get_ml_prog_state () |> ml_progLib.get_state
@@ -500,7 +505,8 @@ val _ = append_prog forward_matching_lines;
 val st = get_ml_prog_state();
 
 val maincall =
-  ``Dlet unknown_loc (Pcon NONE []) (App Opapp [Var (Short "forward_matching_lines"); Con NONE []])``
+  ``Dlet unknown_loc (Pcon NONE []) 
+        (App Opapp [Var (Short "forward_matching_lines"); Con NONE []])``
 
 val filter_ffi = Datatype `
   filter_ffi =
@@ -513,13 +519,14 @@ val filter_oracle = Define `
     (if st.input = LNIL then Oracle_final FFI_diverged
      else if LENGTH bytes = 256 then
         Oracle_return (st with input := THE(LTL(st.input)))
-                        (TAKE 256 (THE(LHD st.input)) ++ DROP (LENGTH(THE(LHD st.input))) bytes)
+                        (TAKE 256 (THE(LHD st.input)) ++ 
+                         DROP (LENGTH(THE(LHD st.input))) bytes)
      else Oracle_final FFI_failed)
   else if port = "emit_string" then
     Oracle_return st bytes
   else Oracle_final FFI_failed
-`
-
+`;
+  
 val encode_oracle_state_def = Define `
   encode_oracle_state st =
       (Fun
@@ -677,7 +684,9 @@ val next_filter_events = Define
     else
       []`
 
-val nth_arr_init_def = Define `nth_arr_init n ll buff =
+val nth_arr_init_def = 
+ Define 
+   `nth_arr_init n ll buff =
       FST(FUNPOW
              (λ(l,ll).
                if ll = [||] then (l,[||])
@@ -687,14 +696,16 @@ val nth_arr_init_def = Define `nth_arr_init n ll buff =
              (buff:word8 list,ll))`
 
 Theorem nth_arr_init_SUC: !h n ll init.
-  nth_arr_init (SUC n) (h:::ll) init = nth_arr_init n ll (TAKE 256 h ++ DROP(LENGTH h) init)
+  nth_arr_init (SUC n) (h:::ll) init = 
+  nth_arr_init n ll (TAKE 256 h ++ DROP(LENGTH h) init)
 Proof
   rw[nth_arr_init_def,FUNPOW]
 QED
 
 Theorem nth_arr_init_add: !n m ll init.
   LLENGTH ll = NONE ==>
-  nth_arr_init (n + m) ll init = nth_arr_init n (THE(LDROP m ll)) (nth_arr_init m ll init)
+  nth_arr_init (n + m) ll init = 
+  nth_arr_init n (THE(LDROP m ll)) (nth_arr_init m ll init)
 Proof
   Induct_on `m` >- rw[nth_arr_init_def] >>
   rw[] >>
@@ -1479,8 +1490,17 @@ Proof
   >> metis_tac[]
 QED
 
-(* S-expr generation handled by CMake build system
-val _ = astToSexprLib.write_ast_to_file "../program.sexp" prog;
-*)
+(* S-expr generation handled by CMake build system *)
 
+val prog = get_ml_prog_state() |> get_prog |> EVAL |> concl |> rhs;
+
+val _ = astToSexprLib.write_ast_to_file "program.sexp" prog;
+
+(*
+   $ /home/guardol/Projects/cakeml/bin/cake-x64-64/cake --skip_type_inference=true --sexp=true < program.sexp > program.S
+
+
+gcc program.S /home/guardol/Projects/cakeml/bin/cake-x64-64/basis_ffi.c -o program
+
+*)
 val _ = export_theory ();

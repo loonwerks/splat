@@ -50,4 +50,7 @@ sig
 
   val IN_CHARSET_NUM_TAC : tactic
 
+  val pure_in_charset_conv : conv
+  val in_charset_conv : conv
+  val in_charset_conv_ss : simpLib.ssfrag
 end

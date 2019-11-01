@@ -58,6 +58,18 @@ val ord_mod_256 = Q.store_thm
  `!c. ORD c MOD 256 = ORD c`,
  rw_tac arith_ss [ORD_BOUND]);
 
+Theorem ORD_EQ :
+ !c n. (ORD c = n) <=> ((CHR n = c) /\ n < 256)
+Proof
+  metis_tac [CHR_ORD,ORD_CHR_RWT,ORD_BOUND]
+QED
+
+Theorem dec_char :
+  !c. dec [c] = ORD c
+Proof
+ rw_tac list_ss [dec_def,l2n_def,ord_mod_256]
+QED
+
 val MAP_ORD_CHR = Q.prove
 (`!list. EVERY ($> 256) list ==> (MAP (ORD o CHR) list = list)`,
  Induct >> rw_tac list_ss [ORD_CHR_RWT]);
@@ -86,12 +98,23 @@ val n2l_bytes_1 = Q.prove
 (`!n. n < 256 ==> (n2l 256 n = [n])`,
  rw_tac list_ss [Once n2l_256]);
 
+val n2l_bound_1 = Q.prove
+(`!y. (n2l 256 n = [y]) ==> n < 256`,
+ rw_tac list_ss [Ntimes n2l_256 2]
+);
+
 val n2l_bytes_2 = Q.prove
 (`!n. ~(n < 256) /\ n < 65536 ==> 
        (n2l 256 n = [n MOD 256; (n DIV 256) MOD 256])`,
  rw_tac list_ss 
     [Ntimes n2l_256 2, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
+
+val n2l_bound_2 = Q.prove
+(`!c1 c2. (n2l 256 n = [c1;c2]) ==> n < 65536`,
+ rw_tac list_ss [Ntimes n2l_256 3]
+ >> intLib.ARITH_TAC
+);
 
 val n2l_bytes_3 = Q.prove
 (`!n. ~(n < 65536) /\ n < 256 * 65536 ==> 
@@ -102,6 +125,12 @@ val n2l_bytes_3 = Q.prove
     [Ntimes n2l_256 3, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
 
+val n2l_bound_3 = Q.prove
+(`!c1 c2 c3. (n2l 256 n = [c1;c2;c3]) ==> n < 16777216`,
+ rw_tac list_ss [Ntimes n2l_256 4]
+ >> intLib.ARITH_TAC
+);
+
 val n2l_bytes_4 = Q.prove
 (`!n. ~(n < 16777216) /\ n < 256 * 16777216 ==> 
        (n2l 256 n = [n MOD 256; 
@@ -111,6 +140,12 @@ val n2l_bytes_4 = Q.prove
  rw_tac list_ss 
     [Ntimes n2l_256 4, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
+
+val n2l_bound_4 = Q.prove
+(`!c1 c2 c3 c4. (n2l 256 n = [c1;c2;c3;c4]) ==> n < 4294967296`,
+ rw_tac list_ss [Ntimes n2l_256 5]
+ >> intLib.ARITH_TAC
+);
 
 (* Table of powers of 256 
 
@@ -134,6 +169,13 @@ val n2l_bytes_5 = Q.prove
     [Ntimes n2l_256 5, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
 
+val n2l_bound_5 = Q.prove
+(`!c1 c2 c3 c4 c5.
+   (n2l 256 n = [c1;c2;c3;c4;c5]) ==> n < 1099511627776`,
+ rw_tac list_ss [Ntimes n2l_256 6]
+ >> intLib.ARITH_TAC
+);
+
 val n2l_bytes_6 = Q.prove
 (`!n. ~(n < 1099511627776) /\ n < 281474976710656 ==> 
        (n2l 256 n = [n MOD 256; 
@@ -145,6 +187,13 @@ val n2l_bytes_6 = Q.prove
  rw_tac list_ss 
     [Ntimes n2l_256 6, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
+
+val n2l_bound_6 = Q.prove
+(`!c1 c2 c3 c4 c5 c6.
+    (n2l 256 n = [c1;c2;c3;c4;c5;c6]) ==> n < 281474976710656`,
+ rw_tac list_ss [Ntimes n2l_256 7]
+ >> intLib.ARITH_TAC
+);
 
 val n2l_bytes_7 = Q.prove
 (`!n. ~(n < 281474976710656) /\ n < 72057594037927936 ==> 
@@ -158,6 +207,13 @@ val n2l_bytes_7 = Q.prove
  rw_tac list_ss 
     [Ntimes n2l_256 7, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
+
+val n2l_bound_7 = Q.prove
+(`!c1 c2 c3 c4 c5 c6 c7.
+   (n2l 256 n = [c1;c2;c3;c4;c5;c6;c7]) ==> n < 72057594037927936`,
+ rw_tac list_ss [Ntimes n2l_256 8]
+ >> intLib.ARITH_TAC
+);
 
 val n2l_bytes_8 = Q.prove
 (`!n. ~(n < 72057594037927936) /\ n < 18446744073709551616 ==> 
@@ -173,10 +229,34 @@ val n2l_bytes_8 = Q.prove
     [Ntimes n2l_256 8, 
      arithmeticTheory.DIV_DIV_DIV_MULT,arithmeticTheory.DIV_LT_X]);
 
+val n2l_bound_8 = Q.prove
+(`!c1 c2 c3 c4 c5 c6 c7 c8.
+   (n2l 256 n = [c1;c2;c3;c4;c5;c6;c7;c8]) ==> n < 18446744073709551616`,
+ rw_tac list_ss [Ntimes n2l_256 9]
+ >> intLib.ARITH_TAC
+);
+
 val n2l_bytes = save_thm
 ("n2l_bytes",
  LIST_CONJ [n2l_bytes_1,n2l_bytes_2,n2l_bytes_3,n2l_bytes_4,
             n2l_bytes_5,n2l_bytes_6,n2l_bytes_7,n2l_bytes_8]);
+
+val n2l_bounds = save_thm
+("n2l_bounds",
+ LIST_CONJ [n2l_bound_1,n2l_bound_2,n2l_bound_3,n2l_bound_4,
+            n2l_bound_5,n2l_bound_6,n2l_bound_7,n2l_bound_8]);
+
+
+(* Table of powers of 256 
+
+   2 -- 65536
+   3 -- 16777216
+   4 -- 4294967296
+   5 -- 1099511627776
+   6 -- 281474976710656
+   7 -- 72057594037927936
+   8 -- 18446744073709551616
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Encoding nums in expected ranges                                          *)
@@ -185,7 +265,6 @@ val n2l_bytes = save_thm
 val enc_1_lem = Q.prove
 (`!n. n < 256 ==> (enc 1 n = STRING (CHR n) "")`,
  rw_tac list_ss [enc_def, PAD_RIGHT, GENLIST, layout_def,n2l_bytes_1]);
-
 
 val enc_2_lem = Q.prove
 (`!n. n < 256 * 256 ==> 
@@ -222,6 +301,7 @@ rw_tac list_ss [enc_def, PAD_RIGHT, GENLIST, layout_def]
      >- (Cases_on `n < 16777216`
          >- rw_tac list_ss [n2l_bytes_3,arithmeticTheory.LESS_DIV_EQ_ZERO]
          >- rw_tac list_ss [n2l_bytes_4])));
+
 
 val enc_5_lem = Q.prove
 (`!n. n < 256 * 256 * 256 * 256 * 256 ==> 
@@ -326,6 +406,157 @@ val enc_bytes = save_thm
  LIST_CONJ [enc_1_lem,enc_2_lem,enc_3_lem,enc_4_lem,
             enc_5_lem,enc_6_lem,enc_7_lem,enc_8_lem]);
 
+val enc_1_thm = Q.prove
+(`!n. (enc 1 n = [CHR n]) <=> n < 256`,
+ simp_tac list_ss [EQ_IMP_THM,enc_1_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,APPEND_EQ_SING]
+  >- metis_tac [n2l_bound_1]
+  >- (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_2_thm = Q.prove
+(`!n. (enc 2 n = [CHR (n MOD 256); 
+                  CHR ((n DIV 256) MOD 256)]) <=> n < 65536`,
+ simp_tac list_ss [EQ_IMP_THM,enc_2_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 2]
+  >- intLib.ARITH_TAC
+  >- (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_3_thm = Q.prove
+(`!n. (enc 3 n = [CHR (n MOD 256);
+                  CHR ((n DIV 256) MOD 256); 
+                  CHR ((n DIV 65536) MOD 256)]) <=>  n < 16777216`,
+ simp_tac list_ss [EQ_IMP_THM,enc_3_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 3]
+  >- intLib.ARITH_TAC
+  >- intLib.ARITH_TAC
+  >- (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_4_thm = Q.prove
+(`!n. (enc 4 n = [CHR (n MOD 256);
+                  CHR ((n DIV 256) MOD 256); 
+                  CHR ((n DIV 65536) MOD 256);
+                  CHR ((n DIV 16777216) MOD 256)]) <=>  n < 4294967296`,
+ simp_tac list_ss [EQ_IMP_THM,enc_4_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 4]
+  >> TRY intLib.ARITH_TAC
+  >> (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_5_thm = Q.prove
+(`!n. (enc 5 n = [CHR (n MOD 256);
+                  CHR ((n DIV 256) MOD 256); 
+                  CHR ((n DIV 65536) MOD 256);
+                  CHR ((n DIV 16777216) MOD 256);
+                  CHR ((n DIV 4294967296) MOD 256)]) <=>  n < 1099511627776`,
+ simp_tac list_ss [EQ_IMP_THM,enc_5_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 5]
+  >> TRY intLib.ARITH_TAC
+  >> (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_6_thm = Q.prove
+(`!n. (enc 6 n = [CHR (n MOD 256);
+                  CHR ((n DIV 256) MOD 256); 
+                  CHR ((n DIV 65536) MOD 256);
+                  CHR ((n DIV 16777216) MOD 256);
+                  CHR ((n DIV 4294967296) MOD 256);
+                  CHR ((n DIV 1099511627776) MOD 256)]) <=>  n < 281474976710656`,
+ simp_tac list_ss [EQ_IMP_THM,enc_6_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 6]
+  >> TRY intLib.ARITH_TAC
+  >> (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_7_thm = Q.prove
+(`!n. (enc 7 n = [CHR (n MOD 256);
+                  CHR ((n DIV 256) MOD 256); 
+                  CHR ((n DIV 65536) MOD 256);
+                  CHR ((n DIV 16777216) MOD 256);
+                  CHR ((n DIV 4294967296) MOD 256);
+                  CHR ((n DIV 1099511627776) MOD 256);
+                  CHR ((n DIV 281474976710656) MOD 256)]) <=>  n < 72057594037927936`,
+ simp_tac list_ss [EQ_IMP_THM,enc_7_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 7]
+  >> TRY intLib.ARITH_TAC
+  >> (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_8_thm = Q.prove
+(`!n. (enc 8 n = [CHR (n MOD 256);
+                  CHR ((n DIV 256) MOD 256); 
+                  CHR ((n DIV 65536) MOD 256);
+                  CHR ((n DIV 16777216) MOD 256);
+                  CHR ((n DIV 4294967296) MOD 256);
+                  CHR ((n DIV 1099511627776) MOD 256);
+                  CHR ((n DIV 281474976710656) MOD 256);
+                  CHR ((n DIV 72057594037927936) MOD 256)]) 
+     <=>  n < 18446744073709551616`,
+ simp_tac list_ss [EQ_IMP_THM,enc_8_lem] 
+  >> rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 8]
+  >> TRY intLib.ARITH_TAC
+  >> (fs[Once n2l_256] >> BasicProvers.NORM_TAC list_ss [])
+);
+
+val enc_unwind_thms = save_thm
+("enc_unwind_thms",
+ LIST_CONJ [enc_1_thm,enc_2_thm,enc_3_thm,enc_4_thm,
+            enc_5_thm,enc_6_thm,enc_7_thm,enc_8_thm]
+);
+
+val enc_limit_1 = Q.prove
+(`!c. enc 1 n = [c] ==> n < 256`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 2]);
+
+val enc_limit_2 = Q.prove
+(`!c1 c2. enc 2 n = [c1;c2] ==> n < 65536`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 3]
+  >> intLib.ARITH_TAC
+);
+
+val enc_limit_3 = Q.prove
+(`!c1 c2 c3. enc 3 n = [c1;c2;c3] ==> n < 16777216`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 4]
+  >> intLib.ARITH_TAC
+);
+val enc_limit_4 = Q.prove
+(`!c1 c2 c3 c4. enc 4 n = [c1;c2;c3;c4] ==> n < 4294967296`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 5]
+  >> intLib.ARITH_TAC
+);
+val enc_limit_5 = Q.prove
+(`!c1 c2 c3 c4 c5. 
+    enc 5 n = [c1;c2;c3;c4;c5] ==> n < 1099511627776`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 6]
+  >> intLib.ARITH_TAC
+);
+val enc_limit_6 = Q.prove
+(`!c1 c2 c3 c4 c5 c6. 
+   enc 6 n = [c1;c2;c3;c4;c5;c6] ==> n < 281474976710656`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 7]
+  >> intLib.ARITH_TAC
+);
+val enc_limit_7 = Q.prove
+(`!c1 c2 c3 c4 c5 c6 c7. 
+    enc 7 n = [c1;c2;c3;c4;c5;c6;c7] ==> n < 72057594037927936`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 8]
+  >> intLib.ARITH_TAC
+);
+val enc_limit_8 = Q.prove
+(`!c1 c2 c3 c4 c5 c6 c7 c8. 
+    enc 8 n = [c1;c2;c3;c4;c5;c6;c7;c8] ==> n < 18446744073709551616`,
+ rw_tac list_ss [enc_def, layout_def, PAD_RIGHT,Ntimes n2l_256 9]
+  >> intLib.ARITH_TAC
+);
+
+val enc_limits = save_thm
+("enc_limits",
+  LIST_CONJ [enc_limit_1, enc_limit_2, enc_limit_3, enc_limit_4, 
+             enc_limit_5, enc_limit_6, enc_limit_7, enc_limit_8]
+);
+
 (*---------------------------------------------------------------------------*)
 (* Lower bounds on encoding lengths                                          *)
 (*---------------------------------------------------------------------------*)
@@ -408,10 +639,29 @@ val strlen_eq = save_thm
   List.all (equal true) (map (itest 16) (upto ~32768 32767));
 *)
 
-val i2n_def =
+val representable_def =
+ Define
+   `representable bits i <=> 
+       0 < bits /\
+       -(&(2 ** (bits - 1))) <= i /\ i < &(2 ** (bits - 1n))`;
+
+
+(*---------------------------------------------------------------------------*)
+(* i2n is a partial function, set to 2^bits outside of the domain.           *)
+(*---------------------------------------------------------------------------*)
+(*
+val i2n_def =  (* old version *)
  Define
   `i2n bits i =
       if 0i <= i then Num(i) else (2 ** bits) - Num(ABS(i))`;
+*)
+
+val i2n_def =
+ Define
+  `i2n bits i =
+      if representable bits i 
+          then (if 0i <= i then Num(i) else (2 ** bits) - Num(ABS(i)))
+      else 2 ** bits`;
 
 val n2i_def =
  Define
@@ -420,14 +670,6 @@ val n2i_def =
       then int_of_num n
      else  -(&(2 ** bits - n))`;
 
-(*
-EVAL ``i2n 8n 13i``;
-EVAL ``i2n 8n (-13i)``;
-
-EVAL ``n2i 8n (i2n 8n 13i)``;
-EVAL ``n2i 8n (i2n 8n (-13i))``;
-*)
-
 val lem = Q.prove
 (`!x i:int. i < 0 /\ x < Num (ABS i) /\ -(&x) <= i ==> F`,
  rw_tac int_ss [INT_ABS] >> intLib.ARITH_TAC);
@@ -435,11 +677,8 @@ val lem = Q.prove
 val n2i_i2n = Q.store_thm
 ("n2i_i2n",
  `!bits i. 
-    0n < bits /\
-   -(&(2n ** (bits - 1))) <= i /\ i < &(2n ** (bits - 1))
-  ==>
-    (n2i bits (i2n bits i) = i)`,
- rw_tac int_ss [n2i_def, i2n_def]
+    representable bits i ==> (n2i bits (i2n bits i) = i)`,
+ rw_tac int_ss [n2i_def, i2n_def, representable_def]
  >> full_simp_tac int_ss [INT_OF_NUM]
  >- (rw_tac int_ss [INT_ABS]
      >- (qpat_x_assum `~(0 <= i)` kall_tac
@@ -454,14 +693,12 @@ val n2i_i2n = Q.store_thm
  >- intLib.ARITH_TAC
 );
 
-
 val enci_def = Define `enci w i = enc w (i2n (8*w) i)`;
 val deci_def = Define `deci w s = n2i (8*w) (dec s)`;
 
 val deci_enci = Q.store_thm
 ("deci_enci",
- `!w i. 0 < w /\ -(&(2n ** ((8 * w) - 1))) <= i /\ i < &(2n ** ((8 * w) - 1))
-        ==> (deci w (enci w i) = i)`,
+ `!w i. representable (8*w) i ==> (deci w (enci w i) = i)`,
  rw_tac int_ss [enci_def, deci_def,dec_enc,n2i_i2n]);
 
 val deci_encis = save_thm
@@ -470,31 +707,30 @@ val deci_encis = save_thm
      (map (C qspec_arith deci_enci) [`1`,`2`,`3`,`4`,`5`,`6`,`7`,`8`]));
 
 val i2n_bounds = Q.prove
-(`!bits i. -(int_of_num(2 ** (bits-1))) <= i /\ 
-        i < (int_of_num (2 ** (bits-1))) ==> i2n bits i < 2 ** bits`,
- Cases >> rw_tac int_ss [i2n_def,EXP] >> intLib.ARITH_TAC);
+(`!bits i. representable bits i ==> i2n bits i < 2 ** bits`,
+ Cases >> rw_tac int_ss [representable_def,i2n_def,EXP] >> intLib.ARITH_TAC);
 
 val i2n_bounds_1 = Q.prove
 (`!i:int. -128i <= i /\ i < 128 ==> i2n 8 i < 256n`,
- metis_tac [qspec_arith `8` i2n_bounds]);
+ rw_tac int_ss [qspec_arith `8` i2n_bounds, representable_def]);
 
 val i2n_bounds_2 = Q.prove
 (`!i:int. -32768i <= i /\ i < 32768 ==> i2n 16 i < 65536n`,
- metis_tac [qspec_arith `16` i2n_bounds]);
+ rw_tac int_ss [qspec_arith `16` i2n_bounds,representable_def]);
 
 val i2n_bounds_3 = Q.prove
 (`!i:int. -8388608i <= i /\ i < 8388608 ==> i2n 24 i < 16777216n`,
- metis_tac [qspec_arith `24` i2n_bounds]);
+ rw_tac int_ss [qspec_arith `24` i2n_bounds,representable_def]);
 
 val i2n_bounds_4 = Q.prove
 (`!i:int. -2147483648i <= i /\ i < 2147483648i ==> i2n 32 i < 4294967296`,
- metis_tac [qspec_arith `32` i2n_bounds]);
+ rw_tac int_ss [qspec_arith `32` i2n_bounds,representable_def]);
 
 val i2n_bounds_8 = Q.prove
 (`!i:int. -9223372036854775808i <= i /\ i < 9223372036854775808i 
     ==> 
    i2n 64 i < 18446744073709551616n`,
- metis_tac [qspec_arith `64` i2n_bounds]);
+ rw_tac int_ss [qspec_arith `64` i2n_bounds,representable_def]);
 
 val enc_bytes' = SIMP_RULE arith_ss [] enc_bytes;
 
@@ -527,6 +763,55 @@ val enci_byte_8 = Q.prove
 val enci_bytes = save_thm
  ("enci_bytes",
   LIST_CONJ [enci_byte_1,enci_byte_2,enci_byte_3,enci_byte_4,enci_byte_8]);
+
+val enci_limit_1 = Q.prove 
+(`!i:int a. enci 1 i = [a] ==> -128i <= i /\ i < 128i`,
+ rw_tac list_ss [enci_def]
+ >> imp_res_tac enc_limit_1
+ >> qpat_x_assum `_ = _` kall_tac
+ >> pop_assum mp_tac
+ >> rw_tac int_ss [i2n_def,representable_def]
+);
+
+val enci_limit_2 = Q.prove 
+(`!i:int c1 c2. enci 2 i = [c1;c2] ==> -32768i <= i /\ i < 32768`,
+ rw_tac list_ss [enci_def]
+ >> imp_res_tac enc_limit_2
+ >> qpat_x_assum `_ = _` kall_tac
+ >> pop_assum mp_tac
+ >> rw_tac int_ss [i2n_def,representable_def]
+);
+val enci_limit_3 = Q.prove 
+(`!i:int c1 c2 c3. enci 3 i = [c1;c2;c3] ==> -8388608 ≤ i ∧ i < 8388608`,
+ rw_tac list_ss [enci_def]
+ >> imp_res_tac enc_limit_3
+ >> qpat_x_assum `_ = _` kall_tac
+ >> pop_assum mp_tac
+ >> rw_tac int_ss [i2n_def,representable_def]
+);
+val enci_limit_4 = Q.prove 
+(`!i:int c1 c2 c3 c4. enci 4 i = [c1;c2;c3;c4] ==> -2147483648 ≤ i ∧ i < 2147483648`,
+ rw_tac list_ss [enci_def]
+ >> imp_res_tac enc_limit_4
+ >> qpat_x_assum `_ = _` kall_tac
+ >> pop_assum mp_tac
+ >> rw_tac int_ss [i2n_def,representable_def]
+);
+val enci_limit_8 = Q.prove 
+(`!i:int c1 c2 c3 c4 c5 c6 c7 c8. 
+  enci 8 i = [c1;c2;c3;c4;c5;c6;c7;c8] ==> -9223372036854775808 ≤ i ∧ i < 9223372036854775808`,
+ rw_tac list_ss [enci_def]
+ >> imp_res_tac enc_limit_8
+ >> qpat_x_assum `_ = _` kall_tac
+ >> pop_assum mp_tac
+ >> rw_tac int_ss [i2n_def,representable_def]
+);
+
+
+val enci_limits = save_thm
+("enci_limits",
+ LIST_CONJ [enci_limit_1,enci_limit_2,enci_limit_3,enci_limit_4,enci_limit_8]
+);
 
 val lower_enci = Q.store_thm
 ("lower_enci",
@@ -604,7 +889,7 @@ val NWIDTH_MINIMAL_BOUND = Q.prove
        >> decide_tac)
 );
 
-val IWIDTH_def =
+val IWIDTH_def =  (* min width needed to represent i *)
  Define 
   `IWIDTH i = 
     let k = NWIDTH (Num (ABS i)) ;
@@ -751,6 +1036,7 @@ rw_tac arith_ss []
  >> `b ** (LOG b n) <= n` by metis_tac [LOG]
  >> decide_tac);
 
+(*
 val len_enc = Q.prove
 (`!w n. 0 < w /\ n < 2 ** (8*w) ==> (LENGTH (enc w n) = w)`,
 rw_tac list_ss [enc_def,layout_def,PAD_RIGHT,EXP_EXP_MULT]
@@ -768,7 +1054,7 @@ val deci_encis = save_thm
 ("deci_encis",
  LIST_CONJ
      (map (C qspec_arith deci_enci) [`1`,`2`,`3`,`4`,`5`,`6`,`7`,`8`]));
-
+*)
 
 (*---------------------------------------------------------------------------*)
 (* ZigZag encoding                                                           *)

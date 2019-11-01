@@ -1,19 +1,16 @@
 Invocation (unix only)
 -----------------------
 
-  $ ./splat
+  $ ./splat prints the following usage message:
 
-Usage message
---------------
-
-   splat: 
-   Usage: splat [basic | cake | hol | full]
-                [-checkprops]
-                [-outdir <dirname>]
-                [-intwidth <int> [optimize]]
-                [-endian (LSB | MSB)]
-                [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)
-                <name>.json
+  splat: 
+  Usage: splat [basic | cake | hol | full]
+               [-checkprops]
+               [-outdir <dirname>]
+               [-intwidth <int> [optimize]]
+               [-endian (LSB | MSB)]
+               [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)
+               <name>.json
 
 Default invocation 
 -------------------
@@ -24,10 +21,10 @@ in <splat-dir> results in the following defaults being used
 
   - assurance level = basic
   - checkprops = false
-  - outdir = invocation/splat_outputs
+  - outdir = <splat-dir>/splat_outputs
   - intwidth = 32, no optimizing field widths
   - endian = LSB
-  - encoding = twos complement
+  - encoding = Twos_comp (twos complement)
 
 Assurance levels [basic | cake | hol | full]
 ---------------------------------------------
@@ -68,7 +65,7 @@ Output directory [-outdir <dirname>]
 -------------------------------------
 
 Splat outputs go in the specified directory. This will include code,
-proof artifacts, and also files specifying the exact message formats.
+proof artifacts, and also files specifying exact message formats.
 The outputs for each filter will go in a separate sub-directory of the
 outdir.
 
@@ -89,6 +86,7 @@ Multibyte integer representations need endianess to be specified.
 Integer encoding [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)]
 ------------------------------------------------------------------------
 
-The representation for integers can be specified to a fixed number of choices.
+The representation for integers can be specified to be one of a fixed
+number of choices.
 
 

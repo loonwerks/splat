@@ -415,6 +415,43 @@ fun fpath s =
       end
 	  
 (*---------------------------------------------------------------------------*)
+(* Expects (x = C1) \/ (x = C2) \/ ...                                       *)
+(* There are some special cases when the enumerated type is bool             *)
+(*                                                                           *)
+(* Note: this could be applied to finite sets of numbers, rather than finite *)
+(* sets of enumerated constructors.                                          *)
+(*---------------------------------------------------------------------------*)
+
+fun constraint_enumset [ctr] = 
+    let val eqns = 
+          if not (is_disj ctr) then 
+               (if is_neg ctr then 
+                  [mk_eq (dest_neg ctr,boolSyntax.F)] else
+                  [mk_eq (ctr,boolSyntax.T)])
+          else strip_disj ctr
+        val constlike = null o free_vars
+        fun elt_of eqn = 
+          let val (l,r) = dest_eq eqn 
+          in if constlike l then l else 
+             if constlike r then r else 
+             raise ERR "constraint_enumset (elt_of)" "expected a projection"
+          end
+        val elts = map elt_of eqns
+        val _ = if null elts then 
+                raise ERR "constraint_enumset" "no elements" else ()
+        val enumty = type_of (hd elts)
+        val etyname = fst(dest_type enumty)
+        val _ = if 256 < length (TypeBase.constructors_of enumty) then 
+                  raise ERR "constraint_enumset" 
+                    ("enumerated type "^Lib.quote etyname
+                     ^" has > 256 elements: too many") 
+                else ()
+    in mk_enumset(enumty,elts)
+    end
+  | constraint_enumset other = 
+    raise ERR "constraint_enumset" "expected a disjunction of equations";
+
+(*---------------------------------------------------------------------------*)
 (* gen_filter_artifacts takes the expanded wellformedness definition and     *)
 (* extracts the per-field constraints on the underlying record type. The     *)
 (* constraints are then translated to regular expressions (actually, one big *)
@@ -425,7 +462,7 @@ fun fpath s =
 
 type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
 
-fun gen_filter_artifacts (shrink,endian,encoding) (fname,thm) =
+fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
  let val intwidth = shrinkVal shrink
      val max_const = max_constFn intwidth encoding
      val min_const = min_constFn intwidth encoding
@@ -501,11 +538,14 @@ fun gen_filter_artifacts (shrink,endian,encoding) (fname,thm) =
              SOME implicit_constraints_def)
          end
 
-     (* map constraints to an interval. The (lo,hi) pair denotes the inclusive
-        interval {i | lo <= i <= hi} so there is some fiddling to translate 
-        all relations to <=.
-     *)
-     fun constraint_interval ctr = (* elts of c expected to have form relop t1 t2 *)
+     (*---------------------------------------------------------------------------*)
+     (* Map constraints on a record field to an interval. The (lo,hi) pair        *)
+     (* denotes the inclusive interval {i | lo <= i <= hi} so there is some       *)
+     (* fiddling to translate all relations to <=. Elts of ctr expected to have   *)
+     (* form relop t1 t2.                                                         *)
+     (*---------------------------------------------------------------------------*)
+
+     fun constraint_interval ctr = 
       let val domtys = fst (strip_fun (type_of (fst (strip_comb (hd ctr)))))
           fun is_numeric ty = (ty = numSyntax.num orelse ty = intSyntax.int_ty) 
           val _ = if Lib.all is_numeric domtys then () 
@@ -576,43 +616,6 @@ fun gen_filter_artifacts (shrink,endian,encoding) (fname,thm) =
         mk_interval shrink encoding endian 
                        (Arbint.toLargeInt lo',Arbint.toLargeInt hi')
       end
-
-     (*---------------------------------------------------------------------*)
-     (* Expects (x = C1) \/ (x = C2) \/ ...                                 *)
-     (* There are some special cases when the enumerated type is bool       *)
-     (*                                                                     *)
-     (* This could be applied to finite sets of numbers, rather than fin.   *)
-     (* sets of enumerated constructors.                                    *)
-     (*---------------------------------------------------------------------*)
-
-     fun constraint_enumset [ctr] = 
-         let val eqns = 
-              if not (is_disj ctr) then 
-                  (if is_neg ctr then 
-                     [mk_eq (dest_neg ctr,boolSyntax.F)] else
-                     [mk_eq (ctr,boolSyntax.T)])
-              else strip_disj ctr
-             val constlike = null o free_vars
-             fun elt_of eqn = 
-                let val (l,r) = dest_eq eqn 
-                in if constlike l then l else 
-                   if constlike r then r else 
-                   raise ERR "constraint_enumset (elt_of)" "expected a projection"
-		end
-	     val elts = map elt_of eqns
-             val _ = if null elts then 
-                       raise ERR "constraint_enumset" "no elements" else ()
-	     val enumty = type_of (hd elts)
-	     val etyname = fst(dest_type enumty)
-             val _ = if 256 < length (TypeBase.constructors_of enumty) 
-                       then raise ERR "constraint_enumset" 
-                         ("enumerated type "^Lib.quote etyname
-                          ^" has > 256 elements: too many") 
-                       else ()
-          in mk_enumset(enumty,elts)
-	  end
-       | constraint_enumset other = 
-           raise ERR "constraint_enumset" "expected a disjunction of equations"
 
      fun mk_segment a = 
         constraint_interval a
@@ -810,5 +813,137 @@ val IN_CHARSET_NUM_TAC =
   >> Q.SPEC_TAC (`ORD c`, `n`)
   >> REPEAT (CONV_TAC (numLib.BOUNDED_FORALL_CONV EVAL))
   >> rw_tac bool_ss [];
+
+
+(*---------------------------------------------------------------------------*)
+(* Reduce charsets to constraints                                            *)
+(*---------------------------------------------------------------------------*)
+
+fun regexp_elts r =
+   Regexp_Type.charset_elts
+     (regexpSyntax.term_to_charset r);
+
+fun charset_intervals r = regexpMisc.intervals (map Char.ord (regexp_elts r))
+
+fun CHECK_SPEC_TAC (t1,t2) (asl,c) =
+  (if can(find_term (aconv t1)) c
+    then SPEC_TAC (t1,t2) 
+    else NO_TAC) (asl,c)
+
+fun GEVAL_TAC (asl,c) =
+    (if null(free_vars c) then EVAL_TAC else NO_TAC) (asl,c);
+
+fun const_bound tm =
+ let open numSyntax
+ in (is_less tm orelse is_leq tm)
+    andalso 
+    is_numeral (rand tm)
+ end
+
+val ordered_pop_tac =
+ rpt (PRED_ASSUM (not o const_bound) mp_tac)
+  >> PRED_ASSUM const_bound mp_tac;
+				
+val prover =
+ let open numSyntax stringSyntax
+     val cvar = mk_var("c",num)
+     val nvar = mk_var("n",num)
+     val ordtm = mk_ord(mk_var("c",char_ty))
+ in
+    rw_tac (list_ss ++ pred_setLib.PRED_SET_ss)
+      [pred_setTheory.EXTENSION, regexpTheory.regexp_lang_def,
+       charsetTheory.charset_mem_def, charsetTheory.alphabet_size_def,
+       EQ_IMP_THM,strlen_eq,LE_LT1]
+    >> full_simp_tac list_ss [dec_char,ORD_CHR_RWT]
+    >> TRY (qexists_tac `ORD c` >> rw_tac list_ss [CHR_ORD])
+    >> (GEVAL_TAC ORELSE
+         (ordered_pop_tac
+           >> (CHECK_SPEC_TAC (cvar,nvar) ORELSE 
+               CHECK_SPEC_TAC (ordtm,nvar))
+           >> REPEAT (CONV_TAC (numLib.BOUNDED_FORALL_CONV EVAL))
+           >> gen_tac >> ACCEPT_TAC TRUTH))
+ end
+    
+(*---------------------------------------------------------------------------*)
+(* Takes a term of the form                                                  *)
+(*                                                                           *)
+(*  s IN regexp_lang (Chset (Charset a b c d))                               *)
+(*                                                                           *)
+(* and returns                                                               *) 
+(*                                                                           *)
+(* |- s IN regexp_lang (Chset (Charset a b c d)) <=>                         *)
+(*    STRLEN s = 1 /\ lo <= dec s <= hi                                      *)
+(*                                                                           *)
+(* where lo and hi are the interval endpoints. If lo = 0 then it is omitted. *)
+(* If lo=hi then we just have (dec s = lo)                                   *)
+(*---------------------------------------------------------------------------*)
+     
+fun pure_in_charset_conv tm =
+ let open regexpSyntax stringSyntax pred_setSyntax numSyntax
+     val (s,rlang) = dest_in tm
+     val reg = dest_chset(dest_regexp_lang rlang)
+     val ivls = charset_intervals reg
+     fun ivl_to_prop (lo,hi) =
+         if lo = hi then
+            ``dec ^s = ^(term_of_int lo)``
+         else
+         if lo = 0 then
+            ``dec ^s < ^(term_of_int(hi + 1))``
+         else
+            ``^(term_of_int lo) <= dec ^s /\ dec ^s <= ^(term_of_int hi)``
+     val slen = ``STRLEN ^s = 1``
+     val property = mk_eq(tm, mk_conj(slen,list_mk_disj (map ivl_to_prop ivls)))
+ in
+    prove(property,prover)
+ end
+
+fun dest_in_chset tm =
+ let open regexpSyntax
+     val (s,rlang) = pred_setSyntax.dest_in tm
+ in
+     dest_chset(dest_regexp_lang rlang)
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Make a memo-izing version of the charset-to-interval conv.                *)
+(*---------------------------------------------------------------------------*)
+
+val in_charset_conv =
+ let val conv =
+      Conv.memoize
+        (Lib.total dest_in_chset)
+        (Redblackmap.fromList Term.compare [])
+(*
+          (map (fn th => (dest_in_chset(lhs(concl th)),th))
+               charset_interval_lems))
+*)
+       (K true)
+       (ERR "in_charset_conv (memoized)" "")
+       pure_in_charset_conv
+ in fn tm =>
+      let val thm = conv tm
+          val left = lhs(concl thm)
+      in
+        if aconv tm left then
+          thm
+        else
+          INST (fst (match_term left tm)) thm
+      end
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Construct a simplification set from the memoized conversion.              *)
+(*---------------------------------------------------------------------------*)
+
+val in_charset_conv_ss =
+ let val csvar = mk_var("cs",regexpSyntax.charset_ty)
+     val svar = mk_var("s",stringSyntax.string_ty)
+     val regexp_chset_pat = ``^svar IN regexp$regexp_lang ^(regexpSyntax.mk_chset csvar)``
+ in
+  simpLib.std_conv_ss
+    {name = "in_charset_conv",
+     conv = in_charset_conv,
+     pats = [regexp_chset_pat]}
+ end
 
 end
