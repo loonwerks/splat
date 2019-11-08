@@ -40,7 +40,7 @@ sig
       correctness : term,
       receiver_correctness : term,
       implicit_constraints : thm option,
-      manifest : (term * fieldrep) list};
+      manifest : (term * fieldrep) list}
 
   datatype shrink = Optimize of int | Uniform of int
 

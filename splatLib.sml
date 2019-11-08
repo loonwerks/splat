@@ -13,8 +13,16 @@ open regexpMisc regexpSyntax pred_setSyntax
      pred_setLib numLib stringLib 
      Regexp_Type Regexp_Numerics regexpLib Enum_Encode;
 
+local open Json in end;
 
 val ERR = Feedback.mk_HOL_ERR "splatLib";
+
+fun pp_ostrm ostrm pretty =
+  let open Portable PP
+      val writer = curry TextIO.output ostrm
+  in 
+     PP.prettyPrint (writer,75) pretty
+  end
 
 structure Finmap = Redblackmap;
 
@@ -97,6 +105,46 @@ fun encoding2string Unsigned  = "Unsigned"
 fun endian2string LSB  = "LSB"
   | endian2string MSB  = "MSB";
 
+fun fieldrep2json frep =
+ let open Json
+ in
+   case frep 
+    of Interval{span,encoding,endian,width,encoder,decoder,regexp} =>
+       AList [("kind", String "Interval"),
+	      ("span", 
+                AList [("lbound",Number(Int(Int.fromLarge(fst span)))), 
+                       ("rbound",Number(Int(Int.fromLarge(snd span))))]),
+              ("encoding", String (encoding2string encoding)),
+              ("endian", String(endian2string endian)),
+              ("width", Number(Int(width2bits width)))]
+     | Enumset{enum_type,constr_codes,elts,codec,regexp} => 
+       AList [("kind", String "Enumset"),
+	      ("enum_type",  
+               let val {Tyop,Thy,Args} = dest_thy_type enum_type
+                in AList [("Tyop", String Tyop), ("Thy",String Thy)]
+               end),
+              ("constr_codes",
+                List (map (fn (constr,code) => AList 
+                              [("constr", String (fst(dest_const constr))),
+                               ("code", Number(Int code))]) constr_codes)),
+              ("elts", List (map (fn e => String (fst(dest_const e))) elts)),
+              ("width", Number(Int 8))]
+     | StringLit{strlit,regexp} => 
+       AList [("kind", String "StringLit"),
+	      ("contents",  String strlit),
+              ("width", Number(Int (String.size strlit * 8)))]
+    | Raw {width,regexp} => raise ERR "fieldrep2json" "unexpected fieldrep (Raw)" 
+ end;
+
+fun manifest2json manif_elts = 
+ let open Json
+     fun elt2json (t,frep) = 
+         AList [("fieldname", String(Parse.term_to_string t)),
+                ("fieldrep", fieldrep2json frep)]
+ in 
+   List (map elt2json manif_elts)
+ end
+
 val pp_fieldrep =
  let open Portable PP
      fun paren i j s1 s2 ps =
@@ -151,24 +199,22 @@ val pp_fieldrep =
  in pp 0 
  end
 
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn fr => pp_fieldrep fr);
-
-fun dump_manifest ostrm manif =
-  let open Portable PP
-      val writer = curry TextIO.output ostrm
-      fun paren i j s1 s2 ps =
+fun manifest2pretty manif = 
+ let open Portable PP
+     fun paren i j s1 s2 ps =
        if i < j then block CONSISTENT 0 ps
        else block INCONSISTENT (size s1) 
                   (add_string s1 :: ps @ [add_string s2])
-       fun pp_manif_elt i (t,fieldrep) = 
+     fun pp_manif_elt i (t,fieldrep) = 
           paren i 0 "(" ")"
              [add_string (Parse.term_to_string t), 
               add_break(1,0), pp_fieldrep fieldrep]
-       val ob = block CONSISTENT 0
-                   (pr_list (pp_manif_elt 0) [NL] manif)
-  in 
-     PP.prettyPrint (writer,75) ob
-  end
+ in
+   block CONSISTENT 0
+     (pr_list (pp_manif_elt 0) [NL] manif)
+ end;
+
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn fr => pp_fieldrep fr);
 
 type filter_info
    = {name : string,
@@ -625,12 +671,17 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
      val manifest = map (I##mk_segment) groups'
 
      val _ = (let open FileSys TextIO
-                  val ostrm = openOut(getDir() ^"/"^ fname^".segments")
-              in dump_manifest ostrm manifest; 
-                 closeOut ostrm
+                  val pretty_segments = manifest2pretty manifest
+                  val pretty_json = Json.pp_json(manifest2json manifest)
+                  val ostrm1 = openOut(getDir() ^"/"^ fname^".segments")
+                  val ostrm2 = openOut(getDir() ^"/"^ fname^".segments.json")
+              in pp_ostrm ostrm1 pretty_segments;
+                 pp_ostrm ostrm2 pretty_json;
+                 closeOut ostrm1;
+                 closeOut ostrm2
               end
-              handle e => raise ERR "gen_filter_artifacts" 
-                                  "unable to write segments file")
+              handle e => 
+              raise ERR "gen_filter_artifacts" "unable to write segments file")
 
      (* Compute regexps for the fields *)
 

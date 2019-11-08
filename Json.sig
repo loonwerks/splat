@@ -21,8 +21,9 @@ sig
   val fromFile       : string -> json list * substring
   val jsonFileName   : string -> string
 
+  val pp_json : json PP.pprinter
+
 (*
-  val pp_json : 'a -> 'b -> json -> PolyML.pretty
   val print_json : json -> unit
   val install_pp_json : unit -> unit
 *)

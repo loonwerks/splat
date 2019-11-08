@@ -8,7 +8,7 @@ open AADL;
 
 val ERR = Feedback.mk_HOL_ERR "splat";
 
-fun printHelp() = 
+fun printHelp() =
   stdErr_print
     ("Usage: splat [basic | cake | hol | full]\n\
      \             [-checkprops]\n\
@@ -50,22 +50,22 @@ fun failwithERR e =
 
 datatype assurance = Basic | Cake | HOL | Full;
 
-val FLAGS = 
+val FLAGS =
   {checkprops = ref NONE : bool option ref,
    alevel     = ref NONE : assurance option ref,
    outDir     = ref NONE : string option ref,
    intwidth   = ref NONE : splatLib.shrink option ref,
    endian     = ref NONE : Regexp_Numerics.endian option ref,
    encoding   = ref NONE : Regexp_Numerics.encoding option ref};
-   
+
 fun set_checkprops b =
  case !(#checkprops FLAGS)
   of NONE => (#checkprops FLAGS := SOME b)
    | SOME _ => ()
 
-fun alevel "basic" = Basic 
-  | alevel "cake"  = Cake 
-  | alevel "hol"   = HOL 
+fun alevel "basic" = Basic
+  | alevel "cake"  = Cake
+  | alevel "hol"   = HOL
   | alevel "full"  = Full
   | alevel otherwise = fail();
 
@@ -82,8 +82,8 @@ fun set_alevel alevel =
 
 fun set_outDir d =
  let open FileSys
-     fun fpath s = 
-      let val path = fullPath s handle _ => (mkDir s ; fullPath s) 
+     fun fpath s =
+      let val path = fullPath s handle _ => (mkDir s ; fullPath s)
                                 handle _ => fail()
       in if isDir path andalso access(path,[A_EXEC,A_READ,A_WRITE])
           then path else fail()
@@ -95,13 +95,13 @@ fun set_outDir d =
  end
 
 fun set_intwidth s b =
- let open splatLib 
+ let open splatLib
  in case !(#intwidth FLAGS)
-     of NONE => 
+     of NONE =>
         (case Int.fromString s
-          of SOME i => 
+          of SOME i =>
               if i < 8 orelse not (i mod 8 = 0)
-                then fail() 
+                then fail()
               else (#intwidth FLAGS := SOME
                       (if b then Optimize i else Uniform i))
           |  NONE => fail())
@@ -145,15 +145,15 @@ fun check_suffix id s =
       | otherwise => fail()
  end
 
-fun parse_args args = 
+fun parse_args args =
  if null args then fail()
- else 
+ else
  let val (flags,file) = front_last args
      val jfile = check_suffix "json" file
-     fun set_flags list = 
+     fun set_flags list =
        case list
-        of [] => (set_checkprops false; 
-                  set_alevel Basic; 
+        of [] => (set_checkprops false;
+                  set_alevel Basic;
                   set_outDir "./splat_outputs";
                   set_intwidth "32" false;
                   set_endian "LSB";
@@ -175,7 +175,7 @@ fun parse_args args =
  end
 
 fun prove_filter_props {name,regexp,encode_def,decode_def,
-                        inversion, correctness, receiver_correctness, 
+                        inversion, correctness, receiver_correctness,
                         implicit_constraints,manifest} =
  let in
      store_thm(name^"_inversion",inversion,shortcut);
@@ -189,14 +189,55 @@ fun deconstruct {certificate, final, matchfn, start, table,aux} =
  in (certificate,start, toList final, toList (Vector.map toList table))
  end;
 
-fun export_dfa codegen
-         {name,regexp,encode_def,decode_def,
-          inversion, correctness, receiver_correctness, 
-          implicit_constraints,manifest} = 
+fun mk_matcher name certificate =
+ let open numSyntax stringSyntax bossLib
+     val SOME thm = certificate
+     val eqn = snd(dest_forall(concl thm))
+     val (exec_dfa,[finals,table,start,s]) = strip_comb(lhs eqn)
+     val finals_name = name^"_finals"
+     val table_name = name^"_table"
+     val start_name = name^"_start"
+     val finals_var = mk_var(finals_name,type_of finals)
+     val table_var  = mk_var(table_name,type_of table)
+     val start_var  = mk_var(start_name,type_of start)
+     val finals_def = Define `^finals_var = ^finals`
+     val table_def  = Define `^table_var = ^table`
+     val start_def  = Define `^start_var = ^start`
+     val thm' = CONV_RULE (BINDER_CONV
+                  (LHS_CONV (REWRITE_CONV [GSYM finals_def, GSYM table_def, GSYM start_def])))
+                  thm
+     val CT = current_theory()
+     val finals_const = prim_mk_const{Thy=CT,Name=finals_name}
+     val table_const = prim_mk_const{Thy=CT,Name=table_name}
+     val start_const = prim_mk_const{Thy=CT,Name=start_name}
+
+     val match_stateName = name^"_match_state"
+     val match_stateVar = mk_var(match_stateName, num --> string_ty --> bool)
+     val match_state_def = Define `^match_stateVar = exec_dfa ^finals_const ^table_const`
+     val match_state_const = prim_mk_const{Thy=CT, Name=match_stateName}
+     (* translate this, not match_state_def *)
+     val match_state_thm = Q.store_thm
+      (match_stateName^"_thm",
+       `^match_state_const n s =
+          if s="" then
+            sub ^finals_const n
+          else case sub (sub ^table_const n) (ORD (HD s)) of
+                 | NONE => F
+                 | SOME k => ^match_state_const k (TL s)`,
+      rw_tac list_ss [match_state_def]
+       >- rw_tac list_ss [regexp_compilerTheory.exec_dfa_def]
+       >- (`?h t. s = h::t` by metis_tac [listTheory.list_CASES]
+	    >> rw_tac list_ss [Once regexp_compilerTheory.exec_dfa_def]))
+     val matchName = name^"_match"
+     val v = mk_var(matchName, string_ty --> bool)
+     val match_def = Define `^v = ^match_state_const ^start_const`
+ in
+    (match_state_thm, match_def)
+ end
+
+fun export_dfa codegen name regexp finals table =
  let open TextIO
-     val (result as (_,_,finals,table)) = 
-                 deconstruct (regexpLib.gen_dfa regexpLib.SML regexp)
-     val rstring = PP.pp_to_string 72 Regexp_Type.pp_regexp regexp 
+     val rstring = PP.pp_to_string 72 Regexp_Type.pp_regexp regexp
      val dfa = {name=name,src_regexp=rstring, finals=finals,table=table}
      val ostrm = openOut (name^".c")
  in
@@ -204,30 +245,38 @@ fun export_dfa codegen
   ; closeOut ostrm
  end
 
-fun process_filter iformat (checkprops,alevel) (fname,thm) = 
+fun process_filter iformat (checkprops,alevel) (fname,thm) =
  let open FileSys
      val _ = stdErr_print ("Processing filter "^Lib.quote fname^".\n")
      val wDir = getDir()
      val filterDir = wDir^"/"^fname
      val _ = ((mkDir filterDir handle _ => ()); chDir filterDir)
-     val filter_artifacts = 
+     val filter_artifacts =
          apply_with_chatter
            (splatLib.gen_filter_artifacts iformat) (fname,thm)
            "Defining filter artifacts ... " "succeeded.\n"
-  in
-     if checkprops = true then
-         apply_with_chatter
-            prove_filter_props filter_artifacts
-            "Proving filter properties ... " "succeeded.\n"
-      else ()
+
+     val _ = if checkprops = true then
+               apply_with_chatter
+                  prove_filter_props filter_artifacts
+                  "Proving filter properties ... " "succeeded.\n"
+             else ()
+
+    val {name,regexp,...} = filter_artifacts
+
+    val regexp_compiler =
+         case alevel
+          of Basic => regexpLib.SML
+	   | HOL   => regexpLib.HOL
+	   | other => failwithERR (ERR "splat" "Cake regexp compilation not handled at present")
+
+    val DFA as (certificate, start, finals, table) =
+        deconstruct (regexpLib.gen_dfa regexp_compiler regexp)
+
+    val matcher_def = mk_matcher fname certificate
+ in
+     export_dfa DFA_Codegen.C name regexp finals table
    ;
-    (case alevel 
-      of Basic => export_dfa DFA_Codegen.C filter_artifacts
-       | Cake  => failwithERR (ERR "splat" "Cake compilation not supported")
-       | HOL   => failwithERR (ERR "splat" "HOL compilation not supported")
-       | Full  => failwithERR (ERR "splat" "Full compilation-by-proof not supported")
-    )
-   ; 
      stdErr_print ("End processing filter "^Lib.quote fname^".\n")
    ;
      chDir wDir
@@ -241,10 +290,10 @@ fun main () =
      val jsonfile = parse_args args
      val {alevel,checkprops,outDir,intwidth,endian,encoding} = FLAGS
      val invocDir = FileSys.getDir()
-     val _ = stdErr_print 
+     val _ = stdErr_print
                (String.concat ["splat invoked in directory ", invocDir, ".\n"])
      val workingDir = valOf(!outDir)
-     val _ = stdErr_print 
+     val _ = stdErr_print
                (String.concat ["output directory is ", workingDir, ".\n"])
      val _ = FileSys.chDir workingDir
      val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonfile
@@ -265,6 +314,6 @@ fun main () =
              else stdErr_print ("Returning to "^invocDir^".\n")
      val _ = FileSys.chDir invocDir
      val _ = stdErr_print "Finished.\n"
-  in 
+  in
     MiscLib.succeed()
  end;

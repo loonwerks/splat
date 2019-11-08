@@ -255,5 +255,35 @@ fun jsonFileName execName =
       | otherwise => fail()
  end
 
+val pp_json =
+ let open Portable PP
+     fun pp json =
+      case json
+       of Null => add_string "Null"
+       |  Boolean b => add_string (Bool.toString b)
+       |  Number (Int i) => 
+             if i < 0 then 
+               add_string("-"^Int.toString(Int.abs i))
+             else add_string(Int.toString i)
+       |  Number (Float _) => raise ERR "pp_json" "floats not presently supported"
+       |  String s => add_string(String.concat ["\"",s,"\""])
+       |  List list => block INCONSISTENT 1 
+            (add_string "[" 
+             :: pr_list pp [add_string ",", add_break(0,0)] list 
+             @ [add_string "]"])
+       |  AList alist => block INCONSISTENT 1 
+            (add_string "{" 
+             :: pr_list pp_bind [add_string ",", add_break(0,0)] alist 
+             @ [add_string "}"])
+       | otherwise => raise ERR "pp_json" "stack tags not printed"
+     and 
+     pp_bind (s,j) = 
+       block CONSISTENT 1
+         [add_string (String.concat ["\"",s,"\" :"]), add_break(1,2), pp j]
+ in
+   pp
+ end
      
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn json => pp_json json);
+
 end (* Json *)

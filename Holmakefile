@@ -1,19 +1,11 @@
 INCLUDES = $(HOLDIR)/examples/formal-languages/regular
 
-THYFILES = $(patsubst %Script.sml,%Theory.uo,$(wildcard *.sml))
-TARGETS = $(patsubst %.sml,%.uo,$(THYFILES))
+all: $(DEFAULT_TARGETS) splat
 
-all: $(TARGETS) mustbuild
+.PHONY: all
 
-mustbuild: splat
-.PHONY: mustbuild all
+EXTRA_CLEANS = splat.o splat
 
-EXTRA_CLEANS = splat.o splat 
-
-# Not really sure why this is needed given the INCLUDES above
-localregexpLib :
-	cp $(HOLDIR)/examples/formal-languages/regular/regexpLib.ui .
-	cp $(HOLDIR)/examples/formal-languages/regular/regexpLib.uo .
-
-splat : splatLib.uo localregexpLib splat.sml 
-	$(protect $(HOLDIR)/bin/buildheap) integer_wordLib stringSimps regexpLib splatLib AADL splat.sml -o $@ --exe main
+#splat : splatLib.uo splat.uo
+splat : splat.uo
+	$(protect $(HOLDIR)/bin/buildheap) splat.uo -o $@ --exe main

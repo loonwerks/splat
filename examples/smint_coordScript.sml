@@ -4,7 +4,10 @@ open arithmeticTheory listTheory stringTheory pred_setLib intLib
      FormalLangTheory charsetTheory regexpTheory regexpLib
      numposrepTheory splatTheory splatLib Regexp_Numerics;
 
-val int_ss = intSimps.int_ss;
+val mesg_ss = list_ss 
+             ++ intSimps.INT_REDUCE_ss 
+             ++ intSimps.INT_RWTS_ss 
+             ++ intLib.INT_ARITH_ss;
 
 (*---------------------------------------------------------------------------*)
 (* Boilerplate prelude stuff                                                 *)
@@ -17,13 +20,15 @@ overload_on ("++",``list$APPEND``);
 infix byA;
 val op byA = BasicProvers.byA;
 
+val subst_all_tac = SUBST_ALL_TAC;
+val sym = SYM;
 val qpat_k_assum = Lib.C qpat_x_assum kall_tac;
 val allhyp_mp_tac = rpt (pop_assum mp_tac);
 val allhyp_kill_tac = rpt (pop_assum kall_tac);
 fun qpat_keeponly_assum qpat = qpat_x_assum qpat mp_tac >> allhyp_kill_tac
 
 fun qspec q th = th |> Q.SPEC q
-fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
+fun qspec_arith q th = qspec q th |> SIMP_RULE smint_ss [];
 
 val var_eq_tac = rpt BasicProvers.VAR_EQ_TAC;
 
@@ -55,7 +60,7 @@ val good_gps_def =
          -180 <= recd.lon /\ recd.lon <= 180 /\
          0 <= recd.alt /\ recd.alt <= 17999`;
 
-val filter_info = 
+val manifest = 
  [(``recd.lat``, 
    Interval 
      {span = (IntInf.fromInt ~90,IntInf.fromInt 90),
@@ -127,40 +132,51 @@ EVAL ``good_gps ^NON_GPS ==> decode (encode ^NON_GPS) = NONE``;
 val (enci_bytes_1 :: enci_bytes_2 :: _) = CONJUNCTS enci_bytes;
 val (enci_limits_1 :: enci_limits_2 :: _) = CONJUNCTS enci_limits;
 
-
-GROSS ... 
-val NO_PAD_RIGHT = Q.prove
-(`!x n L1 L2. n = LENGTH L2 ==> ((PAD_RIGHT x n L1 = L2) = (L1 = L2))`,
- rw_tac list_ss [PAD_RIGHT]
-   >> `(n - LENGTH L1) = 0` by rw_tac arith_ss []
-   >> rw_tac list_ss []
-);
-val NO_PAD_RIGHT = Q.prove
-(`!x n L1 L2. n <= LENGTH L2 ==> ((PAD_RIGHT x n L1 = L2) = (L1 = L2))`,
- rw_tac list_ss [PAD_RIGHT]
-   >> `(n - LENGTH L1) = 0` by rw_tac arith_ss []
-   >> rw_tac list_ss []
+(*
+val PAD_RIGHT_ID = Q.prove
+(`!x n L1 L2. 
+    n <= LENGTH L1 /\ (PAD_RIGHT x n L1 = L2) ==> (L1 = L2)`,
+ rw [PAD_RIGHT]
+ >> rw[]
+ >> `n - LENGTH L1 = 0` by rw_tac arith_ss []
+ >> rw[]
 );
 
+val PAD_RIGHT_ID_IFF = Q.prove
+(`!x n L1 L2. 
+    n <= LENGTH L1 ==> ((PAD_RIGHT x n L1 = L2) <=> (L1 = L2))`,
+ rw [PAD_RIGHT] 
+  >> rw[]
+  >> `n - LENGTH L1 = 0` by rw_tac arith_ss [] 
+  >> rw[]
+);
+
+`0 <= Num m.lat /\ Num m.lat < 128` by intLib.ARITH_TAC;
+`1 <= LENGTH (n2l 256 (Num m.lat))` by rw[n2l_bytes]
+rw[PAD_RIGHT_ID_IFF]
+*)
+
+fun gen_tac manifest topgoal =
+ let val c = snd topgoal
+     val mesgVar = fst(dest_forall c)
+     val mty = type_of mesgVar
+     val {Thy,Tyop,...} = dest_thy_type mty
+     val component_equality_thm = fetch Thy (Tyop^"_component_equality")
+     val tacA = rw_tac smint_ss [good_gps_def, decode_def, encode_def, 
+                 list_case_eq, PULL_EXISTS, fetch "-" "gps_component_equality"]
 
 Theorem decode_encode :
   !m. good_gps m ==> (decode (encode m) = SOME m)
 Proof
- rw_tac list_ss [decode_def, encode_def, list_case_eq, PULL_EXISTS,
-                 good_gps_def, fetch "-" "gps_component_equality"]
-  >> `?p. enci 1 m.lat = [p]` 
-        by (match_mp_tac (qspec `m.lat` enci_bytes_1) >>  intLib.ARITH_TAC)
-  >> `?q r. enci 2 m.lon = [q;r]` 
-        by (match_mp_tac (qspec `m.lon` enci_bytes_2) >>  intLib.ARITH_TAC)
-  >> `?s t. enci 2 m.alt = [s;t]` 
-        by (match_mp_tac (qspec `m.alt` enci_bytes_2) >>  intLib.ARITH_TAC)
-  >> `deci 1 (enci 1 m.lat) = m.lat /\
-      deci 2 (enci 2 m.lon) = m.lon /\
-      deci 2 (enci 2 m.alt) = m.alt` 
-       by (rpt conj_tac >> match_mp_tac deci_enci 
-           >> rw[representable_def] >> intLib.ARITH_TAC)
-  >> rw_tac (srw_ss()) []
-  >> metis_tac []
+ rw_tac smint_ss [good_gps_def, decode_def, encode_def, 
+                 list_case_eq, PULL_EXISTS, fetch "-" "gps_component_equality"]
+  >> (* following can be auto-generated from the manifest *)
+     `(?p. enci 1 m.lat = [p]) /\
+      (?q r. enci 2 m.lon = [q;r]) /\
+      (?s t. enci 2 m.alt = [s;t])` by rw_tac smint_ss [enci_bytes]
+  >> rw[]
+  >> ntac 3 (pop_assum (subst_all_tac o sym))  (* pop the number of fields; substitute *)
+  >> rw_tac smint_ss [deci_enci,representable_def]
 QED
 
 fun LENGTH_EQ_CONV tm = 
@@ -209,8 +225,8 @@ val BOUNDED_FORALL_TAC =
 Theorem AGREE_ENCODE_PROP :
   !m. good_gps m <=> encode(m) IN regexp_lang ^gps_regexp_term
 Proof
- rw_tac list_ss [regexp_lang_cat,IN_dot,PULL_EXISTS,encode_def,EQ_IMP_THM]
- >- (rw_tac (list_ss ++ in_charset_conv_ss) 
+ rw_tac mesg_ss [regexp_lang_cat,IN_dot,PULL_EXISTS,encode_def,EQ_IMP_THM]
+ >- (rw_tac (mesg_ss ++ in_charset_conv_ss) 
        [regexp_lang_cat,regexp_lang_or,LIST_UNION_def,
         IN_dot,strlen_eq,PULL_EXISTS,dec_char]
      >> fs [good_gps_def]
@@ -263,7 +279,7 @@ Proof
     )
 
  (* second part *)
- >- (full_simp_tac (list_ss ++ in_charset_conv_ss) 
+ >- (full_simp_tac (mesg_ss ++ in_charset_conv_ss) 
               [regexp_lang_cat,regexp_lang_or,LIST_UNION_def,
                IN_dot,strlen_eq,PULL_EXISTS,dec_char]
      >> rw_tac list_ss []
