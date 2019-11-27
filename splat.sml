@@ -174,13 +174,9 @@ fun parse_args args =
    ; jfile
  end
 
-fun prove_filter_props {name,regexp,encode_def,decode_def,
-                        inversion, correctness, receiver_correctness,
-                        implicit_constraints,manifest} =
+fun prove_filter_props {name,regexp,implicit_constraints,manifest,tv} =
  let in
-     store_thm(name^"_inversion",inversion,shortcut);
-     store_thm(name^"_correctness",correctness,shortcut);
-     store_thm(name^"_receiver_correctness",receiver_correctness,shortcut);
+     store_thm(name^"_tv",tv,shortcut);
      ()
  end;
 
@@ -234,6 +230,7 @@ fun mk_matcher name certificate =
  in
     (match_state_thm, match_def)
  end
+ handle _ => (TRUTH,TRUTH);
 
 fun export_dfa codegen name regexp finals table =
  let open TextIO
@@ -268,12 +265,13 @@ fun process_filter iformat (checkprops,alevel) (fname,thm) =
          case alevel
           of Basic => regexpLib.SML
 	   | HOL   => regexpLib.HOL
-	   | other => failwithERR (ERR "splat" "Cake regexp compilation not handled at present")
+	   | other => failwithERR
+             (ERR "splat" "Cake regexp compilation not handled at present")
 
     val DFA as (certificate, start, finals, table) =
         deconstruct (regexpLib.gen_dfa regexp_compiler regexp)
 
-    val matcher_def = mk_matcher fname certificate
+    val (match_state_thm, match_def) = mk_matcher fname certificate
  in
      export_dfa DFA_Codegen.C name regexp finals table
    ;

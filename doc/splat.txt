@@ -2,7 +2,7 @@
 for \
 Language and Automata Theory (SPLAT)</a>
 % Konrad Slind, Trusted Systems Group, Collins Aerospace
-% February 7, 2019
+% November 2019
 
 \newcommand{\imp}{\;\Rightarrow\;}
 \newcommand{\valid}{\mathsf{Valid}}
@@ -32,15 +32,15 @@ Language and Automata Theory (SPLAT)</a>
 Introduction
 ============
 
-**SPLAT** (Semantic Properties for Language Laughs and Automata Theory)
+**SPLAT** (Semantic Properties for Language and Automata Theory)
 designates the application of language theory---which is based on
 *strings*---to help enforce, formulate and prove properties over a
 collection of other useful types, such as numbers, enumerations,
-records, and arrays. In particular, our focus is on applying tools and
+records, and arrays. In particular, the focus is on applying tools and
 concepts from language theory to help automate the specification,
 creation, and verification of practical programs. As one example of
-this approach, we employ regular expressions to model and implement
-arithmetic constraints. This has been applied to the task of
+the **SPLAT** approach, we employ regular expressions to model and
+implement arithmetic constraints. This has been applied to the task of
 automating the generation and proof of correctness of encoders and
 decoders for network message formats.
 
@@ -65,18 +65,19 @@ encryption, sending structured data over a network, *etc*.
 Regular expressions
 ---------------------
 
-(We are building on previously reported [safecomp2016] work in HOL4
-providing a theory of regular expressions and a verified translator of
-$\konst{regexp}$s to table-driven DFAs (deterministic finite state
-automata). The formalization is available in the HOL4 distribution.)
+(The present work builds on previously reported [safecomp2016]
+research in HOL4 providing a theory of regular expressions and a
+verified translator of $\konst{regexp}$s to table-driven DFAs
+(deterministic finite state automata). The formalization is available
+in the HOL4 distribution.)
 
 Let $\mathbb{S}$ be the set of finite strings over an alphabet
-$\Sigma$. Throughout, we assume $\Sigma$ is the 256 ASCII
+$\Sigma$. Throughout, $\Sigma$ denotes the set of the 256 ASCII
 characters. This supports the use of $\konst{char}\;\konst{list}$ as a
-representation for $\mathbb{S}$, allowing the use of some list
-operations on elements of $\mathbb{S}$. A regular expression over the
-alphabet designates a set of strings $\mathbb{S} \to \konst{bool}$. We
-use the following datatype to represent regular expressions:
+representation for $\mathbb{S}$, allowing the use of list operations
+on elements of $\mathbb{S}$. A regular expression over the alphabet
+designates a set of strings $\mathbb{S} \to \konst{bool}$. The
+following datatype represents regular expressions:
 
 $$
 \begin{array}{rcl}
@@ -84,7 +85,7 @@ $$
      & \mid & \konst{Cat}\; \konst{regexp}\; \konst{regexp} \\
      & \mid & \konst{Or} \; \konst{regexp}\;\konst{list} \\
      & \mid & \konst{Star}\; \konst{regexp} \\
-     & \mid & \konst{Neg}\;  \konst{regexp} 
+     & \mid & \konst{Neg}\;  \konst{regexp}
 \end{array}
 $$
 
@@ -94,7 +95,7 @@ subset of $\Sigma$. We have chosen to represent bitsets with
 four-tuples of 64-bit numbers. $\konst{Cat}$ is the concatenation
 operator, $\konst{Star}$ is Kleene star, the $\konst{Or}$ operator is
 an *n*-ary disjunction, and $\konst{Neg}$ is a complement
-operator. 
+operator.
 
 The semantics of regular expressions inteprets a $\konst{regexp}$ as a
 set of strings:
@@ -163,7 +164,7 @@ that we gloss over for now.
   grammars, gives more expressive power, and would require a
   $\konst{grammar\_of}$ operator (along with a modified definition of
   $\Lang{-}$) in the statement, *i.e.*:
-$$ 
+$$
 x \in P \iff \konst{encode}\;x \in \Lang{\konst{grammar\_of}\; P}
 $$
 
@@ -191,9 +192,9 @@ Consider the "even-number" predicate $\konst{even} :
 \konst{charset\_of}\;[0,2,4, \ldots, 254]$ be the character set
 corresponding to the non-negative even numbers less than 256. Assuming
 $$
-\regexpof{\konst{even}} = 
+\regexpof{\konst{even}} =
 \konst{Cat}\; (\konst{Chset}\;\mathit{cset})\;(\konst{Star}\;\bullet),
-$$ 
+$$
 (the encoding is in LSB format), we construct the formula
 $$
 \konst{even}(n) \iff \konst{encode}(n) \in \Lang{\konst{Cat}\;
@@ -231,9 +232,9 @@ we can define a basic number encoder $\konst{enc} : \mathbb{N} \to
 : \mathbb{S}\to\mathbb{N}$:
 $$
 \begin{array}{rcl}
-\konst{layout}\; n \; \mathit{width} & = & 
+\konst{layout}\; n \; \mathit{width} & = &
    \konst{pad\_right}\; 0\; \mathit{width}\; (\konst{n2l}\; n) \\
-\konst{enc}\; w\; n & = & 
+\konst{enc}\; w\; n & = &
 \konst{map}\; \konst{chr}\; (\konst{layout}\; n\; w) \\
 \konst{dec}\; s & = & \konst{l2n}\; (\konst{map}\; \konst{ord}\; s)
 \end{array}
@@ -248,7 +249,7 @@ and add 1". But it is expressible at the level of integers and natural
 numbers since an $(n-1)$-bit integer added to its twos complement equals
 $2^n$. Thus
 $$
-\konst{i2n}_N : \set{i \in \mathbb{Z} \mid -2^{N-1} \leq i < 2^{N-1}} 
+\konst{i2n}_N : \set{i \in \mathbb{Z} \mid -2^{N-1} \leq i < 2^{N-1}}
              \to \set{k \in \mathbb{N} \mid 0 \leq k < 2^{N}}
 $$
 specifies a map from an integer to its corresponding natural number defined by
@@ -259,7 +260,7 @@ $$
 $$
 ($\konst{Nat}$ maps from non-negative integers to $\mathbb{N}$;
 $\konst{Int}$ maps from $\mathbb{N}$ to non-negative integers; and
-$\konst{Abs}$ is an absolute value operator that maps integers to non-negative integers.) 
+$\konst{Abs}$ is an absolute value operator that maps integers to non-negative integers.)
 The inverse function is
 $$
 \konst{n2i}_N (n) = \condB{n < 2 ^{N-1}}{\konst{Int}(n)}{-\konst{Int}(2^N - n)}
@@ -290,7 +291,7 @@ $$
 $$
 which gives the basis for the encoder and decoder:
 $$
-\begin{array}{l} 
+\begin{array}{l}
 \konst{enc\_bool}\; b = \konst{enc}\; 1\; (\konst{num\_of\_bool}\; b) \\
  \konst{dec\_bool}\; s = \konst{bool\_of\_num}\; (\konst{dec}\; s)
 \end{array}
@@ -355,7 +356,7 @@ $\mathit{lo} \leq \mathit{hi}$ to hold:
 1. $a < b$. The span between the exponents is split into one
 interval per intermediate exponent
 $$
- [\mathit{lo}, \bto{a + 1} -1] \cup 
+ [\mathit{lo}, \bto{a + 1} -1] \cup
 \underbrace{[\bto{a + 1}, \bto{a + 2} -1] \cup \cdots \cup [\bto{b - 1}, \bto{b} -1]}_{\text{exponent slices}}
  \cup [\bto{b} ,\mathit{hi}]
 $$
@@ -367,7 +368,7 @@ a uniform exponent, which are dealt with by the next case.
 2. $a = b, p < q$. The span between factors can also lead to splits:
 $$
 [p\bto{a} + r_1,(p + 1)\bto{a} -1 ] \cup\
- \underbrace{[(p + 1)\bto{a},q\bto{a} -1]}_{\text{factor slice}} \cup\ 
+ \underbrace{[(p + 1)\bto{a},q\bto{a} -1]}_{\text{factor slice}} \cup\
 [q \bto{a} ,q \bto{a} + r_2]
 $$
 The *factor slice* interval $[(p+1) \bto{k},q\bto{k}-1]$ is only
@@ -388,7 +389,7 @@ less than 256, in which case the charset regexp $[\mathit{lo}-\mathit{hi}]$ is
 returned.
 
 **Integer Intervals.** Translation of integer intervals is accomplished
-  by reduction to natural number intervals, based on the following case split 
+  by reduction to natural number intervals, based on the following case split
   (number of bytes is $w$):
 
 1. $0 \leq \mathit{lo} \leq \mathit{hi}$. No translation needed; the
@@ -400,8 +401,8 @@ $$
 \regexpof{[2^{8w} + \mathit{lo}, 2^{8w} - 1]} + \regexpof{[0, \mathit{hi}]}
 $$
 There is a special case here, where $\mathit{lo} = -2^{8w-1}$ and
-$\mathit{hi} = 2^{8w-1} - 1$, in which case 
-$\regexpof{[\mathit{lo},\mathit{hi}]} = \bullet^{w}$. 
+$\mathit{hi} = 2^{8w-1} - 1$, in which case
+$\regexpof{[\mathit{lo},\mathit{hi}]} = \bullet^{w}$.
 
 3. $\mathit{lo} \leq \mathit{hi} < 0$. Both numbers are negative; we generate the interval from their
    twos complements.
@@ -419,14 +420,14 @@ and $n$ are written as decimal ASCII codes or as printable
 characters. Also, disjunction is expressed with $(- \mid -)$. The
 following are in MSB format.
 
-The interval $[-90,90]$ generates the regexp 
+The interval $[-90,90]$ generates the regexp
 
        [\166-\255] | [\000-Z]
 
 This disjunction is on single charsets, so can be replaced by (and is, in the translation to DFA):
 
        [\000-Z\166-\255]
-    
+
 The interval $[-180,180]$ is recognized by the regexp
 
        [\255][L-\255] | [\000][\000-\180]
@@ -547,7 +548,7 @@ the importance of the well-formedness specification.
 Proofs and Automation
 =====================
 
-Property-enhanced lexing 
+Property-enhanced lexing
 ========================
 
 Lexing provides an interesting application of **SPLAT** notions. A
@@ -559,7 +560,7 @@ created. By attaching properties to regular expressions one can
 imagine a lexer specification augmented with postconditions. In
 particular, an element $(\regexpof{P},f,Q)$ of such a lexer spec
 comprises regular expression $\regexpof{P}$, action function $f$, and
-post-condition $Q$. The following theorem can be automatically proved for 
+post-condition $Q$. The following theorem can be automatically proved for
 $\regexpof{P}$:
 $$
  \vdash s \in \Lang{\regexpof{P}} \imp P (\konst{the}(\konst{decode}\; s))

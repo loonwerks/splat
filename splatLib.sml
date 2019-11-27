@@ -7,10 +7,10 @@ struct
 
 open HolKernel Parse boolLib bossLib MiscLib;
 
-open regexpMisc regexpSyntax pred_setSyntax 
+open regexpMisc regexpSyntax pred_setSyntax
      arithmeticTheory listTheory stringTheory
      charsetTheory regexpTheory splatTheory
-     pred_setLib numLib stringLib 
+     pred_setLib numLib stringLib
      Regexp_Type Regexp_Numerics regexpLib Enum_Encode;
 
 local open Json in end;
@@ -20,7 +20,7 @@ val ERR = Feedback.mk_HOL_ERR "splatLib";
 fun pp_ostrm ostrm pretty =
   let open Portable PP
       val writer = curry TextIO.output ostrm
-  in 
+  in
      PP.prettyPrint (writer,75) pretty
   end
 
@@ -40,7 +40,7 @@ fun pairrel R1 R2 (x,y) (u,v) = R1 x u andalso R2 y v;
 
 datatype width = BITWIDTH of int | BYTEWIDTH of int;
 
-val bits2bytes = 
+val bits2bytes =
  let fun roundup (q,r) = q + (if r > 0 then 1 else 0)
  in fn n => roundup(n div 8,n mod 8)
  end
@@ -49,7 +49,7 @@ fun width2bits (BYTEWIDTH n) = n*8
   | width2bits (BITWIDTH n) = n
 
 fun width2bytes (BYTEWIDTH n) = n
-  | width2bytes (BITWIDTH n) = 
+  | width2bytes (BITWIDTH n) =
      let fun roundup (q,r) = q + (if r > 0 then 1 else 0)
      in roundup(n div 8,n mod 8)
      end
@@ -75,26 +75,30 @@ fun shrinkVal (Optimize i) = i
 (*---------------------------------------------------------------------------*)
 
 datatype fieldrep =
-   Interval of 
+   Interval of
      {span : IntInf.int * IntInf.int,
       encoding : encoding,
       endian : endian,
       width  : width,
       encoder : IntInf.int -> string,
       decoder : string -> IntInf.int,
-      regexp  : Regexp_Type.regexp}
-  | Enumset of 
+      regexp  : Regexp_Type.regexp,
+      constraint : term}
+  | Enumset of
      {enum_type : hol_type,
       constr_codes : (term * int) list,
       elts : term list,
       codec : Enum_Encode.enum_codec,
-      regexp : Regexp_Type.regexp}
-  | StringLit of 
+      regexp : Regexp_Type.regexp,
+      constraint : term}
+  | StringLit of
      {strlit : string,
-      regexp : Regexp_Type.regexp}
-  | Raw of 
+      regexp : Regexp_Type.regexp,
+      constraint : term}
+  | Raw of
      {width : width,
-      regexp : Regexp_Type.regexp}
+      regexp : Regexp_Type.regexp,
+      constraint : term}
 ;
 
 fun encoding2string Unsigned  = "Unsigned"
@@ -108,40 +112,40 @@ fun endian2string LSB  = "LSB"
 fun fieldrep2json frep =
  let open Json
  in
-   case frep 
-    of Interval{span,encoding,endian,width,encoder,decoder,regexp} =>
+   case frep
+    of Interval{span,encoding,endian,width,encoder,decoder,regexp,constraint} =>
        AList [("kind", String "Interval"),
-	      ("span", 
-                AList [("lbound",Number(Int(Int.fromLarge(fst span)))), 
+	      ("span",
+                AList [("lbound",Number(Int(Int.fromLarge(fst span)))),
                        ("rbound",Number(Int(Int.fromLarge(snd span))))]),
               ("encoding", String (encoding2string encoding)),
               ("endian", String(endian2string endian)),
               ("width", Number(Int(width2bits width)))]
-     | Enumset{enum_type,constr_codes,elts,codec,regexp} => 
+     | Enumset{enum_type,constr_codes,elts,codec,regexp,constraint} =>
        AList [("kind", String "Enumset"),
-	      ("enum_type",  
+	      ("enum_type",
                let val {Tyop,Thy,Args} = dest_thy_type enum_type
                 in AList [("Tyop", String Tyop), ("Thy",String Thy)]
                end),
               ("constr_codes",
-                List (map (fn (constr,code) => AList 
+                List (map (fn (constr,code) => AList
                               [("constr", String (fst(dest_const constr))),
                                ("code", Number(Int code))]) constr_codes)),
               ("elts", List (map (fn e => String (fst(dest_const e))) elts)),
               ("width", Number(Int 8))]
-     | StringLit{strlit,regexp} => 
+     | StringLit{strlit,regexp,constraint} =>
        AList [("kind", String "StringLit"),
 	      ("contents",  String strlit),
               ("width", Number(Int (String.size strlit * 8)))]
-    | Raw {width,regexp} => raise ERR "fieldrep2json" "unexpected fieldrep (Raw)" 
+    | Raw {width,regexp,constraint} => raise ERR "fieldrep2json" "unexpected fieldrep (Raw)"
  end;
 
-fun manifest2json manif_elts = 
+fun manifest2json manif_elts =
  let open Json
-     fun elt2json (t,frep) = 
+     fun elt2json (t,frep) =
          AList [("fieldname", String(Parse.term_to_string t)),
                 ("fieldrep", fieldrep2json frep)]
- in 
+ in
    List (map elt2json manif_elts)
  end
 
@@ -149,65 +153,65 @@ val pp_fieldrep =
  let open Portable PP
      fun paren i j s1 s2 ps =
        if i < j then block CONSISTENT 0 ps
-       else block INCONSISTENT (size s1) 
+       else block INCONSISTENT (size s1)
                   (add_string s1 :: ps @ [add_string s2])
-     fun pp_constr_code (constr,code) = 
-       paren 0 0 "(" ")" 
+     fun pp_constr_code (constr,code) =
+       paren 0 0 "(" ")"
           [add_string(fst(dest_const constr)),
            add_string",", add_string(Int.toString code)]
      fun pp i fieldrep =
       case fieldrep
-       of Interval{span,encoding,endian,width,encoder,decoder,regexp} =>
+       of Interval{span,encoding,endian,width,encoder,decoder,regexp,constraint} =>
            paren i 0 "(" ")"
             [add_string "Interval",
-             add_break(1,0), 
-             paren i 0 "(" ")" 
+             add_break(1,0),
+             paren i 0 "(" ")"
                [add_string(IntInf.toString (fst span)),
                 add_string",",
                 add_string(IntInf.toString (snd span))],
-             add_break(1,0), 
-             paren i 0 "(" ")" 
-               (case width 
-                 of BITWIDTH i => [add_string "BITS", add_break (1,0), 
+             add_break(1,0),
+             paren i 0 "(" ")"
+               (case width
+                 of BITWIDTH i => [add_string "BITS", add_break (1,0),
                                    add_string (Int.toString i)]
-                 |  BYTEWIDTH i => [add_string "BYTES", add_break (1,0), 
+                 |  BYTEWIDTH i => [add_string "BYTES", add_break (1,0),
                                    add_string (Int.toString i)]),
-             add_break(1,0), 
+             add_break(1,0),
 	     add_string (encoding2string encoding),
-             add_break(1,0), 
+             add_break(1,0),
 	     add_string (endian2string endian)]
-        | Enumset{enum_type,constr_codes,elts,codec,regexp} => 
+        | Enumset{enum_type,constr_codes,elts,codec,regexp,constraint} =>
             paren i 0 "(" ")"
             [add_string "Enumset",
-             add_break(1,0), 
+             add_break(1,0),
              let val {Tyop,Thy,Args} = dest_thy_type enum_type
-             in paren i 0 "[" "]" 
+             in paren i 0 "[" "]"
                [add_string Thy, add_string",", add_string Tyop]
              end,
-             add_break(1,0), 
+             add_break(1,0),
              add_string "(BYTES 1)",
-             add_break(1,0), 
-             paren i 0 "[" "]" 
-               (pr_list pp_constr_code 
+             add_break(1,0),
+             paren i 0 "[" "]"
+               (pr_list pp_constr_code
                    [add_string ",", add_break(0,0)] constr_codes),
-             add_break(1,0), 
-             paren i 0 "[" "]" 
+             add_break(1,0),
+             paren i 0 "[" "]"
                (pr_list (fn t => add_string (fst(dest_const t)))
                         [add_string ",", add_break(0,0)] elts)]
-        | StringLit{strlit,regexp} => raise ERR "" "" 
-        | Raw {width,regexp} => raise ERR "" "" 
- in pp 0 
+        | StringLit{strlit,regexp,constraint} => raise ERR "" ""
+        | Raw {width,regexp,constraint} => raise ERR "" ""
+ in pp 0
  end
 
-fun manifest2pretty manif = 
+fun manifest2pretty manif =
  let open Portable PP
      fun paren i j s1 s2 ps =
        if i < j then block CONSISTENT 0 ps
-       else block INCONSISTENT (size s1) 
+       else block INCONSISTENT (size s1)
                   (add_string s1 :: ps @ [add_string s2])
-     fun pp_manif_elt i (t,fieldrep) = 
+     fun pp_manif_elt i (t,fieldrep) =
           paren i 0 "(" ")"
-             [add_string (Parse.term_to_string t), 
+             [add_string (Parse.term_to_string t),
               add_break(1,0), pp_fieldrep fieldrep]
  in
    block CONSISTENT 0
@@ -219,14 +223,9 @@ val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn fr => pp_fieldrep fr);
 type filter_info
    = {name : string,
       regexp : Regexp_Type.regexp,
-      encode_def : thm, 
-      decode_def : thm,
-      inversion : term,
-      correctness : term,
-      receiver_correctness : term,
+      manifest : (term * fieldrep) list,
       implicit_constraints : thm option,
-      manifest : (term * fieldrep) list};
-
+      tv : term};
 
 fun width_of atm =
  case atm
@@ -238,6 +237,12 @@ fun regexp_of atm =
  case atm
   of Interval{regexp,...} => regexp
    | Enumset{regexp,...} => regexp
+   | other => raise ERR "regexp_of" "";
+
+fun constraint_of atm =
+ case atm
+  of Interval{constraint,...} => constraint
+   | Enumset{constraint,...}  => constraint
    | other => raise ERR "regexp_of" "";
 
 (*---------------------------------------------------------------------------*)
@@ -275,15 +280,15 @@ fun decoder_of atm =
 (* to encode the interval.                                                   *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_interval shrink enc dir (lo,hi) = 
+fun mk_interval shrink enc dir (lo,hi) pred =
  let open Regexp_Numerics
      val min_ivl_width = interval_width enc (lo,hi)
-     val width = 
+     val width =
        (case shrink
          of Optimize i => min_ivl_width
-         |  Uniform i => 
+         |  Uniform i =>
              let val bytewidth = i div 8
-             in if min_ivl_width <= bytewidth 
+             in if min_ivl_width <= bytewidth
                 then bytewidth
                 else raise ERR "mk_interval"
                       (String.concat ["interval (",
@@ -293,14 +298,15 @@ fun mk_interval shrink enc dir (lo,hi) =
              end)
  in Interval{span = (lo,hi),
              encoding = enc,
-             endian   = dir, 
+             endian   = dir,
              width    = BYTEWIDTH width,
              encoder  = iint2string enc dir width,
              decoder  = string2iint enc dir,
-             regexp    = interval_regexp enc dir width (lo,hi)}
+             regexp    = interval_regexp enc dir width (lo,hi),
+             constraint = pred}
  end;
 
-fun mk_enumset (ety,elts) = 
+fun mk_enumset (ety,elts,pred) =
   case Finmap.peek (Enum_Encode.the_enumMap(),ety)
    of SOME (clist,codec) =>
         let val ilist = List.map (fn e => op_assoc aconv e clist) elts
@@ -311,39 +317,20 @@ fun mk_enumset (ety,elts) =
                   constr_codes = clist,
                   elts = elts,
                   codec = codec,
-                  regexp = Chset cset}
+                  regexp = Chset cset,
+                  constraint = pred}
         end
-    | NONE => raise ERR "mk_enumset" 
+    | NONE => raise ERR "mk_enumset"
          ("enumerated type "^Lib.quote (fst(dest_type ety))^" not registered")
 
 
-(*---------------------------------------------------------------------------*)
-(* Intended to be easily mapped to and from Robby's bitcodec representation  *)
-(* Not currently used.                                                       *)
-(*---------------------------------------------------------------------------*)
-(*
-datatype format
-  = ATOM of atomic
-  | CONCAT of format list
-  | LIST of format
-  | ARRAY of format * int
-  | UNION of format * format
-  | PACKED of format list * width
-;
-*)
-
-(*---------------------------------------------------------------------------*)
-(* Translate formula coming from AGREE specs to regexp. Create encoder and   *)
-(* decoder. Generate correctness formulas                                    *)
-(*---------------------------------------------------------------------------*)
-
 fun is_comparison tm =
  let val (opr,args) = strip_comb tm
-  in op_mem same_const opr 
+  in op_mem same_const opr
           [numSyntax.less_tm,numSyntax.leq_tm,numSyntax.greater_tm,
            numSyntax.geq_tm, intSyntax.less_tm,intSyntax.leq_tm,
            intSyntax.great_tm,intSyntax.geq_tm]
-  end	
+  end
 
 fun mk_set_lr list =
  let fun mk_set [] acc = rev acc
@@ -356,7 +343,7 @@ fun tdrop i list = (List.take(list,i),List.drop(list,i))
 
 fun take_list [] [] = []
   | take_list [] _ = raise ERR "take_list" "non-empty list remains"
-  | take_list (i::t) elts = 
+  | take_list (i::t) elts =
     let val (h,elts') = tdrop i elts
     in h::take_list t elts'
     end
@@ -378,7 +365,7 @@ fun all_paths recdvar =
 	  then let val pfns = map projfn_of (TypeBase.accessors_of ty)
 	       in map (Lib.C (curry mk_comb) tm) pfns
 	       end
-          else 
+          else
           if fcpSyntax.is_cart_type ty then
               let val (bty,dty) = fcpSyntax.dest_cart_type ty
 		  val d = fcpSyntax.dest_int_numeric_type dty
@@ -391,8 +378,8 @@ fun all_paths recdvar =
        end
      fun genpaths paths =
        let val paths' = flatten (map grow paths)
-       in if listrel aconv paths' paths then 
-               paths 
+       in if listrel aconv paths' paths then
+               paths
           else genpaths paths'
        end
  in
@@ -405,13 +392,13 @@ fun all_paths recdvar =
 
 val ii2term = intSyntax.term_of_int o Arbint.fromLargeInt;
 
-fun mk_lt ty = 
-  if ty = numSyntax.num then numSyntax.less_tm else 
+fun mk_lt ty =
+  if ty = numSyntax.num then numSyntax.less_tm else
   if ty = intSyntax.int_ty then intSyntax.less_tm
   else raise ERR "mk_lt" "";
 
-fun mk_le ty = 
-  if ty = numSyntax.num then numSyntax.leq_tm else 
+fun mk_le ty =
+  if ty = numSyntax.num then numSyntax.leq_tm else
   if ty = intSyntax.int_ty then intSyntax.leq_tm
   else raise ERR "mk_le" "";
 
@@ -427,10 +414,10 @@ fun max_constFn (bits:int) encoding =
         of Unsigned  => twoE bits
          | otherwise => twoE (bits - 1))
  in fn ty =>
-     if ty = numSyntax.num then 
+     if ty = numSyntax.num then
          numSyntax.mk_numeral (Arbnum.fromLargeInt maxnum)
-     else 
-     if ty = intSyntax.int_ty then 
+     else
+     if ty = intSyntax.int_ty then
          ii2term maxnum
      else raise ERR "max_const" ""
  end;
@@ -442,24 +429,24 @@ fun min_constFn bits encoding =
          | Sign_mag  => IntInf.~(IntInf.-(twoE (bits - 1), 1))
          | otherwise => IntInf.~(twoE (bits - 1)))
  in fn ty =>
-     if ty = numSyntax.num then 
+     if ty = numSyntax.num then
          numSyntax.zero_tm
-     else 
-     if ty = intSyntax.int_ty then 
+     else
+     if ty = intSyntax.int_ty then
          ii2term minnum
      else raise ERR "min_const" ""
  end;
 
-fun fpath s = 
+fun fpath s =
   let open FileSys
-      fun fail() = raise ERR "fpath" 
+      fun fail() = raise ERR "fpath"
              ("unable to create or access directory "^Lib.quote s)
-      val path = fullPath s handle _ => (mkDir s ; fullPath s) 
+      val path = fullPath s handle _ => (mkDir s ; fullPath s)
                             handle _ => fail()
       in if isDir path andalso access(path,[A_EXEC,A_READ,A_WRITE])
          then path else fail()
       end
-	  
+
 (*---------------------------------------------------------------------------*)
 (* Expects (x = C1) \/ (x = C2) \/ ...                                       *)
 (* There are some special cases when the enumerated type is bool             *)
@@ -468,33 +455,42 @@ fun fpath s =
 (* sets of enumerated constructors.                                          *)
 (*---------------------------------------------------------------------------*)
 
-fun constraint_enumset [ctr] = 
-    let val eqns = 
-          if not (is_disj ctr) then 
-               (if is_neg ctr then 
+fun constraint_enumset [ctr] =
+    let val eqns =
+          if not (is_disj ctr) then
+               (if is_neg ctr then
                   [mk_eq (dest_neg ctr,boolSyntax.F)] else
                   [mk_eq (ctr,boolSyntax.T)])
           else strip_disj ctr
+        val fvs = free_varsl eqns
+        val cvar =
+            if null fvs then
+		raise ERR "constraint_enumset" "no variables being constrained"
+	    else if length fvs > 1 then
+                raise ERR "constraint_enumset" "more than one variable being constrained"
+            else hd fvs
         val constlike = null o free_vars
-        fun elt_of eqn = 
-          let val (l,r) = dest_eq eqn 
-          in if constlike l then l else 
-             if constlike r then r else 
+        fun elt_of eqn =
+          let val (l,r) = dest_eq eqn
+          in if constlike l then l else
+             if constlike r then r else
              raise ERR "constraint_enumset (elt_of)" "expected a projection"
           end
         val elts = map elt_of eqns
-        val _ = if null elts then 
+        val _ = if null elts then
                 raise ERR "constraint_enumset" "no elements" else ()
         val enumty = type_of (hd elts)
         val etyname = fst(dest_type enumty)
-        val _ = if 256 < length (TypeBase.constructors_of enumty) then 
-                  raise ERR "constraint_enumset" 
+        val _ = if 256 < length (TypeBase.constructors_of enumty) then
+                  raise ERR "constraint_enumset"
                     ("enumerated type "^Lib.quote etyname
-                     ^" has > 256 elements: too many") 
+                     ^" has > 256 elements: too many")
                 else ()
-    in mk_enumset(enumty,elts)
+        val enumset_pred = mk_abs(cvar,list_mk_disj eqns)
+    in
+         mk_enumset(enumty,elts,enumset_pred)
     end
-  | constraint_enumset other = 
+  | constraint_enumset other =
     raise ERR "constraint_enumset" "expected a disjunction of equations";
 
 (*---------------------------------------------------------------------------*)
@@ -503,7 +499,7 @@ fun constraint_enumset [ctr] =
 (* constraints are then translated to regular expressions (actually, one big *)
 (* one.) Also, encoders and decoders are created, along with a suite of      *)
 (* theorems showing the relationships between the encoder, decoder, and      *)
-(* filter (generated from the big regular expression).                       *) 
+(* filter (generated from the big regular expression).                       *)
 (*---------------------------------------------------------------------------*)
 
 type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
@@ -513,7 +509,7 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
      val max_const = max_constFn intwidth encoding
      val min_const = min_constFn intwidth encoding
      val (wfpred_apps, expansion) = dest_eq(concl thm)
-     val recdvar = 
+     val recdvar =
         (case free_vars wfpred_apps
           of [x] => x
            | otherwise => raise ERR "gen_filter_artifacts" "expected 1 free var")
@@ -529,55 +525,55 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
         else if is_disj t  (* disjunction of equalities *)
             then flatten (map (snd o strip_comb) (strip_disj t))
             else if type_of t = Type.bool then [t]
-                 else raise ERR "proj_of" 
+                 else raise ERR "proj_of"
                    "expected a disjunction of equalities or an arithmetic inequality")
      val projs = mk_set_lr (flatten (map proj_of constraints))
      val omitted_projs = op_set_diff aconv allprojs projs
      fun in_group tmlist tm = (tm, filter (Lib.can (find_term (aconv tm))) tmlist)
-     val allgroups = map (in_group constraints) allprojs 
-     val groups = map (in_group constraints) projs 
+     val allgroups = map (in_group constraints) allprojs
+     val groups = map (in_group constraints) projs
      val groups' =  (* unconstrained fields get explicitly constrained *)
          if null omitted_projs
 	 then groups
 	 else
          let fun unconstrained proj = (* Done for integers and enums currently *)
               let val ty = type_of proj
-                  open intSyntax 
+                  open intSyntax
               in if ty = int_ty
                     then [mk_leq(min_const ty,proj), mk_less(proj,max_const ty)]
-	         else 
-                 if ty = numSyntax.num 
+	         else
+                 if ty = numSyntax.num
                     then [numSyntax.mk_leq(numSyntax.zero_tm,proj),
                           numSyntax.mk_less(proj,max_const ty)]
                  else case Finmap.peek (the_enumMap(),type_of proj)
-                       of NONE => raise ERR "mk_correctness_goals" 
+                       of NONE => raise ERR "mk_correctness_goals"
                                 ("following field is not in the_enumMap(): "
                                  ^term_to_string proj)
-		        | SOME (plist,_) => 
+		        | SOME (plist,_) =>
                             [list_mk_disj (map (curry mk_eq proj o fst) plist)]
               end
              fun supplement (proj,[]) = (proj,unconstrained proj)
                | supplement other = other
-	 in 
+	 in
             map supplement allgroups
          end
 
      (* Add implicit constraints to the wfpred *)
 
-     val implicit_constraints = 
+     val implicit_constraints =
           List.mapPartial (C (op_assoc1 aconv) groups') omitted_projs
-     val (wfpred_apps',iconstraints_opt) = 
+     val (wfpred_apps',iconstraints_opt) =
 	 if null implicit_constraints
 	 then (wfpred_apps,NONE)
-	 else 
+	 else
          let val implicit_constraints_tm =
                  list_mk_conj (map list_mk_conj implicit_constraints)
 	     val iconstr_name = fname^"_implicit_constraints"
-	     val iconstr_app = 
+	     val iconstr_app =
                     mk_comb(mk_var(iconstr_name,recdty --> Type.bool),recdvar)
 	     val iconstr_def_tm = mk_eq(iconstr_app, implicit_constraints_tm)
 	     val implicit_constraints_def = TotalDefn.Define `^iconstr_def_tm`
-	     val implicit_constraints_const = 
+	     val implicit_constraints_const =
                   mk_const(dest_var(fst(dest_comb iconstr_app)))
          in
             (mk_conj(wfpred_apps,mk_comb(implicit_constraints_const,recdvar)),
@@ -591,64 +587,78 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
      (* form relop t1 t2.                                                         *)
      (*---------------------------------------------------------------------------*)
 
-     fun constraint_interval ctr = 
+     fun constraint_interval ctr =
       let val domtys = fst (strip_fun (type_of (fst (strip_comb (hd ctr)))))
-          fun is_numeric ty = (ty = numSyntax.num orelse ty = intSyntax.int_ty) 
-          val _ = if Lib.all is_numeric domtys then () 
+          fun is_numeric ty = (ty = numSyntax.num orelse ty = intSyntax.int_ty)
+          val _ = if Lib.all is_numeric domtys then ()
                   else raise ERR "constraint_interval" "not a numeric constraint"
           fun elim_gtr tm = (* elim > and >= *)
             case strip_comb tm
 	      of (rel,[a,b]) =>
                   if same_const rel numSyntax.greater_tm
-		    then (numSyntax.less_tm,b,a) else 
-                  if same_const rel numSyntax.geq_tm 
-		    then (numSyntax.leq_tm,b,a) else 
+		    then (numSyntax.less_tm,b,a) else
+                  if same_const rel numSyntax.geq_tm
+		    then (numSyntax.leq_tm,b,a) else
                   if same_const rel intSyntax.great_tm
-		    then (intSyntax.less_tm,b,a) else 
-                  if same_const rel intSyntax.geq_tm 
-		    then (intSyntax.leq_tm,b,a) else 
+		    then (intSyntax.less_tm,b,a) else
+                  if same_const rel intSyntax.geq_tm
+		    then (intSyntax.leq_tm,b,a) else
                   if op_mem same_const rel
                           [intSyntax.leq_tm,numSyntax.leq_tm,
                            intSyntax.less_tm,numSyntax.less_tm,boolSyntax.equality]
                      then (rel,a,b)
                   else raise ERR "constraint_interval" "unknown numeric relation"
-	       | other => raise ERR "constraint_interval" 
+	       | other => raise ERR "constraint_interval"
                                     "expected term of form `relop a b`"
           val ctr' = map elim_gtr ctr
           fun has_recdvar t = op_mem aconv recdvar (free_vars t)
-          fun add_constraint [ctr as (rel,a,b)] = 
+          fun add_constraint [ctr as (rel,a,b)] =
                  let val ty = type_of a
                  in if same_const boolSyntax.equality rel then
                        [ctr, (rel,b,a)]
                     else
-                    if has_recdvar b then 
-                         [ctr, (mk_lt ty, b,max_const ty)] else 
+                    if has_recdvar b then
+                         [ctr, (mk_lt ty, b,max_const ty)] else
                     if has_recdvar a then
-                         [(mk_le ty, min_const ty, a),ctr] 
+                         [(mk_le ty, min_const ty, a),ctr]
                     else raise ERR "constraint_interval" "add_constraint"
                  end
             | add_constraint (x as [_,_]) = x
             | add_constraint other = raise ERR "constraint_interval" "add_constraint"
           val ctr'' = add_constraint ctr'
-          fun sort [c1 as (_,a,b), c2 as (_,c,d)] = 
+          fun sort [c1 as (_,a,b), c2 as (_,c,d)] =
               let val fva = free_vars a
                   val fvb = free_vars b
                   val fvc = free_vars c
                   val fvd = free_vars d
-              in 
-                 if op_mem aconv recdvar fvb andalso 
+              in
+                 if op_mem aconv recdvar fvb andalso
                     op_mem aconv recdvar fvc andalso aconv b c
                    then (c1,c2)
 	         else
-	         if op_mem aconv recdvar fvd andalso 
+	         if op_mem aconv recdvar fvd andalso
                     op_mem aconv recdvar fva andalso aconv a d
                    then (c2,c1)
 	         else raise ERR "constraint_interval(sort)" "unexpected format"
               end
-            | sort otherwise = raise ERR "constraint_interval(sort)" 
+            | sort otherwise = raise ERR "constraint_interval(sort)"
                                          "unexpected format"
-          val ((rel1,lo_tm,_),(rel2,_,hi_tm)) = sort ctr''
-	  fun dest_literal t = 
+          val (loc,hic) = sort ctr''
+          val (rel1,lo_tm,f1) = loc
+          val (rel2,f2,hi_tm) = hic
+          val vname =
+             let val ty = type_of f1
+             in if ty = numSyntax.num then
+                   "n" else
+                if ty = intSyntax.int_ty then
+                   "i"
+                else "v"
+             end
+          val ipvar = mk_var(vname,type_of f1)
+          fun mk_ineq (rel,a,b) = list_mk_comb(rel,[a,b])
+          val interval_pred = mk_abs(ipvar,
+              subst[f1 |-> ipvar] (mk_conj (mk_ineq loc, mk_ineq hic)))
+	  fun dest_literal t =
              (if type_of t = numSyntax.num
 	        then Arbint.fromNat o numSyntax.dest_numeral
                 else intSyntax.int_of_term) t
@@ -658,14 +668,15 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
                       then Arbint.+(lo, Arbint.one) else lo
           val hi' = if op_mem same_const rel2 [numSyntax.less_tm,intSyntax.less_tm]
                       then Arbint.-(hi,Arbint.one) else hi
-      in  
-        mk_interval shrink encoding endian 
-                       (Arbint.toLargeInt lo',Arbint.toLargeInt hi')
+      in
+	   mk_interval shrink encoding endian
+                       (Arbint.toLargeInt lo',Arbint.toLargeInt hi') interval_pred
       end
 
-     fun mk_segment a = 
+
+     fun mk_segment a =
         constraint_interval a
-         handle HOL_ERR _ => 
+         handle HOL_ERR _ =>
 	constraint_enumset a;
 
      val manifest = map (I##mk_segment) groups'
@@ -680,7 +691,7 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
                  closeOut ostrm1;
                  closeOut ostrm2
               end
-              handle e => 
+              handle e =>
               raise ERR "gen_filter_artifacts" "unable to write segments file")
 
      (* Compute regexps for the fields *)
@@ -688,9 +699,33 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
      val regexps = map (regexp_of o snd) manifest
      val the_regexp = Regexp_Match.normalize (catlist regexps)
      val the_regexp_tm = regexpSyntax.regexp_to_term the_regexp
-     
-     val codings = 
-       List.map (fn atm => {enc = encoder_of atm, dec = decoder_of atm}) 
+
+     val encs = map (encoder_of o snd) manifest
+     val preds = map (constraint_of o snd) manifest
+     fun mk_set_abs a b =
+      let val (v,body) = dest_abs b
+      in pred_setSyntax.prim_mk_set_spec(mk_comb(a,v), body, [v])
+      end
+     val obs = map2 mk_set_abs encs preds
+     val dotc = inst [alpha |-> stringSyntax.char_ty]
+                   (prim_mk_const{Thy="FormalLang",Name="dot"})
+     fun mk_dot l1 l2 = list_mk_comb(dotc,[l1,l2])
+     val enc_spec = end_itlist mk_dot obs
+     val svar = mk_var("s",stringSyntax.string_ty)
+     val tv_tm = mk_eq (pred_setSyntax.mk_in (svar,mk_regexp_lang the_regexp_tm),
+                        pred_setSyntax.mk_in (svar,enc_spec))
+ in
+     {name  = fname,
+      regexp = the_regexp,
+      implicit_constraints = iconstraints_opt,
+      manifest = manifest,
+      tv = tv_tm}
+ end
+ handle e => raise wrap_exn "splatLib" "gen_filter_artifacts" e;
+
+(*
+     val codings =
+       List.map (fn atm => {enc = encoder_of atm, dec = decoder_of atm})
                 (map snd manifest);
 
      (* Define encoder *)
@@ -704,8 +739,8 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
      val encodeFn_def = TotalDefn.Define `^encodeFn_def_term`
      val encodeFn = mk_const(dest_var encodeFn_var)
 
-     val regexp_lang_tm = 
-       mk_thy_const{Name = "regexp_lang", Thy = "regexp", 
+     val regexp_lang_tm =
+       mk_thy_const{Name = "regexp_lang", Thy = "regexp",
           Ty = regexpSyntax.regexp_ty --> stringSyntax.string_ty --> Type.bool}
 
      val correctness_goal = mk_forall(recdvar,
@@ -729,16 +764,16 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
      fun enlist vlist = listSyntax.mk_list(vlist,stringSyntax.char_ty)
      val chunked_vars_tms = map enlist chunked_vars
      val rhs_info = zip allprojs (map mk_comb (zip decs chunked_vars_tms))
-     fun rev_strip t b acc = 
+     fun rev_strip t b acc =
          if is_var t then (rev acc, b) else
-         if fcpSyntax.is_fcp_index t then 
+         if fcpSyntax.is_fcp_index t then
           let val (A,i) = fcpSyntax.dest_fcp_index t
               val Aty = type_of A
               val Avar = mk_var("A",Aty)
               val indexOp = mk_abs(Avar,fcpSyntax.mk_fcp_index(Avar,i))
           in rev_strip A b (indexOp::acc)
 	  end
-         else 
+         else
          let val (M,N) = dest_comb t
 	 in rev_strip N b (M::acc)
 	 end
@@ -747,59 +782,59 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
 
      fun parts [] = []
        | parts ((p as ([_],v))::t) = [p]::parts t
-       | parts ((h as (segs1,_))::t) = 
-	 let fun P (segs2,_) = 
-                if null segs1 orelse null segs2 then false 
+       | parts ((h as (segs1,_))::t) =
+	 let fun P (segs2,_) =
+                if null segs1 orelse null segs2 then false
                 else listrel aconv (tl segs1) (tl segs2)
              val (L1,L2) = Lib.partition P (h::t)
 	 in L1 :: parts L2
 	 end
 
-     fun mk_recd_app rty args = 
+     fun mk_recd_app rty args =
        case TypeBase.constructors_of rty
         of [constr] => list_mk_comb (constr,args)
          | otherwise => raise ERR "mk_recd_app" "expected to find a record constructor"
-     
+
      fun maybe_shrink [] = raise ERR "maybe_shrink" "empty partition"
        | maybe_shrink (partn as [([_],_)]) = partn  (* fully shrunk *)
-       | maybe_shrink (partn as (apath::_)) = 
+       | maybe_shrink (partn as (apath::_)) =
           let val segs = fst apath
               val args = map snd partn
               val ty = dom(type_of (hd segs))
-          in if TypeBase.is_record_type ty then 
+          in if TypeBase.is_record_type ty then
                 let val fields = TypeBase.fields_of ty
                 in if length fields = length args
                    then  [(tl segs,mk_recd_app ty args)]
                    else partn
                 end
-             else 
-             if fcpSyntax.is_cart_type ty then 
+             else
+             if fcpSyntax.is_cart_type ty then
                 let open fcpSyntax
                     val (bty,dty) = dest_cart_type ty
                     val dim = dest_int_numeric_type dty
                 in if dim = length args
                    then [(tl segs, mk_l2v(listSyntax.mk_list(args,type_of (hd args))))]
-                   else raise ERR "maybe_shrink" 
+                   else raise ERR "maybe_shrink"
                         ("expected to construct array of size "^Int.toString dim)
-                end 
+                end
              else raise ERR "maybe_shrink" "expected record or array"
           end
        handle e => raise wrap_exn "splatLib" "maybe_shrink" e
 
      (* path : (term list * term) list *)
      val path_eq = listrel (pairrel (listrel aconv) aconv)
-			    
+
      fun mk_recd paths =
       if Lib.all (equal 1 o length o fst) paths
          then mk_recd_app recdty (map snd paths)
-      else 
+      else
       let val partns = parts paths
           val partns' = map maybe_shrink partns
 	  val paths' = flatten partns'
       in
           if length paths' < length paths
 	  then mk_recd paths'
-	  else 
+	  else
             if path_eq paths' paths (* paths' = paths *)
             then raise ERR "mk_recd" "irreducible path"
           else if length paths' = length paths
@@ -846,6 +881,7 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
       manifest = manifest}
  end
  handle e => raise wrap_exn "splatLib" "gen_filter_artifacts" e;
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Proves goals of the form                                                  *)
@@ -857,8 +893,8 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
 
 val IN_CHARSET_NUM_TAC =
  rw_tac (list_ss ++ regexpLib.charset_conv_ss) [EQ_IMP_THM,strlen_eq,LE_LT1]
-  >> TRY EVAL_TAC 
-  >> rule_assum_tac 
+  >> TRY EVAL_TAC
+  >> rule_assum_tac
         (SIMP_RULE list_ss [dec_def, numposrepTheory.l2n_def, ord_mod_256])
   >> rpt (qpat_x_assum `_ < ORD c` mp_tac ORELSE qpat_x_assum `ORD c < _` mp_tac)
   >> Q.SPEC_TAC (`ORD c`, `n`)
@@ -878,7 +914,7 @@ fun charset_intervals r = regexpMisc.intervals (map Char.ord (regexp_elts r))
 
 fun CHECK_SPEC_TAC (t1,t2) (asl,c) =
   (if can(find_term (aconv t1)) c
-    then SPEC_TAC (t1,t2) 
+    then SPEC_TAC (t1,t2)
     else NO_TAC) (asl,c)
 
 fun GEVAL_TAC (asl,c) =
@@ -887,14 +923,14 @@ fun GEVAL_TAC (asl,c) =
 fun const_bound tm =
  let open numSyntax
  in (is_less tm orelse is_leq tm)
-    andalso 
+    andalso
     is_numeral (rand tm)
  end
 
 val ordered_pop_tac =
  rpt (PRED_ASSUM (not o const_bound) mp_tac)
   >> PRED_ASSUM const_bound mp_tac;
-				
+
 val prover =
  let open numSyntax stringSyntax
      val cvar = mk_var("c",num)
@@ -909,18 +945,18 @@ val prover =
     >> TRY (qexists_tac `ORD c` >> rw_tac list_ss [CHR_ORD])
     >> (GEVAL_TAC ORELSE
          (ordered_pop_tac
-           >> (CHECK_SPEC_TAC (cvar,nvar) ORELSE 
+           >> (CHECK_SPEC_TAC (cvar,nvar) ORELSE
                CHECK_SPEC_TAC (ordtm,nvar))
            >> REPEAT (CONV_TAC (numLib.BOUNDED_FORALL_CONV EVAL))
            >> gen_tac >> ACCEPT_TAC TRUTH))
  end
-    
+
 (*---------------------------------------------------------------------------*)
 (* Takes a term of the form                                                  *)
 (*                                                                           *)
 (*  s IN regexp_lang (Chset (Charset a b c d))                               *)
 (*                                                                           *)
-(* and returns                                                               *) 
+(* and returns                                                               *)
 (*                                                                           *)
 (* |- s IN regexp_lang (Chset (Charset a b c d)) <=>                         *)
 (*    STRLEN s = 1 /\ lo <= dec s <= hi                                      *)
@@ -928,7 +964,7 @@ val prover =
 (* where lo and hi are the interval endpoints. If lo = 0 then it is omitted. *)
 (* If lo=hi then we just have (dec s = lo)                                   *)
 (*---------------------------------------------------------------------------*)
-     
+
 fun pure_in_charset_conv tm =
  let open regexpSyntax stringSyntax pred_setSyntax numSyntax
      val (s,rlang) = dest_in tm
