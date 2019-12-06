@@ -6,8 +6,8 @@ HOL_BASE="https://github.com/HOL-Theorem-Prover/HOL.git"
 
 
 # Defaults:
-HOL_CHECKOUT=${HOL_CHECKOUT:master}
-SML=${SML:poly}
+HOL_CHECKOUT=${HOL_CHECKOUT:-master}
+SML=${SML:-poly}
 
 git clone -b $HOL_CHECKOUT $HOL_BASE
 pushd HOL
