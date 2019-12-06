@@ -457,26 +457,27 @@ fun fpath s =
 
 fun constraint_enumset [ctr] =
     let val eqns =
-          if not (is_disj ctr) then
+           if not (is_disj ctr) then
                (if is_neg ctr then
                   [mk_eq (dest_neg ctr,boolSyntax.F)] else
                   [mk_eq (ctr,boolSyntax.T)])
-          else strip_disj ctr
-        val fvs = free_varsl eqns
-        val cvar =
-            if null fvs then
-		raise ERR "constraint_enumset" "no variables being constrained"
-	    else if length fvs > 1 then
-                raise ERR "constraint_enumset" "more than one variable being constrained"
-            else hd fvs
+           else strip_disj ctr
+        val _ = if all is_eq eqns then ()
+                 else raise ERR "constraint_enumset"
+                    "expected disjunction of equations"
         val constlike = null o free_vars
-        fun elt_of eqn =
-          let val (l,r) = dest_eq eqn
-          in if constlike l then l else
-             if constlike r then r else
-             raise ERR "constraint_enumset (elt_of)" "expected a projection"
+        fun norm eqn =
+          let val _ = if not(constlike eqn) then () else
+                 raise ERR "constraint_enumset(norm)"
+                      "expected at least one variable somewhere in eqn"
+             val (l,r) = dest_eq eqn
+          in if constlike l then mk_eq(r,l) else
+             if constlike r then eqn else
+             raise ERR "constraint_enumset (norm)" "expected a constructor"
           end
-        val elts = map elt_of eqns
+        val eqns' = map norm eqns
+        val proj = lhs (hd eqns')
+        val elts = map rhs eqns'
         val _ = if null elts then
                 raise ERR "constraint_enumset" "no elements" else ()
         val enumty = type_of (hd elts)
@@ -486,7 +487,9 @@ fun constraint_enumset [ctr] =
                     ("enumerated type "^Lib.quote etyname
                      ^" has > 256 elements: too many")
                 else ()
-        val enumset_pred = mk_abs(cvar,list_mk_disj eqns)
+        val pvar = mk_var("x",enumty)
+        val enumset_pred =
+            mk_abs(pvar,subst [proj |-> pvar] (list_mk_disj eqns))
     in
          mk_enumset(enumty,elts,enumset_pred)
     end
@@ -504,7 +507,8 @@ fun constraint_enumset [ctr] =
 
 type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
 
-fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
+fun gen_filter_artifacts (intformat as (shrink,endian,encoding))
+                         ((pkgName,fname),thm) =
  let val intwidth = shrinkVal shrink
      val max_const = max_constFn intwidth encoding
      val min_const = min_constFn intwidth encoding
@@ -672,7 +676,6 @@ fun gen_filter_artifacts (iformat as (shrink,endian,encoding)) (fname,thm) =
 	   mk_interval shrink encoding endian
                        (Arbint.toLargeInt lo',Arbint.toLargeInt hi') interval_pred
       end
-
 
      fun mk_segment a =
         constraint_interval a

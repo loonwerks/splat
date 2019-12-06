@@ -53,7 +53,7 @@ sig
 
   type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
 
-  val gen_filter_artifacts : int_format -> string * thm -> filter_info
+  val gen_filter_artifacts : int_format -> (string * string) * thm -> filter_info
 
   val IN_CHARSET_NUM_TAC : tactic
 

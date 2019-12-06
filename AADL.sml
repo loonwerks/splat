@@ -8,8 +8,8 @@ struct
 open Lib Feedback HolKernel boolLib bossLib MiscLib AST Json;
 
 local open
-   stringLib stringSimps wordsLib integer_wordLib fcpLib
-   regexpLib regexpSyntax
+   stringLib stringSimps fcpLib
+   regexpLib regexpSyntax aadl_basetypesTheory
 in end;
 
  type qid = string * string;
@@ -53,12 +53,72 @@ fun dest_qid s =
       | otherwise => raise ERR "dest_qid" "unexpected format"
  end;
 
+(* Principled approach, doing a one-for-one mapping between AADL integer types and,
+   eventually, HOL types. Not sure how well it will work with all AGREE specs limited
+   to be (unbounded) Integer. Example: a field "f : Integer_32" may be constrained by
+   an AGREE formula to be less than 42, say. But AGREE only believes in Integer, so
+   the constraint is not well-typed. A system of coercions can be built, so that
+
+       toInteger (f) < 42
+
+    or
+
+       f < toInteger_32(42)
+
+   deliver a well-typed formula. The first coercion above (toInteger)
+   is total; the second is not, and adds a "wellformedness
+   obligation", namely that the argument of toInteger_32(-) is in
+   range; moreover, in case that the argument is a compound
+   expression, it requires the coercion to be recursively pushed down
+   through the expression. So, for example, coercing to Integer_32 in
+
+      f < toInteger_32(x + 256)
+
+   means rewriting to
+
+      f < Integer_32_plus (toInteger_32(x), toInteger_32 (256))
+
+fun dest_tyqid dotid =
+ let open AST
+     val UnbInt = BaseTy(IntTy(Int NONE))
+ in case dest_qid dotid
+     of (_,"Integer")     => UnbInt
+      | (_,"Natural")     => UnbInt
+      | (_,"Unsigned_8")  => UnbInt
+      | (_,"Unsigned_16") => UnbInt
+      | (_,"Unsigned_32") => UnbInt
+      | (_,"Unsigned_64") => UnbInt
+      | (_,"Integer_8")   => UnbInt
+      | (_,"Integer_16")  => UnbInt
+      | (_,"Integer_32")  => UnbInt
+      | (_,"Integer_64")  => UnbInt
+      | (_,"Bool")        => BaseTy BoolTy
+      | (_,"Boolean")     => BaseTy BoolTy
+      | (_,"String")  => BaseTy StringTy
+      | (_,"Char")    => BaseTy CharTy
+      | (_,"Float")   => BaseTy FloatTy
+      | (a,b)         => NamedTy (a,b)
+ end;
+*)
+
 fun dest_tyqid dotid =
  case dest_qid dotid
-  of ("","Integer") => BaseTy(IntTy (!defaultNumKind))
-   | ("","Bool") => BaseTy BoolTy
-   | ("","String") => BaseTy StringTy
-   | (a,b) => NamedTy (a,b);
+  of (_,"Integer") => BaseTy(IntTy(AST.Int NONE))
+   | (_,"Natural") => BaseTy(IntTy(AST.Nat NONE))
+   | (_,"Unsigned_8")  => BaseTy(IntTy(AST.Nat (SOME 8)))
+   | (_,"Unsigned_16") => BaseTy(IntTy(AST.Nat (SOME 16)))
+   | (_,"Unsigned_32") => BaseTy(IntTy(AST.Nat (SOME 32)))
+   | (_,"Unsigned_64") => BaseTy(IntTy(AST.Nat (SOME 64)))
+   | (_,"Integer_8")   => BaseTy(IntTy(AST.Int (SOME 8)))
+   | (_,"Integer_16")  => BaseTy(IntTy(AST.Int (SOME 16)))
+   | (_,"Integer_32")  => BaseTy(IntTy(AST.Int (SOME 32)))
+   | (_,"Integer_64")  => BaseTy(IntTy(AST.Int (SOME 64)))
+   | (_,"Bool")        => BaseTy BoolTy
+   | (_,"Boolean")     => BaseTy BoolTy
+   | (_,"String")  => BaseTy StringTy
+   | (_,"Char")    => BaseTy CharTy
+   | (_,"Float")   => BaseTy FloatTy
+   | (a,b)         => NamedTy (a,b);
 
 fun get_tyinfo tyinfo =
  case tyinfo
@@ -76,12 +136,12 @@ fun get_tyinfo tyinfo =
      => dest_tyqid tyname
    | [("kind", String "primType"), ("primType", String "bool")]
      => BaseTy BoolTy
-   | [("kind", String "primType"), ("primType", String "int")]
-     => BaseTy(IntTy (!defaultNumKind))
    | [("kind", String "PrimType"), ("primType", String "bool")]
      => BaseTy BoolTy
+   | [("kind", String "primType"), ("primType", String "int")]
+     => BaseTy(IntTy (AST.Int NONE))
    | [("kind", String "PrimType"), ("primType", String "int")]
-     => BaseTy(IntTy (!defaultNumKind))
+     => BaseTy(IntTy (AST.Int NONE))
    | otherwise => raise ERR "get_tyinfo" "unable to construct type";
 
 fun dest_ty ty =
@@ -235,23 +295,28 @@ fun mk_def pkgName json =
 
 fun mk_defs pkgName annex =  (* package annex *)
  case annex
-  of AList [("name", String "agree"),
-            ("kind", String "AnnexLibrary"),
+  of AList (("name", String "agree") ::
+            ("kind", String "AnnexLibrary") ::
             ("parsedAnnexLibrary",
-                 AList [("statements", List decls)]),
-            ("sourceText",_)]
+                 AList [("statements", List decls)]) :: _)
       => mapfilter (mk_def pkgName) decls
    | otherwise => raise ERR "get_fndefs" "unexpected annex format";
+
 (*
 val [d1,d2,d3,d4,d5,d6,d7,d8,d9,d10] = decls;
 *)
 
+fun fldty tystr = dest_tyqid tystr;
+
+(*
 fun fldty tystr =  (* replace with dest_ty? *)
  case dest_qid tystr
-  of ("Base_Types","Integer") => BaseTy(IntTy (!defaultNumKind))
-   | ("Base_Types","Boolean") => BaseTy(BoolTy)
-   | ("Base_Types","String") => BaseTy(StringTy)
+  of ("Base_Types","Integer") => BaseTy(IntTy (Int NONE))
+   | ("Base_Types","Boolean") => BaseTy BoolTy
+   | ("Base_Types","Char")    => BaseTy CharTy
+   | ("Base_Types","String")  => BaseTy StringTy
    | (pkg,tyname) => NamedTy(pkg,tyname);
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Support for detecting and implementing record type extension              *)
@@ -434,11 +499,11 @@ fun get_filter decl =
                 AList [("name", String "CASE_Properties::COMP_SPEC"), _,
                        ("value", List rnames)]]),
        ("annexes",
-         List [AList [("name", String "agree"),
-                      ("kind", String "AnnexSubclause"),
+         List [AList (("name", String "agree") ::
+                      ("kind", String "AnnexSubclause") ::
                       ("parsedAnnexSubclause",
-                           AList [("statements", List guarantees)]),
-                      ("sourceText",_)]])]
+                           AList [("statements", List guarantees)]) :: _)
+                      ])]
       => (case get_named_guarantees rnames guarantees
            of [] => raise ERR "get_filter" "no properties!"
             | glist => FilterDec(dest_qid fname, map get_port ports, glist))
@@ -567,7 +632,8 @@ fun scrape_pkgs json =
       | otherwise => raise ERR "scrape_pkgs" "unexpected format"
  end
 
-(* val List pkgs = jpkg;
+(*
+val List pkgs = jpkg;
 
 fun uses (A as AList (("name", String AName) ::
                            ("kind", String "AadlPackage")::
@@ -603,6 +669,66 @@ scrape pkg13;
 *)
 
 (*---------------------------------------------------------------------------*)
+(* AST to AST                                                                *)
+(*---------------------------------------------------------------------------*)
+
+fun amn_ty ty =
+ let open AST
+ in case ty
+     of BaseTy (IntTy _)     => BaseTy (IntTy (Int NONE))
+      | RecdTy (qid, fldtys) => RecdTy(qid, map (I##amn_ty) fldtys)
+      | ArrayTy (ty,dims)    => ArrayTy(amn_ty ty,dims)
+      | other => ty
+ end
+
+fun amn_exp exp =
+ let open AST
+ in case exp
+     of VarExp _ => exp
+      | ConstExp(IntLit vk) => ConstExp(IntLit{value = #value(vk),kind=Int NONE})
+      | ConstExp _ => exp
+      | Unop (uop,e) => Unop(uop,amn_exp e)
+      | Binop (bop,e1,e2) => Binop(bop,amn_exp e1,amn_exp e2)
+      | RecdProj(e,id) => RecdProj(amn_exp e,id)
+      | RecdExp(qid,fields) => RecdExp(qid,map (I##amn_exp) fields)
+      | ConstrExp(qid,id,NONE) => exp
+      | ConstrExp(qid,id, SOME e) => ConstrExp(qid,id, SOME (amn_exp e))
+      | Fncall (qid,exps) => Fncall(qid,map amn_exp exps)
+      | ArrayIndex(A,indices) => ArrayIndex(amn_exp A, map amn_exp indices)
+      | ArrayExp elist => ArrayExp (map amn_exp elist)
+      | Quantified(quant,qvars,exp) =>
+          Quantified(quant, map (I##amn_ty) qvars, amn_exp exp)
+ end
+
+fun amn_tydec tydec =
+ case tydec
+  of EnumDec _ => tydec
+   | RecdDec (qid,fields) => RecdDec(qid,map (I##amn_ty) fields)
+   | ArrayDec (qid,ty) => ArrayDec(qid, amn_ty ty)
+
+fun amn_tmdec tdec =
+ case tdec
+  of ConstDec (qid,ty,exp) => ConstDec(qid,amn_ty ty,amn_exp exp)
+   | FnDec (qid,params,ty,exp) =>
+       FnDec (qid,map (I##amn_ty) params, amn_ty ty, amn_exp exp)
+;
+
+fun amn_filter_dec fdec =
+ let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
+     fun amn_cprop (s,e) = (s,amn_exp e)
+ in case fdec
+     of FilterDec(qid, ports, cprops) =>
+        FilterDec(qid, map amn_port ports, map amn_cprop cprops)
+ end
+;
+
+fun abstract_model_nums (pkgName,(tydecs,tmdecs,filter_decs)) =
+  (pkgName,
+    (map amn_tydec tydecs,
+     map amn_tmdec tmdecs,
+     map amn_filter_dec filter_decs));
+
+(*---------------------------------------------------------------------------*)
 (* AST to HOL                                                                *)
 (*---------------------------------------------------------------------------*)
 
@@ -615,6 +741,131 @@ fun list_mk_array_type(bty,dims) =
 (*---------------------------------------------------------------------------*)
 (* Translate AGREE types to HOL types                                        *)
 (*---------------------------------------------------------------------------*)
+
+val u8 =  ``:u8``
+val u16 = ``:u16``
+val u32 = ``:u32``
+val u64 = ``:u64``
+
+val i8 =  ``:i8``
+val i16 = ``:i16``
+val i32 = ``:i32``
+val i64 = ``:i64``
+
+fun mk_i8_uminus t =  ``i8_uminus ^t``;
+fun mk_i16_uminus t = ``i16_uminus ^t``;
+fun mk_i32_uminus t = ``i32_uminus ^t``;
+fun mk_i64_uminus t = ``i64_uminus ^t``;
+
+fun mk_u8_signed t  = ``u8_signed ^t``;
+fun mk_u16_signed t = ``u16_signed ^t``;
+fun mk_u32_signed t = ``u32_signed ^t``;
+fun mk_u64_signed t = ``u64_signed ^t``;
+
+fun mk_i8_unsigned t  = ``i8_unsigned ^t``;
+fun mk_i16_unsigned t = ``i16_unsigned ^t``;
+fun mk_i32_unsigned t = ``i32_unsigned ^t``;
+fun mk_i64_unsigned t = ``i64_unsigned ^t``;
+
+fun mk_i8int  t =  ``i8int ^t``;
+fun mk_i16int t = ``i16int ^t``;
+fun mk_i32int t = ``i32int ^t``;
+fun mk_i64int t = ``i64int ^t``;
+fun mk_u8num  t =  ``u8num ^t``;
+fun mk_u16num t = ``u16num ^t``;
+fun mk_u32num t = ``u32num ^t``;
+fun mk_u64num t = ``u64num ^t``;
+
+fun mk_u8_plus  (t1,t2) = ``u8_plus ^t1 ^t2``
+fun mk_u16_plus (t1,t2) = ``u16_plus ^t1 ^t2``
+fun mk_u32_plus (t1,t2) = ``u32_plus ^t1 ^t2``
+fun mk_u64_plus (t1,t2) = ``u64_plus ^t1 ^t2``
+fun mk_i8_plus  (t1,t2) = ``i8_plus ^t1 ^t2``
+fun mk_i16_plus (t1,t2) = ``i16_plus ^t1 ^t2``
+fun mk_i32_plus (t1,t2) = ``i32_plus ^t1 ^t2``
+fun mk_i64_plus (t1,t2) = ``i64_plus ^t1 ^t2``
+
+fun mk_u8_minus  (t1,t2) = ``u8_minus ^t1 ^t2``
+fun mk_u16_minus (t1,t2) = ``u16_minus ^t1 ^t2``
+fun mk_u32_minus (t1,t2) = ``u32_minus ^t1 ^t2``
+fun mk_u64_minus (t1,t2) = ``u64_minus ^t1 ^t2``
+fun mk_i8_minus  (t1,t2) = ``i8_minus ^t1 ^t2``
+fun mk_i16_minus (t1,t2) = ``i16_minus ^t1 ^t2``
+fun mk_i32_minus (t1,t2) = ``i32_minus ^t1 ^t2``
+fun mk_i64_minus (t1,t2) = ``i64_minus ^t1 ^t2``
+
+fun mk_u8_mult  (t1,t2) = ``u8_mult ^t1 ^t2``
+fun mk_u16_mult (t1,t2) = ``u16_mult ^t1 ^t2``
+fun mk_u32_mult (t1,t2) = ``u32_mult ^t1 ^t2``
+fun mk_u64_mult (t1,t2) = ``u64_mult ^t1 ^t2``
+fun mk_i8_mult  (t1,t2) = ``i8_mult ^t1 ^t2``
+fun mk_i16_mult (t1,t2) = ``i16_mult ^t1 ^t2``
+fun mk_i32_mult (t1,t2) = ``i32_mult ^t1 ^t2``
+fun mk_i64_mult (t1,t2) = ``i64_mult ^t1 ^t2``
+
+fun mk_u8_exp  (t1,t2) = ``u8_exp ^t1 ^t2``
+fun mk_u16_exp (t1,t2) = ``u16_exp ^t1 ^t2``
+fun mk_u32_exp (t1,t2) = ``u32_exp ^t1 ^t2``
+fun mk_u64_exp (t1,t2) = ``u64_exp ^t1 ^t2``
+fun mk_i8_exp  (t1,t2) = ``i8_exp ^t1 ^t2``
+fun mk_i16_exp (t1,t2) = ``i16_exp ^t1 ^t2``
+fun mk_i32_exp (t1,t2) = ``i32_exp ^t1 ^t2``
+fun mk_i64_exp (t1,t2) = ``i64_exp ^t1 ^t2``
+
+fun mk_u8_div  (t1,t2) = ``u8_div ^t1 ^t2``
+fun mk_u16_div (t1,t2) = ``u16_div ^t1 ^t2``
+fun mk_u32_div (t1,t2) = ``u32_div ^t1 ^t2``
+fun mk_u64_div (t1,t2) = ``u64_div ^t1 ^t2``
+fun mk_i8_div  (t1,t2) = ``i8_div ^t1 ^t2``
+fun mk_i16_div (t1,t2) = ``i16_div ^t1 ^t2``
+fun mk_i32_div (t1,t2) = ``i32_div ^t1 ^t2``
+fun mk_i64_div (t1,t2) = ``i64_div ^t1 ^t2``
+
+fun mk_u8_mod  (t1,t2) = ``u8_mod ^t1 ^t2``
+fun mk_u16_mod (t1,t2) = ``u16_mod ^t1 ^t2``
+fun mk_u32_mod (t1,t2) = ``u32_mod ^t1 ^t2``
+fun mk_u64_mod (t1,t2) = ``u64_mod ^t1 ^t2``
+fun mk_i8_mod  (t1,t2) = ``i8_mod ^t1 ^t2``
+fun mk_i16_mod (t1,t2) = ``i16_mod ^t1 ^t2``
+fun mk_i32_mod (t1,t2) = ``i32_mod ^t1 ^t2``
+fun mk_i64_mod (t1,t2) = ``i64_mod ^t1 ^t2``
+
+fun mk_u8_less  (t1,t2) = ``u8_less ^t1 ^t2``
+fun mk_u16_less (t1,t2) = ``u16_less ^t1 ^t2``
+fun mk_u32_less (t1,t2) = ``u32_less ^t1 ^t2``
+fun mk_u64_less (t1,t2) = ``u64_less ^t1 ^t2``
+fun mk_i8_less  (t1,t2) = ``i8_less ^t1 ^t2``
+fun mk_i16_less (t1,t2) = ``i16_less ^t1 ^t2``
+fun mk_i32_less (t1,t2) = ``i32_less ^t1 ^t2``
+fun mk_i64_less (t1,t2) = ``i64_less ^t1 ^t2``
+
+fun mk_u8_gtr  (t1,t2) = ``u8_gtr ^t1 ^t2``
+fun mk_u16_gtr (t1,t2) = ``u16_gtr ^t1 ^t2``
+fun mk_u32_gtr (t1,t2) = ``u32_gtr ^t1 ^t2``
+fun mk_u64_gtr (t1,t2) = ``u64_gtr ^t1 ^t2``
+fun mk_i8_gtr  (t1,t2) = ``i8_gtr ^t1 ^t2``
+fun mk_i16_gtr (t1,t2) = ``i16_gtr ^t1 ^t2``
+fun mk_i32_gtr (t1,t2) = ``i32_gtr ^t1 ^t2``
+fun mk_i64_gtr (t1,t2) = ``i64_gtr ^t1 ^t2``
+
+fun mk_u8_leq  (t1,t2) = ``u8_leq ^t1 ^t2``
+fun mk_u16_leq (t1,t2) = ``u16_leq ^t1 ^t2``
+fun mk_u32_leq (t1,t2) = ``u32_leq ^t1 ^t2``
+fun mk_u64_leq (t1,t2) = ``u64_leq ^t1 ^t2``
+fun mk_i8_leq  (t1,t2) = ``i8_leq ^t1 ^t2``
+fun mk_i16_leq (t1,t2) = ``i16_leq ^t1 ^t2``
+fun mk_i32_leq (t1,t2) = ``i32_leq ^t1 ^t2``
+fun mk_i64_leq (t1,t2) = ``i64_leq ^t1 ^t2``
+
+fun mk_u8_geq  (t1,t2) = ``u8_geq ^t1 ^t2``
+fun mk_u16_geq (t1,t2) = ``u16_geq ^t1 ^t2``
+fun mk_u32_geq (t1,t2) = ``u32_geq ^t1 ^t2``
+fun mk_u64_geq (t1,t2) = ``u64_geq ^t1 ^t2``
+fun mk_i8_geq  (t1,t2) = ``i8_geq ^t1 ^t2``
+fun mk_i16_geq (t1,t2) = ``i16_geq ^t1 ^t2``
+fun mk_i32_geq (t1,t2) = ``i32_geq ^t1 ^t2``
+fun mk_i64_geq (t1,t2) = ``i64_geq ^t1 ^t2``
+;
 
 fun transTy tyEnv ty =
  let open AST
@@ -637,9 +888,17 @@ fun transTy tyEnv ty =
    | BaseTy (IntTy(Nat NONE)) => numSyntax.num
    | BaseTy (IntTy(Int NONE)) => intSyntax.int_ty
    | BaseTy (IntTy(Nat(SOME w))) =>
-         wordsSyntax.mk_word_type
-           (fcpSyntax.mk_numeric_type (Arbnum.fromInt w))
-   | BaseTy (IntTy(Int(SOME w))) => wordsSyntax.mk_int_word_type w
+       if w = 8 then  u8 else
+       if w = 16 then u16 else
+       if w = 32 then u32 else
+       if w = 64 then u64 else
+       raise ERR "transTy" "unexpected size for unsigned type"
+   | BaseTy (IntTy(AST.Int(SOME w))) =>
+       if w = 8 then  i8 else
+       if w = 16 then i16 else
+       if w = 32 then i32 else
+       if w = 64 then i64 else
+       raise ERR "transTy" "unexpected size for signed type"
    | ArrayTy(ty,dims) =>
       let fun transDim (ConstExp(IntLit{value,kind})) =
                 fcpSyntax.mk_int_numeric_type value
@@ -657,30 +916,39 @@ fun undef s = raise ERR "transExp" ("undefined case: "^Lib.quote s);
 fun lift_int {value,kind} =
  let open AST
  in case kind
-     of Nat NONE     => numSyntax.term_of_int value
-      | Int NONE     => intSyntax.term_of_int (Arbint.fromInt value)
-      | Nat (SOME w) => wordsSyntax.mk_wordii(value,w)
-      | Int (SOME w) =>  (* does this check that value fits in w bits? *)
-         let open wordsSyntax
-         in if 0 <= value
-             then mk_wordii(value,w)
-              else mk_word_2comp (mk_wordii(Int.abs value,w))
-         end
+     of Nat NONE => numSyntax.term_of_int value
+      | Int NONE => intSyntax.term_of_int (Arbint.fromInt value)
+      | Nat (SOME w) =>
+        let val n = numSyntax.term_of_int value
+        in
+          if w = 8 then  ``mk_u8 ^n``  else
+          if w = 16 then ``mk_u16 ^n`` else
+          if w = 32 then ``mk_u32 ^n`` else
+          if w = 64 then ``mk_u64 ^n`` else
+          raise ERR "lift_int" "unexpected size for signed type"
+        end
+      | Int (SOME w) =>
+        let val i = intSyntax.term_of_int (Arbint.fromInt value)
+        in
+          if w = 8 then  ``mk_i8 ^i``  else
+          if w = 16 then ``mk_i16 ^i`` else
+          if w = 32 then ``mk_i32 ^i`` else
+          if w = 64 then ``mk_i64 ^i`` else
+          raise ERR "lift_int" "unexpected size for signed type"
+        end
  end;
 
-val word8 = wordsSyntax.mk_int_word_type 8;
-
 val gdl_mk_chr =
- let open wordsSyntax stringSyntax
+ let open stringSyntax
  in fn tm =>
-     if type_of tm = word8
-     then mk_chr(mk_w2n tm)
-     else raise ERR "gdl_mk_chr" "expected arg. with type uint8"
+     if type_of tm = numSyntax.num
+     then mk_chr tm
+     else raise ERR "gdl_mk_chr" "expected arg. with type num"
  end;
 
 val gdl_mk_ord =
- let open wordsSyntax stringSyntax
- in fn tm => mk_n2w(mk_ord tm,word8)
+ let open stringSyntax
+ in fn tm => mk_ord tm
     handle HOL_ERR _ => raise ERR "gdl_mk_ord" "expected arg. with type char"
  end
 
@@ -692,104 +960,202 @@ fun unop (uop,e) t =
      of ChrOp  => lift gdl_mk_chr
       | OrdOp  => lift gdl_mk_ord
       | Not    => lift boolSyntax.mk_neg
-      | BitNot => lift wordsSyntax.mk_word_1comp
+      | BitNot => undef "BitNot"
       | UMinus =>
-          if ty = intSyntax.int_ty
-              then lift intSyntax.mk_negated else
-            if wordsSyntax.is_word_type ty
-              then lift wordsSyntax.mk_word_2comp
-              else raise ERR "unop (UMinus)"
+         if ty = intSyntax.int_ty then
+            lift intSyntax.mk_negated else
+         if ty = i8 then
+           lift mk_i8_uminus else
+         if ty = i16 then
+           lift mk_i16_uminus else
+         if ty = i32 then
+           lift mk_i32_uminus else
+         if ty = i64 then
+           lift mk_i64_uminus
+         else raise ERR "unop (UMinus)"
                    "expected type of operand to be int\
                    \ (either fixed width or unbounded)"
       | Signed =>
-          if ty = numSyntax.num
-              then lift intSyntax.mk_injected else
-          if ty = intSyntax.int_ty
-              then lift combinSyntax.mk_I else
-            if wordsSyntax.is_word_type ty
-              then lift combinSyntax.mk_I
-          else raise ERR "unop (Signed)"
-               "expected type of operand to be num, int, or word"
+          if ty = intSyntax.int_ty orelse mem ty [i8,i16,i32,i64] then
+              lift combinSyntax.mk_I else
+          if ty = numSyntax.num then
+             lift intSyntax.mk_injected else
+          if ty = u8 then
+             lift mk_u8_signed else
+          if ty = u16 then
+           lift mk_u16_signed else
+          if ty = u32 then
+           lift mk_u32_signed else
+          if ty = u64 then
+           lift mk_u64_signed
+          else raise ERR "unop (Signed)" "unexpected type of operand"
       | Unsigned =>
-          if ty = intSyntax.int_ty
-              then lift intSyntax.mk_Num else
-          if ty = numSyntax.num
-              then lift combinSyntax.mk_I else
-          if wordsSyntax.is_word_type ty
-              then lift combinSyntax.mk_I
-          else raise ERR "unop (Signed)"
-               "expected type of operand to be num, int, or word"
+          if ty = numSyntax.num orelse mem ty [u8,u16,u32,u64] then
+              lift combinSyntax.mk_I else
+          if ty = intSyntax.int_ty then
+             lift intSyntax.mk_Num else
+          if ty = i8 then
+             lift mk_i8_unsigned else
+          if ty = i16 then
+           lift mk_i16_unsigned else
+          if ty = i32 then
+           lift mk_i32_unsigned else
+          if ty = i64 then
+           lift mk_i64_unsigned
+          else raise ERR "unop (Unsigned)" "unexpected type of operand"
       | Unbounded =>
           if ty = intSyntax.int_ty orelse ty = numSyntax.num
               then lift combinSyntax.mk_I else
-          if wordsSyntax.is_word_type ty
-              then raise ERR "unop (Signed)" "unable to determine sign of word arg"
-          else raise ERR "unop (Signed)"
-               "expected type of operand to be num, int, or word"
+          if ty = u8  then lift mk_u8num else
+          if ty = u16 then lift mk_u16num else
+          if ty = u32 then lift mk_u32num else
+          if ty = u64 then lift mk_u64num else
+          if ty = i8  then lift mk_i8int else
+          if ty = i16 then lift mk_i16int else
+          if ty = i32 then lift mk_i32int else
+          if ty = i64 then lift mk_i64int
+          else raise ERR "unop (Unbounded)" "expected numeric type"
  end;
 
 fun binop (bop,e1,_) t1 t2 =
  let open AST
      fun lift f = f (t1,t2)
      val ty1 = type_of t1
-     fun dispatch (numsOp,intsOp,wordsOp) =
-      if ty1 = numSyntax.num then lift numsOp else
-      if ty1 = intSyntax.int_ty then lift intsOp else
-      if wordsSyntax.is_word_type ty1 then lift wordsOp
-       else raise ERR "binop (dispatch)"
-            "expected type of operands to be num, int, or word"
-     fun dispatchSigned (numsOp,intsOp,uwordsOp,swordsOp) =
-       if ty1 = numSyntax.num then lift numsOp else
-       if ty1 = intSyntax.int_ty then lift intsOp else
-       if wordsSyntax.is_word_type ty1
-         then raise ERR "binop (dispatchSigned)"
-                        "unable to determine sign"
-       else raise ERR "binop (dispatchSigned)"
-            "expected type of operands to be num, int, or word"
  in
   case bop
-   of Equal         => lift boolSyntax.mk_eq
-    | NotEqual      => lift (boolSyntax.mk_neg o boolSyntax.mk_eq)
-    | Or            => lift boolSyntax.mk_disj
-    | And           => lift boolSyntax.mk_conj
-    | Imp           => lift boolSyntax.mk_imp
-    | BitOr         => lift wordsSyntax.mk_word_or
-    | BitAnd        => lift wordsSyntax.mk_word_and
-    | BitXOR        => lift wordsSyntax.mk_word_xor
-    | LogicalLShift => lift wordsSyntax.mk_word_lsl
-    | LogicalRShift => lift wordsSyntax.mk_word_lsr
-    | ArithmeticRShift => lift wordsSyntax.mk_word_asr
-    | Plus => dispatch
-               (numSyntax.mk_plus,intSyntax.mk_plus,wordsSyntax.mk_word_add)
-    | Minus => dispatch
-                (numSyntax.mk_minus,intSyntax.mk_minus,wordsSyntax.mk_word_sub)
-    | Multiply => dispatch
-                   (numSyntax.mk_mult,intSyntax.mk_mult,wordsSyntax.mk_word_mul)
-    | Exponent => dispatch
-                   (numSyntax.mk_exp, intSyntax.mk_exp,
-                    fn _ => raise ERR "binop" "exponent for word types not implemented")
-    | Divide => dispatchSigned
-                   (numSyntax.mk_div, intSyntax.mk_div,
-                    wordsSyntax.mk_word_div,
-                    fn _ => raise ERR "binop" "signed division for word types not implemented")
-    | Modulo => dispatchSigned (numSyntax.mk_mod,intSyntax.mk_mod,
-                                wordsSyntax.mk_word_mod,
-	                    fn _ => raise ERR "binop" "signed modulus for word types not implemented")
-
-    | Less => dispatchSigned
-                (numSyntax.mk_less, intSyntax.mk_less,
-                 wordsSyntax.mk_word_lo,wordsSyntax.mk_word_lt)
-    | Greater => dispatchSigned
-                   (numSyntax.mk_greater, intSyntax.mk_great,
-                    wordsSyntax.mk_word_hi,wordsSyntax.mk_word_gt)
-    | LessEqual => dispatchSigned
-                     (numSyntax.mk_leq, intSyntax.mk_leq,
-                      wordsSyntax.mk_word_ls,wordsSyntax.mk_word_le)
-    | GreaterEqual => dispatchSigned
-                         (numSyntax.mk_geq,intSyntax.mk_geq,
-                          wordsSyntax.mk_word_hs,wordsSyntax.mk_word_ge)
-    | CastWidth => raise ERR "binop" "CastWidth not implemented"
+   of Equal    => lift boolSyntax.mk_eq
+    | NotEqual => lift (boolSyntax.mk_neg o boolSyntax.mk_eq)
+    | Or       => lift boolSyntax.mk_disj
+    | And      => lift boolSyntax.mk_conj
+    | Imp      => lift boolSyntax.mk_imp
+    | Plus =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_plus else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_plus else
+       if ty1 = u8  then lift mk_u8_plus else
+       if ty1 = u16 then lift mk_u16_plus else
+       if ty1 = u32 then lift mk_u32_plus else
+       if ty1 = u64 then lift mk_u64_plus else
+       if ty1 = i8  then lift mk_i8_plus else
+       if ty1 = i16 then lift mk_i16_plus else
+       if ty1 = i32 then lift mk_i32_plus else
+       if ty1 = i64 then lift mk_i64_plus else
+       raise ERR "Plus" "expected numeric arguments"
+    | Minus =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_minus else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_minus else
+       if ty1 = u8  then lift mk_u8_minus else
+       if ty1 = u16 then lift mk_u16_minus else
+       if ty1 = u32 then lift mk_u32_minus else
+       if ty1 = u64 then lift mk_u64_minus else
+       if ty1 = i8  then lift mk_i8_minus else
+       if ty1 = i16 then lift mk_i16_minus else
+       if ty1 = i32 then lift mk_i32_minus else
+       if ty1 = i64 then lift mk_i64_minus else
+       raise ERR "Minus" "expected numeric arguments"
+    | Multiply =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_mult else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_mult else
+       if ty1 = u8  then lift mk_u8_mult else
+       if ty1 = u16 then lift mk_u16_mult else
+       if ty1 = u32 then lift mk_u32_mult else
+       if ty1 = u64 then lift mk_u64_mult else
+       if ty1 = i8  then lift mk_i8_mult else
+       if ty1 = i16 then lift mk_i16_mult else
+       if ty1 = i32 then lift mk_i32_mult else
+       if ty1 = i64 then lift mk_i64_mult else
+       raise ERR "Multiply" "expected numeric arguments"
+    | Exponent =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_exp else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_exp else
+       if ty1 = u8  then lift mk_u8_exp else
+       if ty1 = u16 then lift mk_u16_exp else
+       if ty1 = u32 then lift mk_u32_exp else
+       if ty1 = u64 then lift mk_u64_exp else
+       if ty1 = i8  then lift mk_i8_exp else
+       if ty1 = i16 then lift mk_i16_exp else
+       if ty1 = i32 then lift mk_i32_exp else
+       if ty1 = i64 then lift mk_i64_exp else
+       raise ERR "Exponent" "expected numeric arguments"
+    | Divide =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_div else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_div else
+       if ty1 = u8  then lift mk_u8_div else
+       if ty1 = u16 then lift mk_u16_div else
+       if ty1 = u32 then lift mk_u32_div else
+       if ty1 = u64 then lift mk_u64_div else
+       if ty1 = i8  then lift mk_i8_div else
+       if ty1 = i16 then lift mk_i16_div else
+       if ty1 = i32 then lift mk_i32_div else
+       if ty1 = i64 then lift mk_i64_div else
+       raise ERR "Divide" "expected numeric arguments"
+    | Modulo =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_mod else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_mod else
+       if ty1 = u8  then lift mk_u8_mod else
+       if ty1 = u16 then lift mk_u16_mod else
+       if ty1 = u32 then lift mk_u32_mod else
+       if ty1 = u64 then lift mk_u64_mod else
+       if ty1 = i8  then lift mk_i8_mod else
+       if ty1 = i16 then lift mk_i16_mod else
+       if ty1 = i32 then lift mk_i32_mod else
+       if ty1 = i64 then lift mk_i64_mod else
+       raise ERR "Modulo" "expected numeric arguments"
+    | Less =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_less else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_less else
+       if ty1 = u8  then lift mk_u8_less else
+       if ty1 = u16 then lift mk_u16_less else
+       if ty1 = u32 then lift mk_u32_less else
+       if ty1 = u64 then lift mk_u64_less else
+       if ty1 = i8  then lift mk_i8_less else
+       if ty1 = i16 then lift mk_i16_less else
+       if ty1 = i32 then lift mk_i32_less else
+       if ty1 = i64 then lift mk_i64_less else
+       raise ERR "Less" "expected numeric arguments"
+    | Greater =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_greater else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_great else
+       if ty1 = u8  then lift mk_u8_gtr else
+       if ty1 = u16 then lift mk_u16_gtr else
+       if ty1 = u32 then lift mk_u32_gtr else
+       if ty1 = u64 then lift mk_u64_gtr else
+       if ty1 = i8  then lift mk_i8_gtr else
+       if ty1 = i16 then lift mk_i16_gtr else
+       if ty1 = i32 then lift mk_i32_gtr else
+       if ty1 = i64 then lift mk_i64_gtr else
+       raise ERR "Modulo" "expected numeric arguments"
+    | LessEqual =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_leq else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_leq else
+       if ty1 = u8  then lift mk_u8_leq else
+       if ty1 = u16 then lift mk_u16_leq else
+       if ty1 = u32 then lift mk_u32_leq else
+       if ty1 = u64 then lift mk_u64_leq else
+       if ty1 = i8  then lift mk_i8_leq else
+       if ty1 = i16 then lift mk_i16_leq else
+       if ty1 = i32 then lift mk_i32_leq else
+       if ty1 = i64 then lift mk_i64_leq else
+       raise ERR "LessEqual" "expected numeric arguments"
+    | GreaterEqual =>
+       if ty1 = numSyntax.num then lift numSyntax.mk_geq else
+       if ty1 = intSyntax.int_ty then lift intSyntax.mk_geq else
+       if ty1 = u8  then lift mk_u8_geq else
+       if ty1 = u16 then lift mk_u16_geq else
+       if ty1 = u32 then lift mk_u32_geq else
+       if ty1 = u64 then lift mk_u64_geq else
+       if ty1 = i8  then lift mk_i8_geq else
+       if ty1 = i16 then lift mk_i16_geq else
+       if ty1 = i32 then lift mk_i32_geq else
+       if ty1 = i64 then lift mk_i64_geq else
+       raise ERR "GreaterEqual" "expected numeric arguments"
     | RegexMatch => lift regexpSyntax.mk_regexp_matcher
+    | CastWidth     => undef "CastWidth"
+    | BitOr         => undef "BitOr"
+    | BitAnd        => undef "BitAnd"
+    | BitXOR        => undef "BitXOR"
+    | LogicalLShift => undef "LogicalLShift"
+    | LogicalRShift => undef "LogicalRShift"
+    | ArithmeticRShift => undef "ArithmeticRShift"
  end;
 
 fun mk_constr_const currentpkg (pkg,ty) cname =
@@ -818,15 +1184,14 @@ fun mk_id varE ety id =
  case assoc1 id varE
   of SOME (_,v) => v
    | NONE =>
-     case ety
-      of Expected ty =>
-           (mk_const(id,ty) handle HOL_ERR _ => mk_var(id,ty))
-       | Unknown =>
-           case Term.decls id
-            of [const] => const
-             | [] => raise ERR "transExp" ("unknown free variable: "^Lib.quote id)
-             | otherwise => raise ERR "transExp"
-               ("multiple choices for resolving free variable: "^Lib.quote id);
+ case ety
+  of Expected ty => (mk_const(id,ty) handle HOL_ERR _ => mk_var(id,ty))
+   | Unknown =>
+     case Term.decls id
+      of [const] => const
+       | [] => raise ERR "transExp" ("unknown free variable: "^Lib.quote id)
+       | otherwise => raise ERR "transExp"
+           ("multiple choices for resolving free variable: "^Lib.quote id);
 
 fun transExp pkgName varE ety exp =
   case exp
@@ -898,22 +1263,6 @@ fun transExp pkgName varE ety exp =
     | ArrayIndex(A,indices) => undef "ArrayIndex"
     | ArrayExp elist => undef "ArrayExp"
     | Quantified(quant,qvars,exp) => undef "Quantified"
-
-fun exp_calls [] acc = acc
-  | exp_calls (VarExp _::t) acc = exp_calls t acc
-  | exp_calls (ConstExp _::t) acc = exp_calls t acc
-  | exp_calls (Unop(_,e)::t) acc = exp_calls (e::t) acc
-  | exp_calls (Binop(_,e1,e2)::t) acc = exp_calls (e1::e2::t) acc
-  | exp_calls (ArrayExp elist::t) acc = exp_calls (elist@t) acc
-  | exp_calls (ArrayIndex(_,elist)::t) acc = exp_calls (elist@t) acc
-  | exp_calls (ConstrExp (_,_,NONE)::t) acc = exp_calls t acc
-  | exp_calls (ConstrExp (_,_,SOME e)::t) acc = exp_calls (e::t) acc
-  | exp_calls ((call as Fncall(qid,elist))::t) acc =
-    exp_calls (elist@t) (call::acc)
-  | exp_calls (RecdExp (qid,fields)::t) acc = exp_calls (map snd fields@t) acc
-  | exp_calls (RecdProj(e,_)::t) acc = exp_calls (e::t) acc
-  | exp_calls (Quantified(_,_,e)::t) acc = exp_calls (e::t) acc;
-
 
 (* TOPSORT GUNK : second thing mentions the first *)
 
@@ -1005,7 +1354,7 @@ fun declare_hol_fn tyEnv ((_,name),params,ty,body) =
         val pkgName = current_theory()
         val body_tm = transExp pkgName varE ety body
         val def_var = mk_var(name,
-                             list_mk_fun (map type_of param_vars, type_of body_tm))
+                       list_mk_fun (map type_of param_vars, type_of body_tm))
         val def_tm = mk_eq(list_mk_comb(def_var,param_vars),body_tm)
 	val def = PURE_REWRITE_RULE [GSYM CONJ_ASSOC]
                            (new_definition(name^"_def", def_tm))
@@ -1017,9 +1366,6 @@ fun declare_hol_fn tyEnv ((_,name),params,ty,body) =
 fun declare_hol_term tyEnv (ConstDec (qid,ty,exp)) =
         declare_hol_fn tyEnv (qid,[],ty,exp)
   | declare_hol_term tyEnv (FnDec fninfo) = declare_hol_fn tyEnv fninfo;
-
-fun underscore(a,b) = String.concat[a,"_",b];
-fun underscore2(a,b) = String.concat[a,"__",b];
 
 fun mk_filter_spec (thyName,tyEnv,fn_defs)
 		   (FilterDec ((pkgName,fname), ports, cprops)) =
@@ -1039,9 +1385,9 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
                |> SIMP_RULE arith_ss
                     [arithmeticTheory.BOUNDED_FORALL_THM,
                      GSYM CONJ_ASSOC,GSYM DISJ_ASSOC]
-        val full_name = underscore2(pkgName,fname)
+        val full_name = String.concatWith "__" [pkgName,fname]
     in
-       (full_name,
+       ((pkgName,fname),
         save_thm (full_name,array_forall_expanded))
     end
     handle e => raise wrap_exn "AADL" "mk_filter_spec" e;
@@ -1069,6 +1415,5 @@ fun pkgs2hol thyName list =
           end
  in iter list ([],[],[],[])
  end;
-
 
 end

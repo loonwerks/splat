@@ -33,7 +33,7 @@ fun no_dups [] = true
 (* Make a comb (M N), instantiating type of M in order to make its domain    *)
 (* equal to type of N.                                                       *)
 (*---------------------------------------------------------------------------*)
- 
+
 fun mk_icomb (M,N) =
  let val theta = match_type (fst(dom_rng(type_of M))) (type_of N)
  in mk_comb(inst theta M,N)
@@ -90,7 +90,7 @@ fun TC rels_0 =
      fun fringe_of (x,(Y,fringe)) = fringe
      fun steps rels =
       let val (nullrels,nnullrels) = List.partition (null o fringe_of) rels
-      in if nnullrels = [] 
+      in if nnullrels = []
            then map (fn (x,(Y,_)) => (x,Y)) rels
            else steps (map (relstep rels) nnullrels @ nullrels)
       end
@@ -105,8 +105,8 @@ fun TC rels_0 =
 fun trancl rel =
  let val field = itlist (fn (x,y) => fn acc => insert x (insert y acc)) rel []
      fun init x =
-       let val range = 
-              rev_itlist (fn (a,b) => fn acc => 
+       let val range =
+              rev_itlist (fn (a,b) => fn acc =>
                       if a=x then insert b acc else acc) rel []
        in (x,range)
        end
@@ -125,7 +125,7 @@ fun chunk [] acc = acc
       in chunk rst (((a,adeps)::bideps)::acc)
       end
 
-fun cliques_of tcrel = 
+fun cliques_of tcrel =
  let fun depends_on (a,adeps) (b,bdeps) = mem b adeps andalso not (mem a bdeps)
  in
    chunk (Lib.topsort depends_on tcrel) []
@@ -156,9 +156,9 @@ cliques_of (trancl ex6);
 
 
 (* possibly useful ...
-val tmToString = 
+val tmToString =
  let val (minprint_ty,minprint_tm) = Parse.print_from_grammars Parse.min_grammars
-     val minpp = Parse.pp_term_without_overloads_on ["INSERT","UNION","EMPTY","IN"] 
+     val minpp = Parse.pp_term_without_overloads_on ["INSERT","UNION","EMPTY","IN"]
  in fn PP.pp_to_string 72 pp
  end;
 *)
@@ -166,7 +166,7 @@ val tmToString =
 fun simpfrag_to_ssfrag {rewrs,convs} =
  let open simpLib
  in SSFRAG {name = NONE,
-            convs = convs, rewrs = map (fn th => (NONE,th)) rewrs, 
+            convs = convs, rewrs = map (fn th => (NONE,th)) rewrs,
             filter = NONE, dprocs = [], ac = [], congs = []}
  end;
 
@@ -176,11 +176,11 @@ fun simpfrag_to_ssfrag {rewrs,convs} =
 (* yucky.                                                                    *)
 (*---------------------------------------------------------------------------*)
 
-val basic_ss = 
+val basic_ss =
  let open simpLib boolSimps
      val literal_cong = prove(
     ``(v:'a = v') ==> (literal_case (f:'a -> 'b) v = literal_case f (I v'))``,
-      DISCH_THEN SUBST_ALL_TAC THEN 
+      DISCH_THEN SUBST_ALL_TAC THEN
       REWRITE_TAC [literal_case_THM, combinTheory.I_THM])
 
   val literal_I_thm = prove(
@@ -206,7 +206,7 @@ val basic_ss =
             EXCLUDED_MIDDLE,
             ONCE_REWRITE_RULE [DISJ_COMM] EXCLUDED_MIDDLE,
             bool_case_thm,
-            NOT_AND, 
+            NOT_AND,
             SELECT_REFL, SELECT_REFL_2, RES_FORALL_TRUE, RES_EXISTS_FALSE],
      congs = [literal_cong], filter = NONE, ac = [], dprocs = []}
    val bool_ss = pure_ss ++ BOOL_ss ++ NOT_ss ++ CONG_ss ++ UNWIND_ss
@@ -216,11 +216,11 @@ val basic_ss =
  end;
 
 
-val kstd_ss = 
+val kstd_ss =
  let open simpLib boolSimps
      val literal_cong = prove(
     ``(v:'a = v') ==> (literal_case (f:'a -> 'b) v = literal_case f (I v'))``,
-      DISCH_THEN SUBST_ALL_TAC THEN 
+      DISCH_THEN SUBST_ALL_TAC THEN
       REWRITE_TAC [literal_case_THM, combinTheory.I_THM])
 
   val literal_I_thm = prove(
@@ -264,9 +264,9 @@ fun subterm x y = Lib.can (find_term (aconv x)) y;
 
 val empty_tyset = HOLset.empty Type.compare
 
-fun consts_of tm = 
+fun consts_of tm =
  let fun consts [] acc = acc
-       | consts (h::t) acc = 
+       | consts (h::t) acc =
          if is_comb h
           then let val (t1,t2) = dest_comb h
                in consts (t1::t2::t) acc
@@ -274,7 +274,7 @@ fun consts_of tm =
          if is_abs h then consts (body h::t) acc else
          if is_var h then consts t acc
          else consts t (HOLset.add(acc,h))
- in 
+ in
     consts [tm] Term.empty_tmset
  end
 
@@ -287,7 +287,7 @@ fun zip3 [] [] [] = []
 (* Maps between qids in ML and in HOL.                                       *)
 (*---------------------------------------------------------------------------*)
 
-fun qid_to_tm (s1,s2) = 
+fun qid_to_tm (s1,s2) =
  let open stringSyntax pairSyntax
  in mk_pair(fromMLstring s1,fromMLstring s2)
  end;
@@ -313,8 +313,8 @@ fun fupd_to_proj fupd =  (* can be simpler *)
      val i = String.size (fnrecd_name^"_")
      val j = String.size Name - String.size"_fupd"
      val fldname = String.extract(Name, i, SOME (j-i))
- in 
-    prim_mk_const{Name=fnrecd_name^"_"^fldname,Thy=Thy} 
+ in
+    prim_mk_const{Name=fnrecd_name^"_"^fldname,Thy=Thy}
  end
 
 fun proj_to_fupd proj = (* can be simpler *)
@@ -322,21 +322,21 @@ fun proj_to_fupd proj = (* can be simpler *)
      val fnrecd_name = fst(dest_type (dom Ty))
      val i = String.size (fnrecd_name^"_")
      val fldname = String.extract(Name, i, NONE)
- in 
-    prim_mk_const{Name=fnrecd_name^"_"^fldname^"_fupd",Thy=Thy} 
+ in
+    prim_mk_const{Name=fnrecd_name^"_"^fldname^"_fupd",Thy=Thy}
  end
 
 (*---------------------------------------------------------------------------*)
 (* Projecting a program variable out of the state record.                    *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_gproj state = 
+fun mk_gproj state =
  let val {Tyop=styName,Thy,...} = dest_thy_type (type_of state)
  in prim_mk_const{Name = styName^"_global", Thy=Thy}
     handle HOL_ERR _ => mk_arb ind
  end
 
-fun mk_fnproj state fname = 
+fun mk_fnproj state fname =
  let val {Tyop=styName,Thy,...} = dest_thy_type (type_of state)
  in prim_mk_const{Name = styName^"_"^fname, Thy=Thy}
     handle HOL_ERR _ => mk_gproj state
@@ -356,16 +356,16 @@ fun mk_fnproj state fname =
 (*   M = if b then x else y                                                  *)
 (*---------------------------------------------------------------------------*)
 
-fun TEST_CONV eqthm = 
+fun TEST_CONV eqthm =
   (RAND_CONV o RATOR_CONV o RATOR_CONV o RAND_CONV) (REWR_CONV eqthm)
   THENC
   RAND_CONV COND_CONV;
 
-fun FAPPLY_FUPDATE_CONV key_eq_conv tm = 
+fun FAPPLY_FUPDATE_CONV key_eq_conv tm =
  let open finite_mapSyntax finite_mapTheory
      val (fmap,key) = dest_fapply tm
-     fun steps fmap = 
-      if is_fempty fmap 
+     fun steps fmap =
+      if is_fempty fmap
         then raise ERR "FAPPLY_MAP_CONV" "given key not in map domain"
         else let val (rst,bind) = dest_fupdate fmap
                  val (ki,x) = pairSyntax.dest_pair bind
@@ -385,16 +385,16 @@ fun FAPPLY_FUPDATE_CONV key_eq_conv tm =
 (* Eliminate simple lets.                                                    *)
 (*---------------------------------------------------------------------------*)
 
-fun TRIV_LET_CONV tm = 
+fun TRIV_LET_CONV tm =
  let val (_,a) = boolSyntax.dest_let tm
- in if is_var a orelse is_const a orelse 
+ in if is_var a orelse is_const a orelse
     Literal.is_literal a
     then (REWR_CONV boolTheory.LET_THM THENC BETA_CONV)
     else NO_CONV
  end tm;
 
 fun front_last2 [x,y] = ([],(x,y))
-  | front_last2 (h::h1::t) = 
+  | front_last2 (h::h1::t) =
      let val (front,last2) = front_last2 (h1::t)
      in (h::front,last2)
      end
@@ -416,7 +416,7 @@ fun silent true =
        set_trace "metis" 0;
        set_trace "notify type variable guesses" 0
      end
-  | silent false = 
+  | silent false =
      let open Feedback
      in
        emit_MESG := true;
@@ -437,7 +437,7 @@ fun list x = [x];
 (* Variants                                                                  *)
 (*---------------------------------------------------------------------------*)
 
-fun gen_variant f slist s = 
+fun gen_variant f slist s =
  let fun vary s = if Lib.mem s slist then vary (f s) else s
  in vary s
  end;
@@ -454,7 +454,7 @@ fun suffix_string_variant suffix =
 
 fun numeric_string_variant spacer  =
  let val counter = ref 0
-     fun delta s = 
+     fun delta s =
       let val s' = String.concat [s,spacer,Int.toString (!counter)]
       in counter := !counter + 1;
          s'
@@ -475,19 +475,19 @@ fun vary v (olist,vlist) =
 (* Rename elements of tlist away from vlist.                                 *)
 (*---------------------------------------------------------------------------*)
 
-fun variants vlist tlist = 
+fun variants vlist tlist =
  let val (olist,vlist') = rev_itlist vary tlist ([],vlist)
  in rev olist
  end;
 
-fun mk_gensym prefix base0 = 
- let val idStrm = 
+fun mk_gensym prefix base0 =
+ let val idStrm =
        let fun idName n = prefix^(if n <= 0 then "" else Int.toString n)
        in Lib.mk_istream (fn x => x + 1) 0 idName
        end
      val base = ref base0 : string list ref
      fun set_base slist = (!base before (base := slist))
-     fun gensym () = 
+     fun gensym () =
        let val id = Lib.state idStrm
        in if mem id (!base)
           then (Lib.next idStrm; gensym())
@@ -504,10 +504,10 @@ fun fail()    = OS.Process.terminate OS.Process.failure;
 fun stdOut_print s = let open TextIO in output(stdOut,s); flushOut stdOut end;
 fun stdErr_print s = let open TextIO in output(stdErr,s); flushOut stdErr end;
 
-fun inputFile s = 
+fun inputFile s =
  let open TextIO
      val istrm = openIn s handle _
-     => raise ERR "inputFile" 
+     => raise ERR "inputFile"
             ("unable to open file "^s^" from directory "^FileSys.getDir())
  in inputAll istrm before closeIn istrm
  end;
@@ -519,20 +519,20 @@ fun stringToFile s filename =
     closeOut ostrm
  end;
 
-fun prettyStream ostrm (succmesg,failmesg) pretty = 
+fun prettyStream ostrm (succmesg,failmesg) pretty =
  let open TextIO PolyML
      fun out s = output(ostrm,s)
      val _ = prettyPrint (out,75) pretty
      val _ = stdOut_print succmesg
- in 
+ in
     ()
  end handle _ => (stdErr_print failmesg; TextIO.closeOut ostrm);
 
 
-fun prettyFile filename pretty = 
+fun prettyFile filename pretty =
  let open TextIO PolyML
      val ostrm = openOut filename
- in prettyStream ostrm 
+ in prettyStream ostrm
           ("  Wrote file: "^filename^"\n",
            "Failure on output to opened file: "^filename)
        pretty
@@ -540,13 +540,13 @@ fun prettyFile filename pretty =
    ; closeOut ostrm handle _ => ()
  end
 
-fun apply_with_chatter f x prefix postfix = 
- let val _ = stdErr_print prefix 
-     val result = f x handle e => 
+fun apply_with_chatter f x prefix postfix =
+ let val _ = stdErr_print prefix
+     val result = f x handle e =>
                   (stdErr_print "failed.\n";
                    stdErr_print (Feedback.exn_to_string e); fail())
      val _ = stdErr_print postfix
- in 
+ in
    result
  end
 
@@ -558,7 +558,7 @@ fun inv_image R f x y = R (f x) (f y);
 fun sort_on_int_key list = Lib.sort (inv_image (curry op Int.<=) fst) list;
 fun sort_on_string_key list = Lib.sort (inv_image (curry op String.<=) fst) list;
 
-fun sort_on_qid_key list = 
+fun sort_on_qid_key list =
  let fun leq (s1,s2) (t1,t2) = String.<= (s1^s2,t1^t2)
  in Lib.sort (inv_image leq fst) list
  end;
@@ -568,7 +568,7 @@ fun sort_on_qid_key list =
  Following are unused, but may be useful again.
 
  fun classes P [] = []
-  | classes P (h::t)= 
+  | classes P (h::t)=
      let val (pass,fail) = Lib.partition (P h) t
      in (h::pass)::classes P fail
      end;
@@ -579,7 +579,7 @@ fun sort_on_qid_key list =
 
 val EQT_THM = METIS_PROVE [] ``!x. x = (x = T)``;
 
-fun EQT_INTRO_CONV tm = 
+fun EQT_INTRO_CONV tm =
  (if is_eq tm then NO_CONV
   else if type_of tm = bool
        then REWR_CONV (SPEC_ALL EQT_THM)
@@ -589,11 +589,11 @@ fun EQT_INTRO_CONV tm =
 
 fun mapfilter f list =
   let fun mapf [] acc = rev acc
-        | mapf (h::t) acc = 
+        | mapf (h::t) acc =
              case total f h
                of NONE => mapf t acc
                |  SOME h' => mapf t (h'::acc)
-  in 
+  in
    mapf list []
   end;
 

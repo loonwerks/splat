@@ -3,16 +3,17 @@ Invocation (unix only)
 
   $ ./splat prints the following usage message:
 
-  splat: 
+  splat:
   Usage: splat [basic | cake | hol | full]
                [-checkprops]
                [-outdir <dirname>]
                [-intwidth <int> [optimize]]
                [-endian (LSB | MSB)]
                [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)
+               [-preserve_model_nums]
                <name>.json
 
-Default invocation 
+Default invocation
 -------------------
 
    ./splat <path>/<name>.json
@@ -25,6 +26,7 @@ in <splat-dir> results in the following defaults being used
   - intwidth = 32, no optimizing field widths
   - endian = LSB
   - encoding = Twos_comp (twos complement)
+  - preserve_model_nums = false
 
 Assurance levels [basic | cake | hol | full]
 ---------------------------------------------
@@ -59,7 +61,7 @@ Checking properties [-checkprops]
 
 Automated proofs are conducted in order to check that the generated
 regexp indeed implements the well-formedness specifications that it
-was generated from. 
+was generated from.
 
 Output directory [-outdir <dirname>]
 -------------------------------------
@@ -89,4 +91,18 @@ Integer encoding [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)]
 The representation for integers can be specified to be one of a fixed
 number of choices.
 
+Preserving model [-preserve_model_nums]
+----------------------------------------
 
+Use this command line option to require that numeric types and
+expressions in the model are not abstracted to unbounded integers.
+
+[Longer explanation: The kinds of number allowed in declarations of an
+ AADL model typically allow the user to specify different widths and
+ signedness, e.g., Integer_32 and Unsigned_64. In contrast, AGREE
+ provides only the Integer type, which places no restrictions on the
+ size of numbers. This creates a potential mismatch between the
+ objects being reasoned about and the AGREE specification language. By
+ default, numeric types and expressions are promoted to Integer; this
+ is convenient for SPLAT, and in line with the behavior of AGREE, but
+ loses valuable information.]

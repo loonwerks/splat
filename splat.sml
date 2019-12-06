@@ -16,6 +16,7 @@ fun printHelp() =
      \             [-intwidth <int> [optimize]]\n\
      \             [-endian (LSB | MSB)]\n\
      \             [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)]\n\
+     \             [-preserve_model_nums]\n\
      \             <name>.json\n")
 
 fun fail() = (printHelp(); MiscLib.fail())
@@ -56,7 +57,8 @@ val FLAGS =
    outDir     = ref NONE : string option ref,
    intwidth   = ref NONE : splatLib.shrink option ref,
    endian     = ref NONE : Regexp_Numerics.endian option ref,
-   encoding   = ref NONE : Regexp_Numerics.encoding option ref};
+   encoding   = ref NONE : Regexp_Numerics.encoding option ref,
+   preserve_model_nums = ref NONE : bool option ref};
 
 fun set_checkprops b =
  case !(#checkprops FLAGS)
@@ -108,6 +110,11 @@ fun set_intwidth s b =
    | SOME _ => ()
  end
 
+fun set_preserve_model_nums b =
+ case !(#preserve_model_nums FLAGS)
+  of NONE => (#preserve_model_nums FLAGS := SOME b)
+   | SOME _ => ()
+
 fun s2endian s =
  let open Regexp_Numerics
  in case s
@@ -152,12 +159,16 @@ fun parse_args args =
      val jfile = check_suffix "json" file
      fun set_flags list =
        case list
-        of [] => (set_checkprops false;
-                  set_alevel Basic;
-                  set_outDir "./splat_outputs";
-                  set_intwidth "32" false;
-                  set_endian "LSB";
-                  set_encoding "Twos_comp")
+        of [] =>
+           let in
+              set_checkprops false;
+              set_alevel Basic;
+              set_outDir "./splat_outputs";
+              set_intwidth "32" false;
+              set_endian "LSB";
+              set_encoding "Twos_comp";
+              set_preserve_model_nums false
+            end
          | "basic"::t => (set_alevel Basic; set_flags t)
          | "cake"::t  => (set_alevel Cake; set_flags t)
          | "hol"::t   => (set_alevel HOL; set_flags t)
@@ -168,6 +179,7 @@ fun parse_args args =
          | "-intwidth" :: d :: t => (set_intwidth d false; set_flags t)
          | "-endian"   :: d :: t => (set_endian d; set_flags t)
          | "-encoding" :: d :: t => (set_encoding d; set_flags t)
+         | "-preserve_model_nums"::t => (set_preserve_model_nums true; set_flags t)
          | otherwise => fail()
  in
      set_flags flags
@@ -242,7 +254,7 @@ fun export_dfa codegen name regexp finals table =
   ; closeOut ostrm
  end
 
-fun process_filter iformat (checkprops,alevel) (fname,thm) =
+fun process_filter intformat (checkprops,alevel) ((pkgName,fname),thm) =
  let open FileSys
      val _ = stdErr_print ("Processing filter "^Lib.quote fname^".\n")
      val wDir = getDir()
@@ -250,7 +262,7 @@ fun process_filter iformat (checkprops,alevel) (fname,thm) =
      val _ = ((mkDir filterDir handle _ => ()); chDir filterDir)
      val filter_artifacts =
          apply_with_chatter
-           (splatLib.gen_filter_artifacts iformat) (fname,thm)
+           (splatLib.gen_filter_artifacts intformat) ((pkgName,fname),thm)
            "Defining filter artifacts ... " "succeeded.\n"
 
      val _ = if checkprops = true then
@@ -286,7 +298,8 @@ fun main () =
  let val _ = stdErr_print "splat: \n"
      val args = CommandLine.arguments()
      val jsonfile = parse_args args
-     val {alevel,checkprops,outDir,intwidth,endian,encoding} = FLAGS
+     val {alevel,checkprops,outDir,
+          intwidth,endian,encoding,preserve_model_nums} = FLAGS
      val invocDir = FileSys.getDir()
      val _ = stdErr_print
                (String.concat ["splat invoked in directory ", invocDir, ".\n"])
@@ -298,9 +311,12 @@ fun main () =
 	   ("Parsing "^jsonfile^" ... ") "succeeded.\n"
      val pkgs = apply_with_chatter AADL.scrape_pkgs jpkg
                   "Converting Json to AST ... " "succeeded.\n"
-     val thyName = fst (last pkgs)
+     val pkgs1 = if valOf(!preserve_model_nums) = true then
+                    pkgs
+                 else map AADL.abstract_model_nums pkgs
+     val thyName = fst (last pkgs1)
      val _ = new_theory thyName
-     val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs
+     val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs1
 	   "Converting AST to logic ...\n" "---> succeeded.\n"
      fun filters_of (a,b,c,d) = d
      val filter_spec_thms = filters_of logic_defs
