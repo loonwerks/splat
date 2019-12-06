@@ -258,7 +258,7 @@ fun process_filter intformat (checkprops,alevel) ((pkgName,fname),thm) =
  let open FileSys
      val _ = stdErr_print ("Processing filter "^Lib.quote fname^".\n")
      val wDir = getDir()
-     val filterDir = wDir^"/"^fname
+     val filterDir = String.concat[wDir,"/",pkgName,"_",fname]
      val _ = ((mkDir filterDir handle _ => ()); chDir filterDir)
      val filter_artifacts =
          apply_with_chatter
