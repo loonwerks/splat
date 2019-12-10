@@ -1396,11 +1396,12 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
 val is_datatype =
     same_const (prim_mk_const{Thy="bool",Name="DATATYPE"}) o rator o concl;
 
-fun mk_aadl_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters)) =
+fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters)) =
     let val tyEnv' = rev_itlist declare_hol_type tydecs tyEnv
         val tydecls = List.filter (is_datatype o snd) (theorems thyName)
         val tmdecs' = topsort called_by tmdecs
-        val fn_defs = MiscLib.mapfilter (declare_hol_term tyEnv') tmdecs'
+(*        val fn_defs = MiscLib.mapfilter (declare_hol_term tyEnv') tmdecs' *)
+        val fn_defs = map (declare_hol_term tyEnv') tmdecs'
         val info = (thyName,tyEnv',fn_defs)
         val filter_specs = map (mk_filter_spec info) filters
     in
@@ -1410,7 +1411,7 @@ fun mk_aadl_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters)) =
 fun pkgs2hol thyName list =
  let fun iter [] acc = acc
        | iter (pkg::t) (tyE,tyD,tmD,fS) =
-          let val (tyEnv',tydefs,fndefs,filtspecs) = mk_aadl_defs thyName tyE pkg
+          let val (tyEnv',tydefs,fndefs,filtspecs) = mk_pkg_defs thyName tyE pkg
           in iter t (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS)
           end
  in iter list ([],[],[],[])

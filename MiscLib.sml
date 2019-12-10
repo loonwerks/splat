@@ -543,8 +543,7 @@ fun prettyFile filename pretty =
 fun apply_with_chatter f x prefix postfix =
  let val _ = stdErr_print prefix
      val result = f x handle e =>
-                  (stdErr_print "failed.\n";
-                   stdErr_print (Feedback.exn_to_string e); fail())
+                  (stdErr_print "failed.\n"; raise e)
      val _ = stdErr_print postfix
  in
    result

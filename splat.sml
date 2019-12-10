@@ -4,6 +4,7 @@
 (*---------------------------------------------------------------------------*)
 
 open Lib Feedback HolKernel boolLib MiscLib;
+
 open AADL;
 
 val ERR = Feedback.mk_HOL_ERR "splat";
@@ -22,7 +23,7 @@ fun printHelp() =
 fun fail() = (printHelp(); MiscLib.fail())
 
 fun failwithERR e =
-  (stdErr_print (Feedback.exn_to_string e); MiscLib.fail());
+  (stdErr_print (Feedback.exn_to_string e^"\n\n"); MiscLib.fail());
 
 (*---------------------------------------------------------------------------*)
 (* Assurance levels.                                                         *)
@@ -330,4 +331,9 @@ fun main () =
      val _ = stdErr_print "Finished.\n"
   in
     MiscLib.succeed()
- end;
+ end
+ handle e =>
+    let open MiscLib
+    in stdErr_print "\n\nSPLAT FAILED!!\n\n";
+       failwithERR e
+    end

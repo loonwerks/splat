@@ -137,7 +137,8 @@ fun fieldrep2json frep =
        AList [("kind", String "StringLit"),
 	      ("contents",  String strlit),
               ("width", Number(Int (String.size strlit * 8)))]
-    | Raw {width,regexp,constraint} => raise ERR "fieldrep2json" "unexpected fieldrep (Raw)"
+    | Raw {width,regexp,constraint} =>
+        raise ERR "fieldrep2json" "unexpected fieldrep (Raw)"
  end;
 
 fun manifest2json manif_elts =
@@ -680,7 +681,11 @@ fun gen_filter_artifacts (intformat as (shrink,endian,encoding))
      fun mk_segment a =
         constraint_interval a
          handle HOL_ERR _ =>
-	constraint_enumset a;
+	constraint_enumset a
+         handle HOL_ERR _ =>
+	raise ERR "mk_segment" (String.concat
+         ["Unable to create regexp capturing the following constraints:\n\n  ",
+          String.concatWith ",\n  " (map term_to_string a), "\n\n"])
 
      val manifest = map (I##mk_segment) groups'
 

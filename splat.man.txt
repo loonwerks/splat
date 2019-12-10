@@ -106,3 +106,74 @@ expressions in the model are not abstracted to unbounded integers.
  default, numeric types and expressions are promoted to Integer; this
  is convenient for SPLAT, and in line with the behavior of AGREE, but
  loses valuable information.]
+
+What constraints can splat handle?
+==================================
+
+Splat translates well-formedness constraints on records into regular
+expressions.  The records can be nested (records of records) but not
+recursive. Splat aims to handle records made up of the following kinds
+of field:
+
+  - an element of an AADL base type (boolean or various flavor of
+    integer only; floating point, chars, and strings not supported but
+    in the process of being added).
+
+  - an array (of fixed size)
+
+  - an element of an enumeration.
+
+  - an element of a previously defined record
+
+If a field is a number, then interval constraints are expected.
+Arrays are expanded out, so constraints on array elements are
+uniformly applied. Enumerations: one can specify which of the
+enumerated constants are permitted.
+
+Constraints.
+------------
+
+Suppose we have declared the following types (in a generic notation)
+
+   coord = {lat : integer; lon : integer; alt : integer}
+
+   mode = Off | Running | Flying | TakingOff | Landing
+
+
+and a record type
+
+  recd = {Auth : bool;
+          Plan : coord [10];
+          Mode : mode}
+
+then the following example well-formedness predicate
+
+  wf_coord cr <=> (-90 <= cr.lat AND cr.lat <= 90) AND
+                  (-180 <= cr.lon AND cr.lon <= 180) AND
+                  (0 < cr.alt AND cr.alt < 15000)
+
+  wf_recd r <=> (r.Auth = true) AND
+                (Forall c : r.Plan. wf_coord (c)) /\
+		(r.Mode = Flying OR r.Mode = TakingOff)
+
+will be translated to a regexp that checks binary-level data for
+conformance with the "wf_recd" predicate.
+
+Restrictions.
+-------------
+
+Numeric field constraints that are inequalities {<, <=, >, >=} over
+record fields and numeric literals are supported. Also supported is
+the identification of a subset of an enumeration
+
+  <constr> ::= <ilit> <ineq> <recd-proj>
+            |  <recd-proj> <ineq> <ilit>
+            |  (<recd-proj> '=' <id> OR ... OR <recd-proj> '=' <id>)
+
+  <ineq> ::= '<' | '<=' | '>' | '>='
+  <ilit> ::= ('-')?<digit>+
+
+  <recd-proj> ::= <qid>.fldname
+  <qid> ::= (<qid>'.')*id
+
+In particular, equalities

@@ -31,7 +31,7 @@ sig
 
   val abstract_model_nums : decls -> decls
 
-  val mk_aadl_defs
+  val mk_pkg_defs
     : string
         -> tyEnv
           -> decls
