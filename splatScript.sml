@@ -39,7 +39,6 @@ fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
 
 val _ = new_theory "splat";
 
-
 Theorem ord_mod_256 :
  !c. ORD c MOD 256 = ORD c
 Proof

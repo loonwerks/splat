@@ -246,23 +246,43 @@ fun constraint_of atm =
    | Enumset{constraint,...}  => constraint
    | other => raise ERR "regexp_of" "";
 
-(*---------------------------------------------------------------------------*)
-(* Defaulting to LSB for the moment                                          *)
-(*---------------------------------------------------------------------------*)
-
 fun term_encoder(encoding,endian,width) =
- case encoding
-  of Unsigned  => ``splat$enc ^(numSyntax.term_of_int (width2bytes width))``
-   | Twos_comp => ``splat$enci ^(numSyntax.term_of_int (width2bytes width))``
-   | Zigzag    => ``splat$encZigZag ^(numSyntax.term_of_int (width2bytes width))``
-   | Sign_mag  => ``splat$encSignMag ^(numSyntax.term_of_int (width2bytes width))``
+ case (encoding,endian)
+  of (Unsigned,LSB) =>
+       ``splat$enc ^(numSyntax.term_of_int (width2bytes width))``
+   | (Unsigned,MSB) =>
+       ``\n. REVERSE
+                (splat$enc ^(numSyntax.term_of_int (width2bytes width)) n)``
+   | (Twos_comp,LSB) =>
+       ``splat$enci ^(numSyntax.term_of_int (width2bytes width))``
+   | (Twos_comp,MSB) =>
+       ``\i. REVERSE
+               (splat$enci ^(numSyntax.term_of_int (width2bytes width)) i)``
+   | (Zigzag,LSB) =>
+       ``splat$encZigZag ^(numSyntax.term_of_int (width2bytes width))``
+   | (Zigzag,MSB) =>
+       ``\i. REVERSE
+              (splat$encZigZag ^(numSyntax.term_of_int (width2bytes width)) i)``
+   | (Sign_mag,LSB)  =>
+       ``splat$encSignMag ^(numSyntax.term_of_int (width2bytes width))``
+   | (Sign_mag,MSB)  =>
+       ``\i. REVERSE
+               (splat$encSignMag ^(numSyntax.term_of_int (width2bytes width)) i)``
 
 fun term_decoder(encoding,endian,width) =
- case encoding
-  of Unsigned  => ``splat$dec``
-   | Twos_comp => ``splat$deci ^(numSyntax.term_of_int (width2bytes width))``
-   | Zigzag    => ``splat$decZigZag``
-   | Sign_mag  => ``splat$decSignMag``
+ case (encoding,endian)
+  of (Unsigned,LSB) => ``splat$dec``
+   | (Twos_comp,LSB) => ``splat$deci ^(numSyntax.term_of_int (width2bytes width))``
+   | (Zigzag,LSB)    => ``splat$decZigZag``
+   | (Sign_mag,LSB)  => ``splat$decSignMag``
+   | (Unsigned,MSB) =>
+       ``\s. splat$deci ^(numSyntax.term_of_int (width2bytes width))
+                        (REVERSE s)``
+   | (Twos_comp,MSB) =>
+       ``\s. splat$deci ^(numSyntax.term_of_int (width2bytes width))
+                        (REVERSE s)``
+   | (Zigzag,MSB)    => ``\s. splat$decZigZag (REVERSE s)``
+   | (Sign_mag,MSB)  => ``\s. splat$decSignMag (REVERSE s)``
 
 fun encoder_of atm =
  case atm
