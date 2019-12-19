@@ -865,6 +865,12 @@ Proof
  >> metis_tac [enc_dec]
 QED
 
+Theorem enci_deci_lem :
+ !s n. STRLEN s = n /\ 0 < n ==> s = enci n (deci n s)
+Proof
+metis_tac [enci_deci]
+QED
+
 val i2n_bounds = Q.prove
 (`!bits i. representable bits i ==> i2n bits i < 2 ** bits`,
  Cases >> rw_tac int_ss [representable_def,i2n_def,EXP] >> intLib.ARITH_TAC);

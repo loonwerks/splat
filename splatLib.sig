@@ -3,6 +3,8 @@ sig
  include Abbrev
 
   type regexp = Regexp_Type.regexp
+  type endian = Regexp_Numerics.endian
+  type encoding = Regexp_Numerics.encoding
 
   datatype width
     = BITWIDTH of int
@@ -42,16 +44,12 @@ sig
        implicit_constraints : thm option,
        tv : term}
 
-(*    encode_def : thm,
-      decode_def : thm,
-      inversion : term,
-      correctness : term,
-      receiver_correctness : term,
-*)
+  val field_encoder : fieldrep -> term
+  val field_decoder : fieldrep -> term
 
   datatype shrink = Optimize of int | Uniform of int
 
-  type int_format = shrink * Regexp_Numerics.endian * Regexp_Numerics.encoding
+  type int_format = shrink * endian * encoding
 
   val gen_filter_artifacts : int_format -> (string * string) * thm -> filter_info
 
@@ -60,4 +58,8 @@ sig
   val pure_in_charset_conv : conv
   val in_charset_conv : conv
   val in_charset_conv_ss : simpLib.ssfrag
+
+  val mesg_ss : simpLib.simpset
+  val splat_ss : simpLib.simpset
+  val TV_TAC : fieldrep list -> tactic
 end
