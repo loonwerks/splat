@@ -4,14 +4,23 @@ open arithmeticTheory integerTheory;
 
 val _ = new_theory "aadl_basetypes";
 
-val _ = Hol_datatype `i8  = I8 of int`;
-val _ = Hol_datatype `i16 = I16 of int`;
-val _ = Hol_datatype `i32 = I32 of int`;
-val _ = Hol_datatype `i64 = I64 of int`;
-val _ = Hol_datatype `u8  = U8 of num`;
-val _ = Hol_datatype `u16 = U16 of num`;
-val _ = Hol_datatype `u32 = U32 of num`;
-val _ = Hol_datatype `u64 = U64 of num`;
+Datatype: u8  = U8 num
+End
+Datatype: u16 = U16 num
+End
+Datatype: u32 = U32 num
+End
+Datatype: u64 = U64 num
+End
+
+Datatype: i8  = I8 int
+End
+Datatype: i16 = I16 int
+End
+Datatype: i32 = I32 int
+End
+Datatype: i64 = I64 int
+End
 
 
 (*---------------------------------------------------------------------------*)
