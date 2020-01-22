@@ -1,0 +1,16 @@
+INCLUDES = $(HOLDIR)/examples/formal-languages/regular
+
+all: $(DEFAULT_TARGETS) src filter target
+
+.PHONY: all
+
+EXTRA_CLEANS = src.o filter.o target.o src filter target
+
+src : src.uo
+	$(protect $(HOLDIR)/bin/buildheap) src.uo -o $@ --exe main
+
+filter : filter.uo
+	$(protect $(HOLDIR)/bin/buildheap) filter.uo -o $@ --exe main
+
+target : target.uo
+	$(protect $(HOLDIR)/bin/buildheap) target.uo -o $@ --exe main
