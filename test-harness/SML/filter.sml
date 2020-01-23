@@ -1,4 +1,4 @@
-open Regexp_Type regexpLib Regexp_Numerics;
+open Regexp_Type regexpLib Regexp_Numerics testUtils;
 
 val _ = Regexp_Type.set_intervalFn (twos_comp_interval LSB 4);
 
@@ -6,17 +6,6 @@ val DFA =
   #matchfn
     (regexpLib.gen_dfa SML
        (Regexp_Type.fromQuote `\i{~90,90}\i{~180,180}\i{0,15000}`));
-
-datatype result = EOS | SHORT of string | EXACT of string;
-
-fun getchars (istrm,n) =
- let open TextIO
-     val V = inputN (istrm,n)
-     val k = String.size V
- in if k = 0 then
-      EOS else
-    if k = n then EXACT V else SHORT V
- end
 
 fun main() =
  let open TextIO

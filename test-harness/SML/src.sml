@@ -2,16 +2,14 @@
 (* Provides a source for the filter to filter.                               *)
 (*===========================================================================*)
 
+open testUtils;
+
 (*---------------------------------------------------------------------------*)
 (* Note: SML provides a few flavours of integer. We assume, for now, that an *)
 (* int is 32 bits, in accordance with typical C compilers (for now).         *)
 (*---------------------------------------------------------------------------*)
 
 val A = Word8Array.array(12, Word8.fromInt 0);
-
-fun store A i j =
- PackWord32Little.update
-    (A,i,LargeWord.fromInt j)
 
 val gn = Random.newgen();
 val randFns =
@@ -23,9 +21,9 @@ fun arb_mesg() =
  let val i = arbElt gn
      val j = arbElt gn
      val k = arbElt gn
-     val _ = store A 0 i
-     val _ = store A 1 j
-     val _ = store A 2 k
+     val _ = store32 A 0 i
+     val _ = store32 A 1 j
+     val _ = store32 A 2 k
  in
    (Byte.bytesToString(Word8Array.vector A),(i,j,k))
  end
@@ -34,9 +32,9 @@ fun mesg () =
  let val i = seg1RandElt gn
      val j = seg2RandElt gn
      val k = seg3RandElt gn
-     val _ = store A 0 i
-     val _ = store A 1 j
-     val _ = store A 2 k
+     val _ = store32 A 0 i
+     val _ = store32 A 1 j
+     val _ = store32 A 2 k
  in
    (Byte.bytesToString(Word8Array.vector A), (i,j,k))
  end
@@ -57,7 +55,7 @@ fun main () =
                          Int.toString j,", ",Int.toString k,"\n"])
           val _ = output(stdOut,s)
           val _ = flushOut stdOut
-          val _ = Posix.Process.sleep (Time.fromReal 0.5)
+(*          val _ = Posix.Process.sleep (Time.fromReal 0.5) *)
        in ()
        end
  end;
