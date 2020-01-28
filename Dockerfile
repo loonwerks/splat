@@ -26,7 +26,7 @@ RUN /HOL/bin/Holmake
 FROM ubuntu:16.04
 WORKDIR /
 COPY --from=build /polyml-bin/lib/libpolyml.so.10 /polyml-bin/lib
-COPY --from=build /splat /splat
+COPY --from=build /splat/splat /splat
 WORKDIR /user
 ENV LD_LIBRARY_PATH=/polyml-bin/lib
 ENTRYPOINT [ "/splat/splat" ]
