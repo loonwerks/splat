@@ -14,7 +14,7 @@ WORKDIR /
 RUN git clone https://github.com/HOL-Theorem-Prover/HOL.git
 WORKDIR /HOL
 # RUN git checkout kananaskis-12
-RUN git checkout develop
+RUN git checkout master
 RUN /polyml-bin/bin/poly < tools/smart-configure.sml
 RUN bin/build
 
@@ -25,8 +25,7 @@ RUN /HOL/bin/Holmake
 
 FROM ubuntu:16.04
 WORKDIR /
-COPY --from=build /polyml-bin /polyml-bin
-COPY --from=build /HOL /HOL
+COPY --from=build /polyml-bin/lib/libpolyml.so.10 /polyml-bin/lib
 COPY --from=build /splat /splat
 WORKDIR /user
 ENV LD_LIBRARY_PATH=/polyml-bin/lib
