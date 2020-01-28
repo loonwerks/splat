@@ -4,6 +4,7 @@
 (*---------------------------------------------------------------------------*)
 
 open Lib Feedback HolKernel boolLib MiscLib;
+
 open AADL;
 
 val ERR = Feedback.mk_HOL_ERR "splat";
@@ -22,7 +23,7 @@ fun printHelp() =
 fun fail() = (printHelp(); MiscLib.fail())
 
 fun failwithERR e =
-  (stdErr_print (Feedback.exn_to_string e); MiscLib.fail());
+  (stdErr_print (Feedback.exn_to_string e^"\n\n"); MiscLib.fail());
 
 (*---------------------------------------------------------------------------*)
 (* Assurance levels.                                                         *)
@@ -187,9 +188,9 @@ fun parse_args args =
  end
 
 fun prove_filter_props {name,regexp,implicit_constraints,manifest,tv} =
- let in
-     store_thm(name^"_tv",tv,shortcut);
-     ()
+ let val fieldreps = map snd manifest
+ in store_thm(name^"_TV",tv,splatLib.TV_TAC fieldreps)
+  ; ()
  end;
 
 fun deconstruct {certificate, final, matchfn, start, table,aux} =
@@ -268,7 +269,7 @@ fun process_filter intformat (checkprops,alevel) ((pkgName,fname),thm) =
      val _ = if checkprops = true then
                apply_with_chatter
                   prove_filter_props filter_artifacts
-                  "Proving filter properties ... " "succeeded.\n"
+                  "Proving translation validation property ... " "succeeded.\n"
              else ()
 
     val {name,regexp,...} = filter_artifacts
@@ -330,4 +331,9 @@ fun main () =
      val _ = stdErr_print "Finished.\n"
   in
     MiscLib.succeed()
- end;
+ end
+ handle e =>
+    let open MiscLib
+    in stdErr_print "\n\nSPLAT FAILED!!\n\n";
+       failwithERR e
+    end

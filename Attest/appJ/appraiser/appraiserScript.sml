@@ -14,6 +14,7 @@ open comparisonTheory;
 open wordsTheory;
 
 val _ = new_theory "appraiser";
+
 val _ = numLib.prefer_num ();
 
 val sel4AM_def     = Define `sel4AM = 1w : place`;
@@ -23,11 +24,14 @@ val userAM_def     = Define `userAM = 3w : place`;
 val usm11_def = Define `usm11 = 11`;
 val kim11_def = Define `kim21 = 21`;
 
-val attestation_cmd_def = Define
-    `attestation_cmd = LN (AT platformAM (LN (AT sel4AM (LN (KIM kim21 platformAM [])
-                                                            SIG))
-                                             (LN (KIM kim21 userAM []) SIG)))
-                          (LN (USM usm11 []) SIG)`;
+val attestation_cmd_def =
+ Define
+  `attestation_cmd =
+      LN (AT platformAM
+             (LN (AT sel4AM
+                     (LN (KIM kim21 platformAM []) SIG))
+             (LN (KIM kim21 userAM []) SIG)))
+         (LN (USM usm11 []) SIG)`;
 
 val expected_bs1_def = Define `expected_bs1 = "1234"`;
 val expected_bs2_def = Define `expected_bs2 = "2234"`;
@@ -73,7 +77,9 @@ val is_waiting_def = Define
 
 val check_cache_before_req_def = Define
     `check_cache_before_req c p curr_t =
-         is_accepted c p /\ is_time_expired c p curr_t /\ ~(is_waiting c p)`;
+         is_accepted c p /\
+         is_time_expired c p curr_t /\
+         ~is_waiting c p`;
 
 val update_cache_def = Define
     `update_cache c p curr_t a w =
@@ -82,8 +88,10 @@ val update_cache_def = Define
 val _ = Hol_datatype `
     state_references = <| cache_ref : cache |>`;
 
-val config = global_state_config |> with_state ``:state_references``
-                                 |> with_refs [("cache_ref", ``balanced_map$empty : cache``)];
+val config =
+   global_state_config
+      |> with_state ``:state_references``
+      |> with_refs [("cache_ref", ``balanced_map$empty : cache``)];
 
 val check_cache_or_request_def = Define `
     check_cache_or_request msg time =
@@ -92,7 +100,8 @@ val check_cache_or_request_def = Define `
             c <- get_cache_ref;
             if (check_cache_before_req c place time)
             then return T
-            else (do set_cache_ref (update_cache c place time F T); return F od)
+            else (do set_cache_ref (update_cache c place time F T);
+                     return F od)
            od`;
 
 val response_and_appraise_def = Define `
@@ -101,7 +110,9 @@ val response_and_appraise_def = Define `
             acc = appraise attn_res
            in do
                c <- get_cache_ref;
-               if is_waiting c place then set_cache_ref (update_cache c place time acc F) else set_cache_ref c;
+               if is_waiting c place then
+                  set_cache_ref (update_cache c place time acc F)
+                else set_cache_ref c;
                return (acc /\ is_waiting c place)
               od`;
 

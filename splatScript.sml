@@ -39,7 +39,6 @@ fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
 
 val _ = new_theory "splat";
 
-
 Theorem ord_mod_256 :
  !c. ORD c MOD 256 = ORD c
 Proof
@@ -864,6 +863,12 @@ Proof
  >> `dec s < 2 ** (8 * STRLEN s)` by rw_tac splat_ss [EXP_EXP_MULT,dec_bound]
  >> rw_tac std_ss [i2n_n2i]
  >> metis_tac [enc_dec]
+QED
+
+Theorem enci_deci_lem :
+ !s n. STRLEN s = n /\ 0 < n ==> s = enci n (deci n s)
+Proof
+metis_tac [enci_deci]
 QED
 
 val i2n_bounds = Q.prove
