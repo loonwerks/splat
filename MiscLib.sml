@@ -502,7 +502,7 @@ fun succeed() = OS.Process.terminate OS.Process.success
 fun fail()    = OS.Process.terminate OS.Process.failure;
 
 fun stdOut_print s = let open TextIO in output(stdOut,s); flushOut stdOut end;
-fun stdErr_print s = let open TextIO in output(stdErr,s); flushOut stdErr end;
+fun stdErr_print s = let open TextIO in output(stdErr,s) end;
 
 fun inputFile s =
  let open TextIO

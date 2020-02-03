@@ -1,6 +1,7 @@
 (*---------------------------------------------------------------------------*)
-(* Maps from Json representation of AADL to AST and then to HOL. Solely      *)
-(* aimed at extracting filter properties, plus support definitions.          *)
+(* Maps from Json representation of AADL to AST and then to HOL. Originallly *)
+(* aimed at extracting filter properties, plus support definitions. Has      *)
+(* evolved to also generate code and test harnesses.                         *)
 (*---------------------------------------------------------------------------*)
 
 open Lib Feedback HolKernel boolLib MiscLib;
@@ -11,7 +12,8 @@ val ERR = Feedback.mk_HOL_ERR "splat";
 
 fun printHelp() =
   stdErr_print
-    ("Usage: splat [basic | cake | hol | full]\n\
+    ("Usage: splat [-alevel (basic | cake | hol | full)]\n\
+     \             [-codegen (C | SML | Ada | Slang | Java)]\n\
      \             [-checkprops]\n\
      \             [-outdir <dirname>]\n\
      \             [-intwidth <int> [optimize]]\n\
@@ -29,8 +31,8 @@ fun failwithERR e =
 (* Assurance levels.                                                         *)
 (*                                                                           *)
 (*   Basic: PolyML regexp compiler (generated from HOL model) builds DFA,    *)
-(*        from which {C,Ada,Java,SML} can be generated. Currently produces   *)
-(*        C source code.                                                     *)
+(*        from which {C,Ada,Java,SML,...} can be generated. Defaults to C    *)
+(*        source code being generated.                                       *)
 (*                                                                           *)
 (*   Cake: Input regexp constructed by splat frontend; then passed via       *)
 (*        hol2deep sexp interface. Then off-the-shelf cake binary loaded     *)
@@ -55,6 +57,8 @@ datatype assurance = Basic | Cake | HOL | Full;
 val FLAGS =
   {checkprops = ref NONE : bool option ref,
    alevel     = ref NONE : assurance option ref,
+   codegen    = ref NONE : string option ref,
+   testgen    = ref NONE : bool option ref,
    outDir     = ref NONE : string option ref,
    intwidth   = ref NONE : splatLib.shrink option ref,
    endian     = ref NONE : Regexp_Numerics.endian option ref,
@@ -66,17 +70,30 @@ fun set_checkprops b =
   of NONE => (#checkprops FLAGS := SOME b)
    | SOME _ => ()
 
-fun alevel "basic" = Basic
-  | alevel "cake"  = Cake
-  | alevel "hol"   = HOL
-  | alevel "full"  = Full
-  | alevel otherwise = fail();
+fun set_testgen b =
+ case !(#testgen FLAGS)
+  of NONE => (#testgen FLAGS := SOME b)
+   | SOME _ => ()
+
+fun s2alevel "basic" = Basic
+  | s2alevel "cake"  = Cake
+  | s2alevel "hol"   = HOL
+  | s2alevel "full"  = Full
+  | s2alevel otherwise = fail();
 
 fun set_alevel alevel =
  case !(#alevel FLAGS)
-  of NONE => (#alevel FLAGS := SOME alevel)
+  of NONE => (#alevel FLAGS := SOME (s2alevel alevel))
    | SOME _ => ()
 
+fun set_codegen lang =
+ let val _ =
+    if mem lang ["C","SML","Ada","Java","Slang"]
+    then () else fail()
+ in case !(#codegen FLAGS)
+     of NONE => (#codegen FLAGS := SOME lang)
+      | SOME _ => ()
+ end
 
 (*---------------------------------------------------------------------------*)
 (* If directory does not exist, create it. Also check that dir has rwe       *)
@@ -162,20 +179,21 @@ fun parse_args args =
        case list
         of [] =>
            let in
+              set_alevel "basic";
+              set_codegen "C";
+              set_testgen false;
               set_checkprops false;
-              set_alevel Basic;
               set_outDir "./splat_outputs";
               set_intwidth "32" false;
               set_endian "LSB";
               set_encoding "Twos_comp";
               set_preserve_model_nums false
             end
-         | "basic"::t => (set_alevel Basic; set_flags t)
-         | "cake"::t  => (set_alevel Cake; set_flags t)
-         | "hol"::t   => (set_alevel HOL; set_flags t)
-         | "full"::t  => (set_alevel Full; set_flags t)
-         | "-checkprops"::t => (set_checkprops true; set_flags t)
-         | "-outdir"   :: d :: t => (set_outDir d; set_flags t)
+         | "-checkprops" :: t => (set_checkprops true; set_flags t)
+         | "-testgen"    :: t => (set_testgen true;    set_flags t)
+         | "-alevel"   :: d :: t => (set_alevel d;     set_flags t)
+         | "-codegen"  :: d :: t => (set_codegen d;    set_flags t)
+         | "-outdir"   :: d :: t => (set_outDir d;     set_flags t)
          | "-intwidth" :: d :: "optimize" :: t => (set_intwidth d true; set_flags t)
          | "-intwidth" :: d :: t => (set_intwidth d false; set_flags t)
          | "-endian"   :: d :: t => (set_endian d; set_flags t)
@@ -212,9 +230,10 @@ fun mk_matcher name certificate =
      val finals_def = Define `^finals_var = ^finals`
      val table_def  = Define `^table_var = ^table`
      val start_def  = Define `^start_var = ^start`
-     val thm' = CONV_RULE (BINDER_CONV
-                  (LHS_CONV (REWRITE_CONV [GSYM finals_def, GSYM table_def, GSYM start_def])))
-                  thm
+     val thm' = CONV_RULE
+        (BINDER_CONV
+          (LHS_CONV
+            (REWRITE_CONV [GSYM finals_def, GSYM table_def, GSYM start_def]))) thm
      val CT = current_theory()
      val finals_const = prim_mk_const{Thy=CT,Name=finals_name}
      val table_const = prim_mk_const{Thy=CT,Name=table_name}
@@ -222,7 +241,8 @@ fun mk_matcher name certificate =
 
      val match_stateName = name^"_match_state"
      val match_stateVar = mk_var(match_stateName, num --> string_ty --> bool)
-     val match_state_def = Define `^match_stateVar = exec_dfa ^finals_const ^table_const`
+     val match_state_def =
+            Define `^match_stateVar = exec_dfa ^finals_const ^table_const`
      val match_state_const = prim_mk_const{Thy=CT, Name=match_stateName}
      (* translate this, not match_state_def *)
      val match_state_thm = Q.store_thm
@@ -245,22 +265,13 @@ fun mk_matcher name certificate =
  end
  handle _ => (TRUTH,TRUTH);
 
-fun export_dfa codegen name regexp finals table =
- let open TextIO
-     val rstring = PP.pp_to_string 72 Regexp_Type.pp_regexp regexp
-     val dfa = {name=name,src_regexp=rstring, finals=finals,table=table}
-     val ostrm = openOut (name^".c")
- in
-    codegen dfa ostrm
-  ; closeOut ostrm
- end
-
-fun process_filter intformat (checkprops,alevel) ((pkgName,fname),thm) =
+fun process_filter intformat flags ((pkgName,fname),thm) =
  let open FileSys
-     val _ = stdErr_print ("Processing filter "^Lib.quote fname^".\n")
+     val _ = stdErr_print ("\nProcessing filter "^Lib.quote fname^".\n")
      val wDir = getDir()
      val filterDir = String.concat[wDir,"/",pkgName,"_",fname]
      val _ = ((mkDir filterDir handle _ => ()); chDir filterDir)
+     val (checkprops,codegen,testgen,alevel) = flags
      val filter_artifacts =
          apply_with_chatter
            (splatLib.gen_filter_artifacts intformat) ((pkgName,fname),thm)
@@ -272,7 +283,7 @@ fun process_filter intformat (checkprops,alevel) ((pkgName,fname),thm) =
                   "Proving translation validation property ... " "succeeded.\n"
              else ()
 
-    val {name,regexp,...} = filter_artifacts
+    val {regexp,...} = filter_artifacts
 
     val regexp_compiler =
          case alevel
@@ -285,10 +296,27 @@ fun process_filter intformat (checkprops,alevel) ((pkgName,fname),thm) =
         deconstruct (regexpLib.gen_dfa regexp_compiler regexp)
 
     val (match_state_thm, match_def) = mk_matcher fname certificate
+
+    val (langGen,suffix) =
+     case codegen
+      of "C" => (DFA_Codegen.C,".c")
+       | "SML" => (DFA_Codegen.SML,".sml")
+       | "Ada" => (DFA_Codegen.Ada,".ada")
+       | "Java" => (DFA_Codegen.Java,".java")
+       | "Slang" => (Code_Gen.Slang,".scala")
+       | other    => raise ERR "process_filter" "unsupported target language"
+
+    (* Smuggling architecture info through the name. To be handled (so far)
+       only in Slang code generation, which wants the AADL path to the filter
+    *)
+    val slang_path_name =
+     if codegen = "Slang" then
+       String.concat[pkgName,".",fname]
+     else fname
  in
-     export_dfa DFA_Codegen.C name regexp finals table
+     Code_Gen.export_dfa langGen (slang_path_name,suffix) regexp finals table
    ;
-     stdErr_print ("End processing filter "^Lib.quote fname^".\n")
+     stdErr_print ("End processing filter "^Lib.quote fname^".\n\n")
    ;
      chDir wDir
    ;
@@ -299,7 +327,7 @@ fun main () =
  let val _ = stdErr_print "splat: \n"
      val args = CommandLine.arguments()
      val jsonfile = parse_args args
-     val {alevel,checkprops,outDir,
+     val {alevel,checkprops,outDir,testgen,codegen,
           intwidth,endian,encoding,preserve_model_nums} = FLAGS
      val invocDir = FileSys.getDir()
      val _ = stdErr_print
@@ -322,7 +350,8 @@ fun main () =
      fun filters_of (a,b,c,d) = d
      val filter_spec_thms = filters_of logic_defs
      val intformat = (valOf(!intwidth),valOf(!endian),valOf(!encoding))
-     val otherflags = (valOf(!checkprops),valOf(!alevel))
+     val otherflags = (valOf(!checkprops),valOf(!codegen),
+                       valOf(!testgen),valOf(!alevel))
      val results = map (process_filter intformat otherflags) filter_spec_thms
      val _ = Theory.export_theory()
      val _ = if invocDir = workingDir then ()
@@ -337,3 +366,4 @@ fun main () =
     in stdErr_print "\n\nSPLAT FAILED!!\n\n";
        failwithERR e
     end
+val args = ["-codegen", "SML", "examples/Producer_Consumer.json"];
