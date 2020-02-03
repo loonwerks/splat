@@ -1,9 +1,17 @@
 structure testUtils :> testUtils =
 struct
 
+fun inc x = x := !x + 1;
+fun reset x = x := 0;
+
 fun store32 A i j =
  PackWord32Little.update
     (A,i,LargeWord.fromInt j)
+
+(*---------------------------------------------------------------------------*)
+(* top 32 bits of w32big are 0, since we've come from 4 bytes, so we need to *)
+(* do some work to recover negative numbers.                                 *)
+(*---------------------------------------------------------------------------*)
 
 local
   val top32 = 4294967296

@@ -1,9 +1,9 @@
 test-harness/SML
 ================
 
-The code in this directory supports the creation of a test harness for
-a particular filter. It is a hand-worked example on which higher
-levels of automation is to be based.
+The code in this directory embodies a test harness for a particular
+filter. It is a hand-worked example on which higher levels of
+automation will be based.
 
 Typing
 

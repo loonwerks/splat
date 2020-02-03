@@ -1,8 +1,3 @@
-(*---------------------------------------------------------------------------*)
-(* top 32 bits of w32big are 0, since we've come from 4 bytes, so we need to *)
-(* do some work to recover negative numbers.                                 *)
-(*---------------------------------------------------------------------------*)
-
 open testUtils;
 
 val B = Word8Array.array(12, Word8.fromInt 0);
