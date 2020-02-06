@@ -1,0 +1,91 @@
+FILES IN THIS DIRECTORY
+------------------------
+------------------------
+
+Note: Some of the files use the nicer logical notation (tex symbols)
+for proofs. This requires the latest HOL version.
+
+Scripts about generic types
+----------------------------
+
+
+boolLemmasScript.sml      - lemmas about boolean type
+
+listLemmasScript.sml      - lemmas about lists
+
+setLemmasScript.sml       - lemmas about set
+
+containerLemmasScript.sml - lemmas relating sets to lists
+
+whileLemmasScript.sml     - theorems about while loop, mwhile definition
+                            and related lemmas
+
+Scripts about grammars
+----------------------------
+
+regexpScript.sml     - regular expressions
+
+parseTreeScript.sml  - sets up parse tree definitions and related
+                       lemmas
+
+grammarDefScript.sml - sets up grammar definitions, notion of
+                       derivations and related lemmas
+
+firstSetScript.sml   - sets up firstSet definition, executable and the
+                       set comprehension one, and equivalence proofs
+                       for them
+
+followSetScript.sml  - sets up followSet definition, executable and the
+                       set comprehension one, and equivalence proofs
+                       for them
+
+Scripts about LR grammars
+----------------------------
+
+yaccDefScript.sml      - sets up the parser generator, parser definitions,
+		         closure, slrmac, trans, etc.
+
+lrGrammarDefScript.sml - sets up the definitions related to lrgrammars
+                         such as handle, viable prefix, validItem and
+                         related proofs
+
+validItemDefScript.sml - set up and proof of validItemInv invariant
+
+
+Scripts about soundness proof
+------------------------------
+
+parseProp1DefScript.sml - validStkSymtree invariant for the
+                          parser. The symbol on the stack is the same
+                          as the associated parse tree. Also proves
+                          the validStates invariant, i.e. the items in
+                          each of the state on the stack correspond to
+                          some rule in the grammar and
+                          parse_csl_not_nil, the initial state is
+                          never popped off from the stack.
+
+parseProp2DefScript.sml - sets up and proves leaves_eq_inv invariant
+
+parserPropDefScript.sml - proves that the above invariants hold at the
+			  end of the mwhile loop
+
+
+Scripts about completeness proof
+---------------------------------
+
+macStepScript.sml     - if the invariants (parseInv, validItemInv...)
+		        hold, then the machine can take a step
+		        complDefScript.sml
+
+complDefScript.sml    - theorems about trans and takesSteps that allow
+		        later to establish termination and
+		        completeness
+
+terminationScript.sml - final theorems establishing termination and
+                        proving completeness
+
+Scripts about ambiguity proof
+------------------------------
+
+ambiguityScript.sml - establishes unambiguity definition and proves it
+                      for SLR grammars.
