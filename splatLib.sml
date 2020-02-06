@@ -227,7 +227,7 @@ val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn fr => pp_fieldrep fr);
 type filter_info
    = {name : string,
       regexp : Regexp_Type.regexp,
-      manifest : (term * fieldrep) list,
+      manifest : (term * fieldrep) list, (* segments *)
       implicit_constraints : thm option,
       tv : term};
 

@@ -6,7 +6,7 @@ datatype exp
   = intLit of int
   | BitsExp of exp
   | BytesExp of exp
-  | FldName of string
+  | Val of string
   | ConstName of string
   | EnumName of string
   | Add of exp * exp
@@ -17,8 +17,12 @@ datatype exp
 fun Bits i = intLit i
 fun Bytes i = Bits (8 * i);
 
+val Double = Bits 64
+val i32    = Bits 32
+val i64    = Bits 64;
+
 (*---------------------------------------------------------------------------*)
-(* Environments. A FldName in an exp denotes the numeric value held in the   *)
+(* Environments. A Val in an exp denotes the numeric value held in the   *)
 (* named field. In the environment, it also has a width. A ConstName denotes *)
 (* a number; it doesn't have a width. An EnumName is similar to a ConstName. *)
 (*---------------------------------------------------------------------------*)
@@ -42,7 +46,7 @@ fun evalExp (E as (fEnv,cEnv,eEnv)) e =
   of intLit i    => i
    | BitsExp e   => evalExp E e
    | BytesExp e  => 8 * evalExp E e
-   | FldName s   => value_of(assoc s fEnv)
+   | Val s       => value_of(assoc s fEnv)
    | ConstName s => assoc s cEnv
    | EnumName s  => assoc s eEnv
    | Add(e1,e2)  => evalExp E e1 + evalExp E e2
@@ -55,7 +59,7 @@ fun prim_vars e acc =
   of intLit _    => acc
    | BitsExp e   => prim_vars e acc
    | BytesExp e  => prim_vars e acc
-   | FldName s   => insert s acc
+   | Val s       => insert s acc
    | ConstName s => acc
    | EnumName s  => acc
    | Add(e1,e2)  => prim_vars e2 (prim_vars e2 acc)
@@ -66,8 +70,8 @@ fun prim_vars e acc =
 val expVars = C prim_vars []
 
 (*---------------------------------------------------------------------------*)
-(* A "segments" is an expression tree capturing a set of possible message    *)
-(* formats.                                                                  *)
+(* An element of the segments type is an expression tree capturing a set of  *)
+(* possible message formats.                                                 *)
 (*---------------------------------------------------------------------------*)
 
 datatype segments
@@ -125,7 +129,7 @@ val macHeader =
  Seg (("order",     Bits 1),
  Seg (("duration",  Bytes 2),
  Union
-   (FldName "tpe",
+   (Val "tpe",
      [(preEval (EnumName "Data"),
         Seg(("address1",   Bytes 6),
         Seg(("address2",   Bytes 6),
@@ -135,11 +139,57 @@ val macHeader =
         Seg(("address4",   Bytes 6), Nullseg))))))),
       (preEval (EnumName "Control"),
         Union
-          (FldName "subType",
+          (Val "subType",
              [(11, Seg(("receiver",    Bytes 6),
                    Seg(("transmitter", Bytes 6),Nullseg))),
               (12, Seg(("receiver",    Bytes 6),Nullseg))]))])
  ))))))))))))
 ;
 
-vars_of macHeader;
+(*---------------------------------------------------------------------------*)
+(* Example: uxAS messages in LMCP format                                     *)
+(*---------------------------------------------------------------------------*)
+
+val Bool = Bits 8;
+val StdArrayLen = Bits 16;
+
+(*---------------------------------------------------------------------------*)
+(* Operating Region message                                                  *)
+(*---------------------------------------------------------------------------*)
+
+val operating_region_mesg =
+ Seg (("operating-region-id",       i64),
+ Seg (("zeroize-on-exiting-region", Bool),
+ Seg (("keep-in-areas-len",         StdArrayLen),
+ Seg (("keep-in-areas",             Mult (Val "keep-in-areas-len", i64)),
+ Seg (("keep-out-areas-len",        StdArrayLen),
+ Seg (("keep-out-areas",            Mult (Val "keep-out-areas-len", i64)),
+ Nullseg
+ ))))))
+;
+
+(*---------------------------------------------------------------------------*)
+(* Line Search Task message                                                  *)
+(*---------------------------------------------------------------------------*)
+
+val line_search_task_mesg =
+ Seg (("waypoints-len", StdArrayLen),
+ Seg (("waypoints",     Mult (Val "waypoints-len", Mult(intLit 3, Double))),
+ Seg (("task-id",       i64),
+ Nullseg
+ )))
+;
+
+(*---------------------------------------------------------------------------*)
+(* Automation Request message                                                *)
+(*---------------------------------------------------------------------------*)
+
+val automation_reqt_mesg =
+ Seg (("entities-len",     StdArrayLen),
+ Seg (("entities",         Mult (Val "entities-len", i64)),
+ Seg (("tasks-len",        StdArrayLen),
+ Seg (("tasks",            Mult (Val "tasks-len", i64)),
+ Seg (("operating-region", i64),
+ Nullseg
+ )))))
+;
