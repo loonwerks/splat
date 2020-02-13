@@ -1,0 +1,99 @@
+%<a href="splat-mon.pdf" target="_blank">Semantic Properties for\
+Language and Automata Theory: \
+Runtime Monitoring with SPLAT-MON</a>
+% Konrad Slind, Trusted Systems Group, Collins Aerospace
+% February 2020
+
+\newcommand{\imp}{\;\Rightarrow\;}
+\newcommand{\valid}{\mathsf{Valid}}
+\newcommand{\dom}{\mathsf{Dom}}
+\newcommand{\cod}{\mathsf{Cod}}
+\newcommand{\con}{\mathsf{CON}}
+\newcommand{\cons}[2]{{#1}\, :: \,{#2}}
+\newcommand{\konst}[1]{\mathsf{#1}}
+\newcommand{\set}[1]{\{ {#1} \}}
+\newcommand{\Lang}[1]{{\mathcal L}({#1})}
+\newcommand{\condA}[2]{\konst{if}\; {#1} \;\konst{then}\; {#2}}
+\newcommand{\condB}[3]{\konst{if}\; {#1} \;\konst{then}\; {#2} \;\konst{else}\; {#3}}
+\newcommand{\lsb}{\mathbf{\small{[}}}
+\newcommand{\rsb}{\mathbf{\small{]}}}
+\newcommand{\ltb}{\mathbf{\small{<}}}
+\newcommand{\gtb}{\mathbf{\small{>}}}
+\newcommand{\Env}{\mathcal{E}}
+\newcommand{\sem}[1]{[ \! [ {#1} ] \! ]}
+\newcommand{\divk}[1]{{#1}\;\konst{div}\; 256}
+\newcommand{\modk}[1]{{#1}\;\konst{mod}\; 256}
+\newcommand{\wrap}[1]{#1}
+\newcommand{\bto}[1]{\mathbf{B}^{#1}}
+\newcommand{\regexpof}[1]{\konst{regexp\_of}\;{#1}}
+\newcommand{\rexpof}{\konst{regexp\_of}}
+
+Introduction
+============
+
+**SPLAT** designates the application of language theory---which is
+based on *strings*---to help enforce, formulate and prove properties
+over a collection of other useful types, such as numbers,
+enumerations, records, and arrays. In this note, the focus is on
+expressing system trace properties in temporal logic, and applying
+tools and concepts from the "automata-logic" connection to create
+run-time monitoring tools.  In our current approach, we employ
+past-time LTL to specify behaviors that should be maintained by the
+system being monitored. The **SPLAT-MON** toolchain translates such
+specifications into executable run-time monitors having a strong
+correctness guarantee.
+
+Past-time LTL
+--------------
+
+- ptLTL as a specification language
+
+- Semantics
+
+- Equivalence of small-step with high-level semantics
+
+
+Toolchain
+----------
+
+The toolchain begins in AADL. Beginning with a requirement expressed
+as a ptLTL formula ${\cal F}$ on a component, or collection of components, the
+steps taken are as follows:
+
+1. A new *monitor* component is created. At this point in the toolchain it
+  is just a placeholder.
+
+1. ${\cal F}$ is symbolically executed with respect to the formal
+  small-step semantics of ptLTL formulas. This yields a Buechi
+  automaton (DFA). Since we are working inside a formal theory in HOL,
+  we can prove the theorem
+$$
+\vdash \konst{Sem}_{\mathit{Small}}({\cal F}) \equiv \konst{DFA}
+$$
+We also have a HOL statement that the small-step semantics is equal to
+the high-level (official) semantics $\konst{Sem}$ and thus
+$$
+\vdash \konst{Sem}({\cal F}) \equiv \konst{DFA}
+$$
+
+1. State machine $\konst{DFA}$ is transformed to a table-driven version
+$\konst{DFA}_{\mathit{Table}}$. This is accomplished via proof, obtaining
+$$
+\vdash \konst{Sem}({\cal F},\mathit{input}) \equiv
+     \konst{DFA}_{\mathit{Table}} (\mathit{input})
+$$
+
+1. Now $\konst{DFA}_{\mathit{Table}}$ is compiled with CakeML.  This
+yields binary version $\konst{DFA}_{\mathit{Table-Bin}}$. It is a
+feature of CakeML compilation that correctness properties can also be
+(automatically) translated down to apply to the result of running the
+binary via ISA evaluator $\konst{RUN}$. This allows the following
+end-to-end theorem:
+$$
+\vdash \konst{Sem}({\cal F},\mathit{input}) \equiv
+     \konst{RUN}(\konst{DFA}_{\mathit{Table-Bin}}, \mathit{input})
+$$
+
+1. The next step is to wrap the DFA with IO capabilities and integrate
+  the monitor component, which now has a verified implementation, with
+  the rest of the system via the HAMR build system.
