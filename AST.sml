@@ -2,7 +2,7 @@
 (* Generate ASTs from s-expressions.                                         *)
 (*===========================================================================*)
 
-structure AST :> AST = 
+structure AST :> AST =
 struct
 
 open Lib Feedback MiscLib PPfns;
@@ -17,22 +17,26 @@ fun unimplemented s = ERR s "unimplemented";
 type id = string
 type qid = string * string;
 
-datatype uop = Not    | BitNot   | UMinus | ChrOp | OrdOp 
-             | Signed | Unsigned | Unbounded;
+datatype uop
+  = Not    | BitNot   | UMinus | ChrOp | OrdOp
+  | Signed | Unsigned | Unbounded
+  | Yesterday | ZYesterday | Historically
 
-datatype bop 
+datatype bop
   = Plus | Minus | Multiply | Divide | Modulo | Exponent
-  | Equal | NotEqual | Greater | Less | LessEqual | GreaterEqual 
+  | Equal | NotEqual | Greater | Less | LessEqual | GreaterEqual
   | Or | And | Imp | BitOr | BitAnd | BitXOR
   | LogicalLShift | LogicalRShift | ArithmeticRShift
   | CastWidth
   | RegexMatch
+  | Since
+  | Trigger
 
-datatype numkind 
+datatype numkind
   = Nat of int option
   | Int of int option
 
-datatype lit 
+datatype lit
   = IdConst of qid
   | BoolLit of bool
   | CharLit of char
@@ -50,15 +54,15 @@ datatype builtin
   | RegexTy
 
 datatype quant = Forall | Exists
-  
-datatype ty 
+
+datatype ty
   = BaseTy of builtin
   | NamedTy of qid
   | RecdTy of qid * (id * ty) list
   | ArrayTy of ty * exp list
-and exp 
+and exp
   = VarExp of id
-  | ConstExp of lit  
+  | ConstExp of lit
   | Unop of uop * exp
   | Binop of bop * exp * exp
   | ArrayExp of exp list
@@ -82,12 +86,12 @@ datatype stmt
   | Block of stmt list
   | Check of exp
 
-datatype param 
+datatype param
   = In of vdec
   | Out of vdec
   | InOut of vdec
 
-datatype decl 
+datatype decl
   = NumTyDecl of numkind
   | TyAbbrevDecl of id * ty
   | RecdDecl of id * (id * ty) list
@@ -140,7 +144,7 @@ val intTy = BaseTy (IntTy (Int NONE));
 val defaultNumKind = ref (Nat NONE);
 fun defaultNumTy() = BaseTy(IntTy (!defaultNumKind));
 
-fun mk_uintLit i = 
+fun mk_uintLit i =
   if i < 0 then raise ERR "mk_uintLit" "negative"
   else ConstExp(IntLit{value=i, kind=Nat NONE});
 
@@ -151,9 +155,9 @@ fun dest_uintLit (ConstExp(IntLit{value=i, kind=Nat NONE})) = SOME i
 (* Lift a stmt -> stmt operation to a pkg->pkg operation                     *)
 (*---------------------------------------------------------------------------*)
 
-fun lift_stmt_operator (f:stmt->stmt) (name,decls) = 
+fun lift_stmt_operator (f:stmt->stmt) (name,decls) =
  let fun lift decl =
-       case decl 
+       case decl
         of FnDecl (id,args,retvalOpt,locals,stmts) =>
            FnDecl(id,args,retvalOpt,locals,List.map f stmts)
          | SpecDecl (id,locals,stmts) => SpecDecl(id,locals,List.map f stmts)
@@ -166,21 +170,21 @@ fun lift_stmt_operator (f:stmt->stmt) (name,decls) =
 (* Lift an exp -> exp operation to a pkg->pkg operation                      *)
 (*---------------------------------------------------------------------------*)
 
-fun lift_exp_operator (f:exp->exp) = 
+fun lift_exp_operator (f:exp->exp) =
  let fun lift stmt =
-       case stmt 
+       case stmt
         of Skip => Skip
       | Assign(e1,e2) => Assign(f e1, f e2)
       | IfThenElse(exp,s1,s2) => IfThenElse(f exp, lift s1, lift s2)
-      | Case(e,clauses) => 
+      | Case(e,clauses) =>
          Case(f e, map (fn (exp,stmt) => (f exp, lift stmt)) clauses)
       | Call(qid,elist) => Call(qid,map f elist)
       | While(exp,stmt) => While(f exp, lift stmt)
       | For (id,e1,e2,istmt,body) => For(id, f e1, f e2, lift istmt, lift body)
       | Block stmts => Block (map lift stmts)
       | Check exp => Check (f exp)
-    fun appDecl d = 
-      case d 
+    fun appDecl d =
+      case d
        of ConstDecl(id,ty,e) => ConstDecl(id,ty,f e)
         | SizedDataDecl(id,ty,e1,e2) => SizedDataDecl(id,ty,f e1, Option.map f e2)
         | SizedGraphDecl(id,ty,e1,e2) => SizedGraphDecl(id,ty,f e1,f e2)
@@ -188,7 +192,7 @@ fun lift_exp_operator (f:exp->exp) =
            FnDecl(id,params,rvOpt,locals,map lift stmts)
         | SpecDecl(id,vdecs,stmts) => SpecDecl(id,vdecs,map lift stmts)
         | otherwise => d
-  in 
+  in
      fn (pkgName,decls) => (pkgName,map appDecl decls)
   end;
 
@@ -196,9 +200,9 @@ fun lift_exp_operator (f:exp->exp) =
 (* Lift a ty -> ty operation to a pkg->pkg operation                         *)
 (*---------------------------------------------------------------------------*)
 (*
-fun lift_ty_operator (f:ty->ty) = 
+fun lift_ty_operator (f:ty->ty) =
  let fun liftE exp =
-       case exp 
+       case exp
         of VarExp _ => exp
          | ConstExp _ => exp
          | Unop (uop,e) => UnOp(uop, liftE e)
@@ -210,15 +214,15 @@ fun lift_ty_operator (f:ty->ty) =
          | RecdExp (qid,flds) => recdExp(qid,map (I##liftE) fields)
          | RecdProj(e,id) => RecdProj(liftE e,id)
          | Quantified(q,bvars,exp) => Quantified(q,map (I##f) bvars,liftE exp)
-    fun liftS stmt = 
-       case stmt 
+    fun liftS stmt =
+       case stmt
         of Skip => Skip
       | Assign(e1,e2) => Assign(liftE e1, liftE e2)
       | IfThenElse(exp,s1,s2) => IfThenElse(liftE exp, liftS s1, liftS s2)
       | Case(e,clauses) => Case(liftE e, map (liftE##liftS) clauses)
       | Call(qid,elist) => Call(qid,map liftE elist)
       | While(exp,stmt) => While(liftE exp, liftS stmt)
-      | For (id,e1,e2,istmt,body) => 
+      | For (id,e1,e2,istmt,body) =>
             For(id, liftE e1, liftE e2, liftS istmt, liftS body)
       | Block stmts => Block (map liftS stmts)
       | Check exp => Check (liftE exp)
@@ -258,7 +262,7 @@ fun tyNumTypes [] = []
                                                (expNumTypes dims)
 and
     expNumTypes [] = []
-  | expNumTypes (Quantified(quant,bvars,e)::t) = 
+  | expNumTypes (Quantified(quant,bvars,e)::t) =
         union (tyNumTypes (map snd bvars)) (expNumTypes (e::t))
   | expNumTypes (VarExp id::t) = expNumTypes t
   | expNumTypes (ConstExp _::t) = expNumTypes t
@@ -272,8 +276,8 @@ and
   | expNumTypes (ConstrExp(tyqid,id,opt)::t) = expNumTypes (optlist opt @ t)
 
 fun stmtNumTypes [] = []
-  | stmtNumTypes (stmt::t) = 
-    case stmt 
+  | stmtNumTypes (stmt::t) =
+    case stmt
      of Skip => stmtNumTypes t
       | Assign(e1,e2) => union (expNumTypes [e2]) (stmtNumTypes t)
       | Call(qid,elist) => union (expNumTypes elist) (stmtNumTypes t)
@@ -289,10 +293,10 @@ fun stmtNumTypes [] = []
       | Check e => union (expNumTypes [e]) (stmtNumTypes t)
 
 fun declNumTypes [] = []
-  | declNumTypes(decl::t) = 
+  | declNumTypes(decl::t) =
     let val ntys = declNumTypes t
-        val dntys = 
-          case decl of 
+        val dntys =
+          case decl of
           NumTyDecl nkind => [nkind]
         | TyAbbrevDecl (id,ty) => tyNumTypes [ty]
         | RecdDecl (id,fields) => tyNumTypes (map snd fields)
@@ -303,22 +307,22 @@ fun declNumTypes [] = []
         | SizedDataDecl(id,ty,e1,e2) => union (tyNumTypes [ty]) (expNumTypes (e1::optlist e2))
         | SizedGraphDecl(id,ty,e1,e2) => union (tyNumTypes [ty]) (expNumTypes [e1,e2])
         | EfnDecl(id,params,retvalOpt) =>
-              tyNumTypes (map (snd o dest_param) params @ 
+              tyNumTypes (map (snd o dest_param) params @
                           map snd (optlist retvalOpt))
         | FnDecl(id,params,retvalOpt,locals,stmts) =>
-          let val vartypes =  
-                map (snd o dest_param) params @ 
-                map snd (optlist retvalOpt) @ 
-                map snd locals 
+          let val vartypes =
+                map (snd o dest_param) params @
+                map snd (optlist retvalOpt) @
+                map snd locals
              val var_ntys = tyNumTypes vartypes
              val stmt_ntys = stmtNumTypes stmts
           in union var_ntys stmt_ntys
           end
-        | SpecDecl(id,vars,stmts) => 
+        | SpecDecl(id,vars,stmts) =>
           union (tyNumTypes (map snd vars)) (stmtNumTypes stmts)
         | CommentDecl _ => []
     in
-      union dntys ntys            
+      union dntys ntys
     end
 
 fun pkgNumTypes (pkgName,decls) = declNumTypes decls;
@@ -337,7 +341,7 @@ fun expVars (VarExp id) = [id]
   | expVars (RecdProj(e,id)) = expVars e
   | expVars (Fncall(qid,expl)) = bigU (map expVars expl)
   | expVars (ConstrExp(tyqid,id,opt)) = bigU(map expVars (optlist opt))
-  | expVars (Quantified(quant,bvars,e)) = 
+  | expVars (Quantified(quant,bvars,e)) =
       bigU [map fst bvars, bigU (map (tyVars o snd) bvars), expVars e]
 and tyVars (BaseTy _) = []
   | tyVars (NamedTy _) = []
@@ -346,15 +350,15 @@ and tyVars (BaseTy _) = []
 
 fun stmtVars Skip = []
   | stmtVars (Assign(e1,e2)) = union (expVars e1) (expVars e2)
-  | stmtVars (IfThenElse(e,s1,s2)) = union (expVars e) 
+  | stmtVars (IfThenElse(e,s1,s2)) = union (expVars e)
                                        (union (stmtVars s1) (stmtVars s2))
-  | stmtVars (Case(e,clauses)) = 
+  | stmtVars (Case(e,clauses)) =
      let fun clauseVars (pat,stmt) = union (expVars pat) (stmtVars stmt)
      in union (expVars e) (bigU (map clauseVars clauses))
      end
   | stmtVars (Call(qid,elist)) = bigU(map expVars elist)
   | stmtVars (While(e,s)) = union (expVars e) (stmtVars s)
-  | stmtVars (For((id,ty),e1,e2,istmt,body)) = 
+  | stmtVars (For((id,ty),e1,e2,istmt,body)) =
       bigU [[id], expVars e1, expVars e2, stmtVars istmt,stmtVars body]
   | stmtVars (Block stmts) = bigU (map stmtVars stmts)
   | stmtVars (Check e) = expVars e;
@@ -367,32 +371,32 @@ val sorted_expVars = stringSort o expVars;
 fun declVars (NumTyDecl _) = []
   | declVars (TyAbbrevDecl(_,ty)) = tyVars ty
   | declVars (RecdDecl(_,fields)) = bigU (map (tyVars o snd) fields)
-  | declVars (DatatypeDecl(id, constrList)) = 
+  | declVars (DatatypeDecl(id, constrList)) =
   | declVars (VarDecl(id,ty)) = insert id (tyVars ty)
   | declVars (ConstDecl(id,ty,exp)) = insert id (union (tyVars ty) (expVars exp))
-  | declVars (SizedDataDecl(id,ty,e1,NONE)) 
+  | declVars (SizedDataDecl(id,ty,e1,NONE))
       = insert id (union (tyVars ty) (expVars e1))
-  | declVars (SizedDataDecl(id,ty,e1,SOME e2)) 
+  | declVars (SizedDataDecl(id,ty,e1,SOME e2))
       = insert id (union (tyVars ty) (union (expVars e1) (expVars e2)))
-  | declVars (SizedGraphDecl(id,ty,e1,e2)) 
+  | declVars (SizedGraphDecl(id,ty,e1,e2))
       = insert id (union (tyVars ty) (union (expVars e1) (expVars e2)))
-  | declVars (SizedGraphDecl(id,ty,e1,e2)) = insert id (union (tyVars ty) 
+  | declVars (SizedGraphDecl(id,ty,e1,e2)) = insert id (union (tyVars ty)
                                                   (union (expVars e1) (expVars e2)))
-  | declVars (EfnDecl(id,params,retvalOpt)) = 
-      let val paramIds = map (fst o dest_param) 
+  | declVars (EfnDecl(id,params,retvalOpt)) =
+      let val paramIds = map (fst o dest_param)
                              (params @ map Out (optlist retvalOpt))
           val dimIds = fnArrayDims (params,retvalOpt)
           val localIds = map fst locals
       in stmtFrees (dimIds@paramIds@localIds) (Block stmts)
       end
-  | declVars (FnDecl(id,params,retvalOpt,locals,stmts)) = 
-      let val paramIds = map (fst o dest_param) 
+  | declVars (FnDecl(id,params,retvalOpt,locals,stmts)) =
+      let val paramIds = map (fst o dest_param)
                              (params @ map Out (optlist retvalOpt))
           val dimIds = fnArrayDims (params,retvalOpt)
           val localIds = map fst locals
       in stmtFrees (dimIds@paramIds@localIds) (Block stmts)
       end
-  | declVars(SpecDecl(id,vlist,stmts)) = 
+  | declVars(SpecDecl(id,vlist,stmts)) =
             union (bigU (map (tyVars o snd) vlist))
                   (stmtVars stmts)
   | declVars (CommentDecl _) = []
@@ -402,13 +406,13 @@ fun declVars (NumTyDecl _) = []
 (* Find all/only free variables in an ty/exp/stmt/function/package           *)
 (*---------------------------------------------------------------------------*)
 
-fun tyFrees scope ty = 
- case ty 
+fun tyFrees scope ty =
+ case ty
   of BaseTy _ => []
    | NamedTy _ => []
    | RecdTy(_,fields) => bigU(map (tyFrees scope o snd) fields)
    | ArrayTy(ty,dims) => bigU(tyFrees scope ty::map (expFrees scope) dims)
-and expFrees scope exp = 
+and expFrees scope exp =
  case exp
   of VarExp id => if Lib.mem id scope then [] else [id]
    | ConstExp _ => []
@@ -422,30 +426,30 @@ and expFrees scope exp =
    | ConstrExp(tyqid,id,opt) => bigU(map (expFrees scope) (optlist opt))
    | Quantified(quant,bvars,e) => expFrees (map fst bvars @ scope) e
 
-fun stmtFrees scope stmt = 
- case stmt 
+fun stmtFrees scope stmt =
+ case stmt
   of Skip => []
    | Check e => expFrees scope e
    | Assign(e1,e2) => union (expFrees scope e1) (expFrees scope e2)
-   | IfThenElse(e,s1,s2) => bigU [expFrees scope e, 
+   | IfThenElse(e,s1,s2) => bigU [expFrees scope e,
                                   stmtFrees scope s1, stmtFrees scope s2]
    | Call(qid,elist) => bigU(map (expFrees scope) elist)
    | While(e,s) => union (expFrees scope e) (stmtFrees scope s)
    | Block stmts => bigU (map (stmtFrees scope) stmts)
-   | Case(e,rules) => 
+   | Case(e,rules) =>
       let fun ruleFrees (pat,stmt) = stmtFrees (expFrees [] pat @ scope) stmt
       in union (expFrees scope e) (bigU (map ruleFrees rules))
       end
-   | For((id,ty),e1,e2,istmt,body) => 
-       bigU[expFrees (id::scope) e1, expFrees (id::scope) e2, 
+   | For((id,ty),e1,e2,istmt,body) =>
+       bigU[expFrees (id::scope) e1, expFrees (id::scope) e2,
             stmtFrees (id::scope) istmt, stmtFrees (id::scope) body];
 
 (* -------------------------------------------------------------------------- *)
 (* Array dimensions mentioned in the formal parameters of a function.         *)
 (* -------------------------------------------------------------------------- *)
 
-fun fnArrayDims (formals,retvalOpt) = 
- let val all_param_tys = map (snd o dest_param) 
+fun fnArrayDims (formals,retvalOpt) =
+ let val all_param_tys = map (snd o dest_param)
                              (formals @ map Out (optlist retvalOpt))
      val dimVarIds = U (map tyVars all_param_tys)
  in dimVarIds
@@ -455,8 +459,8 @@ fun fnArrayDims (formals,retvalOpt) =
 (* Free vars of a FnDecl                                                      *)
 (* -------------------------------------------------------------------------- *)
 
-fun fndeclFrees (id,params,retvalOpt,locals,stmts) = 
- let val paramIds = map (fst o dest_param) 
+fun fndeclFrees (id,params,retvalOpt,locals,stmts) =
+ let val paramIds = map (fst o dest_param)
                      (params @ map Out (optlist retvalOpt))
      val dimIds = fnArrayDims (params,retvalOpt)
      val localIds = map fst locals
@@ -498,7 +502,7 @@ fun proc_calls [] acc = acc
 (* What functions are called in a list of statements.                        *)
 (*---------------------------------------------------------------------------*)
 
-fun fn_calls stmts qids = 
+fun fn_calls stmts qids =
  let fun exps [] acc = acc
        | exps (Skip::t) acc = exps t acc
        | exps (Assign(_,e)::t) acc = exps t (e::acc)
@@ -506,11 +510,11 @@ fun fn_calls stmts qids =
        | exps (Case(e,cls)::t) acc = exps (map snd cls@t) (e::acc)
        | exps (Call(qid,elist)::t) acc = exps t (elist@acc)
        | exps (While(e,s)::t) acc = exps (s::t) (e::acc)
-       | exps (For(_,e1,e2,istmt,body)::t) acc = exps (istmt::body::t) 
+       | exps (For(_,e1,e2,istmt,body)::t) acc = exps (istmt::body::t)
                                                       (e1::e2::acc)
        | exps (Block slist::t) acc = exps (slist@t) acc
        | exps (Check e::t) acc = exps t (e::acc)
- in 
+ in
    exp_calls (exps stmts []) qids
  end;
 
@@ -518,8 +522,8 @@ fun fn_calls stmts qids =
 (* All calls made in a list of statements.                                   *)
 (*---------------------------------------------------------------------------*)
 
-fun all_calls stmts qids = 
- let fun calls stmts (qA,eA) = 
+fun all_calls stmts qids =
+ let fun calls stmts (qA,eA) =
       case stmts
        of []                     => exp_calls eA qA
         | Skip::t                => calls t (qA,eA)
@@ -544,19 +548,19 @@ fun eqOpt eqt NONE NONE = true
  |  eqOpt any other thing = false;
 
 fun eqTy typair =
-  case typair 
+  case typair
    of (BaseTy x1, BaseTy x2) => x1=x2
     | (NamedTy qid1,NamedTy qid2) => qid1=qid2
-    | (RecdTy (qid1,fields1), RecdTy (qid2,fields2)) 
+    | (RecdTy (qid1,fields1), RecdTy (qid2,fields2))
         => let val fields1' = sort_on_string_key fields1
                val fields2' = sort_on_string_key fields2
            in qid1=qid2 andalso Lib.all2 eqFieldTy fields1' fields2'
-           end 
-    | (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2)) 
+           end
+    | (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2))
         => eqTy(ty1,ty2) andalso Lib.all2 (curry eqExp) exps1 exps2
     | (other,wise) => false
-and eqExp epair = 
-  case epair 
+and eqExp epair =
+  case epair
   of (VarExp i1, VarExp i2) => i1=i2
    | (ConstExp(IdConst i1), ConstExp(IdConst i2))     => i1=i2
    | (ConstExp(BoolLit b1), ConstExp(BoolLit b2))     => b1=b2
@@ -569,19 +573,19 @@ and eqExp epair =
    | (Binop(op1,d1,d2),Binop(op2,e1,e2))
         => op1=op2 andalso eqExp(d1,e2) andalso eqExp(d2,e2)
    | (ArrayExp elist1,ArrayExp elist2) => Lib.all2 (curry eqExp) elist1 elist2
-   | (ArrayIndex(e1,elist1),ArrayIndex(e2,elist2)) 
+   | (ArrayIndex(e1,elist1),ArrayIndex(e2,elist2))
        => eqExp(e1,e2) andalso Lib.all2 (curry eqExp) elist1 elist2
    | (ConstrExp(q1,i1,eOpt1),ConstrExp(q2,i2,eOpt2))
        => q1=q2 andalso i1=i2 andalso eqOpt (curry eqExp) eOpt1 eOpt2
-   | (Fncall(q1,elist1),Fncall(q2,elist2)) 
+   | (Fncall(q1,elist1),Fncall(q2,elist2))
        => q1=q2 andalso Lib.all2 (curry eqExp) elist1 elist2
-   | (RecdExp (qid1,fields1),RecdExp(qid2,fields2)) => 
+   | (RecdExp (qid1,fields1),RecdExp(qid2,fields2)) =>
        let val fields1' = sort_on_string_key fields1
            val fields2' = sort_on_string_key fields2
        in qid1=qid2 andalso Lib.all2 eqField fields1' fields2'
        end
    | (RecdProj(e1,i1),RecdProj(e2,i2)) => i1=i2 andalso eqExp(e1,e2)
-   | (Quantified(q1,bvars1,e1),Quantified(q2,bvars2,e2)) 
+   | (Quantified(q1,bvars1,e1),Quantified(q2,bvars2,e2))
        => let fun eqBvar(s1,ty1) (s2,ty2) = s1=s2 andalso eqTy(ty1,ty2)
           in q1=q2 andalso eqExp(e1,e2) andalso
              Lib.all2 eqBvar bvars1 bvars2
@@ -600,12 +604,12 @@ and
 type ('a,'b) subst = ('a,'b) Lib.subst
 
 fun substTy theta ty =
- case ty 
+ case ty
   of ArrayTy(ty,elist) => ArrayTy (substTy theta ty, map (substExp theta) elist)
    | RecdTy(qid,flist) => RecdTy (qid,map (I##substTy theta) flist)
    | otherwise => ty
-and 
- substExp theta (exp:exp) = 
+and
+ substExp theta (exp:exp) =
  case subst_assoc (curry eqExp exp) theta
   of SOME exp' => exp'
    | NONE => case exp
@@ -631,13 +635,13 @@ and
 fun substStmt theta stmt =
  let val dom_theta = U(map (expVars o #redex) theta)
      val rng_theta = U(map (expVars o #residue) theta)
- in case stmt 
+ in case stmt
     of Skip => Skip
      | Assign(e1,e2) => Assign (substExp theta e1,substExp theta e2)
-     | IfThenElse(e,s1,s2) => 
+     | IfThenElse(e,s1,s2) =>
        IfThenElse(substExp theta e, substStmt theta s1,substStmt theta s2)
-     | Case(e,rules) => 
-        let fun subst_rule(p,s) = 
+     | Case(e,rules) =>
+        let fun subst_rule(p,s) =
              let val V = expVars p
              in if null(intersect V dom_theta) andalso
                    null (intersect V rng_theta)
@@ -649,7 +653,7 @@ fun substStmt theta stmt =
      | Call(qid,args) => Call(qid,map (substExp theta) args)
      | Block stmts => Block(map (substStmt theta) stmts)
      | While(e,stmt) => While(substExp theta e, substStmt theta stmt)
-     | For((id,ty),e1,e2,istmt,body) => 
+     | For((id,ty),e1,e2,istmt,body) =>
         if mem id dom_theta then stmt
          else For((id,ty),substExp theta e1, substExp theta e2,
                   substStmt theta istmt,substStmt theta body)
@@ -659,14 +663,14 @@ fun substStmt theta stmt =
 fun subst_LR_Stmt ltheta rtheta =
  let val dom_rtheta = U(map (expVars o #redex) rtheta)
      val rng_rtheta = U(map (expVars o #residue) rtheta)
-     fun subst stmt = 
-      case stmt 
+     fun subst stmt =
+      case stmt
        of Skip => Skip
         | Assign(e1,e2) => Assign (substExp ltheta e1,substExp rtheta e2)
-        | IfThenElse(e,s1,s2) => 
+        | IfThenElse(e,s1,s2) =>
           IfThenElse(substExp rtheta e, subst s1,subst s2)
-        | Case(e,rules) => 
-           let fun subst_rule(p,s) = 
+        | Case(e,rules) =>
+           let fun subst_rule(p,s) =
                 let val V = expVars p
                 in if null(intersect V dom_rtheta) andalso
                       null (intersect V rng_rtheta)
@@ -678,17 +682,17 @@ fun subst_LR_Stmt ltheta rtheta =
         | Call(qid,args) => Call(qid,map (substExp rtheta) args)
         | Block stmts => Block(map subst stmts)
         | While(e,stmt) => While(substExp rtheta e, subst stmt)
-        | For((id,ty),e1,e2,istmt,body) => 
-           if mem id dom_rtheta then stmt else 
+        | For((id,ty),e1,e2,istmt,body) =>
+           if mem id dom_rtheta then stmt else
            For((id,ty),substExp rtheta e1, substExp rtheta e2, subst istmt,subst body)
         | Check e => Check (substExp rtheta e)
- in 
+ in
   subst
  end
-  
+
 fun substVdec theta (id,ty) = (id,substTy theta ty);
-  
-fun substParam theta param = 
+
+fun substParam theta param =
  case param
   of In vdec => In (substVdec theta vdec)
    | Out vdec => Out(substVdec theta vdec)
@@ -696,30 +700,30 @@ fun substParam theta param =
 
 fun substConstr theta (id,argtys) = (id, map (substTy theta) argtys);
 
-fun substDecl theta decl = 
- case decl 
+fun substDecl theta decl =
+ case decl
   of NumTyDecl nkind => decl
    | TyAbbrevDecl(id,ty) => TyAbbrevDecl (id,substTy theta ty)
    | RecdDecl(id,flds)   => RecdDecl(id, map (I##substTy theta) flds)
-   | DatatypeDecl(id,constrs) 
+   | DatatypeDecl(id,constrs)
      => DatatypeDecl(id, map (substConstr theta) constrs)
    | GraphDecl(id,nty,ety) => GraphDecl(id,substTy theta nty,substTy theta ety)
    | VarDecl vdec => VarDecl(substVdec theta vdec)
    | ConstDecl(id,ty,exp) => ConstDecl(id,substTy theta ty,substExp theta exp)
-   | SizedDataDecl(id,ty,e1,eopt) 
+   | SizedDataDecl(id,ty,e1,eopt)
       => SizedDataDecl(id,substTy theta ty,substExp theta e1,
                        Option.map (substExp theta) eopt)
-   | SizedGraphDecl(id,ty,e1,e2) 
+   | SizedGraphDecl(id,ty,e1,e2)
       => SizedGraphDecl(id,substTy theta ty, substExp theta e1,substExp theta e2)
-   | EfnDecl(id,params,retvalOpt) 
+   | EfnDecl(id,params,retvalOpt)
      => EfnDecl(id,map (substParam theta) params,
                    Option.map (substVdec theta) retvalOpt)
-   | FnDecl(id,params,retvalOpt,locals,stmts) 
+   | FnDecl(id,params,retvalOpt,locals,stmts)
      => FnDecl(id,map (substParam theta) params,
                Option.map (substVdec theta) retvalOpt,
                map (substVdec theta) locals,
                map (substStmt theta) stmts)
-   | SpecDecl(id,vdecs,stmts) 
+   | SpecDecl(id,vdecs,stmts)
      => SpecDecl(id, map (substVdec theta) vdecs,
                  map (substStmt theta) stmts)
    | CommentDecl _ => decl
@@ -728,36 +732,36 @@ fun substDecl theta decl =
 (* Substitution of types for types                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun substTyTy theta ty = 
+fun substTyTy theta ty =
   case subst_assoc (curry eqTy ty) theta
    of SOME ty1 => ty1
-    | NONE => 
-      let in 
-       case ty 
-        of ArrayTy(ty,elist) => ArrayTy (substTyTy theta ty, 
+    | NONE =>
+      let in
+       case ty
+        of ArrayTy(ty,elist) => ArrayTy (substTyTy theta ty,
                                           map (substTyExp theta) elist)
          | RecdTy(qid,flist) => RecdTy (qid, map (I##substTyTy theta) flist)
          | otherwise => ty
       end
-and substTyExp theta exp = 
+and substTyExp theta exp =
   case exp
     of VarExp _ => exp
      | ConstExp _ => exp
      | Unop(opr,e) => Unop(opr,substTyExp theta e)
      | Binop(opr,e1,e2) => Binop(opr,substTyExp theta e1,substTyExp theta e2)
      | ArrayExp elist => ArrayExp(map (substTyExp theta) elist)
-     | ArrayIndex(e,elist) => ArrayIndex(substTyExp theta e, 
+     | ArrayIndex(e,elist) => ArrayIndex(substTyExp theta e,
                                          map (substTyExp theta) elist)
      | ConstrExp(qid,id,NONE) => exp
      | ConstrExp(qid,id,SOME e) => ConstrExp(qid,id,SOME (substTyExp theta e))
      | Fncall(qid,elist) => Fncall(qid,map (substTyExp theta) elist)
      | RecdExp(qid,fields) => RecdExp(qid,map (I##substTyExp theta) fields)
      | RecdProj(e,id) => RecdProj(substTyExp theta e,id)
-     | Quantified(quant,bvars,e) 
+     | Quantified(quant,bvars,e)
        => Quantified(quant,map (I##substTyTy theta) bvars, substTyExp theta e)
 
 fun substTyVdec theta (id,ty) = (id,substTyTy theta ty);
-fun substTyParam theta param = 
+fun substTyParam theta param =
  case param
   of In vdec  => In (substTyVdec theta vdec)
    | Out vdec  => Out(substTyVdec theta vdec)
@@ -766,58 +770,58 @@ fun substTyParam theta param =
 fun substTyConstr theta (id,argtys) = (id, map (substTyTy theta) argtys);
 
 fun substTyStmt theta stmt =
- case stmt 
+ case stmt
   of Skip => Skip
    | Assign(e1,e2) => Assign (substTyExp theta e1,substTyExp theta e2)
-   | IfThenElse(e,s1,s2) => 
+   | IfThenElse(e,s1,s2) =>
         IfThenElse(substTyExp theta e,
                    substTyStmt theta s1,substTyStmt theta s2)
-   | Case(e,rules) => 
+   | Case(e,rules) =>
       let fun subst_rule(p,s) = (substTyExp theta p, substTyStmt theta s)
       in Case (substTyExp theta e,map subst_rule rules)
       end
    | Call(qid,args) => Call(qid,map (substTyExp theta) args)
    | Block stmts    => Block(map (substTyStmt theta) stmts)
    | While(e,stmt)  => While(substTyExp theta e, substTyStmt theta stmt)
-   | For(v,e1,e2,istmt,body) 
+   | For(v,e1,e2,istmt,body)
      => For(substTyVdec theta v,
-            substTyExp theta e1, 
+            substTyExp theta e1,
             substTyExp theta e2,
             substTyStmt theta istmt,
             substTyStmt theta body)
    | Check e => Check (substTyExp theta e)
 
 
-fun substTyDecl theta decl = 
- case decl 
+fun substTyDecl theta decl =
+ case decl
   of NumTyDecl nkind => decl
-   | TyAbbrevDecl(id,ty) 
+   | TyAbbrevDecl(id,ty)
      => TyAbbrevDecl (id,substTyTy theta ty)
    | RecdDecl(id,flds)
      => RecdDecl(id, map (substTyVdec theta) flds)
-   | DatatypeDecl(id,constrs) 
+   | DatatypeDecl(id,constrs)
      => DatatypeDecl(id, map (substTyConstr theta) constrs)
-   | GraphDecl(id,nty,ety) 
+   | GraphDecl(id,nty,ety)
      => GraphDecl(id,substTyTy theta nty,substTyTy theta ety)
-   | VarDecl vdec 
+   | VarDecl vdec
      => VarDecl(substTyVdec theta vdec)
-   | ConstDecl(id,ty,exp) 
+   | ConstDecl(id,ty,exp)
      => ConstDecl(id,substTyTy theta ty,substTyExp theta exp)
-   | SizedDataDecl(id,ty,e1,eopt) 
+   | SizedDataDecl(id,ty,e1,eopt)
      => SizedDataDecl(id,substTyTy theta ty,
                       substTyExp theta e1,Option.map (substTyExp theta) eopt)
-   | SizedGraphDecl(id,ty,e1,e2) 
+   | SizedGraphDecl(id,ty,e1,e2)
      => SizedGraphDecl(id,substTyTy theta ty,
                        substTyExp theta e1,substTyExp theta e2)
-   | EfnDecl(id,params,retvalOpt) 
+   | EfnDecl(id,params,retvalOpt)
      => EfnDecl(id,map (substTyParam theta) params,
                    Option.map (substTyVdec theta) retvalOpt)
-   | FnDecl(id,params,retvalOpt,locals,stmts) 
+   | FnDecl(id,params,retvalOpt,locals,stmts)
      => FnDecl(id,map (substTyParam theta) params,
                Option.map (substTyVdec theta) retvalOpt,
                map (substTyVdec theta) locals,
                map (substTyStmt theta) stmts)
-   | SpecDecl(id,vdecs,stmts) 
+   | SpecDecl(id,vdecs,stmts)
      => SpecDecl(id, map (substTyVdec theta) vdecs,
                  map (substTyStmt theta) stmts)
    | CommentDecl _ => decl
@@ -826,19 +830,19 @@ fun substTyDecl theta decl =
 (* Replace a qid throughout a ty/exp/stmt/decl/pkg                           *)
 (*---------------------------------------------------------------------------*)
 
-fun alistFn alist x = 
+fun alistFn alist x =
  case subst_assoc (equal x) alist
   of SOME y => y
    | NONE => x;
 
 fun substQidTy theta ty =
-   case ty 
+   case ty
     of NamedTy qid => NamedTy(alistFn theta qid)
      | RecdTy(qid,flist) => RecdTy (alistFn theta qid,map (I##substQidTy theta) flist)
-     | ArrayTy(ty,elist) => ArrayTy (substQidTy theta ty, 
+     | ArrayTy(ty,elist) => ArrayTy (substQidTy theta ty,
                                      map (substQidExp theta) elist)
      | otherwise => ty
-and substQidExp theta (exp:exp) = 
+and substQidExp theta (exp:exp) =
    case exp
     of VarExp _ => exp
      | ConstExp (IdConst qid) => ConstExp(IdConst (alistFn theta qid))
@@ -859,26 +863,26 @@ and substQidExp theta (exp:exp) =
      | Quantified(q,qvars,e) => Quantified(q,qvars,substQidExp theta e)
 
 fun substQidStmt theta stmt =
- case stmt 
+ case stmt
   of Skip => Skip
    | Assign(e1,e2) => Assign (substQidExp theta e1,substQidExp theta e2)
-   | IfThenElse(e,s1,s2) => 
-     IfThenElse(substQidExp theta e, 
+   | IfThenElse(e,s1,s2) =>
+     IfThenElse(substQidExp theta e,
                 substQidStmt theta s1,substQidStmt theta s2)
    | Case(e,rules) => Case (substQidExp theta e,
                             map (I##substQidStmt theta) rules)
    | Call(qid,args) => Call(alistFn theta(qid),map (substQidExp theta) args)
    | Block stmts => Block(map (substQidStmt theta) stmts)
    | While(e,stmt) => While(substQidExp theta e, substQidStmt theta stmt)
-   | For((id,ty),e1,e2,istmt,body) => 
+   | For((id,ty),e1,e2,istmt,body) =>
        For((id,ty),substQidExp theta e1, substQidExp theta e2,
            substQidStmt theta istmt,substQidStmt theta body)
    | Check e => Check (substQidExp theta e)
 ;
-  
+
 fun substQidVdec theta (id,ty) = (id,substQidTy theta ty);
-  
-fun substQidParam theta param = 
+
+fun substQidParam theta param =
  case param
   of In vdec => In (substQidVdec theta vdec)
    | Out vdec => Out(substQidVdec theta vdec)
@@ -886,33 +890,33 @@ fun substQidParam theta param =
 
 fun substQidConstr theta (id,argtys) = (id, map (substQidTy theta) argtys);
 
-fun substQidDecl theta decl = 
- case decl 
+fun substQidDecl theta decl =
+ case decl
   of NumTyDecl nkind => decl
    | TyAbbrevDecl(id,ty) => TyAbbrevDecl (id,substQidTy theta ty)
    | RecdDecl(id,flds)   => RecdDecl(id, map (I##substQidTy theta) flds)
-   | DatatypeDecl(id,constrs) 
+   | DatatypeDecl(id,constrs)
      => DatatypeDecl(id, map (substQidConstr theta) constrs)
    | GraphDecl(id,nty,ety) => GraphDecl(id,substQidTy theta nty,
                                            substQidTy theta ety)
    | VarDecl vdec => VarDecl(substQidVdec theta vdec)
    | ConstDecl(id,ty,exp) => ConstDecl(id,substQidTy theta ty,
                                           substQidExp theta exp)
-   | SizedDataDecl(id,ty,e1,eopt) 
+   | SizedDataDecl(id,ty,e1,eopt)
       => SizedDataDecl(id,substQidTy theta ty,
                        substQidExp theta e1,Option.map (substQidExp theta) eopt)
-   | SizedGraphDecl(id,ty,e1,e2) 
+   | SizedGraphDecl(id,ty,e1,e2)
       => SizedGraphDecl(id,substQidTy theta ty,
                         substQidExp theta e1,substQidExp theta e2)
-   | EfnDecl(id,params,retvalOpt) 
+   | EfnDecl(id,params,retvalOpt)
      => EfnDecl(id,map (substQidParam theta) params,
                    Option.map (substQidVdec theta) retvalOpt)
-   | FnDecl(id,params,retvalOpt,locals,stmts) 
+   | FnDecl(id,params,retvalOpt,locals,stmts)
      => FnDecl(id,map (substQidParam theta) params,
                Option.map (substQidVdec theta) retvalOpt,
                map (substQidVdec theta) locals,
                map (substQidStmt theta) stmts)
-   | SpecDecl(id,vdecs,stmts) 
+   | SpecDecl(id,vdecs,stmts)
      => SpecDecl(id, map (substQidVdec theta) vdecs,
                  map (substQidStmt theta) stmts)
    | CommentDecl _ => decl
@@ -926,7 +930,7 @@ fun substQidPkg theta (pkgName,decls) = (pkgName, map (substQidDecl theta) decls
 type ids = id list;
 
 fun tyIds ty set =
-   case ty 
+   case ty
     of BaseTy _ => set
      | NamedTy (_,id) => insert id set
      | RecdTy((_,id),flist) => itlist (tyIds o snd) flist (insert id set)
@@ -948,26 +952,26 @@ and expIds exp set =
      | Quantified(q,qvars,e) => expIds e (itlist tyIds (map snd qvars) set)
 
 fun stmtIds stmt set =
- case stmt 
+ case stmt
   of Skip => set
    | Assign(e1,e2) => expIds e2 (expIds e1 set)
    | IfThenElse(e,s1,s2) => stmtIds s2 (stmtIds s1 (expIds e set))
-   | Case(e,rules) => itlist (fn (e,s) => fn t => stmtIds s (expIds e t)) 
+   | Case(e,rules) => itlist (fn (e,s) => fn t => stmtIds s (expIds e t))
                              rules (expIds e set)
    | Call((_,id),args) => itlist expIds args (insert id set)
    | Block stmts => itlist stmtIds stmts set
    | While(e,stmt) => stmtIds stmt (expIds e set)
-   | For((id,ty),e1,e2,istmt,body) => 
+   | For((id,ty),e1,e2,istmt,body) =>
       stmtIds body
        (stmtIds istmt
           (expIds e2 (expIds e1 (tyIds ty (insert id set)))))
    | Check e => expIds e set
 ;
-  
+
 fun constrIds (cname,tys) set = itlist tyIds tys (insert cname set);
-    
-fun declIds decl set = 
- case decl 
+
+fun declIds decl set =
+ case decl
   of NumTyDecl nkind => set
    | RecdDecl(id,flds) => itlist tyIds (map snd flds) (insert id set)
    | TyAbbrevDecl(id,ty) => tyIds ty (insert id set)
@@ -975,24 +979,24 @@ fun declIds decl set =
    | GraphDecl(id,nty,ety) => tyIds ety (tyIds nty (insert id set))
    | VarDecl (id,ty) => tyIds ty (insert id set)
    | ConstDecl(id,ty,exp) => expIds exp (tyIds ty (insert id set))
-   | SizedDataDecl(id,ty,e1,NONE) 
+   | SizedDataDecl(id,ty,e1,NONE)
       => expIds e1 (tyIds ty (insert id set))
-   | SizedDataDecl(id,ty,e1,SOME e2) 
+   | SizedDataDecl(id,ty,e1,SOME e2)
       => expIds e2 (expIds e1 (tyIds ty (insert id set)))
-   | SizedGraphDecl(id,ty,e1,e2) 
+   | SizedGraphDecl(id,ty,e1,e2)
       => expIds e2 (expIds e1 (tyIds ty (insert id set)))
-   | EfnDecl(id,params,retvalOpt) => 
-      let val tys = map (snd o dest_param) params @ 
+   | EfnDecl(id,params,retvalOpt) =>
+      let val tys = map (snd o dest_param) params @
                     map snd (optlist retvalOpt)
       in itlist tyIds tys (insert id set)
       end
-   | FnDecl(id,params,retvalOpt,locals,stmts) => 
-      let val tys = map (snd o dest_param) params @ 
-                    map snd (optlist retvalOpt) @ 
+   | FnDecl(id,params,retvalOpt,locals,stmts) =>
+      let val tys = map (snd o dest_param) params @
+                    map snd (optlist retvalOpt) @
                     map snd locals
       in stmtIds (Block stmts) (itlist tyIds tys (insert id set))
       end
-   | SpecDecl(id,vdecs,stmts) => 
+   | SpecDecl(id,vdecs,stmts) =>
         stmtIds (Block stmts) (itlist tyIds (map snd vdecs) (insert id set))
    | CommentDecl _ => set;
 
@@ -1006,7 +1010,7 @@ fun pkgIds (pkgName,decls) set = itlist declIds decls (insert pkgName set);
 type qids = qid list;
 
 fun tyQids ty set =
-   case ty 
+   case ty
     of BaseTy _ => set
      | NamedTy qid => insert qid set
      | RecdTy(qid,flist) => itlist (tyQids o snd) flist set
@@ -1028,26 +1032,26 @@ and expQids exp set =
      | Quantified(q,qvars,e) => expQids e (itlist tyQids (map snd qvars) set)
 
 fun stmtQids stmt set =
- case stmt 
+ case stmt
   of Skip => set
    | Assign(e1,e2) => expQids e2 (expQids e1 set)
    | IfThenElse(e,s1,s2) => stmtQids s2 (stmtQids s1 (expQids e set))
-   | Case(e,rules) => itlist (fn (e,s) => fn t => stmtQids s (expQids e t)) 
+   | Case(e,rules) => itlist (fn (e,s) => fn t => stmtQids s (expQids e t))
                              rules (expQids e set)
    | Call(qid,args) => itlist expQids args (insert qid set)
    | Block stmts => itlist stmtQids stmts set
    | While(e,stmt) => stmtQids stmt (expQids e set)
-   | For((id,ty),e1,e2,istmt,body) => 
+   | For((id,ty),e1,e2,istmt,body) =>
       stmtQids body
        (stmtQids istmt
           (expQids e2 (expQids e1 (tyQids ty set))))
    | Check e => expQids e set
 ;
-  
+
 fun constrQids (cname,tys) set = itlist tyQids tys set;
-    
-fun declQids decl set = 
- case decl 
+
+fun declQids decl set =
+ case decl
   of NumTyDecl nkind => set
    | RecdDecl(id,flds) => itlist tyQids (map snd flds) set
    | TyAbbrevDecl(id,ty) => tyQids ty set
@@ -1055,23 +1059,23 @@ fun declQids decl set =
    | GraphDecl(id,nty,ety) => tyQids nty (tyQids ety set)
    | VarDecl (id,ty) => tyQids ty set
    | ConstDecl(id,ty,exp) => expQids exp (tyQids ty set)
-   | SizedDataDecl(id,ty,e1,eopt) => 
-       (case eopt 
+   | SizedDataDecl(id,ty,e1,eopt) =>
+       (case eopt
          of NONE => expQids e1 (tyQids ty set)
           | SOME e2 => expQids e2 (expQids e1 (tyQids ty set)))
    | SizedGraphDecl(id,ty,e1,e2) => expQids e2 (expQids e1 (tyQids ty set))
-   | EfnDecl(id,params,retvalOpt) => 
-      let val tys = map (snd o dest_param) params @ 
+   | EfnDecl(id,params,retvalOpt) =>
+      let val tys = map (snd o dest_param) params @
                     map snd (optlist retvalOpt)
       in itlist tyQids tys set
       end
-   | FnDecl(id,params,retvalOpt,locals,stmts) => 
-      let val tys = map (snd o dest_param) params @ 
-                    map snd (optlist retvalOpt) @ 
+   | FnDecl(id,params,retvalOpt,locals,stmts) =>
+      let val tys = map (snd o dest_param) params @
+                    map snd (optlist retvalOpt) @
                     map snd locals
       in stmtQids (Block stmts) (itlist tyQids tys set)
       end
-   | SpecDecl(id,vdecs,stmts) => 
+   | SpecDecl(id,vdecs,stmts) =>
         stmtQids (Block stmts) (itlist tyQids (map snd vdecs) set)
    | CommentDecl _ => set;
 
@@ -1085,7 +1089,7 @@ fun renamePkg s (pkg as (pkgName,decls)) =
   let val qids = pkgQids pkg []
       val relevant = filter (equal pkgName o fst) qids
       val replacements = map (fn (a,b) => (s,b)) relevant
-      val theta = map2 (fn x => fn y => {redex = x, residue = y}) 
+      val theta = map2 (fn x => fn y => {redex = x, residue = y})
                        relevant replacements
   in
    (s, map (substQidDecl theta) decls)
@@ -1096,33 +1100,33 @@ fun renamePkg s (pkg as (pkgName,decls)) =
 (* to declare the state record.                                               *)
 (* -------------------------------------------------------------------------- *)
 
-fun expDecs e = []; 
+fun expDecs e = [];
 
 fun stmtDecs Skip = []
   | stmtDecs (Assign _) = []
   | stmtDecs (Call(qid,expl)) = []
   | stmtDecs (Check e) = []
   | stmtDecs (IfThenElse(_,s1,s2)) = List.concat [stmtDecs s1,stmtDecs s2]
-  | stmtDecs (Case(e,cases)) = 
+  | stmtDecs (Case(e,cases)) =
       let fun caseId(e,stmt) = stmtDecs stmt
       in List.concat (map caseId cases)
       end
   | stmtDecs (While(e,stmt)) = stmtDecs stmt
-  | stmtDecs (For((id,ty),e1,e2,istmt,body)) = 
+  | stmtDecs (For((id,ty),e1,e2,istmt,body)) =
         (id,ty)::List.concat [stmtDecs istmt, stmtDecs body]
   | stmtDecs (Block stmts) = List.concat (map stmtDecs stmts);
 
 fun eq_vDec ((id1,ty1):vdec) ((id2,ty2):vdec) = id1=id2 andalso eqTy(ty1,ty2);
 
-fun tyDecs ty = 
- case ty 
+fun tyDecs ty =
+ case ty
   of BaseTy _ => []
    | NamedTy _ => []
-   | RecdTy (qid,fields) => 
+   | RecdTy (qid,fields) =>
       let val ftys = map snd fields
       in itlist (fn ty => fn set => op_union eq_vDec (tyDecs ty) set) ftys []
       end
-   | ArrayTy (ty,dims) => 
+   | ArrayTy (ty,dims) =>
       let val tydecs = tyDecs ty
           val varExps = List.concat (map expVars dims)
           fun nat_vdec id = (id, BaseTy(IntTy(Nat NONE)))
@@ -1136,9 +1140,9 @@ val paramDecs = vdecDecs o dest_param;
 
 val mk_vdec_set = op_mk_set eq_vDec;
 
-fun pkg_varDecs (name,decls) = 
- let fun varDecs decl = 
-      case decl 
+fun pkg_varDecs (name,decls) =
+ let fun varDecs decl =
+      case decl
        of FnDecl(id,args,optret,locals,stmts) =>
           let val pdecs = List.concat(map paramDecs args)
               val odecs = List.concat (map vdecDecs (optlist optret))
@@ -1148,7 +1152,7 @@ fun pkg_varDecs (name,decls) =
           in
             (id,alldecs)
           end
-       | EfnDecl(id,args,optret) => 
+       | EfnDecl(id,args,optret) =>
           let val pdecs = List.concat(map paramDecs args)
               val odecs = List.concat (map vdecDecs (optlist optret))
               val alldecs = mk_vdec_set pdecs
@@ -1168,7 +1172,7 @@ fun pkg_varDecs (name,decls) =
    mapfilter varDecs decls
  end;
 
-fun splitPkg (pkgName,decls) = 
+fun splitPkg (pkgName,decls) =
  let val types = mapfilter (fn (x as RecdDecl _) => x
                              | (x as DatatypeDecl _) => x
                              | (x as GraphDecl _) => x) decls
@@ -1179,7 +1183,7 @@ fun splitPkg (pkgName,decls) =
      val fdecls = mapfilter (fn (x as ConstDecl _) => x
                               | (x as FnDecl _) => x) decls
      val sdecls = mapfilter (fn SpecDecl x => x) decls
- in 
+ in
   (types,vdecls,edecls,fdecls,sdecls)
  end
 
@@ -1192,45 +1196,45 @@ val MATCH_TY_ERR = ERR "matchTy"
 val MATCH_EXP_ERR = ERR "matchExp"
 
 fun matchTy fixed typair =
-  case typair 
-   of (BaseTy x1, BaseTy x2) 
-       => if x1=x2 then [] 
+  case typair
+   of (BaseTy x1, BaseTy x2)
+       => if x1=x2 then []
             else raise MATCH_TY_ERR "disagreement at base types"
-    | (NamedTy qid1,NamedTy qid2) 
-       => if qid1=qid2 then [] 
+    | (NamedTy qid1,NamedTy qid2)
+       => if qid1=qid2 then []
             else raise MATCH_TY_ERR "disagreement at named types"
-    | (RecdTy (qid1,flds1), RecdTy (qid2,flds2)) 
-       => if qid1 <> qid2 then 
+    | (RecdTy (qid1,flds1), RecdTy (qid2,flds2))
+       => if qid1 <> qid2 then
             raise MATCH_TY_ERR "disagreement at record types"
           else
           let val fields1 = sort_on_string_key flds1
               val fields2 = sort_on_string_key flds2
-              fun matchFieldTy (s1,ty1) (s2,ty2) = 
+              fun matchFieldTy (s1,ty1) (s2,ty2) =
                 if s1=s2 then matchTy fixed (ty1,ty2)
                  else raise MATCH_TY_ERR ("disagreement at record field "^s1)
-              val fldpairs = zip fields1 fields2 
-                     handle e => raise MATCH_TY_ERR 
+              val fldpairs = zip fields1 fields2
+                     handle e => raise MATCH_TY_ERR
                                  "disagreement in number of record fields"
               val thetans = map matchFieldTy fldpairs
               fun norm [] = []
                 | norm ([]::t) = norm t
-                | norm (bindings::t) = 
+                | norm (bindings::t) =
                    let val t' = norm t
-                       fun add_bindings (v,e) list = 
+                       fun add_bindings (v,e) list =
                           case assoc1 v list
                             of NONE => (v,e)::list
                              | SOME (_,e') => if e = e' then list
-                                 else raise MATCH_TY_ERR 
+                                 else raise MATCH_TY_ERR
                                   ("disagreement in binding for variable "^fst v)
                    in itlist add_binding bindings t'
                    end
           in norm thetans
           end
-    | (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2)) 
+    | (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2))
         => matchTy(ty1,ty2) andalso Lib.all2 (curry matchExp) exps1 exps2
     | (other,wise) => false
-and matchExp fixed epair = 
-  case epair 
+and matchExp fixed epair =
+  case epair
   of (VarExp i1, VarExp i2) => i1=i2
    | (ConstExp(IdConst i1), ConstExp(IdConst i2))     => i1=i2
    | (ConstExp(BoolLit b1), ConstExp(BoolLit b2))     => b1=b2
@@ -1242,18 +1246,18 @@ and matchExp fixed epair =
    | (Binop(op1,d1,d2),Binop(op2,e1,e2))
         => op1=op2 andalso matchExp(d1,e2) andalso matchExp(d2,e2)
    | (ArrayExp elist1,ArrayExp elist2) => Lib.all2 (curry matchExp) elist1 elist2
-   | (ArrayIndex(e1,elist1),ArrayIndex(e2,elist2)) 
+   | (ArrayIndex(e1,elist1),ArrayIndex(e2,elist2))
        => matchExp(e1,e2) andalso Lib.all2 (curry matchExp) elist1 elist2
    | (ConstrExp(q1,i1,eOpt1),ConstrExp(q2,i2,eOpt2))
        => q1=q2 andalso i1=i2 andalso eqOpt (curry matchExp) eOpt1 eOpt2
-   | (Fncall(q1,elist1),Fncall(q2,elist2)) 
+   | (Fncall(q1,elist1),Fncall(q2,elist2))
        => q1=q2 andalso Lib.all2 (curry matchExp) elist1 elist2
-   | (RecdExp (qid1,fields1),RecdExp(qid2,fields2)) => 
+   | (RecdExp (qid1,fields1),RecdExp(qid2,fields2)) =>
        let fun eqField (s1,e1) (s2,e2) = s1=s2 andalso matchExp(e1,e2)
        in qid1=qid2 andalso Lib.all2 eqField fields1 fields2
        end
    | (RecdProj(e1,i1),RecdProj(e2,i2)) => i1=i2 andalso matchExp(e1,e2)
-   | (Quantified(q1,bvars1,e1),Quantified(q2,bvars2,e2)) 
+   | (Quantified(q1,bvars1,e1),Quantified(q2,bvars2,e2))
        => let fun eqBvar(s1,ty1) (s2,ty2) = s1=s2 andalso matchTy(ty1,ty2)
           in q1=q2 andalso matchExp(e1,e2) andalso
              Lib.all2 eqBvar bvars1 bvars2
@@ -1268,7 +1272,7 @@ and matchExp fixed epair =
 
 type fnsig = qid * (param list * vdec option)
 
-fun fnsigs_of (pkgName,decls) = 
+fun fnsigs_of (pkgName,decls) =
  let fun header_of (EfnDecl(id,params,retOpt)) = ((pkgName,id),(params,retOpt))
        | header_of (FnDecl(id,params,retOpt,_,_)) = ((pkgName,id),(params,retOpt))
        | header_of (ConstDecl(id,ty,exp)) = ((pkgName,id),([],SOME("",ty)))
@@ -1282,23 +1286,23 @@ fun fnsigs_of (pkgName,decls) =
 
 type tysig = qid * ty
 
-fun tysigs_of (pkgName,decls) = 
+fun tysigs_of (pkgName,decls) =
  let fun header_of (TyAbbrevDecl (id,ty)) = ((pkgName,id),ty)
        | header_of (RecdDecl (id,flds)) = ((pkgName,id), NamedTy(pkgName,id))
        | header_of otherwise = raise ERR "" ""
  in Lib.mapfilter header_of decls
  end;
 
-fun resolve_named_ty qid tysigs = 
- let fun chase qid n = 
-   if n < 0 then 
+fun resolve_named_ty qid tysigs =
+ let fun chase qid n =
+   if n < 0 then
     raise ERR "resolve_named_ty" "possible cycle in type abbrevs"
     else case assoc1 qid tysigs
           of SOME (_,NamedTy qid') => chase qid' (n-1)
            | SOME (_, ty) => ty
-           | NONE => raise ERR "resolve_named_ty" 
+           | NONE => raise ERR "resolve_named_ty"
                      ("unknown type abbrev: "^qid_string qid)
-           
+
  in chase qid 10
  end;
 
@@ -1312,13 +1316,13 @@ fun is_int (BaseTy(IntTy _)) = true
 fun is_unbounded_uint (BaseTy(IntTy(Nat NONE))) = true
   | is_unbounded_uint otherwise = false
 
-fun exp (n,e) = 
+fun exp (n,e) =
   if n<0 orelse e<0 then raise ERR "exp" "negative input"
   else if e = 0 then 1
   else n * exp(n,e-1);
 
 fun is_uint_literal (ConstExp(IntLit{kind=Nat NONE,value})) = true
-  | is_uint_literal (ConstExp(IntLit{kind=Nat(SOME width),value})) = 
+  | is_uint_literal (ConstExp(IntLit{kind=Nat(SOME width),value})) =
       0 <= value andalso value < exp(2,width)
   | is_uint_literal otherwise = false;
 
@@ -1341,8 +1345,8 @@ fun flip_sign Signed (BaseTy(IntTy(Nat x))) = BaseTy(IntTy(Int x))
   | flip_sign Unsigned (ty as BaseTy(IntTy(Nat _))) = ty
   | flip_sign uop otherwise = raise ERR "ty_of" "flip_sign: expected a number"
 
-fun drop_bound ty = 
- case ty 
+fun drop_bound ty =
+ case ty
   of BaseTy(IntTy(Nat NONE)) => ty
    | BaseTy(IntTy(Int NONE)) => ty
    | BaseTy(IntTy(Nat (SOME _))) => BaseTy(IntTy(Nat NONE))
@@ -1358,24 +1362,24 @@ val TC_ERR = ERR "typecheck";
 
 val unitTy = NamedTy("","unit")  (* range type of a procedure *)
 
-type tyenv 
+type tyenv
       = (qid -> ty)                   (* abbrEnv *)
          * (id -> ty)                 (* varEnv *)
          * (qid -> ty list * ty)      (* constEnv *)
          * (qid * id -> ty list * ty) (* constrEnv *)
          * (qid -> (id * ty) list)    (* recdEnv *)
-         * qid list                   (* specEnv *) 
+         * qid list                   (* specEnv *)
 ;
 
 fun join_tyenv (abbrEnv1,varEnv1,constEnv1,constrEnv1,recdEnv1,specEnv1)
-               (abbrEnv2,varEnv2,constEnv2,constrEnv2,recdEnv2,specEnv2) = 
+               (abbrEnv2,varEnv2,constEnv2,constrEnv2,recdEnv2,specEnv2) =
  let fun abbrEnv x   = (abbrEnv1 x   handle _ => abbrEnv2 x)
      fun varEnv x    = (varEnv1 x    handle _ => varEnv2 x)
      fun constEnv x  = (constEnv1 x  handle _ => constEnv2 x)
      fun constrEnv x = (constrEnv1 x handle _ => constrEnv2 x)
      fun recdEnv x   = (recdEnv1 x   handle _ => recdEnv2 x)
      val specEnv     = specEnv1@specEnv2
- in 
+ in
    (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv)
  end
 
@@ -1383,16 +1387,16 @@ fun join_tyenv (abbrEnv1,varEnv1,constEnv1,constrEnv1,recdEnv1,specEnv1)
 (* Type abbreviation expansion in types and terms                            *)
 (*---------------------------------------------------------------------------*)
 
-fun applyAbbrev (abbrEnv,recdEnv) qid = 
+fun applyAbbrev (abbrEnv,recdEnv) qid =
 (* check recdEnv first, because all recd decls are dummy stored in abbrEnv *)
- RecdTy(qid,recdEnv qid) handle HOL_ERR _ 
- => 
- abbrEnv qid handle HOL_ERR _ 
- => 
+ RecdTy(qid,recdEnv qid) handle HOL_ERR _
+ =>
+ abbrEnv qid handle HOL_ERR _
+ =>
  raise TC_ERR ("expandTy : undefined type: "^qid_string qid);
 
-fun qid_map E qid = 
-  case applyAbbrev E qid 
+fun qid_map E qid =
+  case applyAbbrev E qid
    of NamedTy qid' => qid'
     | otherwise => raise TC_ERR ("qid_map : undefined type: "^qid_string qid);
 
@@ -1402,33 +1406,33 @@ fun expand1Ty E ty =
    | NamedTy(qid) => applyAbbrev E qid
    | RecdTy(qid,flist) => RecdTy (qid, map (I##expand1Ty E) flist)
    | ArrayTy(ty,dlist) => ArrayTy (expand1Ty E ty, map (expand1TyExp E) dlist)
- and expand1TyExp E exp = 
+ and expand1TyExp E exp =
    case exp
     of VarExp _ => exp
      | ConstExp _ => exp
      | Unop(opr,e) => Unop(opr,expand1TyExp E e)
      | Binop(opr,e1,e2) => Binop(opr,expand1TyExp E e1,expand1TyExp E e2)
      | ArrayExp elist => ArrayExp(map (expand1TyExp E) elist)
-     | ArrayIndex(e,elist) => 
+     | ArrayIndex(e,elist) =>
           ArrayIndex(expand1TyExp E e, map (expand1TyExp E) elist)
      | ConstrExp(qid,id,NONE) => ConstrExp(qid_map E qid,id,NONE)
-     | ConstrExp(qid,id,SOME e) => 
+     | ConstrExp(qid,id,SOME e) =>
           ConstrExp(qid_map E qid, id,SOME (expand1TyExp E e))
      | Fncall(qid,elist) => Fncall(qid,map (expand1TyExp E) elist)
-     | RecdExp(qid,fields) => 
+     | RecdExp(qid,fields) =>
           RecdExp(qid_map E qid, map (I##expand1TyExp E) fields)
      | RecdProj(e,id) => RecdProj(expand1TyExp E e,id)
-     | Quantified(quant,bvars,e) => 
+     | Quantified(quant,bvars,e) =>
          Quantified(quant,map (I##expand1Ty E) bvars, expand1TyExp E e)
 ;
 
-fun expandTyN E n ty = 
-  if n <= 0 then ty else 
+fun expandTyN E n ty =
+  if n <= 0 then ty else
    let val ty' = expand1Ty E ty
    in if eqTy(ty,ty') then ty else expandTyN E (n-1) ty'
    end;
-fun expandTyExpN E n exp = 
-  if n <= 0 then exp else 
+fun expandTyExpN E n exp =
+  if n <= 0 then exp else
    let val exp' = expand1TyExp E exp
    in if eqExp(exp,exp') then exp else expandTyExpN E (n-1) exp'
    end;
@@ -1442,98 +1446,98 @@ fun expandTyExp E exp = expandTyExpN E TYABBREV_EXPANSION_BOUND exp;
 (* Check equality of two types in a type abbrev. environment.                *)
 (*---------------------------------------------------------------------------*)
 
-fun eqTyEnv E ty1 ty2 = 
-  eqTy(ty1,ty2) orelse 
+fun eqTyEnv E ty1 ty2 =
+  eqTy(ty1,ty2) orelse
   eqTy(expandTy E ty1,expandTy E ty2);
 
 fun eqExpEnv E e1 e2 =
-  eqExp(e1,e2) orelse 
+  eqExp(e1,e2) orelse
   eqExp(expandTyExp E e1,expandTyExp E e2);
 
 fun CALL_ERR s = TC_ERR ("Procedure call: "^s)
 
 fun checkDims E [] = ()  (* array dims all match *)
-  | checkDims E ((c1 as ConstExp _, c2 as ConstExp _)::t) = 
-     if is_uint_literal c1 
+  | checkDims E ((c1 as ConstExp _, c2 as ConstExp _)::t) =
+     if is_uint_literal c1
           andalso is_uint_literal c2
-          andalso eqExp(c1,c2) 
+          andalso eqExp(c1,c2)
       then checkDims E t
-      else raise TC_ERR 
+      else raise TC_ERR
              "array dimensions (both constants) disagree or are not uints"
   | checkDims E ((v as VarExp _, e)::t) =
-      if not (is_VarExp e) andalso not(is_uint_literal e) 
-        then raise TC_ERR 
+      if not (is_VarExp e) andalso not(is_uint_literal e)
+        then raise TC_ERR
                        "formal array dimension is not a uint or a variable"
-        else (case get_first (fn (a,b) => if eqExpEnv E a v 
+        else (case get_first (fn (a,b) => if eqExpEnv E a v
                                                    then SOME b else NONE) t
                of NONE => checkDims E t
-                | SOME e1 => 
+                | SOME e1 =>
                     if eqExpEnv E e e1 then checkDims E t
                      else raise CALL_ERR (String.concat
                          ["dimension of some array argument does not match ",
                           "that of the corresponding formal parameter"]))
-  | checkDims E otherwise = raise CALL_ERR 
+  | checkDims E otherwise = raise CALL_ERR
                        "array dimensions must be variables or uint constants"
 
 fun matchTys E [] bindings = checkDims E bindings
-  | matchTys E ((pat,ob)::t) bindings = 
+  | matchTys E ((pat,ob)::t) bindings =
      case (pat,ob)
-      of (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2)) 
+      of (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2))
          => matchTys E ((ty1,ty2)::t) ((zip exps1 exps2)@bindings)
-       | (RecdTy (qid1,fields1), RecdTy (qid2,fields2)) 
+       | (RecdTy (qid1,fields1), RecdTy (qid2,fields2))
          => if qid1 <> qid2
               then raise TC_ERR "Type mismatch in function call args (record types with different qids)."
-              else 
+              else
                let val (f1_ids, f1_tys) = unzip (sort_on_string_key fields1)
                    val (f2_ids,f2_tys) = unzip (sort_on_string_key fields2)
-               in 
+               in
                  if f1_ids = f2_ids
                    then matchTys E (zip f1_tys f2_tys @ t) bindings
                    else raise TC_ERR "matchTys at RecdTy"
                end
-       | otherwise => 
+       | otherwise =>
             if eqTyEnv E pat ob then ()
              else raise TC_ERR "Type mismatch in function call args ."
 
 fun check_pred opstr ty pred = if pred ty then ty else raise TC_ERR opstr;
 
-fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty = 
- let in 
+fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
+ let in
     case ty
      of BaseTy _ => ()
       | NamedTy qid => (* enforced by IDE, also checked here *)
-         (case total abbrEnv qid 
+         (case total abbrEnv qid
            of SOME _ => ()
-            | NONE => 
+            | NONE =>
           case total recdEnv qid
            of SOME _ => ()
-            | NONE => raise TC_ERR 
+            | NONE => raise TC_ERR
                        ("type "^Lib.quote(qid_string qid)^" has not been declared")
          )
       | RecdTy (qid,fields) => List.app (tcTy env o snd) fields
-      | ArrayTy (basety,dimExps) => 
+      | ArrayTy (basety,dimExps) =>
          let fun expectUnsigned ty = check_pred "ArrayDim" ty is_unsigned
              val _ = tcTy env basety
              val dimTys = List.map (expectUnsigned o tcExp env) dimExps
-         in 
+         in
            ()
          end
  end
- and 
-  tcExp (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) exp :ty = 
+ and
+  tcExp (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) exp :ty =
    let fun check opstr ty ety = check_pred opstr ty (eqTyEnv (abbrEnv,recdEnv) ety)
    in
-    case exp 
-     of VarExp id => 
-        (case total varEnv id 
+    case exp
+     of VarExp id =>
+        (case total varEnv id
           of SOME ty => ty
-           | NONE => raise TC_ERR 
+           | NONE => raise TC_ERR
                        ("variable "^Lib.quote id^" has not been declared"))
-      | ConstExp (IdConst qid) => 
+      | ConstExp (IdConst qid) =>
          (case total constEnv qid
           of SOME ([],rngty) => rngty
            | SOME otherwise => raise TC_ERR "nullary constant has function type"
-           | NONE => raise TC_ERR 
+           | NONE => raise TC_ERR
                        ("constant "^qid_string qid^" has not been declared"))
 
       | ConstExp (BoolLit _) => BaseTy BoolTy
@@ -1543,86 +1547,101 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
       | ConstExp (IntLit{kind, ...}) => BaseTy (IntTy kind)
       | ConstExp (FloatLit _) => BaseTy FloatTy
       | Unop(Not,e) => check "Not" (tcExp env e) (BaseTy BoolTy)
-      | Unop(BitNot,e) => 
+      | Unop(BitNot,e) =>
           check_pred "BitNot: expected argument to have bounded integer type"
                    (tcExp env e)
                    is_bounded
-      | Unop(UMinus,e) => 
-         let val estr = String.concat 
+      | Unop(UMinus,e) =>
+         let val estr = String.concat
                 ["Unary Minus: expected argument to be an int ",
                  "(either fixed width or unbounded)"]
          in check_pred estr (tcExp env e) is_signed
          end
-      | Unop(ChrOp,e) => 
-         let in 
-             check "chr" (tcExp env e) 
+      | Unop(ChrOp,e) =>
+         let in
+             check "chr" (tcExp env e)
                          (BaseTy (IntTy (Nat(SOME 8))));
              BaseTy CharTy
          end
-      | Unop(OrdOp,e) => 
-         let in 
+      | Unop(OrdOp,e) =>
+         let in
              check "ord" (tcExp env e) (BaseTy CharTy);
              BaseTy (IntTy (Nat(SOME 8)))
          end
-      | Unop(Signed,e) => 
+      | Unop(Signed,e) =>
          let val ty = tcExp env e
          in check_pred "Signed: expected argument to be an int of some kind"
                        ty is_int;
             flip_sign Signed ty
          end
-      | Unop(Unsigned,e) => 
+      | Unop(Unsigned,e) =>
          let val ty = tcExp env e
          in check_pred "Unsigned: expected argument to be an int of some kind"
                     ty is_int;
             flip_sign Unsigned ty
          end
-      | Unop(Unbounded,e) => 
+      | Unop(Unbounded,e) =>
          let val ty = tcExp env e
          in check_pred "Unbounded: expected argument to be an int of some kind"
                        ty is_int;
             drop_bound ty
          end
-      | Binop(CastWidth,e1,e2) => 
+      | Unop(Yesterday,e) =>
+          let in
+            check "Yesterday" (tcExp env e) (BaseTy BoolTy);
+            BaseTy BoolTy
+          end
+      | Unop(ZYesterday,e) =>
+          let in
+            check "ZYesterday" (tcExp env e) (BaseTy BoolTy);
+            BaseTy BoolTy
+          end
+      | Unop(Historically,e) =>
+          let in
+            check "Historically" (tcExp env e) (BaseTy BoolTy);
+            BaseTy BoolTy
+          end
+      | Binop(CastWidth,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
-            check_pred "CastWidth: expected int in first argument" 
+          in
+            check_pred "CastWidth: expected int in first argument"
                        ty1 is_int;
-            check_pred "CastWidth: expected uint literal in second argument" 
+            check_pred "CastWidth: expected uint literal in second argument"
                        ty2 is_unbounded_uint;
             case dest_uintLit e2
              of SOME n => BaseTy(IntTy(Nat (SOME n)))
               | NONE => raise TC_ERR"CastWidth: non-literal width "
           end
-      | Binop(And,e1,e2) => 
-          let in 
+      | Binop(And,e1,e2) =>
+          let in
             check "And" (tcExp env e1) (BaseTy BoolTy);
             check "And" (tcExp env e2) (BaseTy BoolTy);
             BaseTy BoolTy
           end
-      | Binop(Imp,e1,e2) => 
-          let in 
+      | Binop(Imp,e1,e2) =>
+          let in
             check "Imp" (tcExp env e1) (BaseTy BoolTy);
             check "Imp" (tcExp env e2) (BaseTy BoolTy);
             BaseTy BoolTy
           end
-      | Binop(ArithmeticRShift,e1,e2) => 
+      | Binop(ArithmeticRShift,e1,e2) =>
            let val ty1 = tcExp env e1
                val ty2 = tcExp env e2
-           in 
+           in
               check_pred "ArithmeticRShift" ty1 is_bounded;
               check_pred "ArithmeticRShift" ty2 is_unbounded_uint;
               ty1
           end
-      | Binop(BitAnd,e1,e2) => 
+      | Binop(BitAnd,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "BitAnd" ty1 is_bounded;
               check "BitAnd" ty1 ty2;
               ty2
           end
-      | Binop(BitOr,e1,e2) => 
+      | Binop(BitOr,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
           in
@@ -1630,149 +1649,161 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
               check "BitOr" ty1 ty2;
               ty2
           end
-      | Binop(BitXOR,e1,e2) => 
+      | Binop(BitXOR,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "BitXOR" ty1 is_bounded;
               check "BitXOR" ty1 ty2;
               ty2
           end
-      | Binop(Equal,e1,e2) => 
+      | Binop(Equal,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
-              check "Equal" ty1 ty2; 
+          in
+              check "Equal" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(Exponent,e1,e2) => 
+      | Binop(Exponent,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Exponent" ty1 is_int;
               check_pred "Exponent" ty2 is_unbounded_uint;
               ty1
           end
-      | Binop(Greater,e1,e2) => 
+      | Binop(Greater,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Greater" ty1 is_int;
               check "Greater" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(GreaterEqual,e1,e2) => 
+      | Binop(GreaterEqual,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "GreaterEqual" ty1 is_int;
               check "GreaterEqual" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(Divide,e1,e2) => 
+      | Binop(Divide,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Divide" ty1 is_int;
               check "Divide" ty1 ty2;
               ty1
           end
-      | Binop(Less,e1,e2) => 
+      | Binop(Less,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Less" ty1 is_int;
               check "Less" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(LessEqual,e1,e2) => 
+      | Binop(LessEqual,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "LessEqual" ty1 is_int;
               check "LessEqual" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(LogicalLShift,e1,e2) => 
+      | Binop(LogicalLShift,e1,e2) =>
            let val ty1 = tcExp env e1
                val ty2 = tcExp env e2
-           in 
+           in
                check_pred "LogicalLShift" ty1 is_bounded;
                check_pred "LogicalLShift" ty2 is_unbounded_uint;
                ty1
           end
-      | Binop(LogicalRShift,e1,e2) => 
+      | Binop(LogicalRShift,e1,e2) =>
            let val ty1 = tcExp env e1
                val ty2 = tcExp env e2
-           in 
+           in
                check_pred "LogicalRShift" ty1 is_bounded;
                check_pred "LogicalRShift" ty2 is_unbounded_uint;
                ty1
           end
-      | Binop(Minus,e1,e2) => 
+      | Binop(Minus,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Minus" ty1 is_int;
               check "Minus" ty1 ty2;
               ty2
           end
-      | Binop(Modulo,e1,e2) => 
+      | Binop(Modulo,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Modulo" ty1 is_int;
               check "Modulo" ty1 ty2;
               ty1
           end
-      | Binop(Multiply,e1,e2) => 
+      | Binop(Multiply,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Multiply" ty1 is_int;
               check "Multiply" ty1 ty2;
               ty1
           end
-      | Binop(NotEqual,e1,e2) => 
+      | Binop(NotEqual,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check "NotEqual" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(Or,e1,e2) => 
-          let in 
+      | Binop(Or,e1,e2) =>
+          let in
              check "Or" (tcExp env e1) (BaseTy BoolTy);
              check "Or" (tcExp env e2) (BaseTy BoolTy);
              BaseTy BoolTy
           end
-      | Binop(Plus,e1,e2) => 
+      | Binop(Plus,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
-          in 
+          in
               check_pred "Plus" ty1 is_int;
               check "Plus" ty1 ty2;
               ty1
           end
-      | Binop(RegexMatch,e1,e2) => 
-          let in 
+      | Binop(RegexMatch,e1,e2) =>
+          let in
             check "RegexMatch" (tcExp env e1) (BaseTy RegexTy);
             check "RegexMatch" (tcExp env e2) (BaseTy StringTy);
             BaseTy BoolTy
           end
-      | ArrayExp elist => 
+      | Binop(Since,e1,e2) =>
+          let in
+            check "Since" (tcExp env e1) (BaseTy BoolTy);
+            check "Since" (tcExp env e2) (BaseTy BoolTy);
+            BaseTy BoolTy
+          end
+      | Binop(Trigger,e1,e2) =>
+          let in
+            check "Trigger" (tcExp env e1) (BaseTy BoolTy);
+            check "Trigger" (tcExp env e2) (BaseTy BoolTy);
+            BaseTy BoolTy
+          end
+      | ArrayExp elist =>
          let fun crunchArrayTy (ArrayTy(b,dims)) = (b,dims)
                | crunchArrayTy ty = (ty,[])
-         in 
+         in
           case map (tcExp env) elist
             of [] => raise TC_ERR "zero-length array expression"
-             | h::t => 
+             | h::t =>
                 let val dim = mk_uintLit (length elist)
                     val (b,dims) = crunchArrayTy h
-                in 
+                in
                   if List.all (fn ty => eqTy(h,ty)) t
                    then ArrayTy(b, dim::dims)
-                  else raise TC_ERR 
+                  else raise TC_ERR
                       "not all elements in array expression have same type"
                 end
          end
@@ -1780,53 +1811,53 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
           let val itys = map (tcExp env) indices
               val _ = List.map (fn ty => check "ArrayIndex" ty uintTy) itys
           in case expandTy (abbrEnv,recdEnv) (tcExp env A)
-              of ArrayTy(bty,dims) => 
+              of ArrayTy(bty,dims) =>
                   if Lib.all2 (eqTyEnv (abbrEnv,recdEnv)) itys (map (tcExp env) dims)
                   then bty
                   else raise TC_ERR "Array index: type disagreement on dimensions"
-               | otherwise => raise TC_ERR 
+               | otherwise => raise TC_ERR
                    "Array part of array index expression doesn't have array type"
           end
       | ConstrExp (qid,c,argOpt) =>
           let val argTy = optlist(Option.map (tcExp env) argOpt)
-          in 
-           case total constrEnv (qid,c) 
+          in
+           case total constrEnv (qid,c)
             of NONE =>  raise TC_ERR ("unknown type: "^qid_string qid)
-             | SOME([],rngty) => 
+             | SOME([],rngty) =>
                 if null argTy then rngty else
-                raise TC_ERR (String.concat 
+                raise TC_ERR (String.concat
                   ["constructor: ",qid_string qid,
                    " expects no arguments, but has been given some"])
              | SOME([domty],rngty) =>
-                 if length argTy = 1 then 
-                    (if eqTyEnv (abbrEnv,recdEnv) domty (hd argTy) 
-                     then rngty 
-                     else raise TC_ERR (String.concat 
+                 if length argTy = 1 then
+                    (if eqTyEnv (abbrEnv,recdEnv) domty (hd argTy)
+                     then rngty
+                     else raise TC_ERR (String.concat
                       ["constructor: ",qid_string qid^"."^c,
                       " has been given an argument of the wrong type"]))
                 else
-                raise TC_ERR (String.concat 
+                raise TC_ERR (String.concat
                   ["constructor: ",qid_string qid,
                    " has been given the wrong number of arguments"])
-             | SOME(domtys,rngty) => raise TC_ERR 
+             | SOME(domtys,rngty) => raise TC_ERR
                (String.concat ["constructor: ",qid_string qid,
                                " has more than one argument"])
-          end 
+          end
       | Fncall (qid,elist) =>  (* Similar to typecheck of Call stmt *)
          let val tys = map (tcExp env) elist
-         in case total constEnv qid 
+         in case total constEnv qid
              of NONE => raise TC_ERR ("unknown function: "^qid_string qid)
               | SOME(domtys,rngty) => (* Need to instantiate rngty *)
-                  (matchTys (abbrEnv,recdEnv) (zip domtys tys) []; rngty) handle e => 
+                  (matchTys (abbrEnv,recdEnv) (zip domtys tys) []; rngty) handle e =>
                   raise TC_ERR ("function: "^qid_string qid^" misapplied")
-         end 
-      | RecdExp(qid,fields) => 
+         end
+      | RecdExp(qid,fields) =>
           let val (ids,exps) = unzip (sort_on_string_key fields)
               val field_tys = List.map (tcExp env) exps
               fun fieldEq (id1,ty1) (id2,ty2) = id1=id2 andalso eqTy(ty1,ty2)
-          in case total recdEnv qid 
+          in case total recdEnv qid
               of NONE => raise TC_ERR ("unknown record: "^qid_string qid)
-               | SOME efields => 
+               | SOME efields =>
                   let val efields' = sort_on_string_key efields
                   in if Lib.all2 fieldEq (zip ids field_tys) efields'
                      then NamedTy qid  (* all record types have been lifted and named *)
@@ -1835,29 +1866,29 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
                   end
           end
       | RecdProj (e,id) =>
-         let fun unknown_field_err tyqid id = 
-               TC_ERR (String.concat 
+         let fun unknown_field_err tyqid id =
+               TC_ERR (String.concat
                  ["unknown field: ", Lib.quote id, " in ", qid_string tyqid, " record"])
-         in 
+         in
          case tcExp env e
-          of NamedTy tyqid => 
+          of NamedTy tyqid =>
              (case total recdEnv tyqid
-               of NONE => raise TC_ERR (String.concat 
+               of NONE => raise TC_ERR (String.concat
                               ["undeclared record: ", qid_string tyqid])
-                | SOME fields => (assoc id fields handle HOL_ERR _ 
+                | SOME fields => (assoc id fields handle HOL_ERR _
                                   => raise unknown_field_err tyqid id)
              )
            | RecdTy (tyqid,fields) =>
-               (assoc id fields handle HOL_ERR _ 
+               (assoc id fields handle HOL_ERR _
                  => raise unknown_field_err tyqid id)
-           | otherwise => raise TC_ERR 
-                (String.concat ["record projection <exp>.", id, 
+           | otherwise => raise TC_ERR
+                (String.concat ["record projection <exp>.", id,
                                ": expected <exp> to have a record type"])
          end
-      | Quantified(quant,bvars,e) => 
+      | Quantified(quant,bvars,e) =>
           let fun varEnv' id = (assoc id bvars handle HOL_ERR _ => varEnv id)
               val env' = (abbrEnv,varEnv',constEnv,constrEnv,recdEnv,specEnv)
-          in 
+          in
              List.app (tcTy env) (map snd bvars);
              check "Quantified"
                    (tcExp env' e)
@@ -1865,37 +1896,37 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
           end
    end
 
-fun tcStmt E stmt = 
+fun tcStmt E stmt =
  let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
  in
-  case stmt 
+  case stmt
    of Skip => ()
-    | Check exp => 
+    | Check exp =>
        let val ty = tcExp E exp
-       in if eqTy(ty,BaseTy BoolTy) 
+       in if eqTy(ty,BaseTy BoolTy)
           then ()
           else raise TC_ERR "Check statement: expected boolean expression"
        end
-    | Assign(e1,e2) => 
+    | Assign(e1,e2) =>
         let val lty = tcExp E e1
             val rty = tcExp E e2
         in
          if eqTyEnv (abbrEnv,recdEnv) lty rty
           then ()
-          else raise TC_ERR 
+          else raise TC_ERR
                "Assignment statement: types of lhs and rhs differ"
         end
-    | Call (("","target-return"),[e]) => 
+    | Call (("","target-return"),[e]) =>
        let val _ = tcExp E e
        in ()
        end
-    | Call (("Std","print"),[e]) => 
+    | Call (("Std","print"),[e]) =>
        let val ty = tcExp E e
-       in if eqTy(ty,BaseTy StringTy) 
+       in if eqTy(ty,BaseTy StringTy)
           then ()
           else raise TC_ERR "print statement: expected string argument"
        end
-    | Call (qid,exps) => 
+    | Call (qid,exps) =>
        let val tys = List.map (tcExp E) exps
            val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
        in case total constEnv qid
@@ -1903,7 +1934,7 @@ fun tcStmt E stmt =
              | SOME(domtys,rngty) => matchTys (abbrEnv,recdEnv) (zip domtys tys) []
                 handle e => raise TC_ERR ("function: "^qid_string qid^
                                           " misapplied")
-       end 
+       end
     | IfThenElse (exp,s1,s2) =>
         let val ty = tcExp E exp
         in if eqTyEnv (abbrEnv,recdEnv) ty (BaseTy BoolTy)
@@ -1912,17 +1943,17 @@ fun tcStmt E stmt =
         end
     | Case (exp,rules) => (* patterns have the form : qid.C(id) *)
        let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
-           fun pat_id_type (ConstrExp(qid,c,expOpt)) = 
+           fun pat_id_type (ConstrExp(qid,c,expOpt)) =
                (case total constrEnv (qid,c)
                  of NONE => raise TC_ERR "Case statement: unknown constructor"
                   | SOME (domtys,rngty) =>
                      (case expOpt
                        of NONE => if null domtys then NONE
                                   else raise TC_ERR (String.concat
-                                  ["Case statement: constructor ",c, 
+                                  ["Case statement: constructor ",c,
                                    " from type ", qid_string qid,
                                    " expects a non-zero number of arguments"])
-                        | SOME (VarExp id) => 
+                        | SOME (VarExp id) =>
                             if length domtys = 1
                              then SOME(id,hd domtys)
                              else raise TC_ERR (String.concat
@@ -1932,11 +1963,11 @@ fun tcStmt E stmt =
                            ["Case statement: expected a constructor applied ",
                             "to a variable"]))
                )
-             | pat_id_type otherwise = raise TC_ERR 
+             | pat_id_type otherwise = raise TC_ERR
                  "Case statement: expected a constructor pattern"
-           fun tcRule (p,s) = 
+           fun tcRule (p,s) =
             let val patvarOpt = pat_id_type p
-                fun varEnv' id = 
+                fun varEnv' id =
                    (case patvarOpt
                     of NONE => varEnv id
                      | SOME (id1,ty) => if id=id1 then ty else varEnv id
@@ -1944,7 +1975,7 @@ fun tcStmt E stmt =
                 val E' = (abbrEnv,varEnv',constEnv,constrEnv,recdEnv,specEnv)
             in tcStmt E' s
             end
-       in 
+       in
           tcExp E exp;
           List.app tcRule rules
        end
@@ -1953,13 +1984,13 @@ fun tcStmt E stmt =
         let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
             fun varEnv' (x) = if x=id then ty else varEnv x
             val E' = (abbrEnv,varEnv',constEnv,constrEnv,recdEnv,specEnv)
-        in 
+        in
            tcExp E e1;  (* check it's a number? *)
            tcExp E' e2; (* check it's a bool *)
            tcStmt E' istmt;
            tcStmt E' body
         end
-    | While (exp,stmt) => 
+    | While (exp,stmt) =>
         let in
           tcExp E exp;
           tcStmt E stmt
@@ -1994,9 +2025,9 @@ fun decl_info decl =
    | CommentDecl _       => "CommentDecl"
 
 
-fun tcDecl E decl = 
+fun tcDecl E decl =
  let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
- in 
+ in
  case decl
   of NumTyDecl nkind => ()
    | CommentDecl _ => ()
@@ -2004,13 +2035,13 @@ fun tcDecl E decl =
    | RecdDecl(id,flds) => List.app (tcTy E o snd) flds
    | DatatypeDecl (id,constrs) =>
       let fun check_constr (id,tylist) = List.app (tcTy E) tylist
-       in 
+       in
            List.app check_constr constrs
        end
    | VarDecl(id,ty) => tcTy E ty
    | ConstDecl(id,ty,exp) =>
        let val _ = tcTy E ty
-       in if eqTyEnv (abbrEnv,recdEnv) ty (tcExp E exp) 
+       in if eqTyEnv (abbrEnv,recdEnv) ty (tcExp E exp)
            then ()
            else raise TC_ERR (String.concat
                       ["declaration of constant: ",Lib.quote id,
@@ -2019,7 +2050,7 @@ fun tcDecl E decl =
        end
    | SizedDataDecl(id,ty,e1,eopt) =>
        let val _ = tcTy E ty
-       in if eqTyEnv (abbrEnv,recdEnv) uintTy (tcExp E e1) 
+       in if eqTyEnv (abbrEnv,recdEnv) uintTy (tcExp E e1)
            then ()
            else raise TC_ERR (String.concat
                       ["declaration of bounded size global variable: ",Lib.quote id,
@@ -2027,8 +2058,8 @@ fun tcDecl E decl =
            ;
           (case eopt
             of NONE => ()
-             | SOME e2 => 
-                 if eqTyEnv (abbrEnv,recdEnv) ty (tcExp E e2) 
+             | SOME e2 =>
+                 if eqTyEnv (abbrEnv,recdEnv) ty (tcExp E e2)
                  then ()
                  else raise TC_ERR (String.concat
                       ["declaration of bounded size global variable: ",Lib.quote id,
@@ -2046,19 +2077,19 @@ fun tcDecl E decl =
                        " expected size bounds to be of type uint"])
        end
    | GraphDecl(id,nty,ety) =>
-       let in 
+       let in
            tcTy E nty
          ; tcTy E ety
        end
    | EfnDecl(id,params,retvalOpt) =>
-       let val paramVars = map dest_param params 
+       let val paramVars = map dest_param params
            val fnVars = paramVars @ optlist retvalOpt
            val _ = assert no_dups (map fst fnVars)
        in
           List.app (tcTy E) (map snd fnVars)
        end
    | FnDecl(id,params,retvalOpt,locals,stmts) =>
-       let val paramVars = map dest_param params 
+       let val paramVars = map dest_param params
            val dimVarIds = fnArrayDims(params,retvalOpt)
            val dimVars = map mk_dimVar dimVarIds
            val formalVars = paramVars @ optlist retvalOpt @ dimVars
@@ -2070,12 +2101,12 @@ fun tcDecl E decl =
            val _ = List.app (tcTy E1) (map snd formalVars)
 
            fun checkLocals () = ()
-           (* let fun eqVdec (s1,ty1) (s2,ty2) = 
+           (* let fun eqVdec (s1,ty1) (s2,ty2) =
                  s1=s2 andalso eqTyEnv (abbrEnv,recdEnv) ty1 ty2
              in
                case Lib.op_intersect eqVdec locals formalVars
                 of [] => ()
-                 | vlist => raise TC_ERR (String.concat 
+                 | vlist => raise TC_ERR (String.concat
                                ["local variables ",
                                 String.concatWith "," (map fst vlist),
                                 " mask formal parameter(s)"])
@@ -2087,10 +2118,10 @@ fun tcDecl E decl =
            val fnScope = locals@localDimVars@formalVars
            fun varEnv' (id) = (assoc id fnScope handle _ => varEnv id)
            val E' = (abbrEnv,varEnv',constEnv,constrEnv,recdEnv,specEnv)
-       in 
+       in
           List.app (tcStmt E') stmts
        end
-   | SpecDecl(id,vdecs,stmts) => 
+   | SpecDecl(id,vdecs,stmts) =>
        let val vdecDimVarIds = U (map (tyVars o snd) vdecs)
            val vdecDimVars = map mk_dimVar vdecDimVarIds
            val specVars = vdecDimVars@vdecs
@@ -2098,7 +2129,7 @@ fun tcDecl E decl =
            fun varEnv' (id) = (C assoc specVars id handle _ => varEnv id)
            val E' = (abbrEnv,varEnv',constEnv,constrEnv,recdEnv,specEnv)
            val _ = List.app (tcTy E') (map snd vdecs)
-       in 
+       in
           List.app (tcStmt E') stmts
        end
  end
@@ -2108,8 +2139,8 @@ fun tcDecl E decl =
 (* Create type environment for the package.                                  *)
 (*---------------------------------------------------------------------------*)
 
-fun tydecls pkgName decls = 
- mapfilter 
+fun tydecls pkgName decls =
+ mapfilter
    (fn (RecdDecl (id,_))    => ((pkgName,id),NamedTy(pkgName,id))
      | (DatatypeDecl(id,_)) => ((pkgName,id),NamedTy(pkgName,id))
      | (GraphDecl (id,_,_)) => ((pkgName,id),NamedTy(pkgName,id))
@@ -2122,8 +2153,8 @@ fun constr_decls decls = mapfilter (fn (DatatypeDecl x) => x) decls;
 fun recd_decls decls = mapfilter (fn (RecdDecl x) => x) decls;
 
 fun const_decls decls =
- let fun dest decl = 
-      case decl 
+ let fun dest decl =
+      case decl
        of EfnDecl(id,params,retValOpt) =>
            (id,(map (snd o dest_param) params,
                 case retValOpt
@@ -2136,7 +2167,7 @@ fun const_decls decls =
                   | SOME(_,ty) => ty))
         | ConstDecl(id,ty,e) => (id,([],ty))
         | otherwise => raise ERR "const_decls" ""
- in 
+ in
    mapfilter dest decls
  end
 
@@ -2151,7 +2182,7 @@ val vardecls = (* assumes all globals are declared in current package *)
     mapfilter dest_var
   end;
 
-fun tyEnvs (pkgName,decls) = 
+fun tyEnvs (pkgName,decls) =
  let val alist = tydecls pkgName decls
      val alistFn = C assoc alist
      fun failEnv qid = raise ERR "tyEnvs" "failEnv"
@@ -2163,23 +2194,23 @@ fun tyEnvs (pkgName,decls) =
      val constEnv = map (fn (id,x) => ((pkgName,id),x)) consts
      val constrs = constr_decls decls
      fun constr_type qid (id,tys) = ((qid,id),(tys,NamedTy(qid)))
-     val constrEnv = 
+     val constrEnv =
         flatten (map (fn (id,constrs) =>
                        let val qid = (pkgName,id)
                        in map (constr_type qid) constrs
-                       end) 
+                       end)
                      constrs)
      val varEnv = vardecls decls
      val specIds = specdecls decls
      val _ = assert no_dups specIds
      val specEnv = map (fn id => (pkgName,id)) specIds
- in 
+ in
     (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv)
  end
 
-fun typecheck (pkg as (pkgName,decls)) = 
+fun typecheck (pkg as (pkgName,decls)) =
  let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = tyEnvs pkg
-     val E : tyenv = 
+     val E : tyenv =
         (C assoc abbrEnv,
          C assoc varEnv,
          C assoc constEnv,
@@ -2199,7 +2230,7 @@ val ipkg = parsePkg "test/prio.sexp";
 
 val pkg = Passes.apply_type_abbrevs ipkg;
 val (pkgName,decls) = pkg;
-fun fdecl_assoc s ((dec as FnDecl(id,params,ret,locals,stmts))::t) = 
+fun fdecl_assoc s ((dec as FnDecl(id,params,ret,locals,stmts))::t) =
     if s = id then dec else fdecl_assoc s t
   | fdecl_assoc s (other::t) = fdecl_assoc s t;
 
@@ -2209,7 +2240,7 @@ tcDecl pkgName E decl;
 List.app (tcDecl pkgName E) decls;
 val [decl1,decl2,decl3,decl4,decl5,decl6,decl7,decl8,decl9,decl10,decl11] = decls;
 
-val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, 
+val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
      c11, c12, c13, c14, c15, c16, c17, c18, c19, c20] = fdecl_cohorts;
 *)
 
@@ -2217,12 +2248,12 @@ val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
 (* Compute type declaration cliques                                          *)
 (*---------------------------------------------------------------------------*)
 
-fun tydecl_cliques pkgName tydecls = 
- let fun graph_of (RecdDecl(id,flds)) = 
+fun tydecl_cliques pkgName tydecls =
+ let fun graph_of (RecdDecl(id,flds)) =
             ((pkgName,id),namedTypes(map snd flds))
-       | graph_of (DatatypeDecl(id,constrs)) = 
+       | graph_of (DatatypeDecl(id,constrs)) =
             ((pkgName,id),namedTypes(List.concat(map snd constrs)))
-       | graph_of otherwise = raise ERR "tydecl_cliques" 
+       | graph_of otherwise = raise ERR "tydecl_cliques"
                               "expected a record or datatype decl"
      val graph = Lib.mapfilter graph_of tydecls
      val tcgraph = MiscLib.TC graph
@@ -2233,7 +2264,7 @@ fun tydecl_cliques pkgName tydecls =
        | is_decl_of other wise = false
      fun decl_of qid = Lib.first (is_decl_of qid) tydecls
      val decl_cliques = map (map decl_of) tyclique_qids
- in 
+ in
     decl_cliques
  end;
 
@@ -2254,7 +2285,7 @@ fun base_ty_name (BaseTy BoolTy)   = "bool"
   | base_ty_name (NamedTy args) = pp_qid args
   | base_ty_name other = raise ERR "base_ty_name" "not a base type"
 
-fun pp_ty depth ty = 
+fun pp_ty depth ty =
  let open PolyML
  in if depth = 0 then PrettyString "<ty>"
    else
@@ -2264,26 +2295,26 @@ fun pp_ty depth ty =
      | RecdTy(qid,fields) =>
          PrettyBlock(2,true,[],
            [PrettyString (pp_qid qid), PrettyBreak(0,0),
-            PrettyString "[", 
-            pp_comma_list (pp_ty_field (depth-1)) fields, 
+            PrettyString "[",
+            pp_comma_list (pp_ty_field (depth-1)) fields,
             PrettyString "]"])
      | ArrayTy(eltype,dims) =>
          PrettyBlock(2,true,[],
             [pp_ty (depth-1) eltype, PrettyBreak (1,0),
-             PrettyString "[", pp_comma_list (pp_exp (depth-1)) dims, 
+             PrettyString "[", pp_comma_list (pp_exp (depth-1)) dims,
              PrettyString "]"])
  end
- and pp_exp depth exp = 
+ and pp_exp depth exp =
   let open PolyML
   in if depth = 0 then PrettyString "<exp>"
     else
-    case exp 
+    case exp
      of VarExp id => PrettyString id
       | ConstExp (IdConst qid) => PrettyString (pp_qid qid)
       | ConstExp (BoolLit b) => PrettyString (Bool.toString b)
       | ConstExp (CharLit c) => PrettyString ("'#"^Char.toString c^"'")
       | ConstExp (StringLit s) => PrettyString (Lib.quote(String.toString s))
-      | ConstExp (IntLit{kind, value}) => 
+      | ConstExp (IntLit{kind, value}) =>
           let val istr = Int.toString value
           in case kind
               of Nat NONE => PrettyString (istr^"uint")
@@ -2317,6 +2348,15 @@ fun pp_ty depth ty =
       | Unop(Unbounded,e) => PrettyBlock(2,true,[],
            [PrettyString"unbounded",
             PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
+      | Unop(Yesterday,e) => PrettyBlock(2,true,[],
+           [PrettyString"Yesterday",
+            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
+      | Unop(ZYesterday,e) => PrettyBlock(2,true,[],
+           [PrettyString"ZYesterday",
+            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
+      | Unop(Historically,e) => PrettyBlock(2,true,[],
+           [PrettyString"Historically",
+            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
       | Binop(And,e1,e2) => pp_binop depth ("and",e1,e2)
       | Binop(Imp,e1,e2) => pp_binop depth ("==>",e1,e2)
       | Binop(ArithmeticRShift,e1,e2) => pp_binop depth ("a>>",e1,e2)
@@ -2340,6 +2380,8 @@ fun pp_ty depth ty =
       | Binop(Plus,e1,e2) => pp_binop depth ("+",e1,e2)
       | Binop(CastWidth,e1,e2) => pp_binop depth ("width",e1,e2)
       | Binop(RegexMatch,e1,e2) => pp_exp depth (Fncall(("","match"),[e1,e2]))
+      | Binop(Since,e1,e2) => pp_exp depth (Fncall(("","Since"),[e1,e2]))
+      | Binop(Trigger,e1,e2) => pp_exp depth (Fncall(("","Trigger"),[e1,e2]))
       | ArrayExp elist => PrettyBlock(0,true,[],
            [PrettyString"[",
             pp_list_with_style false Comma [emptyBreak] (pp_exp (depth-1)) elist,
@@ -2348,9 +2390,9 @@ fun pp_ty depth ty =
            [pp_exp (depth-1) A, PrettyString"[",
             gen_pp_list Comma [emptyBreak] (pp_exp (depth-1)) dims,
             PrettyString"]"])
-      | ConstrExp(qid, constr,argOpt) => 
+      | ConstrExp(qid, constr,argOpt) =>
          PrettyBlock(2,true,[],
-           [PrettyString(pp_qid qid^"'"^constr), 
+           [PrettyString(pp_qid qid^"'"^constr),
             PrettyBlock(0,false,[],
              case argOpt of NONE => []
                | SOME vexp => [PrettyString"(", pp_exp (depth-1) vexp,
@@ -2360,49 +2402,49 @@ fun pp_ty depth ty =
             PrettyBlock(0,false,[],
                [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1)) args]),
             PrettyString")"])
-      | Quantified (quant,bvars,body) => 
+      | Quantified (quant,bvars,body) =>
           PrettyBlock(2,true,[],
-           [PrettyString(case quant of Forall => "forall " | Exists => "exists "), 
+           [PrettyString(case quant of Forall => "forall " | Exists => "exists "),
             PrettyBlock(0,false,[],
                [gen_pp_list Space [] (pp_ty_field (depth-1)) bvars]),
                 pp_exp (depth-1) body])
       | RecdExp (qid,fields) => PrettyBlock(2,true,[],
-           [PrettyString(pp_qid qid), PrettyString("["), 
-            PrettyBlock(0,false,[], 
+           [PrettyString(pp_qid qid), PrettyString("["),
+            PrettyBlock(0,false,[],
                         [pp_comma_list (pp_exp_field (depth-1)) fields]),
             PrettyString"]"])
       | RecdProj(recd,field) => PrettyBlock(0,false,[],
            [pp_exp (depth-1) recd,PrettyString".",PrettyString field])
   end
-and pp_binop d (str,e1,e2) = 
+and pp_binop d (str,e1,e2) =
     let open PolyML
     in PrettyBlock(2,true,[],
         [PrettyString"(",pp_exp (d-1) e1,
          Space,PrettyString str, Space,
          pp_exp (d-1) e2,PrettyString")"])
     end
-and pp_exp_field d (id,exp) = 
+and pp_exp_field d (id,exp) =
  let open PolyML
  in PrettyBlock(0,true,[],
      [PrettyString id, PrettyString":",pp_exp (d-1) exp])
  end
-and pp_ty_field d (id,ty) = 
+and pp_ty_field d (id,ty) =
  let open PolyML
  in PrettyBlock(0,true,[],
      [PrettyString id, PrettyString":",pp_ty (d-1) ty])
  end
 ;
 
-fun pp_vdec_semi d (id,ty) = 
+fun pp_vdec_semi d (id,ty) =
  let open PolyML
  in PrettyBlock(0,true,[],
      [PrettyString id, PrettyString":",pp_ty (d-1) ty,PrettyString";"])
  end;
- 
 
-fun pp_param d param = 
+
+fun pp_param d param =
  let open PolyML
-     fun ppp mpp d (id,ty) = 
+     fun ppp mpp d (id,ty) =
        PrettyBlock(2,false,[],
          [PrettyString id, Space, PrettyString":",
           Space, mpp, Space, pp_ty (d-1) ty])
@@ -2411,52 +2453,52 @@ fun pp_param d param =
       | Out vdec => ppp (PrettyString"out") d vdec
       | InOut vdec => ppp (PrettyString"inout") d vdec
  end;
-   
-fun pp_stmt depth stmt = 
+
+fun pp_stmt depth stmt =
  let open PolyML
  in if depth = 0 then PrettyString "<stmt>"
-  else 
-   case stmt 
+  else
+   case stmt
     of Skip => PrettyString "Skip;"
-     | Check e => 
+     | Check e =>
          PrettyBlock(2,true,[],
-            [PrettyString "check",Space, 
+            [PrettyString "check",Space,
              pp_exp (depth-1) e, PrettyString";"])
-     | Assign(e1,e2) => 
+     | Assign(e1,e2) =>
          PrettyBlock(2,true,[],
          [pp_exp (depth-1) e1, PrettyString " :=",
           Space, pp_exp (depth-1) e2, PrettyString";"])
      | Call((pkgName,fnName),elist) =>
           PrettyBlock(2,true,[],
-            [PrettyString (pkgName^"."^fnName),PrettyBreak(0,0), 
-             PrettyString"(", pp_comma_list (pp_exp (depth-1)) elist, 
+            [PrettyString (pkgName^"."^fnName),PrettyBreak(0,0),
+             PrettyString"(", pp_comma_list (pp_exp (depth-1)) elist,
              PrettyString");"])
-     | IfThenElse(e,s1,s2) => 
+     | IfThenElse(e,s1,s2) =>
           PrettyBlock(2,true,[],
             [PrettyString"if ", pp_exp (depth-1) e, Space,
              PrettyString"then ", pp_stmt (depth-1) s1,Space,
              PrettyString"else ", pp_stmt (depth-1) s2])
-     | Case(e,rules) => 
-        let fun pp_rule d (p,s) = 
+     | Case(e,rules) =>
+        let fun pp_rule d (p,s) =
          PrettyBlock(2,true,[],
           [pp_exp (d-1) p, PrettyString" =>", Space,
            pp_stmt (d-1) s])
         in
           PrettyBlock(2,true,[],
-           [PrettyString "match ", pp_exp (depth-1) e, 
+           [PrettyString "match ", pp_exp (depth-1) e,
             PrettyString " {", Line_Break,
             gen_pp_list emptyString [Space] (pp_rule (depth-1)) rules,
             Line_Break, PrettyString "}"])
         end
-     | Block stmts => 
+     | Block stmts =>
            PrettyBlock(0,true,[],
             [PrettyString"{", Line_Break,
              PrettyBlock(2,true,[],
               [gen_pp_list emptyString [Space] (pp_stmt (depth-1)) stmts]),
              PrettyBreak(0,0),PrettyString "}"])
-     | For((id,ty),e1,e2,istmt,body) => 
+     | For((id,ty),e1,e2,istmt,body) =>
           PrettyBlock(4,true,[],
-            [PrettyString"for", PrettyString"(", 
+            [PrettyString"for", PrettyString"(",
              PrettyBlock(2,false,[],
                [PrettyString id,Space,PrettyString":",
                 Space, pp_ty (depth-1) ty, Space,
@@ -2467,7 +2509,7 @@ fun pp_stmt depth stmt =
              pp_stmt (depth-1) istmt,
              PrettyString")", PrettyBreak(9999,0),
              pp_stmt (depth-1) body])
-     | While(e,stmt) => 
+     | While(e,stmt) =>
           PrettyBlock(2,false,[],
             [PrettyString"while ", pp_exp (depth-1) e, Line_Break,
              PrettyString"do ", pp_stmt (depth-1) stmt])
@@ -2475,46 +2517,46 @@ fun pp_stmt depth stmt =
  end;
 
 
-fun pp_decl depth decl = 
+fun pp_decl depth decl =
  let open PolyML
  in if depth = 0 then PrettyString "<decl>"
-  else 
+  else
    case decl
-    of NumTyDecl nkind 
+    of NumTyDecl nkind
        => PrettyBlock(0,true,[],
            [PrettyString "numeral type = ",
             pp_ty (depth-1) (BaseTy(IntTy nkind)), PrettyString";"])
-     | TyAbbrevDecl(id,ty) 
+     | TyAbbrevDecl(id,ty)
        => PrettyBlock(2,true,[],
            [PrettyString "type ", PrettyString id, PrettyString " = ",
             pp_ty (depth-1) ty, PrettyString";"])
-     | RecdDecl(id,flds) 
+     | RecdDecl(id,flds)
        => let in
           PrettyBlock(2,true,[],
-             [PrettyString "type ", PrettyString id, PrettyString " =", Space, 
-              PrettyString "[", pp_comma_list (pp_ty_field (depth-1)) flds, 
+             [PrettyString "type ", PrettyString id, PrettyString " =", Space,
+              PrettyString "[", pp_comma_list (pp_ty_field (depth-1)) flds,
               PrettyString"];"])
           end
-     | DatatypeDecl(id,constrs) 
-       => let fun pp_constr d (id,tys) = 
+     | DatatypeDecl(id,constrs)
+       => let fun pp_constr d (id,tys) =
                PrettyBlock(0,true,[],
-                  [PrettyString id, 
+                  [PrettyString id,
                    if not(null tys) then PrettyString":" else PrettyString"",
                    pp_comma_list (pp_ty (d-1)) tys])
-              fun pp_constr_list d list = 
+              fun pp_constr_list d list =
                let fun iter [] = []
                  | iter [x] = [pp_constr (d-1) x]
-                 | iter (h::t) = pp_constr (d-1) h :: 
+                 | iter (h::t) = pp_constr (d-1) h ::
                                  PrettyString" |" :: Space::iter t
                in
                  PrettyBlock(0,true,[],iter list)
                 end
           in PrettyBlock(2,true,[],
-             [PrettyString "datatype ", PrettyString id, PrettyString " =", Space, 
-              pp_constr_list (depth-1) constrs, 
+             [PrettyString "datatype ", PrettyString id, PrettyString " =", Space,
+              pp_constr_list (depth-1) constrs,
               PrettyString";"])
           end
-     | GraphDecl(id,nty,ety) 
+     | GraphDecl(id,nty,ety)
        => PrettyBlock(2,true,[],
              [PrettyString ("graphtype "^id), Space, PrettyString"= (",
               PrettyString "nodeLabel = ", pp_ty (depth-1) nty, Comma,Space,
@@ -2523,50 +2565,50 @@ fun pp_decl depth decl =
        => PrettyBlock(0,true,[],
              [PrettyString "var", Space, pp_ty_field (depth-1) vdec,
               PrettyString";"])
-     | ConstDecl(id,ty,exp) 
+     | ConstDecl(id,ty,exp)
        => PrettyBlock(2,true,[],
-             [PrettyString "const ", 
+             [PrettyString "const ",
               pp_ty_field (depth-1) (id,ty),
-              PrettyString" = ", Space, 
+              PrettyString" = ", Space,
               pp_exp (depth-1) exp, PrettyString";"])
-     | SizedDataDecl(id,ty,e1,NONE) 
+     | SizedDataDecl(id,ty,e1,NONE)
        => PrettyBlock(2,true,[],
-             [PrettyString "sized ", 
+             [PrettyString "sized ",
               pp_ty_field (depth-1) (id,ty),
               PrettyString" (", pp_exp (depth-1) e1, PrettyString");"])
-     | SizedDataDecl(id,ty,e1,SOME e2) 
+     | SizedDataDecl(id,ty,e1,SOME e2)
        => PrettyBlock(2,true,[],
-             [PrettyString "sized ", 
+             [PrettyString "sized ",
               pp_ty_field (depth-1) (id,ty),
               PrettyString" (", pp_exp (depth-1) e1, PrettyString") :=",
               Space, pp_exp (depth-1) e2, PrettyString ";"])
-     | SizedGraphDecl(id,ty,e1,e2) 
+     | SizedGraphDecl(id,ty,e1,e2)
        => PrettyBlock(2,true,[],
-             [PrettyString "sized ", 
+             [PrettyString "sized ",
               pp_ty_field (depth-1) (id,ty),
               PrettyString" (", pp_exp (depth-1) e1, Comma,
                                 pp_exp (depth-1) e2, PrettyString");"])
-     | EfnDecl(id,params,retvalOpt) 
+     | EfnDecl(id,params,retvalOpt)
        => PrettyBlock(2,true,[],
-             [PrettyString "imported function", Space, 
-              PrettyString id,Space, 
+             [PrettyString "imported function", Space,
+              PrettyString id,Space,
               PrettyString"(", pp_comma_list (pp_param (depth-1)) params,
-              PrettyString")", 
+              PrettyString")",
               PrettyBlock(2,true,[],
-                case retvalOpt 
+                case retvalOpt
                  of NONE => []
                   | SOME vdec => [PrettyString" returns ",
                                   pp_ty_field (depth-1) vdec]),
               PrettyString";"])
-     | FnDecl(id,params,retvalOpt,locals,stmts) 
+     | FnDecl(id,params,retvalOpt,locals,stmts)
        => let fun pp_params() = PrettyBlock (2,true,[],
-                   [PrettyString id,Space, 
-                    PrettyString"(", 
+                   [PrettyString id,Space,
+                    PrettyString"(",
                     PrettyBlock(0,false,[],
                          [pp_comma_list (pp_param(depth-1)) params]),
-                    PrettyString")", 
+                    PrettyString")",
                     PrettyBlock (2,true,[],
-                         case retvalOpt 
+                         case retvalOpt
                           of NONE => []
                            | SOME vdec => [PrettyString" returns ",
                                            pp_ty_field (depth-1) vdec])])
@@ -2585,21 +2627,21 @@ fun pp_decl depth decl =
                        pp_body()])
           in
            PrettyBlock(2,false,[],
-             [PrettyString "function ", pp_params(), 
+             [PrettyString "function ", pp_params(),
               PrettyString" {", Line_Break,
               PrettyString " ",
               pp_top_stmt locals,
-              Line_Break, 
+              Line_Break,
               PrettyString"}"])
           end
-     | SpecDecl(id,vdecs,stmts) 
+     | SpecDecl(id,vdecs,stmts)
         => PrettyBlock(2,true,[],
              [PrettyString "spec ", PrettyString id,
               PrettyString " = {", PrettyBreak(999,2),
               PrettyBlock(4,true,[],
                 case vdecs
                  of [] => []
-                  | otherwise => 
+                  | otherwise =>
                       [PrettyString"var", Line_Break,
                        gen_pp_list emptyString [Line_Break] (pp_vdec_semi (depth-1)) vdecs,
                        Line_Break, PrettyString"in ",Line_Break]),
@@ -2607,7 +2649,7 @@ fun pp_decl depth decl =
               Line_Break, PrettyString"}"])
      | CommentDecl lines
         => PrettyBlock(0,true,[],
-           [PrettyString "/*-----------------------------------------------------------------", 
+           [PrettyString "/*-----------------------------------------------------------------",
             Line_Break, PrettyString"-- ",
             gen_pp_list Line_Break [PrettyString"--"] PrettyString lines,
             Line_Break,
@@ -2621,5 +2663,3 @@ val _ = PolyML.addPrettyPrinter (fn i => fn () => fn stmt => pp_stmt i stmt);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn decl => pp_decl i decl);
 
 end (* AST *)
-
-

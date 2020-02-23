@@ -1,0 +1,49 @@
+package RunTimeMonitor_Simple_Example_V1
+public
+	with CASE_Properties;
+	with AGREE_PLTL;
+
+	system GroundStation
+		features
+			radio_recv: in event data port;
+			radio_send: out event data port;
+--		properties
+--			CASE_Properties::BOUNDARY => (PHYSICAL);
+	end GroundStation;
+
+	system implementation GroundStation.Impl
+	end GroundStation.Impl;
+
+	system UAV
+		features
+			radio_recv: in event data port;
+			radio_send: out event data port;
+--		properties
+--			CASE_Properties::BOUNDARY => (PHYSICAL);
+		annex agree {**
+			guarantee "Expected system behavior" :
+                            AGREE_PLTL::Historically(event(radio_send)
+                            =>
+                            AGREE_PLTL::Yesterday(AGREE_PLTL::Since(not event(radio_send), event(radio_recv))));
+
+--			AGREE_PLTL::Historically(radio_send => AGREE_PLTL::Yesterday(AGREE_PLTL::Since(not radio_send, radio_recv))) and
+--AGREE_PLTL::Historically(radio_recv => AGREE_PLTL::Zyesterday(AGREE_PLTL::Since(not radio_recv, radio_send)) or  AGREE_PLTL::Zyesterday(AGREE_PLTL::Historically(not radio_recv)));
+		**};
+	end UAV;
+
+	system implementation UAV.Impl
+	end UAV.Impl;
+
+	system UAS
+	end UAS;
+
+	system implementation UAS.Impl
+		subcomponents
+			GND: system GroundStation.Impl;
+			UAV: system UAV.Impl;
+		connections
+			c1: port GND.radio_send -> UAV.radio_recv;
+			c2: port UAV.radio_send -> GND.radio_recv;
+	end UAS.Impl;
+
+end RunTimeMonitor_Simple_Example_V1;

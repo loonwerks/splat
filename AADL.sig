@@ -19,11 +19,15 @@ sig
  datatype filter
     = FilterDec of qid * (string * ty * string * string) list * (string * exp) list
 
+ datatype monitor
+    = MonitorDec of qid * (string * ty * string * string) list * (string * exp) list
+
  type decls =
   (* pkgName *)  string *
   (* types *)    (tydec list *
   (* consts *)    tmdec list *
-  (* filters *)   filter list)
+  (* filters *)   filter list *
+  (* monitors *)  monitor list)
   ;
 
   val scrape : Json.json -> decls
@@ -35,11 +39,16 @@ sig
     : string
         -> tyEnv
           -> decls
-            -> tyEnv * thm list * thm list * ((string * string) * thm) list
+            -> tyEnv * thm list (* types *)
+                     * thm list (* constant defns *)
+                     * ((string * string) * thm) list (* filters *)
+                     * ((string * string) * thm) list (* monitors *)
 
   val pkgs2hol
       : string
          -> decls list
-           -> tyEnv * thm list * thm list * ((string * string) * thm) list
-
+           -> tyEnv * thm list (* types *)
+                    * thm list (* constant defns *)
+                    * ((string * string) * thm) list (* filters *)
+                    * ((string * string) * thm) list (* monitors *)
 end

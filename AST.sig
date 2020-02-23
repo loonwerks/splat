@@ -4,7 +4,7 @@ sig
   type id = string
   type qid = string * string
 
-  datatype bop 
+  datatype bop
     = And
     | ArithmeticRShift
     | BitAnd
@@ -28,17 +28,21 @@ sig
     | Or
     | CastWidth
     | RegexMatch
+    | Since
+    | Trigger
 
-  datatype uop 
-    = Not | BitNot | UMinus | ChrOp | OrdOp | Signed | Unsigned | Unbounded
+  datatype uop
+    = Not | BitNot | UMinus | ChrOp | OrdOp
+    | Signed | Unsigned | Unbounded
+    | Yesterday | ZYesterday | Historically
 
-  datatype numkind 
+  datatype numkind
     = Nat of int option
     | Int of int option
 
   val defaultNumKind : numkind ref
 
-  datatype lit 
+  datatype lit
     = IdConst of qid
     | BoolLit of bool
     | CharLit of char
@@ -47,17 +51,17 @@ sig
     | FloatLit of real
     | RegexLit of string
 
-  datatype builtin 
+  datatype builtin
     = BoolTy
     | CharTy
     | StringTy
-    | IntTy of numkind 
+    | IntTy of numkind
     | FloatTy
     | RegexTy
 
   datatype quant = Exists | Forall
 
-  datatype ty 
+  datatype ty
     = BaseTy of builtin
     | NamedTy of qid
     | RecdTy of qid * (id * ty) list
@@ -74,10 +78,10 @@ sig
     | RecdExp of qid * (id * exp) list
     | RecdProj of exp * id
     | Quantified of quant * (id * ty) list * exp
-  
+
   type vdec = id * ty
 
-  datatype stmt 
+  datatype stmt
     = Skip
     | Check of exp
     | Assign of exp * exp
@@ -90,7 +94,7 @@ sig
 
   datatype param = In of vdec | InOut of vdec | Out of vdec
 
-  datatype decl 
+  datatype decl
     = NumTyDecl of numkind
     | TyAbbrevDecl of id * ty
     | RecdDecl of id * (id * ty) list
@@ -200,10 +204,10 @@ sig
 
   val pkgNumTypes  : package -> numkind list
 
-  val splitPkg     : package -> decl list * 
-                                decl list * 
+  val splitPkg     : package -> decl list *
+                                decl list *
                                 (id * param list * vdec option) list *
-                                decl list * 
+                                decl list *
                                 (id * vdec list * stmt list) list
 
   type fnsig = qid * (param list * vdec option)
@@ -213,22 +217,22 @@ sig
   val tysigs_of : package -> tysig list
   (* val ty_of : vdec list * (fnsig list * tysig list) -> exp -> ty *)
 
-  type tyenv 
+  type tyenv
      = (qid -> ty)                    (* abbrEnv *)
      * (id -> ty)                     (* varEnv *)
      * (qid -> ty list * ty)          (* constEnv *)
      * ((qid * id) -> (ty list * ty)) (* constrEnv *)
      * (qid -> (id * ty) list)        (* recdEnv *)
-     * qid list                       (* specEnv *) 
+     * qid list                       (* specEnv *)
 
   val join_tyenv : tyenv -> tyenv -> tyenv
-  val tyEnvs 
+  val tyEnvs
      : package -> (qid * ty) list
                   * (id * ty) list
                   * (qid * (ty list * ty)) list
                   * ((qid * id) * (ty list * ty)) list
                   * (qid * (id * ty) list) list
-                  * qid list 
+                  * qid list
 
   val tcTy : tyenv -> ty -> unit
   val tcExp : tyenv -> exp -> ty

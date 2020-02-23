@@ -347,7 +347,7 @@ fun main () =
      val _ = new_theory thyName
      val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs1
 	   "Converting AST to logic ...\n" "---> succeeded.\n"
-     fun filters_of (a,b,c,d) = d
+     fun filters_of (a,b,c,d,e) = d
      val filter_spec_thms = filters_of logic_defs
      val intformat = (valOf(!intwidth),valOf(!endian),valOf(!encoding))
      val otherflags = (valOf(!checkprops),valOf(!codegen),
@@ -366,4 +366,3 @@ fun main () =
     in stdErr_print "\n\nSPLAT FAILED!!\n\n";
        failwithERR e
     end
-val args = ["-codegen", "SML", "examples/Producer_Consumer.json"];

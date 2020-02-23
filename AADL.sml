@@ -9,7 +9,7 @@ open Lib Feedback HolKernel boolLib bossLib MiscLib AST Json;
 
 local open
    stringLib stringSimps fcpLib
-   regexpLib regexpSyntax aadl_basetypesTheory
+   regexpLib regexpSyntax aadl_basetypesTheory ptltlSyntax
 in end;
 
  type qid = string * string;
@@ -29,11 +29,15 @@ in end;
  datatype filter
     = FilterDec of qid * (string * ty * string * string) list * (string * exp) list
 
+ datatype monitor
+    = MonitorDec of qid * (string * ty * string * string) list * (string * exp) list
+
  type decls =
   (* pkgName *)  string *
   (* types *)    (tydec list *
   (* consts *)    tmdec list *
-  (* filters *)   filter list)
+  (* filters *)   filter list *
+  (* monitors *)  monitor list)
   ;
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
@@ -113,12 +117,13 @@ fun dest_tyqid dotid =
    | (_,"Integer_16")  => BaseTy(IntTy(AST.Int (SOME 16)))
    | (_,"Integer_32")  => BaseTy(IntTy(AST.Int (SOME 32)))
    | (_,"Integer_64")  => BaseTy(IntTy(AST.Int (SOME 64)))
-   | (_,"Bool")        => BaseTy BoolTy
-   | (_,"Boolean")     => BaseTy BoolTy
+   | (_,"Bool")    => BaseTy BoolTy
+   | (_,"Boolean") => BaseTy BoolTy
    | (_,"String")  => BaseTy StringTy
    | (_,"Char")    => BaseTy CharTy
    | (_,"Float")   => BaseTy FloatTy
-   | (a,b)         => NamedTy (a,b);
+   | (a,b)         => NamedTy (a,b)
+;
 
 fun get_tyinfo tyinfo =
  case tyinfo
@@ -180,7 +185,6 @@ fun mk_binop (opr,e1,e2) =
 	 | "=>"  => Imp
          | "="   => Equal
          | "and" => And
-         | "or"  => Or
          | other => raise ERR "mk_binop"
                ("unknown binary operator "^Lib.quote other)
  in Binop(oexp,e1,e2)
@@ -229,6 +233,9 @@ fun dest_named_ty (NamedTy qid) = qid
 fun dest_exp e =
  case e
   of AList [("kind", String "NamedElmExpr"), ("name", String s)]
+       => VarExp s
+   | AList [("kind", String "EventExpr"),
+            ("id", AList [("kind", String "NamedElmExpr"),("name", String s)])]
        => VarExp s
    | AList [("kind", String "BoolLitExpr"), ("value", String bstr)]
        => mk_bool_const bstr
@@ -509,6 +516,63 @@ fun get_filter decl =
             | glist => FilterDec(dest_qid fname, map get_port ports, glist))
    | otherwise => raise ERR "get_filter" "not a filter thread";
 
+
+(* CHECK *)
+fun get_monitor_port port =
+ case port
+  of AList [("name", String pname),
+            ("kind", String conn_style),
+            ("classifier", classif),
+            ("direction", String flowdir)]
+      => let val ty = (case classif
+                        of Null => dest_tyqid "Bool" (* why is Null there? *)
+                         | String tyqidstring => dest_tyqid tyqidstring
+                         | other => raise ERR "get_monitor_port" "unexpected type")
+          in (pname,ty,flowdir,conn_style)
+          end
+   | otherwise => raise ERR "get_monitor_port" "unexpected port format"
+
+fun get_monitor_guarantee [AList(("kind", String "GuaranteeStatement")::binds)] =
+    (let val String gdoc = assoc "label" binds
+         val expr = assoc "expr" binds
+     in SOME(gdoc, dest_exp expr)
+     end
+     handle _ => NONE
+    )
+  | get_monitor_guarantee otherwise = NONE
+;
+
+fun get_monitor decl =
+ case decl
+  of AList
+      [("name", String fname),
+       ("localName",String _),
+       ("kind",String "ComponentType"),
+       ("category", _),
+       ("features", List ports),
+(* to be added
+       ("properties",
+          List [AList [("name", String "CASE_Properties::COMP_TYPE"), _,
+                       ("value", String "MONITOR")],
+                AList [("name", String "CASE_Properties::COMP_SPEC"), _,
+                       ("value", List rnames)]]),
+*)
+       ("annexes",
+         List [AList (("name", String "agree") ::
+                      ("kind", String "AnnexSubclause") ::
+                      ("parsedAnnexSubclause",
+                           AList [("statements", List guarantees)]) :: _)
+                      ])]
+      => let val qid = dest_qid fname
+             val portL = map get_monitor_port ports
+         in
+            case get_monitor_guarantee guarantees
+             of NONE => raise ERR "get_monitor" "not a monitor spec"
+              | SOME guar => MonitorDec(qid, portL, [guar])
+         end
+   | otherwise => raise ERR "get_monitor" "unexpected syntax";
+
+
 fun dest_publist plist =
  let fun dest_with ("with", List wlist) = wlist
        | dest_with other = raise ERR "dest_with" ""
@@ -551,8 +615,9 @@ fun scrape pkg =
             val tydecls = get_tydecls pkgName complist
 	    val fndecls = List.concat (mapfilter (mk_defs pkgName) annexlist)
             val filters = mapfilter get_filter complist
+            val monitors = mapfilter get_monitor complist
         in
-           (pkgName,(tydecls, fndecls, filters))
+           (pkgName,(tydecls, fndecls, filters, monitors))
         end
   | otherwise => raise ERR "scrape" "unexpected format";
 
@@ -577,17 +642,16 @@ fun refine_recd_decs declist =
       case tydec
        of RecdDec (qid,flds) => exists (fn (s,ty) => eqTy(ty,null_ty)) flds
         | otherwise => false
-     fun lift_extensibles (s, (tydecs,tmdecs,filters)) =
+     fun lift_extensibles (s, (tydecs,tmdecs,filters,monitors)) =
        let val (extensibles,tydecs') = partition is_extensible tydecs
-       in (extensibles, (s,(tydecs',tmdecs,filters)))
+       in (extensibles, (s,(tydecs',tmdecs,filters,monitors)))
        end
-
      val itner = map lift_extensibles declist
      val partial_decs = map dest_recd_dec (List.concat (map fst itner))
      val modlist = map snd itner
      fun refine pdec module =
        let val (oqid,oflds) = pdec
-           val (pkgName, (tydecs,tmdecs,filters)) = module
+           val (pkgName, (tydecs,tmdecs,filters,monitors)) = module
            fun try_extension eflds (s,ty) =
                case assoc1 s eflds
                 of NONE => (s,ty)
@@ -601,7 +665,7 @@ fun refine_recd_decs declist =
                  else tydec
 	   val tydecs' = map augment tydecs
        in
-         (pkgName, (tydecs',tmdecs,filters))
+         (pkgName, (tydecs',tmdecs,filters,monitors))
        end
      fun refine_modules pdec modlist = map (refine pdec) modlist
  in
@@ -649,7 +713,7 @@ val AList alist = jpkg;
 val pkgs = dropList (assoc "modelUnits" alist);
 
 val (opkgs as [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7,
-               pkg8, pkg9, pkg10, pkg11, pkg12, pkg13]) = rev (topsort uses pkgs);
+               pkg8, pkg9, pkg10, pkg11]) = rev (topsort uses pkgs);
 
 val declist = mapfilter scrape opkgs;
 
@@ -722,11 +786,21 @@ fun amn_filter_dec fdec =
  end
 ;
 
-fun abstract_model_nums (pkgName,(tydecs,tmdecs,filter_decs)) =
+fun amn_monitor_dec fdec =
+ let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
+     fun amn_cprop (s,e) = (s,amn_exp e)
+ in case fdec
+     of MonitorDec(qid, ports, cprops) =>
+        MonitorDec(qid, map amn_port ports, map amn_cprop cprops)
+ end
+;
+
+fun abstract_model_nums (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) =
   (pkgName,
     (map amn_tydec tydecs,
      map amn_tmdec tmdecs,
-     map amn_filter_dec filter_decs));
+     map amn_filter_dec filtdecs,
+     map amn_monitor_dec mondecs));
 
 (*---------------------------------------------------------------------------*)
 (* AST to HOL                                                                *)
@@ -1015,6 +1089,9 @@ fun unop (uop,e) t =
           if ty = i32 then lift mk_i32int else
           if ty = i64 then lift mk_i64int
           else raise ERR "unop (Unbounded)" "expected numeric type"
+      | Yesterday => lift ptltlSyntax.mk_Yester
+      | ZYesterday => lift ptltlSyntax.mk_Zyester
+      | Historically => lift ptltlSyntax.mk_Histor
  end;
 
 fun binop (bop,e1,_) t1 t2 =
@@ -1148,6 +1225,8 @@ fun binop (bop,e1,_) t1 t2 =
        if ty1 = i32 then lift mk_i32_geq else
        if ty1 = i64 then lift mk_i64_geq else
        raise ERR "GreaterEqual" "expected numeric arguments"
+    | Since => undef "Since"
+    | Trigger => undef "Trigger"
     | RegexMatch => lift regexpSyntax.mk_regexp_matcher
     | CastWidth     => undef "CastWidth"
     | BitOr         => undef "BitOr"
@@ -1177,6 +1256,53 @@ fun organize_fields progfields tyinfo_fields =
  in
   reorg progfields tyinfo_fields
  end;
+
+fun fromMLbool b = if b then T else F;
+
+
+(*---------------------------------------------------------------------------*)
+(* ptltl formulas are handled separately, even the boolean structure.        *)
+(*---------------------------------------------------------------------------*)
+
+fun trans_ptLTL pkgName varE formula =
+    case formula
+     of Fncall(("AGREE_PLTL","Yesterday"),[e]) =>
+          ptltlSyntax.mk_Yester(trans_ptLTL pkgName varE e)
+      | Fncall(("AGREE_PLTL","Zyesterday"),[e]) =>
+         ptltlSyntax.mk_Zyester(trans_ptLTL pkgName varE e)
+      | Fncall(("AGREE_PLTL","Historically"),[e]) =>
+         ptltlSyntax.mk_Histor(trans_ptLTL pkgName varE e)
+      | Fncall(("AGREE_PLTL","Since"),[e1,e2]) =>
+         ptltlSyntax.mk_Since
+              (trans_ptLTL pkgName varE e1,
+               trans_ptLTL pkgName varE e2)
+      | Fncall(("AGREE_PLTL","Trigger"),[e1,e2]) =>
+         ptltlSyntax.mk_Trigger
+              (trans_ptLTL pkgName varE e1,
+               trans_ptLTL pkgName varE e2)
+      | Fncall(("AGREE_PLTL",s),_) =>
+        raise ERR "trans_ptLTL" ("unknown AGREE_PTLTL operator: "^Lib.quote s)
+      | VarExp id => ptltlSyntax.mk_Eid (stringSyntax.fromMLstring id)  (* temporary *)
+      | ConstExp (BoolLit b) => ptltlSyntax.mk_Prim (fromMLbool b)
+      | Unop(Not,e) => ptltlSyntax.mk_Not(trans_ptLTL pkgName varE e)
+      | Binop(Equal,e1,e2) =>
+         ptltlSyntax.mk_Equiv
+              (trans_ptLTL pkgName varE e1,
+               trans_ptLTL pkgName varE e2)
+      | Binop(Imp,e1,e2) =>
+         ptltlSyntax.mk_Imp
+              (trans_ptLTL pkgName varE e1,
+               trans_ptLTL pkgName varE e2)
+      | Binop(Or,e1,e2) =>
+         ptltlSyntax.mk_Or
+              (trans_ptLTL pkgName varE e1,
+               trans_ptLTL pkgName varE e2)
+      | Binop(And,e1,e2) =>
+         ptltlSyntax.mk_And
+              (trans_ptLTL pkgName varE e1,
+               trans_ptLTL pkgName varE e2)
+      | otherwise =>
+        raise ERR "trans_ptLTL" "unknown syntax inside AGREE_PTLTL operator"
 
 datatype expect = Unknown | Expected of hol_type;
 
@@ -1254,6 +1380,7 @@ fun transExp pkgName varE ety exp =
       in list_mk_comb(fcp_exists_tm',[mk_abs(v,Pbody), A])
       end
     | Fncall ((_,"Array_Exists"),_) => raise ERR "transExp" "Array_Exists: unexpected syntax"
+    | Fncall (("AGREE_PLTL",_),args) => trans_ptLTL pkgName varE exp
     | Fncall ((thyname,cname),expl) =>
        (let val thyname' = if thyname = "" then pkgName else thyname
             val c = prim_mk_const{Thy=thyname',Name=cname}
@@ -1393,28 +1520,57 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
     handle e => raise wrap_exn "AADL" "mk_filter_spec" e;
 ;
 
+fun mk_monitor_spec (thyName,tyEnv,fn_defs)
+                    (MonitorDec ((pkgName,fname), ports, cprops)) =
+    let val outport = Lib.first (fn (_,_,dir,_) => (dir = "out")) ports
+	val inport = Lib.first (fn (_,_,dir,_) => (dir = "in")) ports
+        val iname = #1 inport
+        val oname = #1 outport
+        val ty = transTy tyEnv (#2 outport)
+        val varIn = (iname,mk_var(iname,ty))
+        val varOut = (oname,mk_var(oname,ty))
+        val prop = end_itlist mk_and (map #2 cprops)
+        val spec = transExp thyName [varIn,varOut] (Expected bool) prop
+        val spec_thm = QCONV (PURE_REWRITE_CONV fn_defs) spec
+        val spec_def = TotalDefn.Define
+                        `^(mk_eq(mk_var(fname^"_MONITOR_SPEC",ptltlSyntax.formula), spec))’
+(*        val array_forall_expanded =
+             spec_thm
+(*               |> SIMP_RULE (srw_ss()) [splatTheory.fcp_every_thm] *)
+               |> SIMP_RULE arith_ss
+                    [arithmeticTheory.BOUNDED_FORALL_THM,
+                     GSYM CONJ_ASSOC,GSYM DISJ_ASSOC]
+*)
+        val full_name = String.concatWith "__" [pkgName,fname]
+    in
+       ((pkgName,fname),spec_def)
+    end
+    handle e => raise wrap_exn "AADL" "mk_monitor_spec" e;
+;
+
 val is_datatype =
     same_const (prim_mk_const{Thy="bool",Name="DATATYPE"}) o rator o concl;
 
-fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters)) =
+fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
     let val tyEnv' = rev_itlist declare_hol_type tydecs tyEnv
         val tydecls = List.filter (is_datatype o snd) (theorems thyName)
         val tmdecs' = topsort called_by tmdecs
-(*        val fn_defs = MiscLib.mapfilter (declare_hol_term tyEnv') tmdecs' *)
         val fn_defs = map (declare_hol_term tyEnv') tmdecs'
         val info = (thyName,tyEnv',fn_defs)
         val filter_specs = map (mk_filter_spec info) filters
+        val monitor_specs = map (mk_monitor_spec info) monitors
     in
-      (tyEnv', map snd tydecls, fn_defs, filter_specs)
+      (tyEnv', map snd tydecls, fn_defs, filter_specs, monitor_specs)
     end;
 
 fun pkgs2hol thyName list =
  let fun iter [] acc = acc
-       | iter (pkg::t) (tyE,tyD,tmD,fS) =
-          let val (tyEnv',tydefs,fndefs,filtspecs) = mk_pkg_defs thyName tyE pkg
-          in iter t (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS)
+       | iter (pkg::t) (tyE,tyD,tmD,fS,mS) =
+          let val (tyEnv',tydefs,fndefs,filtspecs,monspecs)
+                = mk_pkg_defs thyName tyE pkg
+          in iter t (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS, monspecs@mS)
           end
- in iter list ([],[],[],[])
+ in iter list ([],[],[],[],[])
  end;
 
 end
