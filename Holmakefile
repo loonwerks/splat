@@ -1,11 +1,13 @@
 INCLUDES = $(HOLDIR)/examples/formal-languages/regular
 
-all: $(DEFAULT_TARGETS) splat
+all: $(DEFAULT_TARGETS) splat splat-mon
 
 .PHONY: all
 
-EXTRA_CLEANS = splat.o splat
+EXTRA_CLEANS = splat.o splat splat-mon.o splat-mon
 
-#splat : splatLib.uo splat.uo
 splat : splat.uo
 	$(protect $(HOLDIR)/bin/buildheap) splat.uo -o $@ --exe main
+
+splat-mon : splat-mon.uo
+	$(protect $(HOLDIR)/bin/buildheap) splat-mon.uo -o $@ --exe main
