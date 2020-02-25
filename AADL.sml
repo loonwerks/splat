@@ -185,6 +185,7 @@ fun mk_binop (opr,e1,e2) =
 	 | "=>"  => Imp
          | "="   => Equal
          | "and" => And
+         | "or"  => Or
          | other => raise ERR "mk_binop"
                ("unknown binary operator "^Lib.quote other)
  in Binop(oexp,e1,e2)
@@ -222,6 +223,9 @@ val _ = defaultNumKind := AST.Int NONE;
 fun dropString (String s) = s
   | dropString otherwise = raise ERR "dropString" "not a json String application";
 
+fun dropList (List list) = list
+  | dropList otherwise = raise ERR "dropList" "not a json List application";
+
 fun dropImpl s =
      case String.tokens (equal #".") s
       of [x,"Impl"] => SOME x
@@ -254,11 +258,12 @@ fun dest_exp e =
    | AList [("kind", String "Selection"), ("target", target), ("field", String fname)]
        => RecdProj (dest_exp target, fname)
    | AList [("kind", String "CallExpr"),
-             ("function", AList [("kind", String _),
-                                 ("packageName", String pkg),
-                                 ("name", String fname)]),
+             ("function", AList alist),
              ("args", List args)]
-       => mk_fncall(pkg,fname,map dest_exp args)
+       => let val pkg = dropString (assoc "packageName" alist) handle _ => ""
+              val fname = dropString (assoc "name" alist) handle _ => ""
+          in mk_fncall(pkg,fname,map dest_exp args)
+          end
    | AList [("kind", String "AadlEnumerator"),
             ("type", AList tyinfo), ("value", String constrname)]
        => mk_nullary_constr (constrname,get_tyinfo tyinfo)
@@ -267,6 +272,16 @@ fun dest_exp e =
             ("array", jarr),
             ("expr", jexp)]
        => mk_fncall ("","Array_Forall",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
+   | AList [("kind", String "ExistsExpr"),
+            ("binding", String bvarname),
+            ("array", jarr),
+            ("expr", jexp)]
+       => mk_fncall ("","Array_Exists",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
+   | AList [("kind", String "IfThenElseExpr"),
+            ("if", e1),
+            ("then",e2),
+            ("else",e3)]
+       => mk_fncall ("","IfThenElse",[dest_exp e1, dest_exp e2, dest_exp e3])
    | other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);
@@ -278,13 +293,14 @@ fun dest_param param =
 
 fun mk_fun_def pkgName json =
  case json
-  of AList [("kind", String "FnDef"),
-            ("packageName",pkg),
-            ("name", String fname),
-            ("args", List params),
-            ("type", ty),
-            ("expr", body)] =>
-     FnDec((pkgName,fname), map dest_param params, dest_ty ty, dest_exp body)
+  of AList (("kind", String "FnDef")::binds) =>
+     (case (assoc "name" binds,
+            assoc "args" binds,
+            assoc "type" binds,
+            assoc "expr" binds)
+       of (String fname, List params, ty, body) =>
+           FnDec((pkgName,fname), map dest_param params, dest_ty ty, dest_exp body)
+       |  otherwise => raise ERR "mk_fun_def" "unexpected input")
    | otherwise => raise ERR "mk_fun_def" "unexpected input";
 
 fun mk_const_def pkgName json =
@@ -300,14 +316,27 @@ fun mk_def pkgName json =
   mk_fun_def pkgName json   handle HOL_ERR _ =>
   raise ERR "mk_def" "unexpected syntax";
 
-fun mk_defs pkgName annex =  (* package annex *)
- case annex
-  of AList (("name", String "agree") ::
-            ("kind", String "AnnexLibrary") ::
-            ("parsedAnnexLibrary",
-                 AList [("statements", List decls)]) :: _)
-      => mapfilter (mk_def pkgName) decls
-   | otherwise => raise ERR "get_fndefs" "unexpected annex format";
+fun get_annex_stmts (AList alist) =
+    (case (assoc "name" alist,
+           assoc "parsedAnnexLibrary" alist
+            handle _ =>
+           assoc "parsedAnnexSubclause" alist)
+      of (String "agree", AList [("statements", List decls)]) => decls
+       | otherwise => raise ERR "get_annex_stmts" "unexpected syntax")
+  | get_annex_stmts otherwise = raise ERR "get_annex_stmts" "unexpected syntax"
+
+fun mk_annex_defs pkgName annex =
+  mapfilter (mk_def pkgName) (get_annex_stmts annex)
+
+fun mk_comp_defs pkgName comp =  (* annex inside package component *)
+ case comp
+  of AList alist =>
+     let val compName = dropString (assoc "name" alist) handle _ => ""
+         val annexes = dropList (assoc "annexes" alist)
+     in map (mk_annex_defs pkgName) annexes
+     end
+   | otherwise => raise ERR "mk_comp_defs" "unexpected annex format";
+
 
 (*
 val [d1,d2,d3,d4,d5,d6,d7,d8,d9,d10] = decls;
@@ -492,6 +521,15 @@ fun get_named_guarantees rnames guarantees =
 (* Note that a single filter can have multiple properties attached.          *)
 (*---------------------------------------------------------------------------*)
 
+fun get_annex_stmts (AList alist) =
+    (case (assoc "name" alist,
+           assoc "parsedAnnexLibrary" alist
+            handle _ =>
+           assoc "parsedAnnexSubclause" alist)
+      of (String "agree", AList [("statements", List decls)]) => decls
+       | otherwise => raise ERR "get_annex_stmts" "unexpected syntax")
+  | get_annex_stmts otherwise = raise ERR "get_annex_stmts" "unexpected syntax"
+
 fun get_filter decl =
  case decl
   of AList
@@ -505,19 +543,15 @@ fun get_filter decl =
                        ("value", String "FILTER")],
                 AList [("name", String "CASE_Properties::COMP_SPEC"), _,
                        ("value", List rnames)]]),
-       ("annexes",
-         List [AList (("name", String "agree") ::
-                      ("kind", String "AnnexSubclause") ::
-                      ("parsedAnnexSubclause",
-                           AList [("statements", List guarantees)]) :: _)
-                      ])]
-      => (case get_named_guarantees rnames guarantees
+       ("annexes", List annexen)]
+    => let val guarantees = List.concat (map get_annex_stmts annexen)
+       in case get_named_guarantees rnames guarantees
            of [] => raise ERR "get_filter" "no properties!"
-            | glist => FilterDec(dest_qid fname, map get_port ports, glist))
+            | glist => FilterDec(dest_qid fname, map get_port ports, glist)
+       end
    | otherwise => raise ERR "get_filter" "not a filter thread";
 
 
-(* CHECK *)
 fun get_monitor_port port =
  case port
   of AList [("name", String pname),
@@ -532,46 +566,54 @@ fun get_monitor_port port =
           end
    | otherwise => raise ERR "get_monitor_port" "unexpected port format"
 
-fun get_monitor_guarantee [AList(("kind", String "GuaranteeStatement")::binds)] =
-    (let val String gdoc = assoc "label" binds
-         val expr = assoc "expr" binds
-     in SOME(gdoc, dest_exp expr)
-     end
-     handle _ => NONE
-    )
+fun get_monitor_guarantee (AList(("kind", String thing)::binds)) =
+    if mem thing ["PropertyStatement", "GuaranteeStatement"] then
+      (let val String gdoc = assoc "label" binds handle _ => String ""
+           val expr = assoc "expr" binds
+       in SOME(gdoc, dest_exp expr)
+       end handle _ => NONE)
+    else
+      NONE
   | get_monitor_guarantee otherwise = NONE
 ;
 
-fun get_monitor decl =
- case decl
-  of AList
-      [("name", String fname),
-       ("localName",String _),
-       ("kind",String "ComponentType"),
-       ("category", _),
-       ("features", List ports),
-(* to be added
-       ("properties",
-          List [AList [("name", String "CASE_Properties::COMP_TYPE"), _,
-                       ("value", String "MONITOR")],
-                AList [("name", String "CASE_Properties::COMP_SPEC"), _,
-                       ("value", List rnames)]]),
-*)
-       ("annexes",
-         List [AList (("name", String "agree") ::
-                      ("kind", String "AnnexSubclause") ::
-                      ("parsedAnnexSubclause",
-                           AList [("statements", List guarantees)]) :: _)
-                      ])]
-      => let val qid = dest_qid fname
-             val portL = map get_monitor_port ports
-         in
-            case get_monitor_guarantee guarantees
-             of NONE => raise ERR "get_monitor" "not a monitor spec"
-              | SOME guar => MonitorDec(qid, portL, [guar])
-         end
-   | otherwise => raise ERR "get_monitor" "unexpected syntax";
+fun mk_and a b = Binop(And,a,b);
 
+fun get_monitor_guarantees [] = NONE
+  | get_monitor_guarantees neList =
+     let val aexps = List.mapPartial get_monitor_guarantee neList
+         val exps = map snd aexps
+         val string_things = String.concatWith "\n\n" (map fst aexps)
+     in
+       SOME(string_things, end_itlist mk_and exps)
+     end
+
+fun get_rqt_names json =
+ case json
+  of List [AList [("name", String "CASE_Properties::COMP_TYPE"), _,
+                  ("value", String "MONITOR")],
+           AList [("name", String "CASE_Properties::COMP_SPEC"), _,
+                  ("value", List rnames)]]
+      => map dropString rnames
+   | otherwise => raise ERR "get_rqt_names" "named requirements not found";
+
+fun get_monitor (AList alist) =
+     (case (assoc "name" alist,
+            assoc "features" alist,
+            get_rqt_names(assoc "properties" alist) handle _ => [],
+            assoc "annexes" alist)
+       of (String fname, List ports, rqt_names, List annexen)
+          => let val qid = dest_qid fname
+                 val portL = map get_monitor_port ports
+                 val stmts = List.concat (map get_annex_stmts annexen)
+             in
+              case get_monitor_guarantees stmts
+               of NONE => raise ERR "get_monitor" "not a monitor spec"
+                | SOME guar => MonitorDec(qid, portL, [guar])
+             end
+       | otherwise => raise ERR "get_monitor" "unexpected syntax")
+  | get_monitor otherwise = raise ERR "get_monitor" "unexpected syntax"
+;
 
 fun dest_publist plist =
  let fun dest_with ("with", List wlist) = wlist
@@ -600,7 +642,7 @@ fun get_data_model pkg =
 (*
 val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15,
      c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28,
-     c29, c30, c31, c32] = complist;
+     c29, c30, c31, c32, c33, c34,c35] = complist;
 
 val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16]
    = complist;
@@ -613,19 +655,17 @@ fun scrape pkg =
             ("public", AList publist) :: _)
      => let val (withs,renamings,complist,annexlist) = dest_publist publist
             val tydecls = get_tydecls pkgName complist
-	    val fndecls = List.concat (mapfilter (mk_defs pkgName) annexlist)
+	    val annex_fndecls = List.concat (mapfilter (mk_annex_defs pkgName) annexlist)
+            val comp_fndecls =  List.concat(List.concat (mapfilter (mk_comp_defs pkgName) complist))
             val filters = mapfilter get_filter complist
             val monitors = mapfilter get_monitor complist
         in
-           (pkgName,(tydecls, fndecls, filters, monitors))
+           (pkgName,(tydecls, annex_fndecls@comp_fndecls, filters, monitors))
         end
   | otherwise => raise ERR "scrape" "unexpected format";
 
 fun dest_with ("with", List wlist) = map dropString wlist
   | dest_with other = raise ERR "dest_with" "";
-
-fun dropList (List list) = list
-  | dropList otherwise = raise ERR "dropList" "";
 
 (*---------------------------------------------------------------------------*)
 (* For any declaration of a partial record type there should be a later      *)
@@ -697,8 +737,6 @@ fun scrape_pkgs json =
  end
 
 (*
-val List pkgs = jpkg;
-
 fun uses (A as AList (("name", String AName) ::
                            ("kind", String "AadlPackage")::
                            ("public", AList publist):: _))
@@ -713,7 +751,7 @@ val AList alist = jpkg;
 val pkgs = dropList (assoc "modelUnits" alist);
 
 val (opkgs as [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7,
-               pkg8, pkg9, pkg10, pkg11]) = rev (topsort uses pkgs);
+               pkg8, pkg9, pkg10, pkg11,pkg12,pkg13]) = rev (topsort uses pkgs);
 
 val declist = mapfilter scrape opkgs;
 
@@ -1358,6 +1396,12 @@ fun transExp pkgName varE ety exp =
       end
     | ConstrExp(qid,id, NONE) => mk_constr_const pkgName qid id
     | ConstrExp(qid,id, SOME e) => undef "ConstrExp with arg"
+    | Fncall ((_,"IfThenElse"),[e1,e2,e3]) =>
+       let val a = transExp pkgName varE (Expected bool) e1
+           val b = transExp pkgName varE ety e2
+           val c = transExp pkgName varE ety e3
+       in mk_cond(a,b,c)
+       end
     | Fncall ((_,"Array_Forall"),[VarExp bv,e2,e3]) =>
       let open fcpSyntax
 	  val A = transExp pkgName varE Unknown e2

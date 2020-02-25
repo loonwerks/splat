@@ -64,11 +64,13 @@ fun synthesize_monitor monitor =
       in save_thm(s1^"_"^s2,EVAL exec_tm)
       end
  in
-  monitor_data monitor
+   monitor_data monitor
  end
 
+
 (*
-val args = ["examples/RunTimeMonitor_Simple_Example_V1.json"];
+val args = ["examples_monitor/RunTimeMonitor_Simple_Example_V1.json"];
+val args = ["examples_monitor/Datacentric_monitor.json"];
 *)
 
 fun main () =
