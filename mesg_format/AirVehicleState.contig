@@ -108,7 +108,7 @@ val EntityState = Recd [
   ("wdot",real32),
 
   (* Angle between true North and the projection of the body x-axis in the
-       North-East plane. Units="degree" *)
+     North-East plane. Units="degree" *)
   ("Heading",real32),
 
   (* Pitch of vehicle around body y-axis (positive upwards). Units="degree" *)

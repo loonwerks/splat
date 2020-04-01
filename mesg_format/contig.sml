@@ -265,7 +265,7 @@ fun segments E contig s = segFn E (VarName"root") contig ([],s,empty_lvalMap);
 
 fun atomic_widths atm =
  case atm
-  of Bool      => 1
+  of Bool       => 1
    | Char       => 1
    | Signed i   => i
    | Unsigned i => i
@@ -634,4 +634,74 @@ val SOME(segs, remaining, lvalMap) = segments E' contig string;
 
 Redblackmap.listItems lvalMap;
 
+*)
+
+datatype target
+  = BOOL of bool
+  | CHAR of char
+  | INT of int
+  | ENUM of string
+  | BLOB of string
+  | RECD of (string * target) list
+  | ARRAY of target array
+;
+
+(*
+fun parse_atom
+
+fun parseFn E path contig state =
+ let val (Consts,Decls,atomicWidths,valueFn) = E
+     val (segs,s,WidthValMap) = state
+ in
+ case contig
+  of Basic a =>
+       let val awidth = atomicWidths a
+       in case tdrop awidth s
+         of NONE => NONE
+          | SOME (segment,rst) =>
+             SOME(segs@[segment],rst,
+                  Redblackmap.insert(WidthValMap,path,segment))
+       end
+   | Declared name => parseFn E path (assoc name Decls) state
+   | Raw exp =>
+       let val exp' = resolve_exp_lvals WidthValMap path exp
+           val width = evalExp (Consts,WidthValMap,valueFn) exp'
+       in
+         case tdrop width s
+         of NONE => NONE
+          | SOME (segment,rst) =>
+              SOME(segs@[segment],rst,
+                   Redblackmap.insert(WidthValMap,path,segment))
+       end
+   | Scanner scanFn =>
+      (case scanFn s
+        of NONE => raise ERR "parseFn" "Scanner failed"
+         | SOME(segment,rst) =>
+              SOME(segs@[segment],rst,
+                   Redblackmap.insert(WidthValMap,path,segment)))
+   | Recd fields =>
+       let fun fieldFn fld NONE = NONE
+             | fieldFn (fName,c) (SOME st) = parseFn E (RecdProj(path,fName)) c st
+       in rev_itlist fieldFn fields (SOME state)
+       end
+   | Array (c,exp) =>
+       let val exp' = resolve_exp_lvals WidthValMap path exp
+           val dim = evalExp (Consts,WidthValMap,valueFn) exp'
+           fun indexFn i NONE = NONE
+             | indexFn i (SOME state) = parseFn E (ArraySub(path,intLit i)) c state
+       in rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
+       end
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             let val bexp' = resolve_bexp_lvals WidthValMap path bexp
+             in evalBexp (Consts,WidthValMap,valueFn) bexp'
+             end
+       in case List.find choiceFn choices
+           of NONE => raise ERR "parseFn" "Union: no choices possible"
+            | SOME(bexp,c) => parseFn E path c state
+       end
+ end
+;
+
+fun parse E contig s = parseFn E (VarName"root") contig ([],s,empty_lvalMap);
 *)

@@ -1,0 +1,79 @@
+(*---------------------------------------------------------------------------*)
+(* 802-11 message format (some portion of it)                                *)
+(*---------------------------------------------------------------------------*)
+
+use "contig.sml";
+
+(*---------------------------------------------------------------------------*)
+(* Set up the environment.                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun valueFn s = failwith "valueFn: unexpected invocation"
+
+val Frame_enum =
+ ("Frame",
+  [("Management",0),
+   ("Control",   1),
+   ("Data",      2),
+   ("Reserved",  3)
+  ]);
+
+val E = ([],[],atomic_widths,valueFn) |> C add_enum_decl Frame_enum;
+
+val Frame = Declared "Frame";
+
+(*---------------------------------------------------------------------------*)
+(* In reality 802-11 message fields are in terms of bits while, currently,   *)
+(* widths in contig expressions denote number of bytes. So a parser generated*)
+(* from the following wouldn't work at all, and the following contig         *)
+(* expression is merely evocative. We would like to be able to talk about    *)
+(* fields both in terms of bits and also in terms of bytes. I don't think    *)
+(* this is a big challenge, since the essential notion, that of width,       *)
+(* doesn't change, it just requires the lexer/parser to take chomps out of   *)
+(* the input string differently.                                             *)
+(*                                                                           *)
+(* Also, more of an issue is that the "tails" field is one I have            *)
+(* manufactured, in order to adjoin the Union to the preceding fields. It    *)
+(* works, but it might be cleaner to have a basic concatenation combinator   *)
+(* for contigs, so that I could write                                        *)
+(*                                                                           *)
+(*   Cat (Recd fields, Union choices)                                        *)
+(*                                                                           *)
+(* That seems to be a clean way to handle things.                            *)
+(*---------------------------------------------------------------------------*)
+
+fun Bits i = Raw (intLit i);
+fun Bytes i = Raw (intLit (i*8));
+
+val macHeader = Recd [
+ ("protocol",  Bits 2),
+ ("tpe",       Frame),
+ ("subType",   Bits 4),
+ ("toDS",      Bits 1),
+ ("fromDS",    Bits 1),
+ ("moreFrag",  Bits 1),
+ ("retry",     Bits 1),
+ ("powerMgmt", Bits 1),
+ ("moreData",  Bits 1),
+ ("wep",       Bits 1),
+ ("order",     Bits 1),
+ ("duration",  Bytes 2),
+ ("tails",Union [
+  (Beq(Loc(VarName "tpe"), ConstName "Frame'Data"),
+     Recd [("address1",   Bytes 6),
+           ("address2",   Bytes 6),
+           ("address3",   Bytes 6),
+           ("fragNumber", Bits 4),
+           ("seqNumber",  Bits 12),
+           ("address4",   Bytes 6)])
+  ,
+  (Band(Beq(Loc(VarName "tpe"), ConstName "Frame'Control"),
+        Beq(Loc(VarName "subType"), intLit 11)),
+     Recd [("receiver",    Bytes 6),
+           ("transmitter", Bytes 6)])
+  ,
+  (Band(Beq(Loc(VarName "tpe"), ConstName "Frame'Control"),
+        Beq(Loc(VarName "subType"), intLit 12)),
+     Recd [("receiver", Bytes 6)])
+ ])
+];

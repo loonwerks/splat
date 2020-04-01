@@ -32,8 +32,7 @@ val LMCP_Object = Recd [
   ("checksum", u32)
 ];
 
-val E =
-  add_contig_decl baseEnv ("Operating_Region",operating_region);
+val E = add_contig_decl baseEnv ("Operating_Region",operating_region);
 
 (*---------------------------------------------------------------------------*)
 (* Full message looks like (Eric Mercer dug this info out)                   *)
@@ -45,11 +44,11 @@ val E =
 (*  <address> is e.g. uxas.project.isolate.IntruderAlert,                    *)
 (*                    uxas.roadmonitor,  etc.                                *)
 (*                                                                           *)
-(*  <attributes> = <contentType>                                             *)
-(*               | <descriptor>                                              *)
-(*               | <source-group>                                            *)
-(*               | <source-entity-ID>                                        *)
-(*               | <source-service-ID>                                       *)
+(*  <attributes> = <contentType>       ;; string of non "|" chars            *)
+(*               | <descriptor>        ;; ditto                              *)
+(*               | <source-group>      ;; ditto                              *)
+(*               | <source-entity-ID>  ;; ditto                              *)
+(*               | <source-service-ID> ;; ditto                              *)
 (*                                                                           *)
 (* (The vertical bars are included in the message text.)                     *)
 (*---------------------------------------------------------------------------*)
@@ -62,8 +61,7 @@ val attributes = Recd [
  ("source_service_ID",Scanner (scanTo "$"))
  ];
 
-val E1 =
-  add_contig_decl E ("Attributes",attributes);
+val E1 = add_contig_decl E ("Attributes",attributes);
 
 val Attributes = Declared "Attributes";
 
