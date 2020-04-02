@@ -1,8 +1,0 @@
-Modelling Flexible Messages.
-----------------------------
-
-Problem: A message format describes how a flat array of bytes (or
-bits) is to be broken into pieces for further processing. This
-partitioning can be static: the message is built from fixed-size
-subcomponents. However, there are many message formats where the size
-of an element can
