@@ -1,0 +1,68 @@
+Notes on LMCP messages.
+=======================
+
+
+1. All multi-byte numbers are in MSB (big-endian)
+
+2. There is the usual collection of basic types. Booleans are 8 bits;
+   chars are 8 bits.
+
+   Beware: the actual representation of a boolean depends on that used
+   in LMCP source language (C++) and that language doesn't say what
+   bit patterns are used for true and false.
+
+     https://stackoverflow.com/questions/19351483/how-is-a-bool-represented-in-memory
+
+3. Arrays are variable length, immediately preceded by their size, a
+   u16. So an array will be laid out as the length, followed by
+   `length` array elements. The length field is evaluated at runtime
+   to a number <= 65535.  (CHECK ... my memory says that the
+   inequality might be strict for some reason). This could be
+   visualized in record notation as
+
+    [ len : u16, elts : elt [len] ]
+
+5. A string is an array of chars; (* byte array with max 65535 elts *)
+
+6. An LMCP "object" is based on an enum field that tells whether the
+   object is present or not. So it is essentially an option type, being a
+   disjoint union discriminated by an boolean
+
+    no object ==> [ present : bool = false ]
+    object    ==> [ present : bool = true,
+                    series  : i64,
+		    name    : u32,
+		    version : u16,
+		    contents : <data>
+                  ]
+
+7. Each element A[i] in an array of objects will be such that A[i].present = true.
+
+8. Named records can be extended, in which case the additional fields are
+   appended to those of the original record.
+
+Question.
+---------
+
+ Following is description dug up by Eric of the LMCP_Object component
+of the Operating Region message. I wonder why it differs from the
+discussion above in (6).
+
+LMCP_Object =
+  ("controlString",  i32)  (* = 0x4c4d4350 *)
+  ("mesgSize",       u32)
+  ("nullMesg",       Bool)
+  ("seriesID",       i64)
+  ("mesgType",       u32)
+  ("version",        u16)
+  ("payload",        operating_region)
+  ("checksum",       u32)
+
+where
+
+operating_region =
+  ("ID",                 i64)
+  ("keep_in_areas_len",  u16)
+  ("keep_in_areas",      u64 [keep_in_areas_len])
+  ("keep_out_areas_len", u16)
+  ("keep_out_areas",     u64 [keep_out_areas_len])
