@@ -1,3 +1,4 @@
+load "regexpLib";
 use "contig-index.sml";
 
 val initE = ([],[],atomic_widths);
@@ -17,7 +18,7 @@ fun mk_char c =
 fun mk_string s =
     mk_u16 (String.size s) :: map mk_char (String.explode s);
 fun mk_enum E (s,constr) =
- let val (Consts,Decls,atomicWidths,valueFn) = E
+ let val (Consts,Decls,atomicWidths) = E
  in mk_u8 (assoc (s ^ "'" ^ constr) Consts)
  end
 end;
@@ -61,7 +62,7 @@ val string = String.concat
 
 val V = Byte.stringToBytes string;
 
-val SOME(segs, remaining, lvalMap) = segments initE contig V
+val SOME(segs, remaining, lvalMap) = segments initE contig V;
 
 Redblackmap.listItems lvalMap;
 
@@ -227,7 +228,7 @@ val navigation_mode = ("NavigationMode", [
   ("LostComm",5)
  ]);
 
-val E' =add_enum_decl (add_enum_decl initE altitude_type) navigation_mode;
+val E' = add_enum_decl (add_enum_decl initE altitude_type) navigation_mode;
 
 val AltitudeType = Declared "AltitudeType"
 val NavigationMode = Declared "NavigationMode"
@@ -243,12 +244,12 @@ val string = String.concat
    mk_enum E' ("NavigationMode","LostComm"),
    mk_enum E' ("NavigationMode","Waypoint"),
    mk_enum E' ("NavigationMode","Loiter"),
-   mk_enum E' ("NavigationMode","FollowLeader")]
+   mk_enum E' ("NavigationMode","FollowLeader")];
 
 val V = Byte.stringToBytes string;
 
-val SOME(segs, next_pos, lvalMap) = segments E' contig string;
+val SOME(segs, next_pos, lvalMap) = segments E' contig V;
 
 Redblackmap.listItems lvalMap;
 
-val (ptree,next_pos,_) = parse E' contig string;
+val (ptree,next_pos,_) = parse E' contig V;

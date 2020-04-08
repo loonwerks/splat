@@ -4,6 +4,8 @@
 (* values at locations, the types are mutually recursive.                    *)
 (*---------------------------------------------------------------------------*)
 
+val ERR = mk_HOL_ERR "contig-index";
+
 datatype lval
   = VarName of string
   | RecdProj of lval * string
@@ -16,7 +18,21 @@ and exp
   | Mult of exp * exp
 ;
 
-val ERR = mk_HOL_ERR "contig-index";
+(*---------------------------------------------------------------------------*)
+(* Atomic formulas                                                           *)
+(*---------------------------------------------------------------------------*)
+
+datatype bexp
+  = boolLit of bool
+  | Bnot of bexp
+  | Bor  of bexp * bexp
+  | Band of bexp * bexp
+  | Beq  of exp * exp
+  | Blt  of exp * exp
+  | Bgtr of exp * exp
+  | Bleq of exp * exp
+  | Bgeq of exp * exp
+;
 
 (*---------------------------------------------------------------------------*)
 (* lval comparison function used to build lval-keyed finite map.             *)
@@ -63,7 +79,8 @@ and
 ;
 
 (*---------------------------------------------------------------------------*)
-(* context maps an lval to an interval in the input buffer.                  *)
+(* An lvalMap is used to hold context: it maps an lval to an interval in the *)
+(* input buffer. That interval can be evaluated to get a number.             *)
 (*---------------------------------------------------------------------------*)
 
 val empty_lvalMap
@@ -86,6 +103,41 @@ fun path_prefixes lval =
 
 
 (*---------------------------------------------------------------------------*)
+(* For convenience, and composability, we allow "location completion", so    *)
+(* that partly-given locations can be a convenient notation. Completion      *)
+(* effectively looks "up and to the left" in the original contig type for    *)
+(* a full lval that the given lval is a suffix of. The full lval is used as  *)
+(* key in lookups in expression evaluation.                                  *)
+(*---------------------------------------------------------------------------*)
+
+fun resolve_lval lvalMap path lval =
+ let val prefixes = path_prefixes path
+     val prospects = map (C lval_append lval) prefixes @ [lval]
+ in Lib.first (can (curry Redblackmap.find lvalMap)) prospects
+ end
+ handle HOL_ERR _ => raise ERR "resolve_lval" "unsuccessful";
+
+fun resolve_exp_lvals lvalMap path exp =
+ case exp
+  of Loc lval     => Loc(resolve_lval lvalMap path lval)
+   | Add (e1,e2)  => Add(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+   | Mult (e1,e2) => Mult(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+   | otherwise    => exp
+
+fun resolve_bexp_lvals lvalMap path bexp =
+ case bexp
+  of boolLit _   => bexp
+   | Bnot b      => Bnot(resolve_bexp_lvals lvalMap path b)
+   | Bor(b1,b2)  => Bor(resolve_bexp_lvals lvalMap path b1,resolve_bexp_lvals lvalMap path b2)
+   | Band(b1,b2) => Band(resolve_bexp_lvals lvalMap path b1,resolve_bexp_lvals lvalMap path b2)
+   | Beq(e1,e2)  => Beq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+   | Blt (e1,e2) => Blt(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+   | Bgtr(e1,e2) => Bgtr(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+   | Bleq(e1,e2) => Bleq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+   | Bgeq(e1,e2) => Bgeq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+;
+
+(*---------------------------------------------------------------------------*)
 (* Compute the big-endian integer from the slice between i and j in vector V *)
 (*---------------------------------------------------------------------------*)
 
@@ -100,7 +152,7 @@ fun numBetwixt V (i,j) =
  in valFn i 0
  end
 
-(*
+(*  Check it works
 val string = List.concat(List.map mk_u16 [123, 9999,32000]);
 val V = Byte.stringToBytes (String.concat(List.map mk_u16 [123, 9999,32000]));
 
@@ -130,29 +182,13 @@ fun evalExp (E as (constMap,lvalMap,V)) exp =
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Atomic formulas                                                           *)
-(*---------------------------------------------------------------------------*)
-
-datatype bexp
-  = boolLit of bool
-  | Bnot of bexp
-  | Bor  of bexp * bexp
-  | Band of bexp * bexp
-  | Beq  of exp * exp
-  | Blt  of exp * exp
-  | Bgtr of exp * exp
-  | Bleq of exp * exp
-  | Bgeq of exp * exp
-;
-
-(*---------------------------------------------------------------------------*)
 (* Evaluate atomic formulas                                                  *)
 (*---------------------------------------------------------------------------*)
 
 fun evalBexp E bexp =
  case bexp
-  of boolLit b => b
-   | Bnot b    => not (evalBexp E b)
+  of boolLit b   => b
+   | Bnot b      => not (evalBexp E b)
    | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
    | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
    | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
@@ -185,42 +221,7 @@ datatype contig
   | Union of (bexp * contig) list;
 
 (*---------------------------------------------------------------------------*)
-(* A distinctive feature of our approach is the use of lvals to describe     *)
-(* locations in the message where values are stored. These values are used   *)
-(* as the sizes for variable-sized arrays in the message. For convenience,   *)
-(* we allow "location completion", so that partly-given locations can be     *)
-(* a convenient notation.                                                    *)
-(*---------------------------------------------------------------------------*)
-
-fun resolve_lvals lvalMap path lval =
- let val prefixes = path_prefixes path
-     val prospects = map (C lval_append lval) prefixes @ [lval]
- in Lib.first (can (curry Redblackmap.find lvalMap)) prospects
- end
- handle HOL_ERR _ => raise ERR "resolve_lvals" "unsuccessful";
-
-fun resolve_exp_lvals lvalMap path exp =
- case exp
-  of Loc lval     => Loc(resolve_lvals lvalMap path lval)
-   | Add (e1,e2)  => Add(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | Mult (e1,e2) => Mult(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | otherwise    => exp
-
-fun resolve_bexp_lvals lvalMap path bexp =
- case bexp
-  of boolLit _   => bexp
-   | Bnot b      => Bnot(resolve_bexp_lvals lvalMap path b)
-   | Bor(b1,b2)  => Bor(resolve_bexp_lvals lvalMap path b1,resolve_bexp_lvals lvalMap path b2)
-   | Band(b1,b2) => Band(resolve_bexp_lvals lvalMap path b1,resolve_bexp_lvals lvalMap path b2)
-   | Beq(e1,e2)  => Beq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | Blt (e1,e2) => Blt(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | Bgtr(e1,e2) => Bgtr(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | Bleq(e1,e2) => Bleq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | Bgeq(e1,e2) => Bgeq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-;
-
-(*---------------------------------------------------------------------------*)
-(* Check that oen is not indexing off the end of the buffer.                 *)
+(* Check that one is not indexing off the end of the buffer.                 *)
 (*---------------------------------------------------------------------------*)
 
 fun indexable V i = (Word8Vector.sub(V,i); true) handle _ => false;
@@ -302,158 +303,6 @@ fun segFn E path contig state V =
 fun segments E contig V =
    segFn E (VarName"root") contig ([],0,empty_lvalMap) V;
 
-(*---------------------------------------------------------------------------*)
-(* Miscellaneous support stuff needed to make things work                    *)
-(*---------------------------------------------------------------------------*)
-
-fun atomic_widths atm =
- case atm
-  of Bool       => 1
-   | Char       => 1
-   | Signed i   => i
-   | Unsigned i => i
-   | Float      => 4
-   | Double     => 8
-   | Enum _     => 1
-;
-
-val u8  = Basic(Unsigned 1);
-val u16 = Basic(Unsigned 2);
-val u32 = Basic(Unsigned 4);
-val u64 = Basic(Unsigned 8);
-val i16 = Basic(Signed 2);
-val i32 = Basic(Signed 4);
-val i64 = Basic(Signed 8);
-
-fun add_enum_decl E (s,bindings) =
- let val (Consts,Decls,atomicWidths) = E
-     val enum = Basic(Enum(s,bindings))
-     val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
- in
-   (bindings' @ Consts, (s,enum)::Decls, atomicWidths)
- end
-
-
-(*---------------------------------------------------------------------------*)
-(* Support for the Scanner constructor. The end delimiter is left on the     *)
-(* string.                                                                   *)
-(*---------------------------------------------------------------------------*)
-
-fun scanTo byte V pos =
- let val top = Word8Vector.length V
-     fun look i =
-        if i >= top then
-           NONE else
-        if Word8Vector.sub(V,i) = byte then
-           SOME i
-        else look (i+1)
- in
-   if pos < 0 then
-     NONE
-   else look pos
- end
-
-val scanCstring = scanTo (Word8.fromInt 0)
-
-
-(*---------------------------------------------------------------------------*)
-(* Pretty printing                                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun paren i j s1 s2 ps =
- let open PP
- in if i < j then
-      block CONSISTENT 0 ps
-    else
-      block INCONSISTENT (size s1)
-           (add_string s1 :: ps @ [add_string s2])
-end;
-
-fun pp_binop opr x y =
- let open PP
- in  paren 0 0 "(" ")"
-	[x, add_string (" "^opr), add_break(1,0), y]
- end
-
-local open Portable PP
-in
-fun pp_lval lval =
-   case lval
-    of VarName s => add_string s
-     | RecdProj (p,s) =>
-        block INCONSISTENT 0 [pp_lval p, add_string".",add_string s]
-     | ArraySub (lval,d) =>
-        block CONSISTENT 1 [pp_lval lval, paren 0 0 "[" "]" [pp_exp d]]
- and pp_exp exp =
-   case exp
-    of Loc lval => pp_lval lval
-     | intLit i => add_string (Int.toString i)
-     | ConstName s => add_string s
-     | Add (e1,e2) => pp_binop "+" (pp_exp e1) (pp_exp e2)
-     | Mult (e1,e2) => pp_binop "*" (pp_exp e1) (pp_exp e2)
-end
-
-fun pp_bexp bexp =
- let open PP
- in
-   case bexp
-    of boolLit b => add_string (Bool.toString b)
-     | Bnot b    => block CONSISTENT 0
-                     [add_string"not", paren 0 0 "(" ")" [pp_bexp b]]
-     | Bor(b1,b2)  => pp_binop "or" (pp_bexp b1) (pp_bexp b2)
-     | Band(b1,b2) => pp_binop "and" (pp_bexp b1) (pp_bexp b2)
-     | Beq (e1,e2) => pp_binop "=" (pp_exp e1) (pp_exp e2)
-     | Blt (e1,e2) => pp_binop "<" (pp_exp e1) (pp_exp e2)
-     | Bgtr(e1,e2) => pp_binop ">" (pp_exp e1) (pp_exp e2)
-     | Bleq(e1,e2) => pp_binop "<=" (pp_exp e1) (pp_exp e2)
-     | Bgeq(e1,e2) => pp_binop ">=" (pp_exp e1) (pp_exp e2)
- end;
-
-fun pp_atom atom =
- let open PP
- in case atom
-     of Bool => add_string "Bool"
-      | Char => add_string "Char"
-      | Float => add_string "Float"
-      | Double => add_string "Double"
-      | Signed i => add_string ("i"^Int.toString (i*8))
-      | Unsigned i => add_string ("u"^Int.toString (i*8))
-      | Enum (s,list) => add_string s
- end;
-
-fun pp_contig contig =
- let open PP
- in
-   case contig
-    of Basic atom => pp_atom atom
-     | Declared s => add_string s
-     | Raw exp => block CONSISTENT 1
-            [add_string "Raw", add_string "(", pp_exp exp, add_string ")"]
-     | Scanner _ =>  add_string "<scan-fn>"
-     | Recd fields =>
-        let fun pp_field (s,c) = block CONSISTENT 0
-                 [add_string s, add_string " : ", pp_contig c,NL]
-        in
-          block CONSISTENT 1
-             ([add_string "{" ] @ map pp_field fields @ [add_string "}"])
-        end
-     | Array (c,e) => block CONSISTENT 1
-             [pp_contig c, add_string " [", pp_exp e, add_string "]"]
-     | Union choices =>
-        let fun pp_choice (bexp,c) = block CONSISTENT 2
-                 [add_string "(", pp_bexp bexp, add_string " -->",
-                  add_break(1,2), pp_contig c,add_string ")", NL]
-        in
-          block CONSISTENT 3
-            ([add_string "Union {", NL] @ map pp_choice choices @ [add_string "}"])
-        end
- end
-
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn lval => pp_lval lval);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn exp => pp_exp exp);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn bexp => pp_bexp bexp);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn atm => pp_atom atm);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
 
 (*---------------------------------------------------------------------------*)
 (* Parsing. First define a universal target type to parse into. It provides  *)
@@ -579,3 +428,156 @@ fun parse E contig V =
   | SOME otherwise => raise ERR "parse" "expected stack of size 1"
   | NONE => raise ERR "parse" ""
 ;
+
+(*---------------------------------------------------------------------------*)
+(* Pretty printing                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun paren i j s1 s2 ps =
+ let open PP
+ in if i < j then
+      block CONSISTENT 0 ps
+    else
+      block INCONSISTENT (size s1)
+           (add_string s1 :: ps @ [add_string s2])
+end;
+
+fun pp_binop opr x y =
+ let open PP
+ in  paren 0 0 "(" ")"
+	[x, add_string (" "^opr), add_break(1,0), y]
+ end
+
+local open Portable PP
+in
+fun pp_lval lval =
+   case lval
+    of VarName s => add_string s
+     | RecdProj (p,s) =>
+        block INCONSISTENT 0 [pp_lval p, add_string".",add_string s]
+     | ArraySub (lval,d) =>
+        block CONSISTENT 1 [pp_lval lval, paren 0 0 "[" "]" [pp_exp d]]
+ and pp_exp exp =
+   case exp
+    of Loc lval => pp_lval lval
+     | intLit i => add_string (Int.toString i)
+     | ConstName s => add_string s
+     | Add (e1,e2) => pp_binop "+" (pp_exp e1) (pp_exp e2)
+     | Mult (e1,e2) => pp_binop "*" (pp_exp e1) (pp_exp e2)
+end
+
+fun pp_bexp bexp =
+ let open PP
+ in
+   case bexp
+    of boolLit b => add_string (Bool.toString b)
+     | Bnot b    => block CONSISTENT 0
+                     [add_string"not", paren 0 0 "(" ")" [pp_bexp b]]
+     | Bor(b1,b2)  => pp_binop "or" (pp_bexp b1) (pp_bexp b2)
+     | Band(b1,b2) => pp_binop "and" (pp_bexp b1) (pp_bexp b2)
+     | Beq (e1,e2) => pp_binop "=" (pp_exp e1) (pp_exp e2)
+     | Blt (e1,e2) => pp_binop "<" (pp_exp e1) (pp_exp e2)
+     | Bgtr(e1,e2) => pp_binop ">" (pp_exp e1) (pp_exp e2)
+     | Bleq(e1,e2) => pp_binop "<=" (pp_exp e1) (pp_exp e2)
+     | Bgeq(e1,e2) => pp_binop ">=" (pp_exp e1) (pp_exp e2)
+ end;
+
+fun pp_atom atom =
+ let open PP
+ in case atom
+     of Bool => add_string "Bool"
+      | Char => add_string "Char"
+      | Float => add_string "Float"
+      | Double => add_string "Double"
+      | Signed i => add_string ("i"^Int.toString (i*8))
+      | Unsigned i => add_string ("u"^Int.toString (i*8))
+      | Enum (s,list) => add_string s
+ end;
+
+fun pp_contig contig =
+ let open PP
+ in
+   case contig
+    of Basic atom => pp_atom atom
+     | Declared s => add_string s
+     | Raw exp => block CONSISTENT 1
+            [add_string "Raw", add_string "(", pp_exp exp, add_string ")"]
+     | Scanner _ =>  add_string "<scan-fn>"
+     | Recd fields =>
+        let fun pp_field (s,c) = block CONSISTENT 0
+                 [add_string s, add_string " : ", pp_contig c,NL]
+        in
+          block CONSISTENT 1
+             ([add_string "{" ] @ map pp_field fields @ [add_string "}"])
+        end
+     | Array (c,e) => block CONSISTENT 1
+             [pp_contig c, add_string " [", pp_exp e, add_string "]"]
+     | Union choices =>
+        let fun pp_choice (bexp,c) = block CONSISTENT 2
+                 [add_string "(", pp_bexp bexp, add_string " -->",
+                  add_break(1,2), pp_contig c,add_string ")", NL]
+        in
+          block CONSISTENT 3
+            ([add_string "Union {", NL] @ map pp_choice choices @ [add_string "}"])
+        end
+ end
+
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn lval => pp_lval lval);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn exp => pp_exp exp);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn bexp => pp_bexp bexp);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn atm => pp_atom atm);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
+
+
+(*---------------------------------------------------------------------------*)
+(* Miscellaneous support stuff needed to make things work                    *)
+(*---------------------------------------------------------------------------*)
+
+fun atomic_widths atm =
+ case atm
+  of Bool       => 1
+   | Char       => 1
+   | Signed i   => i
+   | Unsigned i => i
+   | Float      => 4
+   | Double     => 8
+   | Enum _     => 1
+;
+
+val u8  = Basic(Unsigned 1);
+val u16 = Basic(Unsigned 2);
+val u32 = Basic(Unsigned 4);
+val u64 = Basic(Unsigned 8);
+val i16 = Basic(Signed 2);
+val i32 = Basic(Signed 4);
+val i64 = Basic(Signed 8);
+
+fun add_enum_decl E (s,bindings) =
+ let val (Consts,Decls,atomicWidths) = E
+     val enum = Basic(Enum(s,bindings))
+     val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
+ in
+   (bindings' @ Consts, (s,enum)::Decls, atomicWidths)
+ end
+
+
+(*---------------------------------------------------------------------------*)
+(* Support for the Scanner constructor. The end delimiter is left on the     *)
+(* string.                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun scanTo byte V pos =
+ let val top = Word8Vector.length V
+     fun look i =
+        if i >= top then
+           NONE else
+        if Word8Vector.sub(V,i) = byte then
+           SOME i
+        else look (i+1)
+ in
+   if pos < 0 then
+     NONE
+   else look pos
+ end
+
+val scanCstring = scanTo (Word8.fromInt 0)
