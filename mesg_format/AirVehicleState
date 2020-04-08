@@ -198,61 +198,27 @@
 </Struct>
 *)
 
+use "contig.sml";
 
-datatype exp
-  = intLit of int
-  | ConstName of string
-  | VarName of string
-  | Add of exp * exp
-  | Mult of exp * exp
-;
+val real32 = Basic Float;
+val real64 = Basic Double;
 
-fun Bits i = intLit i
-fun Bytes i = Bits (8 * i);
+val StringRecd =  (* varying length strings *)
+  Recd [("len", u16),
+        ("elts", Array(Basic Char,Loc (VarName"len")))
+];
 
-(*---------------------------------------------------------------------------*)
-(* Width                                                                     *)
-(*---------------------------------------------------------------------------*)
+val String = Declared "String";
 
-val Bool = Bits 8;
-val Char = Bits 8;
-val u8   = Bits 8;
-val i8   = Bits 8;
-val u16  = Bits 16;
-val i16  = Bits 16;
-val u32  = Bits 32;
-val i32  = Bits 32
-val u64  = Bits 64;
-val i64  = Bits 64;
-val Float = Bits 32;
-val Double = Bits 64;
+val KeyValuePair =
+  Recd [("key",   String),
+        ("value", String)];
 
-val int64 = i64;
-val real32 = Float;
-val real64 = Double;
-
-val StdArrayLen = u16;
-
-datatype contig
-  = Bool
-  | Int
-  | Char
-  | Enum of (string * int) list
-  | Named of string
-  | Recd of (string * contig) list
-  | Array of contig * exp
-  | Union of contig list;
-
-fun FixedString n = Array(Char, intLit n)
-fun VarString s = Array(Char, VarName s)
+val E = ([],[("String",String), ("KeyValuePair", KeyValuePair)],atomic_widths);
 
 (*---------------------------------------------------------------------------*)
 (* As contiguity types                                                       *)
 (*---------------------------------------------------------------------------*)
-
-val KeyValuePair = Recd [
-  ("key", VarString "key-len"),
-  ("value", VarString "value-len")];
 
 val AltitudeType = Enum [("AGL",0), ("MSL",1)];
 
@@ -277,7 +243,7 @@ val NavigationMode = Enum [
 (*---------------------------------------------------------------------------*)
 
 val PayLoadState = Recd [
- ("PayloadID", i64"),
+ ("PayloadID", i64),
  ("Parameters", Array(KeyValuePair, VarName"PayLoadStateLen")
 ];
 

@@ -1,41 +1,6 @@
-use "contig.sml";
-
 (*---------------------------------------------------------------------------*)
-(* Set up the environment.                                                   *)
-(*---------------------------------------------------------------------------*)
-
-fun valueFn s =
- let open Regexp_Numerics
- in IntInf.toInt(string2iint Unsigned MSB s)
- end
-
-val baseEnv = ([],[],atomic_widths,valueFn);
-
-val operating_region = Recd [
-  ("ID", i64),
-  ("kiLen", u16),
-  ("keep_in_areas", Array(u64, Loc(VarName "kiLen"))),
-  ("koLen", u16),
-  ("keep_out_areas", Array(u64, Loc(VarName "koLen")))
-  ];
-
-val Operating_Region = Declared "operating_region"
-
-val LMCP_Object = Recd [
-  ("controlString", i32),  (* = 0x4c4d4350 *)
-  ("mesgSize", u32),
-  ("nullMesg", Basic Bool),
-  ("seriesID", i64),
-  ("mesgType", u32),
-  ("version",  u16),
-  ("payload",  Operating_Region),
-  ("checksum", u32)
-];
-
-val E = add_contig_decl baseEnv ("Operating_Region",operating_region);
-
-(*---------------------------------------------------------------------------*)
-(* Full message looks like (Eric Mercer dug this info out)                   *)
+(* Full uxAS operating region message looks like the following               *)
+(* (Eric Mercer dug this info out):                                          *)
 (*                                                                           *)
 (*  <address> $ <attributes> $ <LMCP_Object>                                 *)
 (*                                                                           *)
@@ -51,7 +16,30 @@ val E = add_contig_decl baseEnv ("Operating_Region",operating_region);
 (*               | <source-service-ID> ;; ditto                              *)
 (*                                                                           *)
 (* (The vertical bars are included in the message text.)                     *)
+(*                                                                           *)
+(*  <LMCP_Object> is described below.                                        *)
 (*---------------------------------------------------------------------------*)
+
+use "contig.sml";
+
+val operating_region = Recd [
+  ("ID", i64),
+  ("kiLen", u16),
+  ("keep_in_areas", Array(u64, Loc(VarName "kiLen"))),
+  ("koLen", u16),
+  ("keep_out_areas", Array(u64, Loc(VarName "koLen")))
+  ];
+
+val LMCP_Object = Recd [
+  ("controlString", i32),  (* = 0x4c4d4350 *)
+  ("mesgSize",      u32),
+  ("nullMesg",      Basic Bool),
+  ("seriesID",      i64),
+  ("mesgType",      u32),
+  ("version",       u16),
+  ("payload",       operating_region),
+  ("checksum",      u32)
+];
 
 val attributes = Recd [
  ("contentType",      Scanner (scanTo "|")),
@@ -61,12 +49,21 @@ val attributes = Recd [
  ("source_service_ID",Scanner (scanTo "$"))
  ];
 
-val E1 = add_contig_decl E ("Attributes",attributes);
-
-val Attributes = Declared "Attributes";
-
 val full_mesg = Recd [
   ("address", Scanner (scanTo "$")),
-  ("attributes", Attributes),
+  ("attributes", attributes),
   ("lmcp-object", LMCP_Object)
   ];
+
+(*---------------------------------------------------------------------------*)
+(* Set up the environment.                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun valueFn s =
+ let open Regexp_Numerics
+ in IntInf.toInt(string2iint Unsigned MSB s)
+ end;
+
+val E = ([],[],atomic_widths,valueFn);
+      |> C add_contig_decl ("Operating_Region",operating_region);
+      |> C add_contig_decl E ("Attributes",attributes);

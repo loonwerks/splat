@@ -74,7 +74,8 @@ val NavigationMode = Declared "NavigationMode";
 
 val PayloadState = Recd [
  ("PayloadID", i64),
- ("Parameters", Array(KeyValuePair, Loc(VarName"PayloadStateLen")))
+ ("ParametersLen", u16),
+ ("Parameters", Array(KeyValuePair, Loc(VarName"ParametersLen")))
 ];
 
 val Location3D = Recd [
@@ -150,6 +151,7 @@ val EntityState = Recd [
   ("ActualEnergyRate", real32),
 
   (* A list of states for any onboard payloads *)
+  ("PayloadStateListLen", u16),
   ("PayloadStateList", Array(PayloadState, Loc(VarName"PayloadStateListLen"))),
 
   (* The ID of the current waypoint. Only valid if the vehicle is in
@@ -169,6 +171,7 @@ val EntityState = Recd [
      in the task request.  For instance, if a waypoint is associated with a
      search task, then the task number associated with that search should be
      included in this list. *)
+  ("AssociatedTasksLen", u16),
   ("AssociatedTasks", Array(i64,Loc(VarName"AssociatedTasksLen"))),
 
   (* time stamp of this data. Time datum is defined by the application, but
@@ -177,6 +180,7 @@ val EntityState = Recd [
 
   (* A list that maps keys to values for the inclusion of extra, custom
      information about this entity *)
+  ("InfoLen", u16),
   ("Info", Array(KeyValuePair, Loc(VarName"InfoLen")))
 ];
 

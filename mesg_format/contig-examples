@@ -1,0 +1,247 @@
+load "regexpLib";   (* To get access to Regexp_Numerics *)
+
+use "contig.sml";
+
+fun valueFn s =
+ let open Regexp_Numerics
+ in IntInf.toInt(string2iint Unsigned MSB s)
+ end
+
+val E = ([],[],atomic_widths,valueFn);
+
+(*---------------------------------------------------------------------------*)
+(* Support for making test messages                                          *)
+(*---------------------------------------------------------------------------*)
+
+local open Regexp_Numerics
+in
+fun mk_u8 i = iint2string Unsigned MSB 1 (IntInf.fromInt i)
+fun mk_u16 i = iint2string Unsigned MSB 2 (IntInf.fromInt i)
+fun mk_i32 i = iint2string Twos_comp MSB 4 (IntInf.fromInt i)
+fun mk_bool b =
+  if b then
+    iint2string Unsigned MSB 1 (IntInf.fromInt 1)
+  else
+    iint2string Unsigned MSB 1 (IntInf.fromInt 0)
+fun mk_char c =
+  iint2string Unsigned MSB 1 (IntInf.fromInt (Char.ord c))
+fun mk_string s =
+    mk_u16 (String.size s) :: map mk_char (String.explode s);
+fun mk_enum E (s,constr) =
+ let val (Consts,Decls,atomicWidths,valueFn) = E
+ in mk_u8 (assoc (s ^ "'" ^ constr) Consts)
+ end
+end;
+
+(*===========================================================================*)
+
+val contig = Recd [
+   ("A", Basic Bool),
+   ("B", Basic Char),
+   ("len", u16),
+   ("elts", Array (i32, Loc(VarName"len")))
+ ];
+
+val string = String.concat
+  [mk_bool true,
+   "g",
+   mk_u16 3,
+   mk_i32 25,
+   mk_i32 2356,
+   mk_i32 12345
+  ];
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+val (ptree,remaining,_) = parse E contig string;
+
+val string = String.concat
+  [mk_bool true,
+   "g",
+   mk_u16 5,
+   mk_i32 25,
+   mk_i32 2356,
+   mk_i32 12345,
+   mk_i32 12345,
+   mk_i32 12345
+  ];
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(*===========================================================================*)
+
+val contig = Recd [
+   ("A", Array (u16,intLit 2)),
+   ("elts", Array (i32, Loc(ArraySub(VarName"A",intLit 0))))
+ ];
+
+val string = String.concat
+  [mk_u16 4,
+   mk_u16 2,
+   mk_i32 25,
+   mk_i32 2356,
+   mk_i32 12345,
+   mk_i32 999,
+   mk_i32 1000,
+   mk_i32 1001
+  ]
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(*===========================================================================*)
+
+val String =  (* varying length strings *)
+  Recd [("len", Basic(Unsigned 2)),
+        ("elts", Array(Basic Char,Loc (VarName"len")))
+];
+
+val E = ([],[("String",String)],atomic_widths,valueFn);
+
+val contig = Recd [
+   ("len", u16),
+   ("strings", Array (Declared "String", Loc(VarName"len")))
+ ];
+
+val string = String.concat
+ [mk_u16 4,
+  mk_u16 3, mk_char #"f",mk_char #"o",mk_char #"o",
+  mk_u16 3, mk_char #"b",mk_char #"a",mk_char #"r",
+  mk_u16 7, mk_char #"f",mk_char #"r",mk_char #"i",mk_char #"z",mk_char #"z",mk_char #"l",mk_char #"e",
+  mk_u16 2, mk_char #"n",mk_char #"o"
+  ];
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(*===========================================================================*)
+
+
+val KeyValuePairRecd =
+  Recd [("key", Declared "String"),
+        ("value", Declared "String")];
+
+val E = ([],[("String",String), ("KeyValuePair", KeyValuePairRecd)],atomic_widths,valueFn);
+
+val contig = Recd [
+   ("len", u16),
+   ("kvpairs", Array (Declared "KeyValuePair", Loc(VarName"len")))
+ ];
+
+val string = String.concat
+ ([mk_u16 4] @
+   mk_string "foo"     @ mk_string "bar" @
+   mk_string "serpent" @ mk_string "boar" @
+   mk_string "rooster" @ mk_string "mustang" @
+   mk_string "foot"    @ mk_string "ten-toes"
+ )
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(*===========================================================================*)
+
+val contig = Recd [
+   ("len", u16),
+   ("raw-blocks", Array (Raw (intLit 3), Loc (VarName"len")))
+ ];
+
+val string = String.concat [mk_u16 4, "foobarfoobarfrizzle"]
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(*===========================================================================*)
+
+val contig = Recd [
+   ("len", u16),
+   ("raw-block", Raw (Mult(intLit 3, Loc(VarName"len"))))
+ ];
+
+val string = String.concat [mk_u16 4, "foobarfoobarfrizzlealphabetsoup"];
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(*===========================================================================*)
+
+
+val contig = Recd [
+   ("A", u16),
+   ("B", Scanner scanCstring),
+   ("C", i32)
+ ];
+
+val string = String.concat [mk_u16 4, ("foo-bar-foo-bar"^String.str(Char.chr 0)), mk_i32 4096];
+
+val SOME(segs, remaining, lvalMap) = segments E contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E contig string;
+
+(* Failure to find final delimiter in the right place, or at all.  *)
+
+segments E contig (String.concat [mk_u16 4, "foo-bar-foo-bar", mk_i32 4096]);
+
+segments E contig (String.concat [mk_u16 4, "foo-bar-foo-bar", mk_i32 (~1)]);
+
+(*===========================================================================*)
+
+val altitude_type = ("AltitudeType", [("AGL",0), ("MSL",1)]);
+
+val navigation_mode = ("NavigationMode", [
+  ("Waypoint",0),
+  ("Loiter", 1),
+  ("FlightDirector",2),
+  ("TargetTrack",3),
+  ("FollowLeader",4),
+  ("LostComm",5)
+ ]);
+
+val E' = add_enum_decl(add_enum_decl E altitude_type) navigation_mode;
+
+val AltitudeType = Declared "AltitudeType"
+val NavigationMode = Declared "NavigationMode"
+
+val contig = Recd [
+   ("A", AltitudeType),
+   ("B", NavigationMode),
+   ("C", Array(AltitudeType, intLit 3))
+ ];
+
+val string = String.concat
+  [mk_enum E' ("AltitudeType","AGL"),
+   mk_enum E' ("NavigationMode","LostComm"),
+   mk_enum E' ("NavigationMode","Waypoint"),
+   mk_enum E' ("NavigationMode","Loiter"),
+   mk_enum E' ("NavigationMode","FollowLeader")]
+
+val SOME(segs, remaining, lvalMap) = segments E' contig string;
+
+Redblackmap.listItems lvalMap;
+
+val (ptree,remaining,_) = parse E' contig string;

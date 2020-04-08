@@ -16,7 +16,7 @@ and exp
   | Mult of exp * exp
 ;
 
-val ERR = mk_HOL_ERR "contig";
+val ERR = mk_HOL_ERR "contig-index";
 
 (*---------------------------------------------------------------------------*)
 (* lval comparison function used to build lval-keyed finite map.             *)
@@ -62,7 +62,12 @@ and
    | (Mult _, _) => GREATER
 ;
 
-val empty_lvalMap : (lval,string) Redblackmap.dict = Redblackmap.mkDict lval_compare ;
+(*---------------------------------------------------------------------------*)
+(* context maps an lval to an interval in the input buffer.                  *)
+(*---------------------------------------------------------------------------*)
+
+val empty_lvalMap
+   : (lval,(int*int)) Redblackmap.dict = Redblackmap.mkDict lval_compare;
 
 fun lval_append p lval =
  case lval
@@ -80,15 +85,43 @@ fun path_prefixes lval =
    | ArraySub (arr,dim) => lval :: path_prefixes arr (* goofy, may need to be revisited. *)
 
 
-fun evalExp (E as (Delta,lvalMap,valueFn)) exp =
+(*---------------------------------------------------------------------------*)
+(* Compute the big-endian integer from the slice between i and j in vector V *)
+(*---------------------------------------------------------------------------*)
+
+fun numBetwixt V (i,j) =
+ let val _ = if i <= j andalso 0 <= i andalso 0 <= j then
+              () else raise ERR "numAt" "malformed range"
+     fun atV index = Word8.toInt(Word8Vector.sub(V,index))
+     fun valFn n acc =
+       if n > j then
+         acc
+       else valFn (n+1) (acc * 256 + atV n)
+ in valFn i 0
+ end
+
+(*
+val string = List.concat(List.map mk_u16 [123, 9999,32000]);
+val V = Byte.stringToBytes (String.concat(List.map mk_u16 [123, 9999,32000]));
+
+numBetwixt V (0,1);
+numBetwixt V (2,3);
+numBetwixt V (4,5);
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Expression evaluation                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun evalExp (E as (constMap,lvalMap,V)) exp =
  case exp
   of Loc lval =>
        (case Redblackmap.peek(lvalMap,lval)
-         of SOME s => valueFn s
+         of SOME (i,j) => numBetwixt V (i,j)
           | NONE => raise ERR "evalExp" "Lval binding failure")
    | intLit i => i
    | ConstName s =>
-     (case assoc1 s Delta
+     (case assoc1 s constMap
        of SOME(_,i) => i
         | NONE => raise ERR "evalExp"
             ("unable to find value for constant named "^Lib.quote s))
@@ -112,10 +145,14 @@ datatype bexp
   | Bgeq of exp * exp
 ;
 
+(*---------------------------------------------------------------------------*)
+(* Evaluate atomic formulas                                                  *)
+(*---------------------------------------------------------------------------*)
+
 fun evalBexp E bexp =
  case bexp
-  of boolLit b   => b
-   | Bnot b      => not (evalBexp E b)
+  of boolLit b => b
+   | Bnot b    => not (evalBexp E b)
    | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
    | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
    | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
@@ -142,7 +179,7 @@ datatype contig
   = Basic of atom
   | Declared of string
   | Raw of exp
-  | Scanner of (string -> (string * string) option)
+  | Scanner of (Word8Vector.vector -> int -> int option)
   | Recd of (string * contig) list
   | Array of contig * exp
   | Union of (bexp * contig) list;
@@ -152,7 +189,7 @@ datatype contig
 (* locations in the message where values are stored. These values are used   *)
 (* as the sizes for variable-sized arrays in the message. For convenience,   *)
 (* we allow "location completion", so that partly-given locations can be     *)
-(* as a convenient notation.                                                 *)
+(* a convenient notation.                                                    *)
 (*---------------------------------------------------------------------------*)
 
 fun resolve_lvals lvalMap path lval =
@@ -164,10 +201,10 @@ fun resolve_lvals lvalMap path lval =
 
 fun resolve_exp_lvals lvalMap path exp =
  case exp
-  of Loc lval => Loc(resolve_lvals lvalMap path lval)
-   | Add (e1,e2) => Add(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
+  of Loc lval     => Loc(resolve_lvals lvalMap path lval)
+   | Add (e1,e2)  => Add(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
    | Mult (e1,e2) => Mult(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
-   | otherwise => exp
+   | otherwise    => exp
 
 fun resolve_bexp_lvals lvalMap path bexp =
  case bexp
@@ -183,15 +220,10 @@ fun resolve_bexp_lvals lvalMap path bexp =
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Take n elements off the front of a string, if possible.                   *)
+(* Check that oen is not indexing off the end of the buffer.                 *)
 (*---------------------------------------------------------------------------*)
 
-fun tdrop n s =
- let open Substring
-     val (ss1,ss2) = splitAt(extract(s,0,NONE),n)
- in SOME (string ss1, string ss2)
- end
- handle _ => NONE;
+fun indexable V i = (Word8Vector.sub(V,i); true) handle _ => false;
 
 (*---------------------------------------------------------------------------*)
 (* Environments:                                                             *)
@@ -199,73 +231,80 @@ fun tdrop n s =
 (*   Consts : maps constant names to integers                                *)
 (*   Decls  : maps names to previously declared contigs                      *)
 (*   atomicWidths : gives width info for basic types                         *)
-(*   valueFn : function for computing a value                                *)
-(*             stored at the designated location in the string.              *)
+(*   V : vector being scanned/parsed                                         *)
 (*                                                                           *)
-(* segFn operates on a state tuple (segs,s,wvMap)                            *)
+(* segFn operates on a state tuple (segs,pos,wvMap)                          *)
 (*                                                                           *)
-(*  segs : (string * int) list  ;;; list of segments and associated values   *)
-(*  s    :  string              ;;; remainder of string                      *)
-(* wvMap : (lval |-> int)       ;;; previously seen values, accessed by path *)
+(*  segs : (int * int) list      ;;; list of segments                        *)
+(*  pos  :  int                  ;;; current position in vector              *)
+(* lvMap : (lval |-> int * int)  ;;; locations of prev. seen elements        *)
 (*                                                                           *)
 (* which is wrapped in the error monad.                                      *)
 (*---------------------------------------------------------------------------*)
 
-fun segFn E path contig state =
- let val (Consts,Decls,atomicWidths,valueFn) = E
-     val (segs,s,WidthValMap) = state
+fun segFn E path contig state V =
+ let val (Consts,Decls,atomicWidths) = E
+     val (segs,pos,WidthValMap) = state
  in
  case contig
   of Basic a =>
-       let val awidth = atomicWidths a
-       in case tdrop awidth s
-         of NONE => NONE
-          | SOME (segment,rst) =>
-             SOME(segs@[segment],rst,
-                  Redblackmap.insert(WidthValMap,path,segment))
+       let val j = pos + atomicWidths a - 1
+       in if indexable V j then
+             SOME(segs@[(pos,j)],j+1,
+                  Redblackmap.insert(WidthValMap,path,(pos,j)))
+          else NONE
        end
-   | Declared name => segFn E path (assoc name Decls) state
+   | Declared name => segFn E path (assoc name Decls) state V
    | Raw exp =>
        let val exp' = resolve_exp_lvals WidthValMap path exp
-           val width = evalExp (Consts,WidthValMap,valueFn) exp'
+           val width = evalExp (Consts,WidthValMap,V) exp'
+           val j = pos + width - 1
        in
-         case tdrop width s
-         of NONE => NONE
-          | SOME (segment,rst) =>
-              SOME(segs@[segment],rst,
-                   Redblackmap.insert(WidthValMap,path,segment))
+         if indexable V j then
+              SOME(segs@[(pos,j)],j+1,
+                   Redblackmap.insert(WidthValMap,path,(pos,j)))
+         else NONE
        end
    | Scanner scanFn =>
-      (case scanFn s
+      (case scanFn V pos
         of NONE => raise ERR "segFn" "Scanner failed"
-         | SOME(segment,rst) =>
-              SOME(segs@[segment],rst,
-                   Redblackmap.insert(WidthValMap,path,segment)))
+         | SOME j => (* index of last scanned char *)
+              SOME(segs@[(pos,j)],j+1,
+                   Redblackmap.insert(WidthValMap,path,(pos,j))))
    | Recd fields =>
        let fun fieldFn fld NONE = NONE
-             | fieldFn (fName,c) (SOME st) = segFn E (RecdProj(path,fName)) c st
+             | fieldFn (fName,c) (SOME st) = segFn E (RecdProj(path,fName)) c st V
        in rev_itlist fieldFn fields (SOME state)
        end
    | Array (c,exp) =>
        let val exp' = resolve_exp_lvals WidthValMap path exp
-           val dim = evalExp (Consts,WidthValMap,valueFn) exp'
+           val dim = evalExp (Consts,WidthValMap,V) exp'
            fun indexFn i NONE = NONE
-             | indexFn i (SOME state) = segFn E (ArraySub(path,intLit i)) c state
+             | indexFn i (SOME state) = segFn E (ArraySub(path,intLit i)) c state V
        in rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
        end
    | Union choices =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolve_bexp_lvals WidthValMap path bexp
-             in evalBexp (Consts,WidthValMap,valueFn) bexp'
+             in evalBexp (Consts,WidthValMap,V) bexp'
              end
        in case List.find choiceFn choices
            of NONE => raise ERR "segFn" "Union: no choices possible"
-            | SOME(bexp,c) => segFn E path c state
+            | SOME(bexp,c) => segFn E path c state V
        end
  end
 ;
 
-fun segments E contig s = segFn E (VarName"root") contig ([],s,empty_lvalMap);
+(*---------------------------------------------------------------------------*)
+(* segFn with initial values given                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun segments E contig V =
+   segFn E (VarName"root") contig ([],0,empty_lvalMap) V;
+
+(*---------------------------------------------------------------------------*)
+(* Miscellaneous support stuff needed to make things work                    *)
+(*---------------------------------------------------------------------------*)
 
 fun atomic_widths atm =
  case atm
@@ -287,11 +326,11 @@ val i32 = Basic(Signed 4);
 val i64 = Basic(Signed 8);
 
 fun add_enum_decl E (s,bindings) =
- let val (Consts,Decls,atomicWidths,valueFn) = E
+ let val (Consts,Decls,atomicWidths) = E
      val enum = Basic(Enum(s,bindings))
      val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
  in
-   (bindings' @ Consts, (s,enum)::Decls, atomicWidths,valueFn)
+   (bindings' @ Consts, (s,enum)::Decls, atomicWidths)
  end
 
 
@@ -300,20 +339,22 @@ fun add_enum_decl E (s,bindings) =
 (* string.                                                                   *)
 (*---------------------------------------------------------------------------*)
 
-fun scanTo delim s =
- let open Substring
-     val k = String.size delim
-     val ss = full s
-     val (ss1,ss2) = position delim ss
- in if isEmpty ss2 then
-       NONE
-    else
-      let val (_,_,j) = base ss1
-      in SOME ((string##string)(splitAt (ss,j+k)))
-      end
+fun scanTo byte V pos =
+ let val top = Word8Vector.length V
+     fun look i =
+        if i >= top then
+           NONE else
+        if Word8Vector.sub(V,i) = byte then
+           SOME i
+        else look (i+1)
+ in
+   if pos < 0 then
+     NONE
+   else look pos
  end
 
-val scanCstring = scanTo (String.str(Char.chr 0));
+val scanCstring = scanTo (Word8.fromInt 0)
+
 
 (*---------------------------------------------------------------------------*)
 (* Pretty printing                                                           *)
@@ -416,19 +457,20 @@ val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
 
 (*---------------------------------------------------------------------------*)
 (* Parsing. First define a universal target type to parse into. It provides  *)
-(* structure, but the leaf elements are left uninterpreted.                  *)
+(* structure, but the leaf elements are left as pairs of indices into the    *)
+(* buffer.                                                                   *)
 (*---------------------------------------------------------------------------*)
 
 datatype ptree
-  = BOOL of string
-  | CHAR of string
-  | INT of int * string
-  | UINT of int * string
-  | FLOAT of string
-  | DOUBLE of string
-  | ENUM of string * string
-  | BLOB of string
-  | SCANNED of string
+  = BOOL of int * int
+  | CHAR of int * int
+  | INT of int * (int * int)
+  | UINT of int * (int * int)
+  | FLOAT of int * int
+  | DOUBLE of int * int
+  | ENUM of string * (int * int)
+  | BLOB of int * int
+  | SCANNED of int * int
   | RECD of (string * ptree) list
   | ARRAY of ptree list
 ;
@@ -444,7 +486,9 @@ case atom
   | Enum (s,list) => curry ENUM s
 
 fun take_drop n list =
- SOME(List.take(list, n),List.drop(list, n)) handle _ => NONE
+  SOME(List.take(list, n),
+       List.drop(list, n))
+  handle _ => NONE;
 
 (*---------------------------------------------------------------------------*)
 (* Environments:                                                             *)
@@ -452,88 +496,85 @@ fun take_drop n list =
 (*   Consts : maps constant names to integers                                *)
 (*   Decls  : maps names to previously declared contigs                      *)
 (*   atomicWidths : gives width info for basic types                         *)
-(*   valueFn : function for computing a value                                *)
-(*             stored at the designated location in the string.              *)
 (*                                                                           *)
-(* segFn operates on a state tuple (segs,s,wvMap)                            *)
+(* parseFn operates on a state tuple (segs,s,wvMap)                          *)
 (*                                                                           *)
-(*  stk : ptree list        ;;; parser stack                                 *)
-(*  s    :  string          ;;; remainder of string                          *)
-(* wvMap : (lval |-> int)   ;;; previously seen values, accessed by path     *)
+(*  stk : ptree list  ;;; parsing stack                                      *)
+(*  pos : int         ;;; current position in string                         *)
+(* lvMap : (lval |-> int*int) ;;; locations of previously seen elements      *)
 (*                                                                           *)
 (* which is wrapped in the error monad.                                      *)
 (*---------------------------------------------------------------------------*)
 
-fun parseFn E path contig state =
- let val (Consts,Decls,atomicWidths,valueFn) = E
-     val (stk,s,WidthValMap) = state
+fun parseFn E path contig state V =
+ let val (Consts,Decls,atomicWidths) = E
+     val (stk,pos,WidthValMap) = state
  in
  case contig
   of Basic a =>
-       let val awidth = atomicWidths a
+       let val j = pos + atomicWidths a - 1
            val constrFn = atom_constr a
-       in case tdrop awidth s
-         of NONE => NONE
-          | SOME (segment,rst) =>
-             SOME(constrFn segment::stk,rst,
-                  Redblackmap.insert(WidthValMap,path,segment))
+       in if indexable V j then
+             SOME(constrFn(pos,j)::stk,j+1,
+                  Redblackmap.insert(WidthValMap,path,(pos,j)))
+          else NONE
        end
-   | Declared name => parseFn E path (assoc name Decls) state
+   | Declared name => parseFn E path (assoc name Decls) state V
    | Raw exp =>
        let val exp' = resolve_exp_lvals WidthValMap path exp
-           val width = evalExp (Consts,WidthValMap,valueFn) exp'
+           val width = evalExp (Consts,WidthValMap,V) exp'
+           val j = pos + width - 1
        in
-         case tdrop width s
-         of NONE => NONE
-          | SOME (segment,rst) =>
-              SOME(BLOB segment::stk,rst,
-                   Redblackmap.insert(WidthValMap,path,segment))
+         if indexable V j then
+              SOME(BLOB(pos,j)::stk,j+1,
+                   Redblackmap.insert(WidthValMap,path,(pos,j)))
+         else NONE
        end
    | Scanner scanFn =>
-      (case scanFn s
+      (case scanFn V pos
         of NONE => raise ERR "parseFn" "Scanner failed"
-         | SOME(segment,rst) =>
-              SOME(SCANNED segment::stk,rst,
-                   Redblackmap.insert(WidthValMap,path,segment)))
+         | SOME j =>  (* index of last scanned char *)
+              SOME(SCANNED (pos,j)::stk,j+1,
+                   Redblackmap.insert(WidthValMap,path,(pos,j))))
    | Recd fields =>
        let fun fieldFn fld NONE = NONE
-             | fieldFn (fName,c) (SOME st) = parseFn E (RecdProj(path,fName)) c st
+             | fieldFn (fName,c) (SOME st) = parseFn E (RecdProj(path,fName)) c st V
        in case rev_itlist fieldFn fields (SOME state)
            of NONE => NONE
-            | SOME (stk',s',WidthValMap') =>
+            | SOME (stk',pos',WidthValMap') =>
                case take_drop (length fields) stk'
                 of NONE => NONE
                  | SOME(elts,stk'') =>
                      SOME(RECD (zip (map fst fields) (rev elts))::stk'',
-                          s', WidthValMap')
+                          pos', WidthValMap')
        end
    | Array (c,exp) =>
        let val exp' = resolve_exp_lvals WidthValMap path exp
-           val dim = evalExp (Consts,WidthValMap,valueFn) exp'
+           val dim = evalExp (Consts,WidthValMap,V) exp'
            fun indexFn i NONE = NONE
-             | indexFn i (SOME state) = parseFn E (ArraySub(path,intLit i)) c state
+             | indexFn i (SOME state) = parseFn E (ArraySub(path,intLit i)) c state V
        in case rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
            of NONE => NONE
-            | SOME (stk',s',WidthValMap') =>
+            | SOME (stk',pos',WidthValMap') =>
                case take_drop dim stk'
                 of NONE => NONE
                  | SOME(elts,stk'') =>
-                     SOME(ARRAY (rev elts)::stk'', s', WidthValMap')
+                     SOME(ARRAY (rev elts)::stk'', pos', WidthValMap')
        end
    | Union choices =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolve_bexp_lvals WidthValMap path bexp
-             in evalBexp (Consts,WidthValMap,valueFn) bexp'
+             in evalBexp (Consts,WidthValMap,V) bexp'
              end
        in case List.find choiceFn choices
            of NONE => raise ERR "parseFn" "Union: no choices possible"
-            | SOME(bexp,c) => parseFn E path c state
+            | SOME(bexp,c) => parseFn E path c state V
        end
  end
 ;
 
-fun parse E contig s =
- case parseFn E (VarName"root") contig ([],s,empty_lvalMap)
+fun parse E contig V =
+ case parseFn E (VarName"root") contig ([],0,empty_lvalMap) V
   of SOME ([ptree],remaining,lvMap) => (ptree,remaining,lvMap)
   | SOME otherwise => raise ERR "parse" "expected stack of size 1"
   | NONE => raise ERR "parse" ""
