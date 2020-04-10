@@ -143,7 +143,7 @@ fun resolve_bexp_lvals lvalMap path bexp =
 
 fun numBetwixt V (i,j) =
  let val _ = if i <= j andalso 0 <= i andalso 0 <= j then
-              () else raise ERR "numAt" "malformed range"
+              () else raise ERR "numBetwixt" "malformed range"
      fun atV index = Word8.toInt(Word8Vector.sub(V,index))
      fun valFn n acc =
        if n > j then
@@ -153,6 +153,12 @@ fun numBetwixt V (i,j) =
  end
 
 (*  Check it works
+load "regexpLib";
+local open Regexp_Numerics
+in
+fun mk_u16 i = iint2string Unsigned MSB 2 (IntInf.fromInt i)
+end
+
 val string = List.concat(List.map mk_u16 [123, 9999,32000]);
 val V = Byte.stringToBytes (String.concat(List.map mk_u16 [123, 9999,32000]));
 
@@ -170,7 +176,7 @@ fun evalExp (E as (constMap,lvalMap,V)) exp =
   of Loc lval =>
        (case Redblackmap.peek(lvalMap,lval)
          of SOME (i,j) => numBetwixt V (i,j)
-          | NONE => raise ERR "evalExp" "Lval binding failure")
+          | NONE => raise ERR "evalExp" "lval binding failure")
    | intLit i => i
    | ConstName s =>
      (case assoc1 s constMap

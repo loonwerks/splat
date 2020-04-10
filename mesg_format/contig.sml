@@ -538,3 +538,67 @@ fun parse E contig s =
   | SOME otherwise => raise ERR "parse" "expected stack of size 1"
   | NONE => raise ERR "parse" ""
 ;
+
+(*---------------------------------------------------------------------------*)
+(* Version of segFn that uses a worklist style                               *)
+(*---------------------------------------------------------------------------*)
+
+fun matchFn E (state as (worklist,s,theta)) =
+ let val (Consts,Decls,atomicWidths,valueFn) = E
+ in
+ case worklist
+   of [] => SOME (s,theta)
+   |  (Basic a,path)::t =>
+       let val awidth = atomicWidths a
+           val constrFn = atom_constr a
+       in case tdrop awidth s
+           of NONE => NONE
+            | SOME (segment,rst) =>
+              matchFn E (t,rst,
+                         Redblackmap.insert(theta,path,constrFn segment))
+       end
+   | (Declared name,path)::t => matchFn E ((assoc name Decls,path)::t,s,theta)
+   | (Raw exp,path)::t =>
+       let val exp' = resolve_exp_lvals theta path exp
+           val width = evalExp (Consts,theta,valueFn) exp'
+       in case tdrop width s
+           of NONE => NONE
+            | SOME (segment,rst) =>
+              matchFn E (t,rst,
+                         Redblackmap.insert(theta,path,BLOB segment))
+       end
+   | (Scanner scanFn,path)::t =>
+      (case scanFn s
+        of NONE => raise ERR "matchFn" "Scanner failed"
+         | SOME(segment,rst) =>
+             matchFn E (t,rst, Redblackmap.insert(theta,path,SCANNED segment)))
+   | (Recd fields,path)::t =>
+       let fun fieldFn (fName,c) = (c,RecdProj(path,fName))
+       in matchFn E (map fieldFn fields @ t,s,theta)
+       end
+   | (Array (c,exp),path)::t =>
+       let val exp' = resolve_exp_lvals theta path exp
+           val dim = evalExp (Consts,theta,valueFn) exp'
+           fun indexFn i = (c,ArraySub(path,intLit i))
+       in matchFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
+       end
+   | (Union choices,path)::t =>
+       let fun choiceFn(bexp,c) =
+             let val bexp' = resolve_bexp_lvals theta path bexp
+             in evalBexp (Consts,theta,valueFn) bexp'
+             end
+       in case List.find choiceFn choices
+           of NONE => raise ERR "matchFn" "Union: no choices possible"
+            | SOME(bexp,c) => matchFn E ((c,path)::t,s,theta)
+       end
+ end
+;
+
+
+(*
+Need to better handle tagging leaf nodes with target type info.
+
+val lvalMap : (lval,ptree) Redblackmap.dict = Redblackmap.mkDict lval_compare ;
+
+fun match E contig s = matchFn E ([(contig,VarName"root")],s,lvalMap);
+*)

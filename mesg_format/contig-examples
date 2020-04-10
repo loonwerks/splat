@@ -230,7 +230,7 @@ val NavigationMode = Declared "NavigationMode"
 val contig = Recd [
    ("A", AltitudeType),
    ("B", NavigationMode),
-   ("C", Array(AltitudeType, intLit 3))
+   ("C", Array(NavigationMode, intLit 3))
  ];
 
 val string = String.concat
