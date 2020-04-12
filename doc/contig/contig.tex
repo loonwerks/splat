@@ -1,0 +1,753 @@
+\documentclass[svgnames]{llncs}
+
+\newcommand{\ie}{i.e.}
+\newcommand{\eg}{e.g.}
+\newcommand{\etal}{et al.}
+\newcommand{\etc}{etc.}
+\newcommand{\adhoc}{\textit{ad hoc}}
+
+\usepackage{xspace}
+%\usepackage{microtype}
+
+% Packages and abbreviations used by Konrad
+\usepackage{latexsym}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsbsy}
+
+\newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\imp}{\Rightarrow}
+\newcommand{\lval}{\ensuremath{\mathit{lval}}}
+\newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
+\newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
+\newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
+\newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+
+% Latex trickery for infix div operator, from stackexchange
+
+\makeatletter
+\newcommand*{\bdiv}{%
+  \nonscript\mskip-\medmuskip\mkern5mu%
+  \mathbin{\operator@font div}\penalty900\mkern5mu%
+  \nonscript\mskip-\medmuskip
+}
+\makeatother
+
+% For the diagrams, pinched from the Data61 report
+
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usetikzlibrary{arrows}
+\usetikzlibrary{shapes.multipart}
+
+\begin{document}
+
+
+% More abbreviations used by Johannes
+
+%% Title information
+\title{Specifying Message Formats with \\ Contiguity Types}
+
+\author{Konrad Slind}
+\institute{Trusted Systems Group \\ Collins Aerospace}
+\maketitle
+
+\begin{abstract}
+We introduce \emph{Contiguity Types}, a formalism for network message
+formats. Contiguity types provide an intermediate layer between
+programming language data structures and messages, offering a helpful
+setting from which to automatically generate decoders, filters, and
+message generators (fuzzers). L-values and R-values provide valuable
+support in handling common self-describing message formats.
+\end{abstract}
+
+
+\section{Introduction}\label{sec:intro}
+
+Network messages are used to convey information over a network. As a
+result, there have been innumerable libraries and tools created that
+use high level specifications as a basis for automating the creation,
+validation, and decoding of such messages. Usually, these high level
+specifications describe the format of a message in terms of how the
+elements (fields) of the message are packed side-by-side to make the
+full message. When the size of each field is known in advance, there
+are really no conceptual difficulties. However, messages can be more
+complicated than that.
+
+The main source of difficulty is \emph{self-describing} messages:
+those where information embedded in fields of the message determines
+the structure of the message. Two of the main culprits are
+variable-length arrays and unions. A \emph{variable-length array} is a
+field where the number of elements in the field depends on the value
+of some already-seen field (or, more generally, as the result of a
+computation involving previously-seen information in the message).
+The length is therefore a value determined at runtime. A \emph{union}
+is deployed when some information held in a message is used to
+determine the structure of later portions of the message. For example,
+this can be used to support versioning where version $i$ has $n$
+fields, and version $i+1$ has $n+1$. In cases where both versions need
+to be supported, it can make sense to encode the version handling
+inside the message, and unions are how this can be specified.
+
+We think that tools and techniques from formal language theory such as
+regular expressions, automata, grammars, parser generators, \etc\, are
+an effective way to tackle message formats, and have been using the
+acronym \konst{SPLAT} (Semantic Properties for Language and Automata
+Theory) to refer to this approach. For example, we have used regular
+expressions as a specification language for simple message formats,
+with arithmetic constraints on the values allowed in
+fields. Generation of the corresponding DFA results in an efficient
+table-driven automaton implementing the specified constraints \cite{},
+with a solid proof certificate connecting the original constraints
+with the DFA behavior.
+
+However, as mentioned above, many message formats remain outside the
+realm of common formal language techniques.  Note that variable-length
+fields can't be directly handled by regular or context-free means; it
+seems that context-sensitive grammars can, in principle, specify such
+information, but there are few tools supporting context sensitive
+languages. Another possibility would be to use \emph{parser
+  combinators} in order to quickly stitch together a parser; it seems
+likely that parsing combinators can be instrumented to gather and
+propagate contextual information. However, we are seeking a higher
+level of formal specification and automation, while still being rooted
+in formal languages, with their emphasis on sets of strings as the
+basic notion.
+
+\section {Contiguity Types}
+
+The characteristic property of a message is \emph{contiguity}: all the
+elements of the message are laid out side-by-side. Our assumption is
+that a message is the \emph{result} of a map from structured data and
+rely on a basic collection of programming language types to capture
+that structure. We start with common base types (booleans, characters,
+signed and unsigned integers, \etc) and form compound structures with
+records, arrays, and unions.
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+ \mathit{base} & = & \konst{bool} \mid \konst{char} \mid \konst{u8} \mid
+ \konst{u16} \mid \konst{u32} \mid \konst{u64}  \mid \konst{i16} \mid
+ \konst{i32} \mid \konst{i64} \mid \cdots \\
+ \tau & = & \mathit{base} \\
+      & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
+      & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
+      & \mid & \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n)
+\end{array}
+\]
+\label{contig-types}
+\caption{Contiguity types}
+\end{figure}
+
+(We will use the terms ``\emph{contiguity type}, \emph{c-type}, and $\tau$
+interchangeably.) Notice that $\tau$ is defined in terms of a type of
+arithmetic expressions $\mathit{exp}$ and also $\mathit{bexp}$,
+boolean expressions built from $\mathit{exp}$. Now consider
+
+\[
+ \konst{Array} \; \tau \; \mathit{exp}
+\]
+
+\noindent For this to specify a varying length array dependent on
+other fields of the message, its dimension $\mathit{exp}$ should be
+able to refer to the \emph{values} of those fields. The challenge is
+just how to express the concept of ``other fields'', \ie, we need a
+notation to describe the \emph{location} in the message buffer where
+the value of a field can be accessed. Our core insight is that this is
+similar to the problem that programming language designers had in the
+60s and 70s, resolved by the notions of \emph{L-value} and
+\emph{R-value}. The idea is originally due to Christopher Strachey in
+CPL and developed subsequently, for example by Dennis Ritchie in
+C.\footnote{https://www.bell-labs.com/usr/dmr/www/chist.html}
+
+\noindent Before getting into formal details, we discuss a few examples.
+
+\subsection{Examples}
+
+We will use familiar notation: records are lists of $\mathit{name} :
+\tau$ elements enclosed by braces while an array field
+$\konst{Array}\;c\;\mathit{dim}$ is written $c [\mathit{dim}]$. Our
+current toolset for c-types supports the syntax on output but we have
+yet to implement a parser.
+
+\begin{enumerate}
+
+\item A straightforward record where each field is of a statically known size.
+
+\begin{verbatim}
+  {A : u8
+   B : {name : char [13]
+        cell : i32}
+   C : bool
+  }
+\end{verbatim}
+
+The \verb+A+ field is specified to be an unsigned int of width 8 bits,
+the \verb+B+ field is a record, the first element of which is a
+character array of size 13, and then second element of which is a 32
+bit integer; finally the last field is specified to be a
+boolean.
+
+\item Variable-sized strings. The \verb+len+ field determines the
+  length of the \verb+elts+ field.
+
+\begin{verbatim}
+  { len : u16
+    elts : char [len]
+  }
+\end{verbatim}
+
+
+\item The following is shows how the \konst{Union} construct might be
+  used for multiple versions.  Versions less than 14 have 3 fields in
+  the message, while all others have 2.
+
+\begin{verbatim}
+  {versionID : u8
+   versions : Union {
+      (versionID < 14, { A : i32, B : u16})
+      (versionID >= 14, { Vec : char [13]})
+    }
+  }
+\end{verbatim}
+
+\item The following is a contrived example showing the need for
+  resolution of multiple similarly named fields; it also shows how the
+  information needed to determine the message structure may be deeply
+  buried in some fields.
+
+\begin{verbatim}
+  {len : u16
+   A : {len : u16
+        elts : u16[len]
+       }
+   B : char [A.len * len]
+   C : i32 [A.elts[0]]
+  }
+\end{verbatim}
+
+\end{enumerate}
+
+\subsection{Expressions}
+
+In programming languages, an \emph{L-value} is an expression that can
+occur on the left-hand side of an assignment statement. Similarly,
+\emph{R-value} designates expressions occurring on the right-hand side
+of assignments. A few examples:
+
+\begin{verbatim}
+    x := x + 1
+    A[x] := B.y + 42
+    A[x].lens.fst[7] := MAX_LEN * 1024 + B.y
+\end{verbatim}
+
+An L-value denotes an \emph{offset} from the beginning of a
+data structure, plus a \emph{width}. In an R-value, an occurrence of an
+L-value is mapped to the value of the patch of memory between
+$\mathit{offset}$ and $\mathit{offset} + \mathit{width}$. For the
+purpose of specifying message formats, it may not be immediately
+obvious that a notation supporting assignment in imperative languages
+can help, but there is indeed a form of assignment lurking.
+
+An L-value can be a variable, an array index, or a record field
+access. R-values are arithmetic expressions that can contain L-values
+(we will use $\mathit{exp}$ interchangeably with R-value). Thus the
+definitions of $\mathit{lval}$, $\mathit{exp}$ and $\mathit{bexp}$ are
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+\mathit{lval} & = & \mathit{varname} \mid
+                    \mathit{lval} \, [ \mathit{exp} ] \mid
+                    \mathit{lval} . \mathit{fieldname} \\
+  & & \\
+\mathit{exp} & = & \konst{Loc}\; \mathit{lval}
+              \mid \konst{nLit}\; \konst{nat}
+              \mid \mathit{constname}
+              \mid \mathit{exp} + \mathit{exp}
+              \mid \mathit{exp} * \mathit{exp} \\
+  & & \\
+\mathit{bexp} & = & \konst{bLit}\; bool
+              \mid  \neg \mathit{bexp}
+              \mid  \mathit{bexp} \lor \mathit{bexp}
+              \mid  \mathit{bexp} \land \mathit{bexp}
+              \mid  \mathit{exp} = \mathit{exp}
+              \mid  \mathit{exp} < \mathit{exp}
+\end{array}
+\]
+\caption{L-values, expressions, and boolean expressions}
+\end{figure}
+
+Given environments $\theta: \mathit{lval} \to \konst{string}$, binding
+lvals to strings, $\Delta : \konst{string} \to \mathbb{N}$, binding
+constant names to numbers, and function
+$\konst{toN}:\konst{string}\to\mathbb{N}$, which interprets ASCII
+characters strings as binary-encoded numbers, expression evaluation
+and boolean expression evaluation proceed conventionally:
+
+\[
+\begin{array}{l}
+\konst{evalExp} \; e =
+\mathtt{case}\; e\
+ \left\{
+ \begin{array}{lcl}
+    \konst{Loc}\; \lval & \Rightarrow & \konst{toN}(\theta(\lval)) \\
+    \konst{nLit}\; n & \Rightarrow & n  \\
+    \mathit{constname} & \Rightarrow & \Delta(\mathit{constname})  \\
+    e_1 + e_2 & \Rightarrow & \konst{evalExp}\; e_1 + \konst{evalExp}\; e_2  \\
+    e_1 * e_2 & \Rightarrow & \konst{evalExp}\; e_1 * \konst{evalExp}\; e_2  \\
+  \end{array}
+ \right.
+ \\ \\
+\konst{evalBexp} \; b =
+\mathtt{case}\; b\
+ \left\{
+ \begin{array}{lcl}
+    \konst{bLit}\; b_1 & \Rightarrow & b_1 \\
+    \neg b_1 & \Rightarrow & \neg(\konst{evalBexp} \; b_1)  \\
+    b_1 \lor b_2 & \Rightarrow & \konst{evalBexp} \;b_1 \lor \konst{evalBexp} \;b_2   \\
+    b_1 \land b_2 & \Rightarrow & \konst{evalBexp} \;b_1 \land \konst{evalBexp} \;b_2   \\
+    e_1 = e_2 & \Rightarrow & \konst{evalExp} \;e_1 = \konst{evalExp} \;e_2   \\
+    e_1 < e_2 & \Rightarrow & \konst{evalExp} \;e_1 < \konst{evalExp} \;e_2
+  \end{array}
+ \right.
+
+\end{array}
+\]
+
+\noindent\textbf{Remark}.
+
+In spite of the structural similarity, a contiguity type is not a
+type: it is a formal language. A type is usually understood to
+represent a set (or domain) of values, \eg, the type \konst{int32}
+represents a set of integers. In contrast, the contiguity type
+\konst{i32} represents the set of strings of width 32 bits. An element
+of a contiguity type can be turned into an element of a type by
+providing interpretations for all the strings at the leaves and
+interpreting the \konst{Recd} and \konst{Array} constructors into the
+corresponding type constructs. Thus, contiguity types
+sit---conveniently---between the types in a programming language and
+the strings used to make messages.
+
+
+\subsection{Semantics}
+
+As mentioned, a contiguity type expresses a formal language. The
+semantics definition depends on a few basic notions familiar from
+language theory: language concatenation, and iterated language
+concatenation.
+
+\begin{align}
+L_1 \cdot L_2 &= \set{w_1 w_2 \mid w_1 \in L_1 \land w_2 \in  L_2} \\
+L^0 &= \varepsilon \\
+L^{n+1} &= L \cdot L^n
+\end{align}
+
+
+\begin{definition}[Semantics of contiguity types]
+
+ In the following, we assume given a assignment $\theta$ adequate for
+evaluating expressions, \ie, having bindings for every
+$\mathit{lval}$ in every $\mathit{exp}$ and $\mathit{bexp}$
+occurring in $\tau$.
+
+\[
+% \begin{array}{l}
+\Lang{\tau} =
+\mathtt{case}\; \tau\
+% \hspace*{3mm}
+ \left\{
+ \begin{array}{l}
+ \mathit{base} \Rightarrow \set{s \mid \konst{len}(s) = \konst{width}(base)} \\
+ \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n)
+      \Rightarrow \Lang{\tau_1} \cdot \ldots \cdot \Lang{\tau_n}
+\\
+ \konst{Array}\; \tau_1 \; \mathit{exp}
+      \Rightarrow  \Lang{\tau_1}^{\konst{evalExp}\;\theta\;\mathit{exp}}
+\\
+ \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n) \Rightarrow \\
+  \hspace*{5mm}
+ \left\{
+ \begin{array}{ll}
+    \Lang{\tau_i} &  \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp}_i = \konst{true} \\
+                  & \mathrm{and\ no\ other}\ \mathit{bexp}_j\ \mathrm{evaluates\ to}\ \konst{true}  \\
+    \emptyset & \mathrm{otherwise}
+ \end{array}
+ \right.
+ \\
+\end{array}
+ \right.
+%\end{array}
+\]
+\end{definition}
+
+\section{Algorithms}
+
+We are working on the following algorithms over contiguity types.
+
+\begin{itemize}
+
+\item Parsing (decoding). Break a sequence of bytes up and put the
+  pieces into a parse tree, or some useful data structure.
+
+\item Filtering (does a sequence of bytes meet the specification of a
+  contiguity type). This is an instance of the language recognition
+  problem: given a formal specification of a language, decide if a
+  string is in the language. More powerful filters enforce that certain
+  fields of a message, when interpreted, meet specific semantic
+  properties.
+
+\item Serialization (encoding). Given a data structure, write a compact
+  binary version to a message.
+
+\item Fuzzing (test generation). Given a contiguity type, generate
+  byte sequences that do (or do not) meet its specification and feed
+  the sequences to implementations in order to observe their behaviour.
+
+\end{itemize}
+
+\subsection{Parsing, decoding, and matching}
+
+Let us recall the distinction between \emph{parsing}, which discovers
+structure (parse trees), and \emph{matching}, which is given structure
+and calculates assignments (substitutions).\footnote{Thus the notion
+  of matching discussed here is in the tradition of term rewriting
+  \cite{nipkow-trs-book}, the main difference being that our
+  substitutions are applied to $\mathit{lvar}$s rather than
+  variables.} Giving some types makes the difference clear:
+
+\begin{align}
+  \konst{parse} &: \mathit{grammar} \to \konst{string} \to \mathit{parse tree} \\
+  \konst{match} &: \mathit{AST} \to \konst{string} \to \mathit{assignments}
+\end{align}
+
+The central algorithm for continuity types is a matcher: given a
+contiguity type $\tau$ and a string $s$, the matcher will either fail,
+or succeed with an assignment $\theta : \mathit{lval} \mapsto
+\konst{string}$ mapping each L-value in $\tau$ to its corresponding
+slice of $s$.
+
+\begin{definition}[Matching algorithm]
+
+The matching algorithm operates over a triple $(\mathit{worklist},
+\mathit{string}, \theta)$ where $\mathit{worklist}$ is a stack used to
+linearize the input contiguity type $\tau$, $\mathit{string}$
+represents the remainder of the input string, and $\theta$ is the
+assignment being built up.
+
+\[
+\begin{array}{l}
+\konst{matchFn}\; (\mathit{worklist}, \mathit{string}, \theta) = \\
+\end{array}
+\]
+
+\end{definition}
+
+The correctness statement for the matcher is similar to that found for
+matching in term rewriting.
+
+\begin{theorem}[Matcher correctness]
+
+\[
+  \forall \tau\;s.\; \konst{match}\; \tau \; s = (\theta, s') \imp \theta(\tau) \cdot s' = s
+\]
+
+\noindent\textit{Proof}. In progress
+
+\end{theorem}
+
+A matcher with this property will break up the input string in
+accordance with the specification; it also generates a sequence of
+assignments that, when executed, will populate a data structure with
+the specified data in the specified places. Therefore it is not really
+necessary to generate parse trees to decode: one merely needs a data
+structure to write data into. The correctness property will ensure
+that \emph{all} fields are written, and with the specified data. The
+assignments can be incrementally evaluated as the decoder runs, or can
+be stored and applied when the decoder terminates.\footnote{Beware: in
+  the incremental approach, if the decoder fails at some point, the
+  result will be a partly filled data structure.}
+
+\begin{example}
+\end{example}
+
+
+\section{Filtering}
+
+The building blocks for expressing simple filters are already in
+place. The skeleton of the matcher provides the needed traversal of
+the string and the accumulation of contextual information in the form
+of the map $\theta$. The $\mathit{bexp}$ provides an (impoverished but
+adequately illustrative) assertion language over R-values. One
+particularly simple approach we are investigating is to add a new
+``assertion'' constructor to the definition of $\tau$:
+
+\[
+  \konst{Assert}(\mathit{bexp})
+\]
+
+\noindent For example, the following c-type (taking liberties with notation)
+
+\begin{verbatim}
+    { A : i32
+      B : Assert (-90 <= toInt(A) <= 90)
+    }
+\end{verbatim}
+
+\noindent supplies field \verb+B+, which is processed after field
+\verb+A+, and scrutinizes the value of field \verb+A+ at
+match time. When it comes to code-generation \verb+Assertion+ fields
+are ignored, or can be added as assertion checks in the generated code.
+
+Assertion fields can be immediately useful in checking basic
+structural well-formedness properties, as well as user-specified
+well-formedness. For example, c-types support enumerations. An
+\emph{enumeration} declaration introduces a new base contiguity type,
+and also adds the specified elements to the map associating constant
+names to numbers. It can (and usually will) happen that the space
+allowed to represent enumerations will be able to represent all the
+elements in the enumeration, and more. Thus, an enumeration field can
+hold a byte pattern that does not correspond to any element in the
+enumeration, leading to malformed messages.
+
+\begin{example}
+ For example, suppose that enumerations are allowed to have up to 256
+ elements, allowing any enumerated element to fit in one byte. The following
+ enumeration (taken from the uxAS project \cite{}) is declared:
+\begin{verbatim}
+  NavigationMode
+    = Waypoint | Loiter | FlightDirector
+    | TargetTrack | FollowLeader | LostComm
+\end{verbatim}
+
+A field expecting a \verb+NavigationMode+ element will be 1 byte wide,
+and thus there are 250 byte patterns that should not be allowed in the field. Thus, the c-type
+
+\begin{verbatim}
+  { A : NavigationMode }
+\end{verbatim}
+
+should be replaced by
+
+\begin{verbatim}
+  { A : NavigationMode
+    A-range : Assert (A <= 5)
+  }
+\end{verbatim}
+
+\noindent in order to specify an on-the-fly check.
+
+\end{example}
+
+Another example from uxAS, in which the length of every array element
+is held in a length field 2 bytes in length. Thus the following
+c-type, in the absence of any constraint, supports arrays of length up
+to 65535 elements, which the receiver system may well not be prepared
+to accept.
+
+\begin{verbatim}
+  { len : u16
+    elts : i32 [len] }
+\end{verbatim}
+
+This problem is remedied by the following enhanced c-type:
+
+\begin{verbatim}
+  { len : u16
+    len-range : Assert (len <= 8)
+    elts : i32 [len] }
+\end{verbatim}
+
+\noindent Note that the expected array length should be specified
+before the array itself, otherwise the allocation atttempt will be
+made before the check.
+
+\begin{itemize}
+
+\item The assertion language will have to be beefed up in order to be
+  useful, and should also be extensible as well. In the context of
+  CASE, the AADL/AGREE/SPLAT toolchain does provide this, for a
+  limited class of types.
+
+\item Assertions on arrays (how best to specify universal and
+  existential predicates on arrays.)
+
+\item Choice as to whether processing should fail as soon as one
+  assertion fails vs. going all the way through and keeping track of
+  all the failures for a final report.
+
+\end{itemize}
+
+\section{Extensions and future work}
+
+Implemented extensions:
+
+\begin{itemize}
+\item Enums
+\item Raw chunks
+\item Guest scanners
+\item Non-copying versions; changes to semantics; there is possibility
+  of quite fast implementations when no L-values referenced anywhere
+  in contig type.
+\end{itemize}
+
+\noindent The following are current and future work.
+
+\begin{itemize}
+\item bitfields (pure) and mixtures of bits/bytes
+\item Add Kleene Star: repeatedly get elements until failure.
+\item Currently, we are left-centric: only fields to the left of us in
+  the input can determine what happens next. However, certain formats
+  (\eg, IPv4) refer ahead.
+
+\item Consider the following schema for an \emph{optional} contiguity type:
+
+\begin{verbatim}
+  Union { (bexp, {})
+          (not(bexp), c)
+   }
+\end{verbatim}
+
+In case $\mathit{bexp}$ evaluates to \konst{true}, no portion of the
+string is consumed; otherwise, $c$ is processed. Having zero-size
+contiguity types causes problems with arrays. For example
+
+\begin{verbatim}
+  {A: Union { (bexp, {}),
+             (not(bexp), c) }
+   B : A [3]
+\end{verbatim}
+
+\end{itemize}
+
+
+\appendix
+
+\section{Examples}
+
+Following are some longer examples of contiguity types.
+
+\begin{enumerate}
+
+\item 802-11 MAC header. The format depends on an enumerated type
+
+\begin{verbatim}
+ Enum Frame = [("Management",0),
+               ("Control",   1),
+               ("Data",      2),
+               ("Reserved",  3)
+              ]
+\end{verbatim}
+\noindent The actual MAC header is in terms of bits while our current implementation
+is for bytes. (Requires very little to change.) Also, we use the $\konst{Raw}(n)$
+construct to break off a chunk of size $n$.
+\begin{verbatim}
+   {protocol  : Raw(2)
+    type      : Frame
+    subType   : Raw(4)
+    toDS      : Raw(1)
+    fromDS    : Raw(1)
+    moreFrag  : Raw(1)
+    retry     : Raw(1)
+    powerMgmt : Raw(1)
+    moreData  : Raw(1)
+    wep       : Raw(1)
+    order     : Raw(1)
+    duration  : Raw(16)
+    tails     : Union {
+     (type = Frame'Data)
+          --> {address1   : Raw(48)
+               address2   : Raw(48)
+               address3   : Raw(48)
+               fragNumber : Raw(4)
+               seqNumber  : Raw(12)
+               address4   : Raw(48)
+              }
+     (type = Frame'Control and subType = 11)
+          --> {receiver    : Raw(48)
+               transmitter : Raw(48)
+              }
+     (type = Frame'Control and subType = 12)
+          --> {receiver : Raw(48)
+              }
+     }
+    }
+\end{verbatim}
+
+\item uxAS AirVehicleState
+\begin{verbatim}
+AirVehicleState =
+   {EntityState   : EntityState
+    Airspeed      : Float
+    VerticalSpeed : Float
+    WindSpeed     : Float
+    WindDirection : Float
+   }
+\end{verbatim}
+
+\noindent where
+\begin{verbatim}
+EntityState =
+   {ID : i64
+    u : Float
+    v : Float
+    w : Float
+    udot : Float
+    vdot : Float
+    wdot : Float
+    Heading : Float
+    Pitch : Float
+    Roll : Float
+    p : Float
+    q : Float
+    r : Float
+    Course : Float
+    Groundspeed : Float
+    Location :
+      {Latitude : Double
+       Longitude : Double
+       Altitude : Float
+       AltitudeType : AltitudeType
+      }
+    EnergyAvailable : Float
+    ActualEnergyRate : Float
+    PayloadStateListLen : u16
+    PayloadStateList :
+     {PayloadID : i64
+      ParametersLen : u16
+      Parameters : KeyValuePair [ParametersLen]
+      } [PayloadStateListLen]
+    CurrentWaypoint : i64
+    CurrentCommand : i64
+    Mode : NavigationMode
+    AssociatedTasksLen : u16
+    AssociatedTasks : i64 [AssociatedTasksLen]
+    Time : i64
+    InfoLen : u16
+    Info : KeyValuePair [InfoLen]
+    }
+\end{verbatim}
+
+\noindent and (among many other things)
+\begin{verbatim}
+String = {len  : u16
+          elts : Char [len]
+         }
+
+KeyValuePair =
+   {key   : String
+    value : String
+   }
+\end{verbatim}
+
+\end{enumerate}
+
+
+
+%% Bibliography
+\bibliographystyle{plain}
+\bibliography{contig}
+
+\end{document}
