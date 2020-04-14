@@ -21,6 +21,7 @@
 \newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
 \newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
 \newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
+\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
 \newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
 
 % Latex trickery for infix div operator, from stackexchange
@@ -43,8 +44,6 @@
 
 \begin{document}
 
-
-% More abbreviations used by Johannes
 
 %% Title information
 \title{Specifying Message Formats with \\ Contiguity Types}
@@ -123,19 +122,19 @@ basic notion.
 \section {Contiguity Types}
 
 The characteristic property of a message is \emph{contiguity}: all the
-elements of the message are laid out side-by-side. Our assumption is
-that a message is the \emph{result} of a map from structured data and
-we will rely on a basic collection of programming language types to
-capture that structure. We start with common base types (booleans,
-characters, signed and unsigned integers, \etc) and form compound
-structures with records, arrays, and unions.
+elements of the message are laid out side-by-side in a byte array (or
+string). Our assumption is that a message is the \emph{result} of a
+map from structured data and we will rely on a basic collection of
+programming language types to capture that structure. We start with
+common base types (booleans, characters, signed and unsigned integers,
+\etc) and form compound structures with records, arrays, and unions.
 
 \begin{figure}
 \[
 \begin{array}{rcl}
  \mathit{base} & = & \konst{bool} \mid \konst{char} \mid \konst{u8} \mid
  \konst{u16} \mid \konst{u32} \mid \konst{u64}  \mid \konst{i16} \mid
- \konst{i32} \mid \konst{i64} \mid \cdots \\
+ \konst{i32} \mid \konst{i64} \mid \konst{float} \mid \konst{double} \\
  \tau & = & \mathit{base} \\
       & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
       & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
@@ -172,7 +171,7 @@ getting into formal details, we discuss a few examples.
 
 We will use familiar notation: records are lists of $\mathit{name} :
 \tau$ elements enclosed by braces while an array field
-$\konst{Array}\;c\;\mathit{dim}$ is written $c [\mathit{dim}]$.\footnote{ Our
+$\konst{Array}\;c\;\mathit{dim}$ is written $c [\mathit{dim}]$.\footnote{Our
 current toolset for c-types supports the syntax on output but we have
 yet to implement a parser.}
 
@@ -360,23 +359,23 @@ occurring in $\tau$.
 
 \[
 % \begin{array}{l}
-\Lang{\tau}_{\theta} =
+\LangTheta{\tau} =
 \mathtt{case}\; \tau\
 % \hspace*{3mm}
  \left\{
  \begin{array}{l}
  \mathit{base} \Rightarrow \set{s \mid \konst{len}(s) = \konst{width}(base)} \\
  \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n)
-      \Rightarrow \Lang{\tau_1} \cdot \ldots \cdot \Lang{\tau_n}
+      \Rightarrow \LangTheta{\tau_1} \cdot \ldots \cdot \LangTheta{\tau_n}
 \\
  \konst{Array}\; \tau_1 \; \mathit{exp}
-      \Rightarrow  \Lang{\tau_1}^{\konst{evalExp}\;\theta\;\mathit{exp}}
+      \Rightarrow  \LangTheta{\tau_1}^{\konst{evalExp}\;\theta\;\mathit{exp}}
 \\
  \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n) \Rightarrow \\
   \hspace*{5mm}
  \left\{
  \begin{array}{ll}
-    \Lang{\tau_i} &  \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp}_i = \konst{true} \\
+    \LangTheta{\tau_i} &  \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp}_i = \konst{true} \\
                   & \mathrm{and\ no\ other}\ \mathit{bexp}_j\ \mathrm{evaluates\ to}\ \konst{true}  \\
     \emptyset & \mathrm{otherwise}
  \end{array}
@@ -399,15 +398,16 @@ type. The record associated with boolean expression $b$ has no fields.
 \end{verbatim}
 
 In case $\mathit{b}$ evaluates to \konst{true}, no portion of the
-string is consumed; otherwise, $c$ is processed. How does this work
-with arrays? For example the following c-type
+string is consumed; otherwise, $c$ is processed. It is instructive to
+consider how this type works with arrays. For example, the following
+c-type
 
 \begin{verbatim}
   (Union { (b, {}), (not(b), i32) }) [3]
 \end{verbatim}
 
-is an array that has three elements, all of which are either of
-size zero, or size four (bytes).
+is an array that has three elements, all of which are either of size
+zero or of size four bytes.
 
 \end{example}
 
@@ -518,7 +518,7 @@ We examine the cases in turn:
 
 \item The first element of the worklist is a union. The boolean guards
   are evaluated; if exactly one of them, $b_i$, evaluates to \konst{true}, the
-  corresponding $\tau_i$ is pushed on to the stack.
+  corresponding $\tau_i$ is pushed on to the stack. Otherwise, fail.
 
 \begin{align*}
 ((\konst{Union}\; (b_1,\tau_1) \cdots (b_n,\tau_n), \lval)::t, \mathit{str}, \theta)
@@ -541,32 +541,30 @@ initial assignment has no bindings.
 
 \end{definition}
 
-The correctness statement for the matcher is similar to that found for
-matching in term rewriting.
+The correctness statement for the matcher is similar to those found in
+the term rewriting literature.
 
 \begin{theorem}[Matcher correctness]
-
-The following statement is basically a standard formulation of matcher
-correctness adapted to c-types:
 
 \[
   \konst{match}\; \mathit{state}_0 = \konst{SOME}(\theta, s)
   \imp \theta(\tau) \cdot s = \mathit{str}_0
 \]
 
-\noindent We also want to provide a link to $\Lang{\tau}$, and this is formalized as
+\noindent We also want to provide a connection to $\LangTheta{\tau}$,
+and this is formalized as
 
 \[
   \mathit{str}_0 = s_1 s_2 \land \konst{match}\; \mathit{state}_0 =
-  \konst{SOME}(\theta, s_2) \imp s_1 \in \Lang{\tau}_{\theta}
+  \konst{SOME}(\theta, s_2) \imp s_1 \in \LangTheta{\tau}
 \]
 
 In other words, a successful match provides a $\theta$ adequate for
 evaluating expressions, and the matched string is indeed in the
 language of $\tau$. A theorem going in the other direction, namely,
-that every string in $\Lang{\tau}_{\theta}$ will be successfully
+that every string in $\LangTheta{\tau}$ will be successfully
 matched, is also desirable, but requires some thought as to the
-$\theta$ that admit strings into $\Lang{\tau}_{\theta}$.
+$\theta$ that admit strings into $\LangTheta{\tau}$.
 
 \end{theorem}
 
@@ -678,8 +676,8 @@ on array sizes.
 In uxAS messages the length of every array element is held in a
 separate \emph{length} field 2 bytes in size. Thus the following
 c-type, in the absence of any further constraint, supports arrays of
-length up to 65536 elements, which the receiver system may not be
-prepared to accept.
+length up to 65536 elements, which the receiver system may not have
+adequate resources to accept.
 
 \begin{verbatim}
   { len : u16
@@ -702,7 +700,8 @@ made before the check.
 \end{example}
 
 
-\noindent The following work needs to be done to implement filters properly.
+\noindent The following work remains to be done to implement filters
+properly.
 
 \begin{itemize}
 
@@ -713,7 +712,7 @@ made before the check.
   but there is work to do in order to port the $\tau$ type and the
   associated algorithms to that context. In particular, $\mathit{exp}$
   only features one kind of numbers, but well-formedness
-  specifications will require the wide range of signed and unsigned
+  specifications will require a wide range of signed and unsigned
   integers, plus floating point.
 
 \item Assertions on arrays require some thought as how best to specify
@@ -728,29 +727,126 @@ made before the check.
 
 \section{Extensions and future work}
 
-The following are already implemented extensions:
+Various extensions have been easy to add to the contiguity type
+framework:
 
-\begin{itemize}
-\item Enums
-\item Raw chunks
-\item Guest scanners
-\item Non-copying versions; changes to semantics; there is possibility
-  of quite fast implementations when no L-values referenced anywhere
-  in contig type.
-\end{itemize}
+\begin{description}
 
-\noindent The following are current and future work.
+\item [Enumerations] These have been already mentioned. An enumeration
+  is a base type, thus having a fixed width (for us, currently, one
+  byte). Each element of the enumeration has a distinct numerical
+  value, so the elements are added to the map from constant names to values.
 
-\begin{itemize}
-\item bitfields (pure) and mixtures of bits/bytes
-\item automatically analyzing guards for unions for satisfiability and disjointness.
-\item Add Kleene Star: repeatedly get elements until failure.
-\item Currently, we are left-centric: only fields to the left of the
-  current input position can determine what happens next. However,
-  certain formats (\eg, IPv4) refer ahead.
+\item [Raw blocks] A raw chunk of a string (byte array) of a size that
+  can depend on the values of earlier fields is easy to specify:
+  \[ \konst{Raw}\; \mathit{exp} \]
+For example, a large \konst{Array} form can lead to a large number of
+L-values being stored in $\theta$; if none are ever accessed later, it
+can be preferable to simply declare a \konst{Raw} block. Thus a 2D
+array could be blocked out in the following manner:
 
-\end{itemize}
+\begin{verbatim}
+  { rows : i32
+    cols : i32
+    block : Raw (rows * cols)
+  }
+\end{verbatim}
 
+\item [Guest scanners] \konst{Array} provides a sort of \emph{bounded
+  iteration} capability, but occasionally a message has fields
+  terminated by a sentinel value, and this requires a form of
+  \emph{unbounded iteration}. For example, C strings use the first
+  ASCII character (0) as the terminal character. Since there are many
+  other such conventions that may be used, it seemed useful to provide
+  a general ability to host scanning functions. This is accomplished via the following c-type:
+
+  \[ \konst{Scanner}\;
+     (\mathit{scanfn} : \konst{string} \to (\konst{string} \times \konst{string})\konst{option}) \]
+
+  When a custom scanner is encountered during the matching process,
+  the given scanner is invoked on the input and should either fail or
+  provide an $(s_1,s_2)$ pair representing a spliting of the
+  input. Then $s_1$ is added to $\theta$ at the current \lval, and
+  matching continues on $s_2$.
+
+\item [Non-copying implementations] In the discussion so far, we have
+  assumed that the input string is being broken up into substrings
+  that are placed into the \lval{} map $\theta$. However, very little
+  is changed if, instead of a substring, an \lval{} in $\theta$ maps
+  to a pair of indices $(\mathit{pos},\mathit{width})$ designating the
+  location of the substring. The result is a matcher that never copies
+  byte buffer data. This seems to promise being able to synthesize
+  efficient filters.
+
+  In making this representation change, there is a slight change to
+  the semantics. In the original, $\theta(\lval)$ yields a string
+  whereas in the non-copying version, $\theta(\lval)$ yields a pair of
+  indices, which means that the original string $\mathit{str}_0$ needs
+  to be included in applying the assignment.
+\end{description}
+
+\subsection{Current and future work}
+
+\begin{description}
+
+\item [Bits and bytes] Bitcodec \cite{} and other tools support packed
+  messages that need to be indexed at the bit-level. Indeed some tools
+  support mixtures of bits and bytes. Having a purely bit-centric
+  version of contiguity types seems straightforward: since everything
+  runs on a notion of \emph{width} the only change would be to the
+  function that breaks a chunk off the input string. However,
+  supporting a mixture of bits and bytes might be more difficult.
+
+\item [Expression analysis] There are many opportunities to
+  automatically analyze guards of union types for satisfiability and
+  disjointness. Also array indexes could be partial, in that an array
+  index inside an R-value might not be meaningful. For example, in
+
+\begin{verbatim}
+  { len : u16
+    A : u8 [len]
+    G : char [A[3]]
+  }
+\end{verbatim}
+
+the reference to \verb+A[3]+ in field \verb+G+ will be incorrect if
+\verb+len+ is less than 4. A well-placed \konst{Assert} would be
+useful, but static checks would be more helpful in avoiding the
+creation of such bad formats.
+
+\item [Left-centricity] Currently, matching is left-centric: only
+  fields to the left of the current input position are put in $\theta$
+  and can determine what happens next. However, certain formats (\eg,
+  IPv4) refer ahead. Since matching visits every field in a c-type, it
+  could be that fields can be topologically sorted on dependency so
+  that such anomalies can be handled. Such sorting should be able to
+  be justified semantically.
+
+\item [Integration into \konst{SPLAT} machinery] In order to generate
+  matchers and filters for various message types needed in CASE, we
+  need to formalize contiguity types and the matcher in HOL4, use the
+  CakeML translator to generate CakeML ASTs, then invoke the CakeML
+  compiler with suitable FFI calls needed to accomplish IO. Ultimately
+  what will be needed are implementations of basic maps from bytes
+  into the base types of CakeML. Simultaneously, we will have to
+  integrate c-types into the \konst{SPLAT} AST level, so that AADL and
+  AGREE specifications are mapped into the correct c-types.
+
+\end{description}
+
+\section{Conclusion}
+
+We have designed and implemented a specification language for message
+formats, based on formal languages and the venerable notion of L- and
+R-values from imperative programming. The notion of contiguity type
+seems to give a lot of expressive power, sufficient to tackle
+difficult idioms in self-describing formats. Contiguity types
+integrate common structuring mechanisms from programming languages,
+such as arrays and records, while keeping the foundation in sets of
+strings, which seems appropriate for message specifications. We have
+also been able to characterize message parsing as an instance of
+pattern matching, which provides clarity in formalizing algorithms and
+stating correctness.
 
 \appendix
 
@@ -760,18 +856,21 @@ Following are some longer examples of contiguity types.
 
 \begin{enumerate}
 
-\item 802-11 MAC header. The format depends on an enumerated type
+\item The following is an abstracted 802-11 MAC header format. The
+  format depends on an enumerated type
 
 \begin{verbatim}
- Enum Frame = [("Management",0),
-               ("Control",   1),
-               ("Data",      2),
-               ("Reserved",  3)
-              ]
+ Enum ("Frame",
+    [("Management",0),
+     ("Control",   1),
+     ("Data",      2),
+     ("Reserved",  3)
+     ])
 \end{verbatim}
-\noindent The actual MAC header is in terms of bits while our current implementation
-is for bytes. (Requires very little to change.) Also, we use the $\konst{Raw}(n)$
-construct to break off a chunk of size $n$.
+\noindent The actual MAC header is in terms of bits while our current
+implementation is for bytes. (Requires very little to change, as
+argued in the body of the paper.) We use the $\konst{Raw}$ construct.
+
 \begin{verbatim}
    {protocol  : Raw(2)
     type      : Frame
@@ -805,7 +904,12 @@ construct to break off a chunk of size $n$.
     }
 \end{verbatim}
 
-\item uxAS AirVehicleState
+\item uxAS AirVehicleState. Notable in this format is the
+  \verb+PayloadStateList+ field which is a variable-length array of
+  records. Each record has its own variable-length array of key-value
+  pairs, and the key and value of each such pair is a variable-length
+  string.
+
 \begin{verbatim}
 AirVehicleState =
    {EntityState   : EntityState
@@ -815,7 +919,6 @@ AirVehicleState =
     WindDirection : Float
    }
 \end{verbatim}
-
 \noindent where
 \begin{verbatim}
 EntityState =
@@ -859,7 +962,7 @@ EntityState =
     }
 \end{verbatim}
 
-\noindent and (among many other things)
+\noindent and
 \begin{verbatim}
 String = {len  : u16
           elts : Char [len]
@@ -869,6 +972,20 @@ KeyValuePair =
    {key   : String
     value : String
    }
+
+Enum ("AltitudeType",
+  [("AGL",0),
+   ("MSL",1)
+  ])
+
+Enum ("NavigationMode",
+  [("Waypoint",      0),
+   ("Loiter",        1),
+   ("FlightDirector",2),
+   ("TargetTrack",   3),
+   ("FollowLeader",  4),
+   ("LostComm",      5)
+  ])
 \end{verbatim}
 
 \end{enumerate}
