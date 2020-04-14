@@ -62,6 +62,11 @@ message generators (fuzzers). L-values and R-values provide valuable
 support in handling common self-describing message formats.
 \end{abstract}
 
+%% \section{Disclaimer}
+
+%% This paper describes work in progress and it is only provided for
+%% friends to give feedback on. It might have mistakes and is not for
+%% further distribution without my permission.
 
 \section{Introduction}\label{sec:intro}
 
@@ -120,10 +125,10 @@ basic notion.
 The characteristic property of a message is \emph{contiguity}: all the
 elements of the message are laid out side-by-side. Our assumption is
 that a message is the \emph{result} of a map from structured data and
-rely on a basic collection of programming language types to capture
-that structure. We start with common base types (booleans, characters,
-signed and unsigned integers, \etc) and form compound structures with
-records, arrays, and unions.
+we will rely on a basic collection of programming language types to
+capture that structure. We start with common base types (booleans,
+characters, signed and unsigned integers, \etc) and form compound
+structures with records, arrays, and unions.
 
 \begin{figure}
 \[
@@ -147,7 +152,7 @@ arithmetic expressions $\mathit{exp}$ and also $\mathit{bexp}$,
 boolean expressions built from $\mathit{exp}$. Now consider
 
 \[
- \konst{Array} \; \tau \; \mathit{exp}
+ \konst{Array} \; \tau \; \mathit{exp} \ .
 \]
 
 \noindent For this to specify a varying length array dependent on
@@ -156,21 +161,20 @@ able to refer to the \emph{values} of those fields. The challenge is
 just how to express the concept of ``other fields'', \ie, we need a
 notation to describe the \emph{location} in the message buffer where
 the value of a field can be accessed. Our core insight is that this is
-similar to the problem that programming language designers had in the
+similar to a problem that programming language designers had in the
 60s and 70s, resolved by the notions of \emph{L-value} and
 \emph{R-value}. The idea is originally due to Christopher Strachey in
 CPL and developed subsequently, for example by Dennis Ritchie in
-C.\footnote{https://www.bell-labs.com/usr/dmr/www/chist.html}
-
-\noindent Before getting into formal details, we discuss a few examples.
+C.\footnote{https://www.bell-labs.com/usr/dmr/www/chist.html} Before
+getting into formal details, we discuss a few examples.
 
 \subsection{Examples}
 
 We will use familiar notation: records are lists of $\mathit{name} :
 \tau$ elements enclosed by braces while an array field
-$\konst{Array}\;c\;\mathit{dim}$ is written $c [\mathit{dim}]$. Our
+$\konst{Array}\;c\;\mathit{dim}$ is written $c [\mathit{dim}]$.\footnote{ Our
 current toolset for c-types supports the syntax on output but we have
-yet to implement a parser.
+yet to implement a parser.}
 
 \begin{enumerate}
 
@@ -186,12 +190,12 @@ yet to implement a parser.
 
 The \verb+A+ field is specified to be an unsigned int of width 8 bits,
 the \verb+B+ field is a record, the first element of which is a
-character array of size 13, and then second element of which is a 32
+character array of size 13, and the second element of which is a 32
 bit integer; finally the last field is specified to be a
 boolean.
 
 \item Variable-sized strings. The \verb+len+ field determines the
-  length of the \verb+elts+ field.
+ length of the \verb+elts+ field.
 
 \begin{verbatim}
   { len : u16
@@ -201,8 +205,9 @@ boolean.
 
 
 \item The following is shows how the \konst{Union} construct might be
-  used for multiple versions.  Versions less than 14 have 3 fields in
-  the message, while all others have 2.
+  used for multiple versions.  Messages with the value of field
+  \verb+versionID+ being less than 14 have three fields in the message,
+  while all others have two.
 
 \begin{verbatim}
   {versionID : u8
@@ -230,7 +235,7 @@ boolean.
 
 \end{enumerate}
 
-\subsection{Expressions}
+\subsection{Expressions, L-values, and R-values}
 
 In programming languages, an \emph{L-value} is an expression that can
 occur on the left-hand side of an assignment statement. Similarly,
@@ -281,7 +286,7 @@ definitions of $\mathit{lval}$, $\mathit{exp}$ and $\mathit{bexp}$ are
 \end{figure}
 
 Given environments $\theta: \mathit{lval} \to \konst{string}$, binding
-lvals to strings, $\Delta : \konst{string} \to \mathbb{N}$, binding
+L-values to strings, $\Delta : \konst{string} \to \mathbb{N}$, binding
 constant names to numbers, and function
 $\konst{toN}:\konst{string}\to\mathbb{N}$, which interprets ASCII
 characters strings as binary-encoded numbers, expression evaluation
@@ -317,7 +322,11 @@ and boolean expression evaluation proceed conventionally:
 \end{array}
 \]
 
-\noindent\textbf{Remark}.
+%\noindent\textbf{Remark}.
+
+
+
+\subsection{Semantics}
 
 In spite of the structural similarity, a contiguity type is not a
 type: it is a formal language. A type is usually understood to
@@ -331,31 +340,27 @@ corresponding type constructs. Thus, contiguity types
 sit---conveniently---between the types in a programming language and
 the strings used to make messages.
 
-
-\subsection{Semantics}
-
-As mentioned, a contiguity type expresses a formal language. The
-semantics definition depends on a few basic notions familiar from
+The semantics definition depends on a few basic notions familiar from
 language theory: language concatenation, and iterated language
 concatenation.
 
-\begin{align}
+\begin{align*}
 L_1 \cdot L_2 &= \set{w_1 w_2 \mid w_1 \in L_1 \land w_2 \in  L_2} \\
 L^0 &= \varepsilon \\
 L^{n+1} &= L \cdot L^n
-\end{align}
+\end{align*}
 
 
 \begin{definition}[Semantics of contiguity types]
 
- In the following, we assume given a assignment $\theta$ adequate for
+ In the following, we assume given an assignment $\theta$ adequate for
 evaluating expressions, \ie, having bindings for every
 $\mathit{lval}$ in every $\mathit{exp}$ and $\mathit{bexp}$
 occurring in $\tau$.
 
 \[
 % \begin{array}{l}
-\Lang{\tau} =
+\Lang{\tau}_{\theta} =
 \mathtt{case}\; \tau\
 % \hspace*{3mm}
  \left\{
@@ -383,30 +388,53 @@ occurring in $\tau$.
 \]
 \end{definition}
 
+\begin{example}
+Consider the following schema for an \emph{optional} contiguity
+type. The record associated with boolean expression $b$ has no fields.
+
+\begin{verbatim}
+  Union { (b, {})
+          (not(b), c)
+   }
+\end{verbatim}
+
+In case $\mathit{b}$ evaluates to \konst{true}, no portion of the
+string is consumed; otherwise, $c$ is processed. How does this work
+with arrays? For example the following c-type
+
+\begin{verbatim}
+  (Union { (b, {}), (not(b), i32) }) [3]
+\end{verbatim}
+
+is an array that has three elements, all of which are either of
+size zero, or size four (bytes).
+
+\end{example}
+
 \section{Algorithms}
 
 We are working on the following algorithms over contiguity types.
 
-\begin{itemize}
+\begin{description}
 
-\item Parsing (decoding). Break a sequence of bytes up and put the
+\item [Parsing] (Also, decoding.) Breaks a sequence of bytes up and puts the
   pieces into a parse tree, or some useful data structure.
 
-\item Filtering (does a sequence of bytes meet the specification of a
-  contiguity type). This is an instance of the language recognition
-  problem: given a formal specification of a language, decide if a
-  string is in the language. More powerful filters enforce that certain
-  fields of a message, when interpreted, meet specific semantic
-  properties.
+\item [Filtering] Computes an answer to the question: ``does a
+  sequence of bytes meet the specification of a given contiguity
+  type''. This is an instance of the language recognition problem:
+  given a formal specification of a language, decide if a string is in
+  the language. More powerful filters enforce that certain fields of a
+  message, when interpreted, meet specific semantic properties.
 
-\item Serialization (encoding). Given a data structure, write a compact
+\item [Serialization] (Also, encoding.) Given a data structure, write a compact
   binary version to a message.
 
-\item Fuzzing (test generation). Given a contiguity type, generate
+\item [Fuzzing] (Also, test generation.) Given a contiguity type, generate
   byte sequences that do (or do not) meet its specification and feed
   the sequences to implementations in order to observe their behaviour.
 
-\end{itemize}
+\end{description}
 
 \subsection{Parsing, decoding, and matching}
 
@@ -418,10 +446,10 @@ and calculates assignments (substitutions).\footnote{Thus the notion
   substitutions are applied to $\mathit{lvar}$s rather than
   variables.} Giving some types makes the difference clear:
 
-\begin{align}
+\begin{align*}
   \konst{parse} &: \mathit{grammar} \to \konst{string} \to \mathit{parse tree} \\
   \konst{match} &: \mathit{AST} \to \konst{string} \to \mathit{assignments}
-\end{align}
+\end{align*}
 
 The central algorithm for continuity types is a matcher: given a
 contiguity type $\tau$ and a string $s$, the matcher will either fail,
@@ -432,16 +460,84 @@ slice of $s$.
 \begin{definition}[Matching algorithm]
 
 The matching algorithm operates over a triple $(\mathit{worklist},
-\mathit{string}, \theta)$ where $\mathit{worklist}$ is a stack used to
-linearize the input contiguity type $\tau$, $\mathit{string}$
+\mathit{str}, \theta)$ where $\mathit{worklist}$ is a stack used to
+linearize the input contiguity type $\tau$, $\mathit{str}$
 represents the remainder of the input string, and $\theta$ is the
-assignment being built up.
+assignment being built up. Each element of the $\mathit{worklist}$ is
+in fact a $(\tau,\mathit{lval})$ pair, where $\tau$ is a c-type, and
+$\mathit{lval}$ is the path growing down from the root to $\tau$. We
+will use the notation $(\lval \mapsto \mathit{slice}) \bullet \theta$
+to mean the addition of binding $\lval \mapsto \mathit{slice}$ to
+assignment $\theta$.
+
+We examine the cases in turn:
+
+\begin{enumerate}
+
+\item The worklist is empty; the match has been successful.
+
+\begin{align*}
+([], \mathit{str}, \theta) &\Rightarrow \konst{SOME}(\mathit{str}, \theta)
+\end{align*}
+
+
+\item The first element of the worklist is a base type. Break the
+  prescribed number of bytes off the front of the string, giving
+  $\mathit{str} = (\mathit{slice},\mathit{rst})$ and insert the
+  binding into $\theta$ before recursing. If the string is shorter
+  than the requested number of bytes, fail.
+
+\begin{align*}
+((\konst{Basic}\;a, \lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  (t,\mathit{rst}, (\lval \mapsto \mathit{slice}) \bullet \theta)
+\end{align*}
+
+\item The first element of the worklist is $\mathit{recd} =
+  \konst{Recd}\;(f_1 : \tau_1) \ldots (f_n : \tau_n)$. Before
+  recursing, the fields are pushed onto the stack, extending the path
+  to each field element:
+
+\begin{align*}
+((\mathit{recd}, \lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  ([(\tau_1,\lval.f_1), \cdots , (\tau_n,\lval.f_n)] @ t,\mathit{str}, \theta)
+\end{align*}
+
+
+\item The first element of the worklist is an array. The dimension
+  expression is evaluated to get the width $d$, then $d$ copies are
+  pushed onto the stack, where each path is extended with the array
+  index.
+
+\begin{align*}
+((\konst{Array}\; \tau \; \mathit{exp},\lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  ([(\tau,\lval[0]), \cdots , (\tau,\lval[d-1])] @ t,\mathit{str}, \theta)
+\end{align*}
+
+\item The first element of the worklist is a union. The boolean guards
+  are evaluated; if exactly one of them, $b_i$, evaluates to \konst{true}, the
+  corresponding $\tau_i$ is pushed on to the stack.
+
+\begin{align*}
+((\konst{Union}\; (b_1,\tau_1) \cdots (b_n,\tau_n), \lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  ((\tau_i,\lval)::t,\mathit{str}, \theta)
+\end{align*}
+
+
+\end{enumerate}
+
+\noindent The matcher function, \konst{match} begins with an initial state
 
 \[
-\begin{array}{l}
-\konst{matchFn}\; (\mathit{worklist}, \mathit{string}, \theta) = \\
-\end{array}
+  \mathit{state}_0 = ([(\tau,\mathit{root})],\mathit{str}_0,\emptyset)
 \]
+
+where the initial path is a default \lval{} variable named
+$\mathit{root}$, the initial string is $\mathit{str}_0$, and the
+initial assignment has no bindings.
 
 \end{definition}
 
@@ -450,15 +546,31 @@ matching in term rewriting.
 
 \begin{theorem}[Matcher correctness]
 
+The following statement is basically a standard formulation of matcher
+correctness adapted to c-types:
+
 \[
-  \forall \tau\;s.\; \konst{match}\; \tau \; s = (\theta, s') \imp \theta(\tau) \cdot s' = s
+  \konst{match}\; \mathit{state}_0 = \konst{SOME}(\theta, s)
+  \imp \theta(\tau) \cdot s = \mathit{str}_0
 \]
 
-\noindent\textit{Proof}. In progress
+\noindent We also want to provide a link to $\Lang{\tau}$, and this is formalized as
+
+\[
+  \mathit{str}_0 = s_1 s_2 \land \konst{match}\; \mathit{state}_0 =
+  \konst{SOME}(\theta, s_2) \imp s_1 \in \Lang{\tau}_{\theta}
+\]
+
+In other words, a successful match provides a $\theta$ adequate for
+evaluating expressions, and the matched string is indeed in the
+language of $\tau$. A theorem going in the other direction, namely,
+that every string in $\Lang{\tau}_{\theta}$ will be successfully
+matched, is also desirable, but requires some thought as to the
+$\theta$ that admit strings into $\Lang{\tau}_{\theta}$.
 
 \end{theorem}
 
-A matcher with this property will break up the input string in
+A matcher with the above properties will break up the input string in
 accordance with the specification; it also generates a sequence of
 assignments that, when executed, will populate a data structure with
 the specified data in the specified places. Therefore it is not really
@@ -470,25 +582,23 @@ be stored and applied when the decoder terminates.\footnote{Beware: in
   the incremental approach, if the decoder fails at some point, the
   result will be a partly filled data structure.}
 
-\begin{example}
-\end{example}
+%\begin{example}
+%\end{example}
 
 
 \section{Filtering}
 
-The building blocks for expressing simple filters are already in
-place. The skeleton of the matcher provides the needed traversal of
-the string and the accumulation of contextual information in the form
-of the map $\theta$. The $\mathit{bexp}$ provides an (impoverished but
-adequately illustrative) assertion language over R-values. One
-particularly simple approach we are investigating is to add a new
+The building blocks for expressing message filters are already in
+place. A simple approach we are investigating is to add a new
 ``assertion'' constructor to the definition of $\tau$:
 
 \[
   \konst{Assert}(\mathit{bexp})
 \]
 
-\noindent For example, the following c-type (taking liberties with notation)
+The basic $\mathit{bexp}$ type defined earlier provides a minimal
+assertion language over R-values. For example, the following c-type
+(taking liberties with notation)
 
 \begin{verbatim}
     { A : i32
@@ -496,26 +606,42 @@ particularly simple approach we are investigating is to add a new
     }
 \end{verbatim}
 
-\noindent supplies field \verb+B+, which is processed after field
-\verb+A+, and scrutinizes the value of field \verb+A+ at
-match time. When it comes to code-generation \verb+Assertion+ fields
-are ignored, or can be added as assertion checks in the generated code.
+\noindent includes field \verb+B+, which is processed after field
+\verb+A+, and checks that the value of field \verb+A+ lies in the
+desired range.
 
-Assertion fields can be immediately useful in checking basic
-structural well-formedness properties, as well as user-specified
-well-formedness. For example, c-types support enumerations. An
-\emph{enumeration} declaration introduces a new base contiguity type,
-and also adds the specified elements to the map associating constant
-names to numbers. It can (and usually will) happen that the space
-allowed to represent enumerations will be able to represent all the
-elements in the enumeration, and more. Thus, an enumeration field can
-hold a byte pattern that does not correspond to any element in the
-enumeration, leading to malformed messages.
+Almost no change to the matcher function is needed to support
+\konst{Assert} forms: the matcher's traversal of c-type and string
+arguments is unchanged, and the accumulation of contextual information
+in the form of the map $\theta$ also is unchanged. Each \konst{Assert}
+expression is evaluated when it is encountered, and the resulting
+truth value is propagated accordingly.
+
+
+%% \konst{Assert}
+%% expressions can also relate multiple fields scattered throughout a
+%% message. Note that the predicate that an \konst{Assert} embodies is
+%% over slices in a string, so that
+
+%When it comes
+%to code-generation \konst{Assert} fields are ignored, or can be added
+%as assertion checks in the generated code.
+
+We note that successful match of a message against a c-type is a basic
+(syntactic) well-formedness check. \konst{Assert} fields provide a
+basis for checking user-specified well-formedness properties on
+messages. It also is worth noting that certain features of c-types
+require checks no matter what kind of user-specified properties are
+required: both enumerations and arrays have side-conditions that
+\konst{Assert} can enforce.
 
 \begin{example}
- For example, suppose that enumerations are allowed to have up to 256
- elements, allowing any enumerated element to fit in one byte. The following
- enumeration (taken from the uxAS project \cite{}) is declared:
+C-types support enumerations. An \emph{enumeration} declaration
+introduces a new base contiguity type, and also adds the specified
+elements to the $\Delta$ map associating constant names to numbers.
+Suppose that enumerations are allowed to have up to 256 elements,
+allowing any enumerated element to fit in one byte. The following
+enumeration is taken from the uxAS project \cite{}:
 \begin{verbatim}
   NavigationMode
     = Waypoint | Loiter | FlightDirector
@@ -523,7 +649,8 @@ enumeration, leading to malformed messages.
 \end{verbatim}
 
 A field expecting a \verb+NavigationMode+ element will be 1 byte wide,
-and thus there are 250 byte patterns that should not be allowed in the field. Thus, the c-type
+and thus there are 250 byte patterns that should not be allowed in the
+field. Thus, the c-type
 
 \begin{verbatim}
   { A : NavigationMode }
@@ -537,22 +664,31 @@ should be replaced by
   }
 \end{verbatim}
 
-\noindent in order to specify an on-the-fly check.
+\noindent in order to specify an on-the-fly check. A pass automatically
+inserting such checks into a c-type would be straightforward to
+implement.
 
 \end{example}
 
-Another example from uxAS, in which the length of every array element
-is held in a length field 2 bytes in length. Thus the following
-c-type, in the absence of any constraint, supports arrays of length up
-to 65535 elements, which the receiver system may well not be prepared
-to accept.
+\noindent \konst{Assert} expressions can also help with specifications
+on array sizes.
+
+\begin{example}
+
+In uxAS messages the length of every array element is held in a
+separate \emph{length} field 2 bytes in size. Thus the following
+c-type, in the absence of any further constraint, supports arrays of
+length up to 65536 elements, which the receiver system may not be
+prepared to accept.
 
 \begin{verbatim}
   { len : u16
     elts : i32 [len] }
 \end{verbatim}
 
-This problem is remedied by the following enhanced c-type:
+\noindent In the meta-data for such messages, there can be information
+about the maximum allowed size, usually a fairly small number. This
+can be directly expressed inside the c-type with an \konst{Assert}:
 
 \begin{verbatim}
   { len : u16
@@ -561,28 +697,38 @@ This problem is remedied by the following enhanced c-type:
 \end{verbatim}
 
 \noindent Note that the expected array length should be specified
-before the array itself, otherwise the allocation atttempt will be
+before the array itself, otherwise the allocation attempt might be
 made before the check.
+\end{example}
+
+
+\noindent The following work needs to be done to implement filters properly.
 
 \begin{itemize}
 
-\item The assertion language will have to be beefed up in order to be
-  useful, and should also be extensible as well. In the context of
-  CASE, the AADL/AGREE/SPLAT toolchain does provide this, for a
-  limited class of types.
+\item The assertion language must be expressive in order to be useful,
+  and must be extensible with user-defined functions and
+  well-formedness assertions. In the context of the CASE project, the
+  AADL/AGREE/SPLAT toolchain does provide the needed expressiveness,
+  but there is work to do in order to port the $\tau$ type and the
+  associated algorithms to that context. In particular, $\mathit{exp}$
+  only features one kind of numbers, but well-formedness
+  specifications will require the wide range of signed and unsigned
+  integers, plus floating point.
 
-\item Assertions on arrays (how best to specify universal and
-  existential predicates on arrays.)
+\item Assertions on arrays require some thought as how best to specify
+  universal and existential predicates on arrays.
 
-\item Choice as to whether processing should fail as soon as one
-  assertion fails vs. going all the way through and keeping track of
-  all the failures for a final report.
+\item There is a choice as to whether processing should fail as soon
+  as one assertion fails vs. going all the way through and keeping
+  track of all the failures for a final report. This is very similar
+  to the issues surrounding parser error messages in compilers.
 
 \end{itemize}
 
 \section{Extensions and future work}
 
-Implemented extensions:
+The following are already implemented extensions:
 
 \begin{itemize}
 \item Enums
@@ -597,28 +743,11 @@ Implemented extensions:
 
 \begin{itemize}
 \item bitfields (pure) and mixtures of bits/bytes
+\item automatically analyzing guards for unions for satisfiability and disjointness.
 \item Add Kleene Star: repeatedly get elements until failure.
-\item Currently, we are left-centric: only fields to the left of us in
-  the input can determine what happens next. However, certain formats
-  (\eg, IPv4) refer ahead.
-
-\item Consider the following schema for an \emph{optional} contiguity type:
-
-\begin{verbatim}
-  Union { (bexp, {})
-          (not(bexp), c)
-   }
-\end{verbatim}
-
-In case $\mathit{bexp}$ evaluates to \konst{true}, no portion of the
-string is consumed; otherwise, $c$ is processed. Having zero-size
-contiguity types causes problems with arrays. For example
-
-\begin{verbatim}
-  {A: Union { (bexp, {}),
-             (not(bexp), c) }
-   B : A [3]
-\end{verbatim}
+\item Currently, we are left-centric: only fields to the left of the
+  current input position can determine what happens next. However,
+  certain formats (\eg, IPv4) refer ahead.
 
 \end{itemize}
 
