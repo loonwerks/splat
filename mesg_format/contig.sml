@@ -142,9 +142,7 @@ fun evalBexp (E as (Delta,lvalMap,valueFn)) bexp =
       (case Redblackmap.peek(lvalMap,lval)
          of SOME (Bool,s) =>
                let val bint = valueFn s
-               in if bint = 0 then false else
-                  if bint = 1 then true else
-                  raise ERR "evalBexp" "boolean field is not 0 or 1"
+               in if bint = 0 then false else true
                end
           | SOME (atom,_) =>
                raise ERR "evalBexp" "expected Bool location"
