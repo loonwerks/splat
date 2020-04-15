@@ -100,36 +100,7 @@ fun evalExp (E as (Delta,lvalMap,valueFn)) exp =
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Atomic formulas                                                           *)
-(*---------------------------------------------------------------------------*)
-
-datatype bexp
-  = boolLit of bool
-  | Bnot of bexp
-  | Bor  of bexp * bexp
-  | Band of bexp * bexp
-  | Beq  of exp * exp
-  | Blt  of exp * exp
-  | Bgtr of exp * exp
-  | Bleq of exp * exp
-  | Bgeq of exp * exp
-;
-
-fun evalBexp E bexp =
- case bexp
-  of boolLit b   => b
-   | Bnot b      => not (evalBexp E b)
-   | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
-   | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
-   | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
-   | Blt (e1,e2) => (evalExp E e1 < evalExp E e2)
-   | Bgtr(e1,e2) => (evalExp E e1 > evalExp E e2)
-   | Bleq(e1,e2) => (evalExp E e1 <= evalExp E e2)
-   | Bgeq(e1,e2) => (evalExp E e1 >= evalExp E e2)
-;
-
-(*---------------------------------------------------------------------------*)
-(* Contiguity types                                                          *)
+(* Leaves of contig types. Need to be defined before evalBexp.               *)
 (*---------------------------------------------------------------------------*)
 
 datatype atom
@@ -145,6 +116,52 @@ datatype atom
 
 val empty_lvalMap
   : (lval,atom * string) Redblackmap.dict = Redblackmap.mkDict lval_compare;
+
+
+(*---------------------------------------------------------------------------*)
+(* Atomic formulas                                                           *)
+(*---------------------------------------------------------------------------*)
+
+datatype bexp
+  = boolLit of bool
+  | BLoc of lval
+  | Bnot of bexp
+  | Bor  of bexp * bexp
+  | Band of bexp * bexp
+  | Beq  of exp * exp
+  | Blt  of exp * exp
+  | Bgtr of exp * exp
+  | Bleq of exp * exp
+  | Bgeq of exp * exp
+;
+
+fun evalBexp (E as (Delta,lvalMap,valueFn)) bexp =
+ case bexp
+  of boolLit b   => b
+   | BLoc lval   =>
+      (case Redblackmap.peek(lvalMap,lval)
+         of SOME (Bool,s) =>
+               let val bint = valueFn s
+               in if bint = 0 then false else
+                  if bint = 1 then true else
+                  raise ERR "evalBexp" "boolean field is not 0 or 1"
+               end
+          | SOME (atom,_) =>
+               raise ERR "evalBexp" "expected Bool location"
+          | NONE => raise ERR "evalBexp" "Lval binding failure")
+   | Bnot b      => not (evalBexp E b)
+   | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
+   | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
+   | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
+   | Blt (e1,e2) => (evalExp E e1 < evalExp E e2)
+   | Bgtr(e1,e2) => (evalExp E e1 > evalExp E e2)
+   | Bleq(e1,e2) => (evalExp E e1 <= evalExp E e2)
+   | Bgeq(e1,e2) => (evalExp E e1 >= evalExp E e2)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Contiguity types                                                          *)
+(*---------------------------------------------------------------------------*)
 
 datatype contig
   = Basic of atom
@@ -181,6 +198,7 @@ fun resolve_exp_lvals lvalMap path exp =
 fun resolve_bexp_lvals lvalMap path bexp =
  case bexp
   of boolLit _   => bexp
+   | BLoc lval   => BLoc(resolve_lvals lvalMap path lval)
    | Bnot b      => Bnot(resolve_bexp_lvals lvalMap path b)
    | Bor(b1,b2)  => Bor(resolve_bexp_lvals lvalMap path b1,resolve_bexp_lvals lvalMap path b2)
    | Band(b1,b2) => Band(resolve_bexp_lvals lvalMap path b1,resolve_bexp_lvals lvalMap path b2)
@@ -376,6 +394,7 @@ fun pp_bexp bexp =
  in
    case bexp
     of boolLit b => add_string (Bool.toString b)
+     | BLoc lval => pp_lval lval
      | Bnot b    => block CONSISTENT 0
                      [add_string"not", paren 0 0 "(" ")" [pp_bexp b]]
      | Bor(b1,b2)  => pp_binop "or" (pp_bexp b1) (pp_bexp b2)
@@ -422,9 +441,9 @@ fun pp_contig contig =
      | Array (c,e) => block CONSISTENT 1
              [pp_contig c, add_string " [", pp_exp e, add_string "]"]
      | Union choices =>
-        let fun pp_choice (bexp,c) = block CONSISTENT 2
+        let fun pp_choice (bexp,c) = block CONSISTENT 0
                  [add_string "(", pp_bexp bexp, add_string " -->",
-                  add_break(1,2), pp_contig c,add_string ")", NL]
+                  add_break(1,3), pp_contig c,add_string ")", NL]
         in
           block CONSISTENT 3
             ([add_string "Union {", NL] @ map pp_choice choices @ [add_string "}"])
@@ -559,7 +578,7 @@ fun matchFn E (state as (worklist,s,theta)) =
  in
  case worklist
    of [] => SOME (s,theta)
-   |  (Basic a,path)::t =>
+   |  (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
            of NONE => NONE
@@ -567,8 +586,8 @@ fun matchFn E (state as (worklist,s,theta)) =
               matchFn E (t,rst,
                          Redblackmap.insert(theta,path,(a,segment)))
        end
-   | (Declared name,path)::t => matchFn E ((assoc name Decls,path)::t,s,theta)
-   | (Raw exp,path)::t =>
+   | (path,Declared name)::t => matchFn E ((path,assoc name Decls)::t,s,theta)
+   | (path,Raw exp)::t =>
        let val exp' = resolve_exp_lvals theta path exp
            val width = evalExp (Consts,theta,valueFn) exp'
        in case tdrop width s
@@ -577,40 +596,40 @@ fun matchFn E (state as (worklist,s,theta)) =
               matchFn E (t,rst,
                          Redblackmap.insert(theta,path,(Blob,segment)))
        end
-   | (Assert bexp,path)::t =>
+   | (path,Assert bexp)::t =>
        let val bexp' = resolve_bexp_lvals theta path bexp
        in if evalBexp (Consts,theta,valueFn) bexp'
             then matchFn E (t,s,theta)
             else raise ERR "matchFn" "Assert expression is false"
        end
-   | (Scanner scanFn,path)::t =>
+   | (path,Scanner scanFn)::t =>
       (case scanFn s
         of NONE => raise ERR "matchFn" "Scanner failed"
          | SOME(segment,rst) =>
              matchFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
-   | (Recd fields,path)::t =>
-       let fun fieldFn (fName,c) = (c,RecdProj(path,fName))
+   | (path,Recd fields)::t =>
+       let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
        in matchFn E (map fieldFn fields @ t,s,theta)
        end
-   | (Array (c,exp),path)::t =>
+   | (path,Array (c,exp))::t =>
        let val exp' = resolve_exp_lvals theta path exp
            val dim = evalExp (Consts,theta,valueFn) exp'
-           fun indexFn i = (c,ArraySub(path,intLit i))
+           fun indexFn i = (ArraySub(path,intLit i),c)
        in matchFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
        end
-   | (Union choices,path)::t =>
+   | (path,Union choices)::t =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolve_bexp_lvals theta path bexp
              in evalBexp (Consts,theta,valueFn) bexp'
              end
        in case List.find choiceFn choices
            of NONE => raise ERR "matchFn" "Union: no choices possible"
-            | SOME(bexp,c) => matchFn E ((c,path)::t,s,theta)
+            | SOME(bexp,c) => matchFn E ((path,c)::t,s,theta)
        end
  end
 ;
 
-fun match E contig s = matchFn E ([(contig,VarName"root")],s,empty_lvalMap);
+fun match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap);
 
 (*---------------------------------------------------------------------------*)
 (* substFn is given an assignment for a contig and applies it to the contig, *)
@@ -665,7 +684,7 @@ fun predFn E (state as (worklist,s,theta)) =
  in
  case worklist
    of [] => true
-   |  (Basic a,path)::t =>
+   |  (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
            of NONE => false
@@ -673,47 +692,47 @@ fun predFn E (state as (worklist,s,theta)) =
               predFn E (t,rst,
                          Redblackmap.insert(theta,path,(a,segment)))
        end
-   | (Declared name,path)::t => predFn E ((assoc name Decls,path)::t,s,theta)
-   | (Raw exp,path)::t =>
+   | (path,Declared name)::t => predFn E ((path,assoc name Decls)::t,s,theta)
+   | (path,Raw exp)::t =>
        let val exp' = resolve_exp_lvals theta path exp
            val width = evalExp (Consts,theta,valueFn) exp'
        in case tdrop width s
            of NONE => false
             | SOME (segment,rst) =>
               predFn E (t,rst,
-                         Redblackmap.insert(theta,path,(Blob,segment)))
+                        Redblackmap.insert(theta,path,(Blob,segment)))
        end
-   | (Assert bexp,path)::t =>
+   | (path,Assert bexp)::t =>
        let val bexp' = resolve_bexp_lvals theta path bexp
        in if evalBexp (Consts,theta,valueFn) bexp'
             then predFn E (t,s,theta)
             else false
        end
-   | (Scanner scanFn,path)::t =>
+   | (path,Scanner scanFn)::t =>
       (case scanFn s
         of NONE => false
          | SOME(segment,rst) =>
              predFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
-   | (Recd fields,path)::t =>
-       let fun fieldFn (fName,c) = (c,RecdProj(path,fName))
+   | (path,Recd fields)::t =>
+       let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
        in predFn E (map fieldFn fields @ t,s,theta)
        end
-   | (Array (c,exp),path)::t =>
+   | (path,Array (c,exp))::t =>
        let val exp' = resolve_exp_lvals theta path exp
            val dim = evalExp (Consts,theta,valueFn) exp'
-           fun indexFn i = (c,ArraySub(path,intLit i))
+           fun indexFn i = (ArraySub(path,intLit i),c)
        in predFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
        end
-   | (Union choices,path)::t =>
+   | (path,Union choices)::t =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolve_bexp_lvals theta path bexp
              in evalBexp (Consts,theta,valueFn) bexp'
              end
        in case List.find choiceFn choices
            of NONE => raise ERR "predFn" "Union: no choices possible"
-            | SOME(bexp,c) => predFn E ((c,path)::t,s,theta)
+            | SOME(bexp,c) => predFn E ((path,c)::t,s,theta)
        end
  end
 ;
 
-fun wellformed E contig s = predFn E ([(contig,VarName"root")],s,empty_lvalMap);
+fun wellformed E contig s = predFn E ([(VarName"root",contig)],s,empty_lvalMap);

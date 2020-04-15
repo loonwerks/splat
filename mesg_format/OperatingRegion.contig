@@ -22,22 +22,41 @@
 
 use "contig.sml";
 
+fun valueFn s =
+ let open Regexp_Numerics
+ in IntInf.toInt(string2iint Unsigned MSB s)
+ end;
+
+infix ------>;
+val op------> = (fn (a,b) => (a,b));
+
+val EMPTY = Recd [];
+
 val operating_region = Recd [
   ("ID", i64),
-  ("kiLen", u16),
-  ("keep_in_areas", Array(u64, Loc(VarName "kiLen"))),
-  ("koLen", u16),
-  ("keep_out_areas", Array(u64, Loc(VarName "koLen")))
+  ("keepinLen", u16),
+  ("keep_in_areas", Array(u64, Loc(VarName "keepinLen"))),
+  ("keepoutLen", u16),
+  ("keep_out_areas", Array(u64, Loc(VarName "keepoutLen")))
   ];
 
+val contentsOption = Union [
+  (BLoc (VarName "nonNullMesg")
+   ------> Recd[("seriesID", i64),
+                ("mesgType", u32),
+                ("version",  u16),
+                ("payload",  operating_region)])
+   ,
+  (Bnot(BLoc (VarName "nonNullMesg"))
+   ------> EMPTY)
+  ]
+
 val LMCP_Object = Recd [
-  ("controlString", i32),  (* = 0x4c4d4350 *)
+  ("controlString", i32),  (* = 0x4c4d4350 = valueFn "LMCP" *)
+  ("check", Assert (Beq(Loc(VarName"controlString"),intLit 1280131920))),
   ("mesgSize",      u32),
-  ("nullMesg",      Basic Bool),
-  ("seriesID",      i64),
-  ("mesgType",      u32),
-  ("version",       u16),
-  ("payload",       operating_region),
+  ("nonNullMesg",   Basic Bool),
+  ("contents",      contentsOption),
   ("checksum",      u32)
 ];
 
@@ -50,19 +69,14 @@ val attributes = Recd [
  ];
 
 val full_mesg = Recd [
-  ("address", Scanner (scanTo "$")),
-  ("attributes", attributes),
+  ("address",     Scanner (scanTo "$")),
+  ("attributes",  attributes),
   ("lmcp-object", LMCP_Object)
   ];
 
 (*---------------------------------------------------------------------------*)
 (* Set up the environment.                                                   *)
 (*---------------------------------------------------------------------------*)
-
-fun valueFn s =
- let open Regexp_Numerics
- in IntInf.toInt(string2iint Unsigned MSB s)
- end;
 
 val E = ([],[],atomic_widths,valueFn);
       |> C add_contig_decl ("Operating_Region",operating_region);
