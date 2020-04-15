@@ -203,7 +203,7 @@ boolean.
 \end{verbatim}
 
 
-\item The following is shows how the \konst{Union} construct might be
+\item The following shows how the \konst{Union} construct might be
   used for multiple versions.  Messages with the value of field
   \verb+versionID+ being less than 14 have three fields in the message,
   while all others have two.
@@ -451,7 +451,7 @@ and calculates assignments (substitutions).\footnote{Thus the notion
   \konst{match} &: \mathit{AST} \to \konst{string} \to \mathit{assignments}
 \end{align*}
 
-The central algorithm for continuity types is a matcher: given a
+The central algorithm for contiguity types is a \emph{matcher}: given a
 contiguity type $\tau$ and a string $s$, the matcher will either fail,
 or succeed with an assignment $\theta : \mathit{lval} \mapsto
 \konst{string}$ mapping each L-value in $\tau$ to its corresponding
@@ -594,41 +594,43 @@ place. A simple approach we are investigating is to add a new
   \konst{Assert}(\mathit{bexp})
 \]
 
-The basic $\mathit{bexp}$ type defined earlier provides a minimal
-assertion language over R-values. For example, the following c-type
-(taking liberties with notation)
+\noindent The semantics of \konst{Assert} are straightforward:
+\[
+\LangTheta{\konst{Assert}\; \mathit{bexp}} =
+ \left\{
+    \begin{array}{ll}
+    \varepsilon, &  \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp} = \konst{true} \\
+    \emptyset & \mathrm{otherwise}
+ \end{array}
+ \right.
+\]
+
+The $\mathit{bexp}$ type provides a minimal (but adequate for
+illustrative purposes) assertion language over R-values. For example,
+the following c-type
 
 \begin{verbatim}
     { A : i32
-      B : Assert (-90 <= toInt(A) <= 90)
+      B : i32
+      C : Assert (A + B <= 42)
     }
 \end{verbatim}
 
-\noindent includes field \verb+B+, which is processed after field
-\verb+A+, and checks that the value of field \verb+A+ lies in the
-desired range.
+\noindent includes field \verb+C+, which is processed after fields
+\verb+A+ and \verb+B+, and checks a relationship between the fields.
 
-Almost no change to the matcher function is needed to support
-\konst{Assert} forms: the matcher's traversal of c-type and string
-arguments is unchanged, and the accumulation of contextual information
-in the form of the map $\theta$ also is unchanged. Each \konst{Assert}
-expression is evaluated when it is encountered, and the resulting
-truth value is propagated accordingly.
+Mirroring the semantics, almost no change to the matcher function is
+needed to support \konst{Assert} forms: the matcher's traversal of
+c-type and string arguments is unchanged, and the accumulation of
+contextual information in the form of the map $\theta$ also is
+unchanged. Each \konst{Assert} expression is evaluated when it is
+encountered; if the result is true, processing continues, otherwise
+an error has been found.
 
-
-%% \konst{Assert}
-%% expressions can also relate multiple fields scattered throughout a
-%% message. Note that the predicate that an \konst{Assert} embodies is
-%% over slices in a string, so that
-
-%When it comes
-%to code-generation \konst{Assert} fields are ignored, or can be added
-%as assertion checks in the generated code.
-
-We note that successful match of a message against a c-type is a basic
-(syntactic) well-formedness check. \konst{Assert} fields provide a
-basis for checking user-specified well-formedness properties on
-messages. It also is worth noting that certain features of c-types
+Notice that successful match of a message against a c-type is a
+minimal (syntactic) well-formedness check. \konst{Assert} fields
+provide a basis for checking user-specified well-formedness properties
+on messages. It also is worth noting that certain features of c-types
 require checks no matter what kind of user-specified properties are
 required: both enumerations and arrays have side-conditions that
 \konst{Assert} can enforce.
@@ -765,7 +767,7 @@ array could be blocked out in the following manner:
 
   When a custom scanner is encountered during the matching process,
   the given scanner is invoked on the input and should either fail or
-  provide an $(s_1,s_2)$ pair representing a spliting of the
+  provide an $(s_1,s_2)$ pair representing a splitting of the
   input. Then $s_1$ is added to $\theta$ at the current \lval, and
   matching continues on $s_2$.
 
