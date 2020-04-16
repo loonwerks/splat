@@ -243,7 +243,7 @@ fun dest_exp e =
        => VarExp s
    | AList [("kind", String "EventExpr"),
             ("id", AList [("kind", String "NamedElmExpr"),("name", String s)])]
-       => VarExp s
+       => mk_fncall("","Event",[VarExp s])
    | AList [("kind", String "BoolLitExpr"), ("value", String bstr)]
        => mk_bool_const bstr
    | AList [("kind", String "IntLitExpr"), ("value", String intstr)]
@@ -261,8 +261,8 @@ fun dest_exp e =
    | AList [("kind", String "Selection"), ("target", target), ("field", String fname)]
        => RecdProj (dest_exp target, fname)
    | AList [("kind", String "CallExpr"),
-             ("function", AList alist),
-             ("args", List args)]
+            ("function", AList alist),
+            ("args", List args)]
        => let val pkg = dropString (assoc "packageName" alist) handle _ => ""
               val fname = dropString (assoc "name" alist) handle _ => ""
           in mk_fncall(pkg,fname,map dest_exp args)
@@ -285,6 +285,10 @@ fun dest_exp e =
             ("then",e2),
             ("else",e3)]
        => mk_fncall ("","IfThenElse",[dest_exp e1, dest_exp e2, dest_exp e3])
+   | AList [("kind", String "PrevExpr"),
+            ("delay", e1),
+            ("init",e2)]
+       => mk_fncall ("","Prev",[dest_exp e1, dest_exp e2])
    | other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);
@@ -547,8 +551,8 @@ fun filter_req_name_eq s1 s2 =
     last s1_tokens = last s2_tokens
  end;
 
-fun get_guarantee (String rname) g =
-   (case g
+fun get_guarantee (String rname) stmt =
+   (case stmt
      of AList [("kind", String "GuaranteeStatement"),
                ("name", String gname),
                ("label", String gdoc),
@@ -655,10 +659,12 @@ fun get_monitor_port port =
 
 fun get_guar_names json =
  case json
-  of List [AList [("name", String "CASE_Properties::COMP_TYPE"), _,
-                  ("value", String "MONITOR")],
-           AList [("name", String "CASE_Properties::COMP_SPEC"), _,
-                  ("value", List TL_guarantee_names)]]
+  of List (AList [("name", String "CASE_Properties::Component_Type"), _,
+                  ("value", String "MONITOR")]
+           ::
+           AList [("name", String "CASE_Properties::Component_Spec"), _,
+                  ("value", List TL_guarantee_names)]
+           :: _)
       => TL_guarantee_names
    | otherwise => raise ERR "get_guar_names" "requirement name(s) not found";
 
@@ -831,7 +837,7 @@ val AList alist = jpkg;
 val pkgs = dropList (assoc "modelUnits" alist);
 
 val (opkgs as [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7,
-               pkg8, pkg9, pkg10, pkg11,pkg12]) = rev (topsort uses pkgs);
+               pkg8, pkg9, pkg10, pkg11,pkg12,pkg13,pkg14,pkg15]) = rev (topsort uses pkgs);
 
 val declist = mapfilter scrape opkgs;
 
