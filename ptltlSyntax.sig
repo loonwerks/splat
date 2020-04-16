@@ -123,4 +123,7 @@ val is_mk_relational_data : term -> bool
 val is_mk_table_data : term -> bool
 val is_table_transition : term -> bool
 
+val bool2pltl : term -> term
+val mk_pltl_cond : term * term * term -> term
+
 end

@@ -404,4 +404,8 @@ Definition to_dotgraph_def :
 End
 *)
 
+Definition Event_def :
+    Event (x) = IS_SOME x
+End
+
 val _ = export_theory();
