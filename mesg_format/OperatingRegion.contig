@@ -22,6 +22,10 @@
 
 use "contig.sml";
 
+(*---------------------------------------------------------------------------*)
+(* Stuff that belongs elsewhere                                              *)
+(*---------------------------------------------------------------------------*)
+
 fun valueFn s =
  let open Regexp_Numerics
  in IntInf.toInt(string2iint Unsigned MSB s)
@@ -32,6 +36,10 @@ val op------> = (fn (a,b) => (a,b));
 
 val EMPTY = Recd [];
 
+fun add_constant (s,i) (a,b,c,d) = ((s,i)::a,b,c,d);
+
+val E0 = add_constant("OPERATINGREGION",39) ([],[],atomic_widths,valueFn);
+
 val operating_region = Recd [
   ("ID", i64),
   ("keepinLen", u16),
@@ -40,10 +48,17 @@ val operating_region = Recd [
   ("keep_out_areas", Array(u64, Loc(VarName "keepoutLen")))
   ];
 
-val contentsOption = Union [
+(*---------------------------------------------------------------------------*)
+(* Either an operating region, or nothing, controlled by the nonNullMesg     *)
+(* field.                                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val OpReg_Option = Union [
   (BLoc (VarName "nonNullMesg")
    ------> Recd[("seriesID", i64),
                 ("mesgType", u32),
+                ("check-mesgType", Assert (Beq(Loc(VarName"mesgType"),
+                                               ConstName"OPERATINGREGION"))),
                 ("version",  u16),
                 ("payload",  operating_region)])
    ,
@@ -53,10 +68,10 @@ val contentsOption = Union [
 
 val LMCP_Object = Recd [
   ("controlString", i32),  (* = 0x4c4d4350 = valueFn "LMCP" *)
-  ("check", Assert (Beq(Loc(VarName"controlString"),intLit 1280131920))),
+  ("check", Assert (Beq(Loc(VarName"controlString"),intLit 0x4c4d4350))),
   ("mesgSize",      u32),
   ("nonNullMesg",   Basic Bool),
-  ("contents",      contentsOption),
+  ("contents",      OpReg_Option),
   ("checksum",      u32)
 ];
 
@@ -73,11 +88,3 @@ val full_mesg = Recd [
   ("attributes",  attributes),
   ("lmcp-object", LMCP_Object)
   ];
-
-(*---------------------------------------------------------------------------*)
-(* Set up the environment.                                                   *)
-(*---------------------------------------------------------------------------*)
-
-val E = ([],[],atomic_widths,valueFn);
-      |> C add_contig_decl ("Operating_Region",operating_region);
-      |> C add_contig_decl E ("Attributes",attributes);
