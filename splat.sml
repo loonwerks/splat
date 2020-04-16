@@ -323,6 +323,9 @@ fun process_filter intformat flags ((pkgName,fname),thm) =
      filter_artifacts
  end
 
+(*
+val args = ["examples/PC-2.json"]
+*)
 fun main () =
  let val _ = stdErr_print "splat: \n"
      val args = CommandLine.arguments()
