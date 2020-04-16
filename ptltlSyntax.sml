@@ -107,6 +107,7 @@ val const_mk_table_data        = ptltl_const"mk_table_data";
 val const_table_transition     = ptltl_const"table_transition";
 
 fun mk_bigstep(t1,t2) = list_mk_comb(const_bigstep,[t1,t2])
+fun mk_bigstep1 t = mk_comb(const_bigstep,t)
 fun mk_smallstep(t1,t2) = list_mk_comb(const_smallstep,[t1,t2])
 fun mk_smallstep1 t = mk_comb(const_smallstep,t)
 fun mk_subforms t = mk_comb(const_mk_subforms, t)
@@ -203,5 +204,28 @@ val is_find_reachable_edges = Lib.can dest_find_reachable_edges;
 val is_mk_relational_data   = Lib.can dest_mk_relational_data;
 val is_mk_table_data        = Lib.can dest_mk_table_data;
 val is_table_transition     = Lib.can dest_table_transition;
+
+fun bool2pltl t =
+ if type_of t = formula then
+     t else
+ if type_of t <> bool then
+  raise ERR "bool2pltl" "expected a term of type bool"
+ else
+  if is_var t then
+   mk_Eid (stringSyntax.fromMLstring (fst(dest_var t))) else
+  if tmem t [T,F] then
+    mk_Prim t else
+  if is_neg t then
+    mk_Not(bool2pltl(dest_neg t)) else
+  if is_conj t then
+    mk_And((bool2pltl##bool2pltl)(dest_conj t)) else
+  if is_disj t then
+    mk_Or((bool2pltl##bool2pltl)(dest_disj t)) else
+  if is_imp t then
+    mk_Imp((bool2pltl##bool2pltl)(dest_imp t))
+  else raise ERR "bool2pltl" "unexpected syntax of type bool"
+;
+
+fun mk_pltl_cond(a,b,c) = mk_And (mk_Imp(a,b),mk_Imp(mk_Not(a),c));
 
 end
