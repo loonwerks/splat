@@ -418,6 +418,9 @@ fun pp_atom atom =
       | Scanned => add_string "Scanned"
  end;
 
+fun is_recd (Recd _) = true
+  | is_recd otherwise = false;
+
 fun pp_contig contig =
  let open PP
  in
@@ -431,7 +434,9 @@ fun pp_contig contig =
      | Scanner _ =>  add_string "<scan-fn>"
      | Recd fields =>
         let fun pp_field (s,c) = block CONSISTENT 0
-                 [add_string s, add_string " : ", pp_contig c,NL]
+               [block CONSISTENT 1
+                  [add_string s, add_string " :", add_break(1,0), pp_contig c],
+                NL]
         in
           block CONSISTENT 1
              ([add_string "{" ] @ map pp_field fields @ [add_string "}"])
@@ -440,11 +445,14 @@ fun pp_contig contig =
              [pp_contig c, add_string " [", pp_exp e, add_string "]"]
      | Union choices =>
         let fun pp_choice (bexp,c) = block CONSISTENT 0
+              [block CONSISTENT 0
                  [add_string "(", pp_bexp bexp, add_string " -->",
-                  add_break(1,3), pp_contig c,add_string ")", NL]
+                  add_break(1,2), pp_contig c,add_string ")"], NL]
         in
-          block CONSISTENT 3
-            ([add_string "Union {", NL] @ map pp_choice choices @ [add_string "}"])
+          block CONSISTENT 2
+            [add_string "Union {", NL,
+             block CONSISTENT 0 (map pp_choice choices),
+             add_string "}"]
         end
  end
 

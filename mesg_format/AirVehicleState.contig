@@ -1,4 +1,5 @@
 use "contig.sml";
+use "uxas-constants.contig";
 
 (*---------------------------------------------------------------------------*)
 (* Set up the environment.                                                   *)
@@ -12,6 +13,40 @@ fun valueFn s =
 val real32 = Basic Float;
 val real64 = Basic Double;
 
+val EMPTY = Recd [];
+
+fun add_contig_decl E (s,d) =
+ let val (Consts,Decls,aW,vFn) = E
+ in (Consts,(s,d)::Decls,aW,vFn)
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Wrapper for a contig, with message type specified                         *)
+(*---------------------------------------------------------------------------*)
+
+fun lmcpObject mesgtyName contig = Recd [
+ ("hasContents", Basic Bool),
+ ("contents",
+   Union [
+     (Bnot(BLoc (VarName "hasContents")), EMPTY),
+     (BLoc (VarName "hasContents"),
+          Recd[("seriesID", i64),
+               ("mesgType", u32),
+               ("version",  u16),
+               ("check-mesg-numbers",
+                Assert (Band(Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesID"),
+                        Band(Beq(Loc(VarName "mesgType"),ConstName mesgtyName),
+                             Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesVersion"))))),
+               ("payload",  contig)])
+   ])
+ ];
+
+fun uxasArray contig = Recd [
+  ("len", u16),
+  ("elts", Array(contig, Loc (VarName"len")))
+ ];
+
+
 (*---------------------------------------------------------------------------*)
 (* Some enumerated types                                                     *)
 (*---------------------------------------------------------------------------*)
@@ -24,7 +59,7 @@ val altitude_type =
 
 val navigation_mode =
  ("NavigationMode",
-  [ ("Waypoint",      0),
+  [("Waypoint",      0),
    ("Loiter",        1),
    ("FlightDirector",2),
    ("TargetTrack",   3),
@@ -32,56 +67,51 @@ val navigation_mode =
    ("LostComm",      5)
   ]);
 
+val AltitudeType = Declared "AltitudeType";
+val NavigationMode = Declared "NavigationMode";
+
 (*---------------------------------------------------------------------------*)
 (* Some reusable contig types                                                *)
 (*---------------------------------------------------------------------------*)
 
-val StringRecd =  (* varying length strings *)
-  Recd [("len", u16),
-        ("elts", Array(Basic Char,Loc (VarName"len")))
-];
+val StringRecd = uxasArray (Basic Char);
 
 val String = Declared "StringRecd";
 
 val KeyValuePairRecd =  (* pairs of varying length strings *)
-  Recd [("key", String),
+  Recd [("key",   String),
         ("value", String)];
 
-val KeyValuePair = Declared "KeyValuePairRecd";
+val KeyValuePair = Declared "KeyValuePair";
 
-fun add_contig_decl E (s,d) =
- let val (Consts,Decls,aW,vFn) = E
- in (Consts,(s,d)::Decls,aW,vFn)
- end
+val KeyValuePairObj = lmcpObject "KEYVALUEPAIR" KeyValuePair;
 
 (*---------------------------------------------------------------------------*)
 (* Set up the environment by adding enumerated types and re-usable types.    *)
 (*---------------------------------------------------------------------------*)
 
-val E = ([],[],atomic_widths,valueFn)
-      |> C add_enum_decl altitude_type
-      |> C add_enum_decl navigation_mode
-      |> C add_contig_decl ("String",StringRecd)
-      |> C add_contig_decl ("KeyValuePair", KeyValuePairRecd)
+val E = (uxas_constants_map,[],atomic_widths,valueFn)
+     |> C add_enum_decl altitude_type
+     |> C add_enum_decl navigation_mode
+     |> C add_contig_decl ("String",StringRecd)
+     |> C add_contig_decl ("KeyValuePair", KeyValuePairRecd)
 ;
-
-val AltitudeType = Declared "AltitudeType";
-val NavigationMode = Declared "NavigationMode";
 
 (*---------------------------------------------------------------------------*)
 (* The AirVehicleState message format as a contig type                       *)
 (*---------------------------------------------------------------------------*)
 
 val PayloadState = Recd [
- ("PayloadID", i64),
- ("ParametersLen", u16),
- ("Parameters", Array(KeyValuePair, Loc(VarName"ParametersLen")))
+ ("PayloadID",     i64),
+ ("Parameters",    uxasArray KeyValuePairObj),
+ ("check-max-parameters",
+   Assert (Bleq(Loc(RecdProj(VarName "Parameters","len")), intLit 8)))
 ];
 
 val Location3D = Recd [
-  ("Latitude", real64),
+  ("Latitude",  real64),
   ("Longitude", real64),
-  ("Altitude", real32),
+  ("Altitude",  real32),
   ("AltitudeType", AltitudeType)
 ];
 
@@ -140,7 +170,7 @@ val EntityState = Recd [
 
   (* The perceived entity location. A valid EntityState must include Location.
      (null not allowed) *)
-  ("Location",Location3D),
+  ("Location", lmcpObject "LOCATION3D" Location3D),
 
   (* The available energy remaining, expressed in terms of the percentage
        of maximum capacity.  Units="%" *)
@@ -151,8 +181,9 @@ val EntityState = Recd [
   ("ActualEnergyRate", real32),
 
   (* A list of states for any onboard payloads *)
-  ("PayloadStateListLen", u16),
-  ("PayloadStateList", Array(PayloadState, Loc(VarName"PayloadStateListLen"))),
+  ("PayloadStateList", uxasArray(lmcpObject "PAYLOADSTATE" PayloadState)),
+  ("check-payload-state-list-size",
+   Assert (Bleq(Loc(RecdProj(VarName "PayloadStateList","len")), intLit 8))),
 
   (* The ID of the current waypoint. Only valid if the vehicle is in
      waypoint following mode. *)
@@ -171,8 +202,7 @@ val EntityState = Recd [
      in the task request.  For instance, if a waypoint is associated with a
      search task, then the task number associated with that search should be
      included in this list. *)
-  ("AssociatedTasksLen", u16),
-  ("AssociatedTasks", Array(i64,Loc(VarName"AssociatedTasksLen"))),
+  ("AssociatedTasks", uxasArray i64),
 
   (* time stamp of this data. Time datum is defined by the application, but
      unless otherwise specified is milliseconds since 1 Jan 1970 *)
@@ -180,8 +210,9 @@ val EntityState = Recd [
 
   (* A list that maps keys to values for the inclusion of extra, custom
      information about this entity *)
-  ("InfoLen", u16),
-  ("Info", Array(KeyValuePair, Loc(VarName"InfoLen")))
+  ("Info", uxasArray(lmcpObject "KEYVALUEPAIR" KeyValuePair)),
+  ("check-info-size",
+   Assert (Bleq(Loc(RecdProj(VarName "Info","len")), intLit 32)))
 ];
 
 val E1 = add_contig_decl E ("EntityState",EntityState);
@@ -221,3 +252,124 @@ val AirVehicleStateRecd = Recd [
 ];
 
 val chopper = segments E1 AirVehicleStateRecd;
+
+
+(* Pretty printed version
+
+> EntityState;
+val it =
+   {ID : i64
+    u : Float
+    v : Float
+    w : Float
+    udot : Float
+    vdot : Float
+    wdot : Float
+    Heading : Float
+    Pitch : Float
+    Roll : Float
+    p : Float
+    q : Float
+    r : Float
+    Course : Float
+    Groundspeed : Float
+    Location :
+     {hasContents : Bool
+      contents :
+       Union {
+         (not(hasContents) --> {})
+         (hasContents -->
+           {seriesID : i64
+            mesgType : u32
+            version : u16
+            check-mesg-numbers :
+             Assert(((seriesID = CMASISeriesID) and
+                    ((mesgType = Location3D) and
+                     (seriesID = CMASISeriesVersion))))
+            payload :
+             {Latitude : Double
+              Longitude : Double
+              Altitude : Float
+              AltitudeType : AltitudeType
+              }
+            })
+         }
+      }
+    EnergyAvailable : Float
+    ActualEnergyRate : Float
+    PayloadStateList :
+     {len : u16
+      elts :
+       {hasContents : Bool
+        contents :
+         Union {
+           (not(hasContents) --> {})
+           (hasContents -->
+             {seriesID : i64
+              mesgType : u32
+              version : u16
+              check-mesg-numbers :
+               Assert(((seriesID = CMASISeriesID) and
+                      ((mesgType = PayloadState) and
+                       (seriesID = CMASISeriesVersion))))
+              payload :
+               {PayloadID : i64
+                Parameters :
+                 {len : u16
+                  elts :
+                   {hasContents : Bool
+                    contents :
+                     Union {
+                      (not(hasContents) --> {})
+                      (hasContents -->
+                         {seriesID : i64
+                          mesgType : u32
+                          version : u16
+                          check-mesg-numbers :
+                          Assert(((seriesID = CMASISeriesID) and
+                                 ((mesgType = KeyValuePair) and
+                                  (seriesID = CMASISeriesVersion))))
+                          payload : KeyValuePair
+                            })
+                         }
+                      } [len]
+                   }
+                check-max-parameters : Assert((Parameters.len <= 8))
+                }
+               })
+            }
+         } [len]
+      }
+    check-payload-state-list-size : Assert((PayloadStateList.len <= 8))
+    CurrentWaypoint : i64
+    CurrentCommand : i64
+    Mode : NavigationMode
+    AssociatedTasks :
+     {len : u16
+      elts : i64 [len]
+      }
+    Time : i64
+    Info :
+     {len : u16
+      elts :
+       {hasContents : Bool
+        contents :
+          Union {
+            (not(hasContents) --> {})
+            (hasContents -->
+              {seriesID : i64
+               mesgType : u32
+               version : u16
+               check-mesg-numbers :
+                Assert(((seriesID = CMASISeriesID) and
+                       ((mesgType = KeyValuePair) and
+                        (seriesID = CMASISeriesVersion))))
+               payload : KeyValuePair
+               })
+            }
+         } [len]
+      }
+    check-info-size : Assert((Info.len <= 32))
+    }: contig
+
+*)

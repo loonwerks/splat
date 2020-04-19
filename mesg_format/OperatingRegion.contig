@@ -21,6 +21,7 @@
 (*---------------------------------------------------------------------------*)
 
 use "contig.sml";
+use "uxas-constants.contig";
 
 (*---------------------------------------------------------------------------*)
 (* Stuff that belongs elsewhere                                              *)
@@ -31,49 +32,62 @@ fun valueFn s =
  in IntInf.toInt(string2iint Unsigned MSB s)
  end;
 
-infix ------>;
-val op------> = (fn (a,b) => (a,b));
-
 val EMPTY = Recd [];
 
-fun add_constant (s,i) (a,b,c,d) = ((s,i)::a,b,c,d);
+(*---------------------------------------------------------------------------*)
+(* Initial environment, binding the operating region to a number, and std    *)
+(* versions of all else.                                                     *)
+(*---------------------------------------------------------------------------*)
 
-val E0 = add_constant("OPERATINGREGION",39) ([],[],atomic_widths,valueFn);
+val E0 = ([("OPERATINGREGION",39)],[],atomic_widths,valueFn);
+
+(*---------------------------------------------------------------------------*)
+(* Core payload                                                              *)
+(*---------------------------------------------------------------------------*)
 
 val operating_region = Recd [
-  ("ID", i64),
-  ("keepinLen", u16),
-  ("keep_in_areas", Array(u64, Loc(VarName "keepinLen"))),
-  ("keepoutLen", u16),
+  ("ID",             i64),
+  ("keepinLen",      u16),
+  ("keep_in_areas",  Array(u64, Loc(VarName "keepinLen"))),
+  ("keepoutLen",     u16),
   ("keep_out_areas", Array(u64, Loc(VarName "keepoutLen")))
   ];
 
 (*---------------------------------------------------------------------------*)
-(* Either an operating region, or nothing, controlled by the nonNullMesg     *)
-(* field.                                                                    *)
+(* Union representing either: an operating region, or nothing. The choice is *)
+(* controlled by the nonNullMesg field.                                      *)
 (*---------------------------------------------------------------------------*)
 
-val OpReg_Option = Union [
-  (BLoc (VarName "nonNullMesg")
-   ------> Recd[("seriesID", i64),
-                ("mesgType", u32),
-                ("check-mesgType", Assert (Beq(Loc(VarName"mesgType"),
-                                               ConstName"OPERATINGREGION"))),
-                ("version",  u16),
-                ("payload",  operating_region)])
-   ,
-  (Bnot(BLoc (VarName "nonNullMesg"))
-   ------> EMPTY)
-  ]
+val OpReg_Option = Recd [
+ ("nonNullMesg", Basic Bool),
+ ("contents",
+   Union [
+     (Bnot(BLoc (VarName "nonNullMesg")), EMPTY),
+     (BLoc (VarName "nonNullMesg"),
+          Recd[("seriesID", i64),
+               ("mesgType", u32),
+               ("check-mesgType", Assert (Beq(Loc(VarName"mesgType"),
+                                              ConstName"OPERATINGREGION"))),
+               ("version",  u16),
+               ("payload",  operating_region)])
+   ])
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* LMCP objects.                                                             *)
+(*---------------------------------------------------------------------------*)
 
 val LMCP_Object = Recd [
   ("controlString", i32),  (* = 0x4c4d4350 = valueFn "LMCP" *)
-  ("check", Assert (Beq(Loc(VarName"controlString"),intLit 0x4c4d4350))),
+  ("check",         Assert (Beq(Loc(VarName"controlString"),intLit 0x4c4d4350))),
   ("mesgSize",      u32),
-  ("nonNullMesg",   Basic Bool),
-  ("contents",      OpReg_Option),
+  ("object",        OpReg_Option),
   ("checksum",      u32)
 ];
+
+(*---------------------------------------------------------------------------*)
+(* Attribute header stuff                                                    *)
+(*---------------------------------------------------------------------------*)
 
 val attributes = Recd [
  ("contentType",      Scanner (scanTo "|")),
@@ -83,8 +97,55 @@ val attributes = Recd [
  ("source_service_ID",Scanner (scanTo "$"))
  ];
 
+(*---------------------------------------------------------------------------*)
+(* Using some regexp-like notation, this is                                  *)
+(*                                                                           *)
+(*  (.* "$") (.* "|"){4} (.* "$") <lmcp-object>                              *)
+(*---------------------------------------------------------------------------*)
+
 val full_mesg = Recd [
-  ("address",     Scanner (scanTo "$")),
-  ("attributes",  attributes),
-  ("lmcp-object", LMCP_Object)
-  ];
+ ("address",     Scanner (scanTo "$")),
+ ("attributes",  attributes),
+ ("lmcp-object", LMCP_Object)
+];
+
+(*---------------------------------------------------------------------------*)
+(*  Pretty printed version:
+
+val full_mesg =
+ {address : <scan-fn>
+  attributes :
+    {contentType : <scan-fn>
+     descriptor : <scan-fn>
+     source_group : <scan-fn>
+     source_entity_ID : <scan-fn>
+     source_service_ID : <scan-fn>
+    }
+  lmcp-object :
+    {controlString : i32
+     check : Assert((controlString = 1280131920))
+     mesgSize : u32
+     object :
+       {nonNullMesg : Bool
+        contents : Union {
+          (not(nonNullMesg) --> {})
+          (nonNullMesg -->
+             {seriesID : i64
+              mesgType : u32
+              check-mesgType : Assert((mesgType = OPERATINGREGION))
+              version : u16
+              payload :
+                {ID : i64
+                 keepinLen : u16
+                 keep_in_areas : u64 [keepinLen]
+                 keepoutLen : u16
+                 keep_out_areas : u64 [keepoutLen]
+                }
+             })
+        }
+       }
+     checksum : u32
+    }
+ }: contig
+
+*)

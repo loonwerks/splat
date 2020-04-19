@@ -1,0 +1,13 @@
+use "contig.sml";
+
+(*---------------------------------------------------------------------------*)
+(* Core payload                                                              *)
+(*---------------------------------------------------------------------------*)
+
+val automation_request = Recd [
+  ("EntityList",           uxasArray_withBound i64 16),
+  ("TaskList",             uxasArray_withBound i64 32),
+  ("TaskRelationShips",    String),
+  ("OperatingRegion",      i64),
+  ("RedoAllTasks",         Basic Bool)
+  ];
