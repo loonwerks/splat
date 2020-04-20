@@ -170,7 +170,10 @@ fun enumList elts = zip elts (upto 0 (length elts - 1));
 val real32 = Basic Float;
 val real64 = Basic Double;
 
-(* A way of expressing the language consisting of just the empty string *)
+(*---------------------------------------------------------------------------*)
+(* A way of expressing the language consisting of just the empty string      *)
+(*---------------------------------------------------------------------------*)
+
 val SKIP = Recd [];
 
 (*---------------------------------------------------------------------------*)
@@ -249,19 +252,18 @@ val uxasEnv =
 
 val altitude_type = ("AltitudeType", enumList ["AGL","MSL"]);
 
+val speed_type = ("SpeedType", enumList ["AirSpeed","GroundSpeed"]);
+
+val turn_type = ("TurnType", enumList ["TurnShort", "FlyOver"]);
+
 val wavelength_band =
- ("WavelengthBand",
-  enumList ["AllAny","EO","LWIR","SWIR","MWIR","Other"]);
+ ("WavelengthBand", enumList ["AllAny","EO","LWIR","SWIR","MWIR","Other"]);
 
 
 val navigation_mode =
  ("NavigationMode",
   enumList ["Waypoint", "Loiter", "FlightDirector",
             "TargetTrack", "FollowLeader", "LostComm"]);
-
-val speed_type = ("SpeedType", enumList ["AirSpeed","GroundSpeed"]);
-
-val turn_type = ("TurnType", enumList ["TurnShort", "FlyOver"]);
 
 val command_status_type =
  ("CommandStatusType",
@@ -361,7 +363,7 @@ val VehicleActionCommand = Recd [
  ];
 
 val Waypoint = Recd [
-  ("Location",            Location3D),
+  ("Location",            Location3D),  (* Q: mesgOption this? A: Nope: extension base *)
   ("Number",              i64),
   ("NextWaypoint",        i64),
   ("Speed",               real32),
@@ -375,7 +377,7 @@ val Waypoint = Recd [
  ];
 
 val MissionCommand = Recd [
- ("VehicleActionCommand", VehicleActionCommand),
+ ("VehicleActionCommand", VehicleActionCommand), (* Q: mesgOption this? Nope: extension base *)
  ("WaypointList",         uxasBoundedArray (mesgOption "WAYPOINT" Waypoint) 1024),
  ("FirstWaypoint",        i64)
 ];
@@ -410,8 +412,8 @@ val EntityState = Recd [
   ("q",      real32),
   ("r",      real32),
   ("Course", real32),
-  ("Groundspeed",real32),
-  ("Location",   mesgOption "LOCATION3D" Location3D),
+  ("Groundspeed",      real32),
+  ("Location",         mesgOption "LOCATION3D" Location3D),
   ("EnergyAvailable",  real32),
   ("ActualEnergyRate", real32),
   ("PayloadStateList", uxasBoundedArray(mesgOption "PAYLOADSTATE" PayloadState) 8),
