@@ -1,11 +1,10 @@
 open HolKernel Parse boolLib bossLib BasicProvers
-     pred_setLib intLib stringLib regexpLib;
+     pred_setLib stringLib regexpLib ASCIInumbersLib;
 
 open arithmeticTheory listTheory rich_listTheory
      stringTheory combinTheory ASCIInumbersTheory
-     numposrepTheory ASCIInumbersLib integerTheory;
+     numposrepTheory FormalLangTheory;
 
-val int_ss = intLib.int_ss;
 
 val _ = numLib.prefer_num();
 
@@ -47,6 +46,7 @@ End
 
 Datatype:
   bexp = boolLit bool
+       | BLoc lval
        | Bnot bexp
        | Bor  bexp bexp
        | Band bexp bexp
@@ -65,10 +65,13 @@ Datatype:
        | Signed num
        | Unsigned num
        | Enum string
+       | Blob
+       | Scanned
 End
 
 Datatype:
-  contig = Basic atom
+  contig = FAIL
+         | Basic atom
          | Recd ((string # contig) list)
          | Array contig exp
          | Union ((bexp # contig) list)
@@ -76,9 +79,59 @@ End
 
 
 (*---------------------------------------------------------------------------*)
-(* NB: there are other constructors we want to add to the contig datatype    *)
-(* (see contig.sml) but we will wait until the proofs get sorted for the     *)
-(* initial version.                                                          *)
+(* comparison functions on lvals and exps                                    *)
+(*---------------------------------------------------------------------------*)
+
+Definition lval_compare_def :
+ (lval_compare (VarName s1) (VarName s2) = string_compare s1 s2) /\
+ (lval_compare (VarName _)  ____         = Less)      /\
+ (lval_compare (RecdProj _ _) (VarName _)  = Greater) /\
+ (lval_compare (RecdProj e1 s1) (RecdProj e2 s2) =
+     (case lval_compare e1 e2
+       of Equal => string_compare s1 s2
+        | other => other))                            /\
+ (lval_compare (RecdProj _ _) ____ = Less)            /\
+ (lval_compare (ArraySub a b) (ArraySub c d) =
+     (case lval_compare a c
+       of Equal => exp_compare b d
+        | other => other))                            /\
+ (lval_compare (ArraySub _ _) ____ = Greater)
+ /\
+ (exp_compare (Loc lv1) (Loc lv2)   = lval_compare lv1 lv2)  /\
+ (exp_compare (Loc lv1) ____        = Less)                  /\
+ (exp_compare (numLit _) (Loc _)    = Greater)               /\
+ (exp_compare (numLit m) (numLit n) = num_compare m n)       /\
+ (exp_compare (numLit _)  ____      = Less)                  /\
+ (exp_compare (Add _ _) (Mult _ _)      = Less)              /\
+ (exp_compare (Add a b) (Add c d)   =
+    (case exp_compare a c
+      of Equal => exp_compare b d
+       | other => other))                                    /\
+ (exp_compare (Add _ _) ____          = Greater)             /\
+ (exp_compare (Mult a b) (Mult c d) =
+    (case exp_compare a c
+      of Equal => exp_compare b d
+       | other => other))                                    /\
+ (exp_compare (Mult _ _) _____        = Greater)
+End
+
+(*---------------------------------------------------------------------------*)
+(* Expression evaluation                                                     *)
+(*---------------------------------------------------------------------------*)
+
+Definition evalExp_def :
+ evalExp (lvalMap,valueFn) (Loc lval) =
+   (case lookup lval_compare lval lvalMap
+     of SOME s => valueFn s
+      | NONE => ARB) /\
+ evalExp E (numLit n) = n /\
+ evalExp E (Add e1 e2) = (evalExp E e1 + evalExp E e2) /\
+ evalExp E (Mult e1 e2) = (evalExp E e1 * evalExp E e2)
+End
+
+
+(*---------------------------------------------------------------------------*)
+(* Location completion                                                       *)
 (*---------------------------------------------------------------------------*)
 
 Definition lval_append_def :
@@ -95,17 +148,6 @@ Definition path_prefixes_def :
   path_prefixes (ArraySub arr dim) = ArraySub arr dim :: path_prefixes arr
 End
 
-Definiton evalExp_def :
-  evalExp (lvalMap,valueFn) exp =
- case exp
-  of Loc lval =>
-       (case Redblackmap.peek(lvalMap,lval)
-         of SOME s => valueFn s
-          | NONE => raise ERR "evalExp" "Lval binding failure")
-   | numLit n => n
-   | Add(e1,e2) => evalExp E e1 + evalExp E e2
-   | Mult(e1,e2) => evalExp E e1 * evalExp E e2
-;
 
 
 val _ = export_theory();

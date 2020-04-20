@@ -4,6 +4,8 @@
 (* values at locations, the types are mutually recursive.                    *)
 (*---------------------------------------------------------------------------*)
 
+val ERR = mk_HOL_ERR "contig";
+
 datatype lval
   = VarName of string
   | RecdProj of lval * string
@@ -16,7 +18,18 @@ and exp
   | Mult of exp * exp
 ;
 
-val ERR = mk_HOL_ERR "contig";
+datatype bexp
+  = boolLit of bool
+  | BLoc of lval
+  | Bnot of bexp
+  | Bor  of bexp * bexp
+  | Band of bexp * bexp
+  | Beq  of exp * exp
+  | Blt  of exp * exp
+  | Bgtr of exp * exp
+  | Bleq of exp * exp
+  | Bgeq of exp * exp
+;
 
 (*---------------------------------------------------------------------------*)
 (* lval comparison function used to build lval-keyed finite map.             *)
@@ -63,8 +76,11 @@ and
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Map from lvals to (kind,string) pairs, where kind signals what kind of    *)
-(* type the string should be interpeted as.                                  *)
+(* A distinctive feature of our approach is the use of lvals to describe     *)
+(* locations in the message where values are stored. These values are used   *)
+(* as the sizes for variable-sized arrays in the message. For convenience,   *)
+(* we allow "location completion", so that partly-given locations can be     *)
+(* as a convenient notation.                                                 *)
 (*---------------------------------------------------------------------------*)
 
 fun lval_append p lval =
@@ -82,102 +98,6 @@ fun path_prefixes lval =
    | ArraySub (RecdProj(p,s),dim) => lval :: path_prefixes p
    | ArraySub (arr,dim) => lval :: path_prefixes arr (* goofy, may need to be revisited. *)
 
-
-fun evalExp (E as (Delta,lvalMap,valueFn)) exp =
- case exp
-  of Loc lval =>
-       (case Redblackmap.peek(lvalMap,lval)
-         of SOME (k,s) => valueFn s
-          | NONE => raise ERR "evalExp" "Lval binding failure")
-   | intLit i => i
-   | ConstName s =>
-     (case assoc1 s Delta
-       of SOME(_,i) => i
-        | NONE => raise ERR "evalExp"
-            ("unable to find value for constant named "^Lib.quote s))
-   | Add(e1,e2) => evalExp E e1 + evalExp E e2
-   | Mult(e1,e2) => evalExp E e1 * evalExp E e2
-;
-
-(*---------------------------------------------------------------------------*)
-(* Leaves of contig types. Need to be defined before evalBexp.               *)
-(*---------------------------------------------------------------------------*)
-
-datatype atom
-  = Bool
-  | Char
-  | Float
-  | Double
-  | Signed of int
-  | Unsigned of int
-  | Enum of string
-  | Blob
-  | Scanned;
-
-val empty_lvalMap
-  : (lval,atom * string) Redblackmap.dict = Redblackmap.mkDict lval_compare;
-
-
-(*---------------------------------------------------------------------------*)
-(* Atomic formulas                                                           *)
-(*---------------------------------------------------------------------------*)
-
-datatype bexp
-  = boolLit of bool
-  | BLoc of lval
-  | Bnot of bexp
-  | Bor  of bexp * bexp
-  | Band of bexp * bexp
-  | Beq  of exp * exp
-  | Blt  of exp * exp
-  | Bgtr of exp * exp
-  | Bleq of exp * exp
-  | Bgeq of exp * exp
-;
-
-fun evalBexp (E as (Delta,lvalMap,valueFn)) bexp =
- case bexp
-  of boolLit b   => b
-   | BLoc lval   =>
-      (case Redblackmap.peek(lvalMap,lval)
-         of SOME (Bool,s) =>
-               let val bint = valueFn s
-               in if bint = 0 then false else true
-               end
-          | SOME (atom,_) =>
-               raise ERR "evalBexp" "expected Bool location"
-          | NONE => raise ERR "evalBexp" "Lval binding failure")
-   | Bnot b      => not (evalBexp E b)
-   | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
-   | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
-   | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
-   | Blt (e1,e2) => (evalExp E e1 < evalExp E e2)
-   | Bgtr(e1,e2) => (evalExp E e1 > evalExp E e2)
-   | Bleq(e1,e2) => (evalExp E e1 <= evalExp E e2)
-   | Bgeq(e1,e2) => (evalExp E e1 >= evalExp E e2)
-;
-
-(*---------------------------------------------------------------------------*)
-(* Contiguity types                                                          *)
-(*---------------------------------------------------------------------------*)
-
-datatype contig
-  = Basic of atom
-  | Declared of string
-  | Raw of exp
-  | Assert of bexp
-  | Scanner of string -> (string * string) option
-  | Recd of (string * contig) list
-  | Array of contig * exp
-  | Union of (bexp * contig) list;
-
-(*---------------------------------------------------------------------------*)
-(* A distinctive feature of our approach is the use of lvals to describe     *)
-(* locations in the message where values are stored. These values are used   *)
-(* as the sizes for variable-sized arrays in the message. For convenience,   *)
-(* we allow "location completion", so that partly-given locations can be     *)
-(* as a convenient notation.                                                 *)
-(*---------------------------------------------------------------------------*)
 
 fun resolve_lvals lvalMap path lval =
  let val prefixes = path_prefixes path
@@ -206,6 +126,91 @@ fun resolve_bexp_lvals lvalMap path bexp =
    | Bleq(e1,e2) => Bleq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
    | Bgeq(e1,e2) => Bgeq(resolve_exp_lvals lvalMap path e1,resolve_exp_lvals lvalMap path e2)
 ;
+
+(*---------------------------------------------------------------------------*)
+(* Expression evaluation                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun evalExp (E as (Delta,lvalMap,valueFn)) exp =
+ case exp
+  of Loc lval =>
+       (case Redblackmap.peek(lvalMap,lval)
+         of SOME (k,s) => valueFn s
+          | NONE => raise ERR "evalExp" "Lval binding failure")
+   | intLit i => i
+   | ConstName s =>
+     (case assoc1 s Delta
+       of SOME(_,i) => i
+        | NONE => raise ERR "evalExp"
+            ("unable to find value for constant named "^Lib.quote s))
+   | Add(e1,e2) => evalExp E e1 + evalExp E e2
+   | Mult(e1,e2) => evalExp E e1 * evalExp E e2
+;
+
+(*---------------------------------------------------------------------------*)
+(* Leaves of contig types. These are basically tags, needing to be defined   *)
+(* before evalBexp.                                                          *)
+(*---------------------------------------------------------------------------*)
+
+datatype atom
+  = Bool
+  | Char
+  | Float
+  | Double
+  | Signed of int
+  | Unsigned of int
+  | Enum of string
+  | Blob
+  | Scanned;
+
+(*---------------------------------------------------------------------------*)
+(* Map from lvals to (atom,string) pairs, where kind signals what kind of    *)
+(* type the string should be interpeted as.                                  *)
+(*---------------------------------------------------------------------------*)
+
+val empty_lvalMap
+  : (lval,atom * string) Redblackmap.dict = Redblackmap.mkDict lval_compare;
+
+(*---------------------------------------------------------------------------*)
+(* Atomic formulas                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun evalBexp (E as (Delta,lvalMap,valueFn)) bexp =
+ case bexp
+  of boolLit b   => b
+   | BLoc lval   =>
+      (case Redblackmap.peek(lvalMap,lval)
+         of SOME (Bool,s) =>
+               let val bint = valueFn s
+               in if bint = 0 then false else true
+               end
+          | SOME (atom,_) =>
+               raise ERR "evalBexp" "expected Bool location"
+          | NONE => raise ERR "evalBexp" "Lval binding failure")
+   | Bnot b      => not (evalBexp E b)
+   | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
+   | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
+   | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
+   | Blt (e1,e2) => (evalExp E e1 < evalExp E e2)
+   | Bgtr(e1,e2) => (evalExp E e1 > evalExp E e2)
+   | Bleq(e1,e2) => (evalExp E e1 <= evalExp E e2)
+   | Bgeq(e1,e2) => (evalExp E e1 >= evalExp E e2)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Contiguity types                                                          *)
+(*---------------------------------------------------------------------------*)
+
+datatype contig
+  = FAIL  (* empty set of strings *)
+  | Basic of atom
+  | Declared of string
+  | Raw of exp
+  | Assert of bexp
+  | Scanner of string -> (string * string) option
+  | Recd of (string * contig) list
+  | Array of contig * exp
+  | Union of (bexp * contig) list;
 
 (*---------------------------------------------------------------------------*)
 (* Take n elements off the front of a string, if possible.                   *)
@@ -241,7 +246,8 @@ fun segFn E path contig state =
      val (segs,s,WidthValMap) = state
  in
  case contig
-  of Basic a =>
+  of FAIL => NONE
+   | Basic a =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
          of NONE => NONE
@@ -425,7 +431,8 @@ fun pp_contig contig =
  let open PP
  in
    case contig
-    of Basic atom => pp_atom atom
+    of FAIL => add_string "FAIL"
+     | Basic atom => pp_atom atom
      | Declared s => add_string s
      | Raw exp => block CONSISTENT 1
             [add_string "Raw", add_string "(", pp_exp exp, add_string ")"]
@@ -485,7 +492,7 @@ fun take_drop n list =
 (*   valueFn : function for computing a value                                *)
 (*             stored at the designated location in the string.              *)
 (*                                                                           *)
-(* segFn operates on a state tuple (segs,s,wvMap)                            *)
+(* parseFn operates on a state tuple (segs,s,wvMap)                          *)
 (*                                                                           *)
 (*  stk : ptree list        ;;; parser stack                                 *)
 (*  s    :  string          ;;; remainder of string                          *)
@@ -499,7 +506,8 @@ fun parseFn E path contig state =
      val (stk,s,WidthValMap) = state
  in
  case contig
-  of Basic a =>
+  of FAIL => NONE
+   | Basic a =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
          of NONE => NONE
@@ -583,8 +591,9 @@ fun matchFn E (state as (worklist,s,theta)) =
  let val (Consts,Decls,atomicWidths,valueFn) = E
  in
  case worklist
-   of [] => SOME (s,theta)
-   |  (path,Basic a)::t =>
+  of [] => SOME (s,theta)
+   | (_,FAIL)::_ => NONE
+   | (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
            of NONE => NONE
@@ -606,7 +615,7 @@ fun matchFn E (state as (worklist,s,theta)) =
        let val bexp' = resolve_bexp_lvals theta path bexp
        in if evalBexp (Consts,theta,valueFn) bexp'
             then matchFn E (t,s,theta)
-            else raise ERR "matchFn" "Assert expression is false"
+            else raise ERR "matchFn" "Assert evaluates to false"
        end
    | (path,Scanner scanFn)::t =>
       (case scanFn s
@@ -647,9 +656,15 @@ fun substFn E theta path contig =
      val (Consts,Decls,atomicWidths,valueFn) = E
  in
   case contig
-   of Basic _   => thetaFn path
-    | Raw _     => thetaFn path
-    | Assert _  => ""
+   of FAIL     => raise ERR "substFn" "contig admits no assignment"
+    | Basic _  => thetaFn path
+    | Raw _    => thetaFn path
+    | Assert b =>
+       let val b' = resolve_bexp_lvals theta path b
+       in if evalBexp (Consts,theta,valueFn) b' then
+            ""
+          else raise ERR "substFn" "Assert failure"
+       end
     | Scanner _ => thetaFn path
     | Declared name => substFn E theta path (assoc name Decls)
     | Recd fields =>
@@ -690,6 +705,7 @@ fun predFn E (state as (worklist,s,theta)) =
  in
  case worklist
    of [] => true
+   |  (path,FAIL)::t => false
    |  (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
