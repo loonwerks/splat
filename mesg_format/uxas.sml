@@ -185,12 +185,19 @@ fun uxasArray contig = Recd [
 
 fun uxasBoundedArray contig bound = Recd [
   ("len", u16),
-  ("len-check",  Assert (Bleq(Loc(VarName "len"), intLit bound))),
+  ("len-check",  Assert (Ble(Loc(VarName "len"), intLit bound))),
   ("elts", Array(contig, Loc (VarName"len")))
  ];
 
 (*---------------------------------------------------------------------------*)
-(* Wrapper for a contig, with message type specified. Essentially an option  *)
+(* Wrapper for a contig, with message type specified. Essentially an option. *)
+(* Notice that we are only checking the message type. A more stringent check *)
+(* would also check the seriesID and seriesVersion, as follows.              *)
+(*                                                                           *)
+(*  ("check-mesg-numbers", Assert                                            *)
+(*   (Band(Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesID"),           *)
+(*    Band(Beq(Loc(VarName "mesgType"),ConstName mesgtyName),                *)
+(*         Beq(Loc(VarName "seriesVersion"),ConstName "CMASISeriesVersion")) *)
 (*---------------------------------------------------------------------------*)
 
 fun mesgOption mesgtyName contig = Recd [
@@ -200,11 +207,9 @@ fun mesgOption mesgtyName contig = Recd [
    (BLoc (VarName "present"), Recd[
      ("seriesID", i64),
      ("mesgType", u32),
-     ("version",  u16),
-     ("check-mesg-numbers", Assert
-       (Band(Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesID"),
-        Band(Beq(Loc(VarName "mesgType"),ConstName mesgtyName),
-             Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesVersion"))))),
+     ("seriesVersion",  u16),
+     ("check-mesg-type",
+       Assert (Beq(Loc(VarName "mesgType"),ConstName mesgtyName))),
      ("payload",  contig)])
    ])
  ];
