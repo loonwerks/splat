@@ -171,12 +171,6 @@ val real32 = Basic Float;
 val real64 = Basic Double;
 
 (*---------------------------------------------------------------------------*)
-(* A way of expressing the language consisting of just the empty string      *)
-(*---------------------------------------------------------------------------*)
-
-val SKIP = Recd [];
-
-(*---------------------------------------------------------------------------*)
 (* Arrays in uxAS are preceded by a length field.                            *)
 (*---------------------------------------------------------------------------*)
 
@@ -184,9 +178,6 @@ fun uxasArray contig = Recd [
   ("len", u16),
   ("elts", Array(contig, Loc (VarName"len")))
  ];
-
-fun arrlenBound name i =
- Assert (Bleq(Loc(RecdProj(VarName name,"len")), intLit i));
 
 (*---------------------------------------------------------------------------*)
 (* Enforce a given bound on array size                                       *)
