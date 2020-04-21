@@ -248,7 +248,7 @@ QED
 
 val contig_size_def = fetch "-" "contig_size_def";
 
-val _ = add_cong list_size_cong;
+val _ = DefnBase.add_cong list_size_cong;
 
 Definition csize_def :
   (csize FAIL            = 0) /\
