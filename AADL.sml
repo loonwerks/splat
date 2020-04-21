@@ -659,14 +659,23 @@ fun get_monitor_port port =
 
 fun get_guar_names json =
  case json
-  of List (AList [("name", String "CASE_Properties::Component_Type"), _,
+  of List (AList [("name", String "CASE_Properties_stub::Component_Type"), _,
                   ("value", String "MONITOR")]
            ::
-           AList [("name", String "CASE_Properties::Component_Spec"), _,
+           AList [("name", String "CASE_Properties_stub::Component_Spec"), _,
                   ("value", List TL_guarantee_names)]
            :: _)
       => TL_guarantee_names
    | otherwise => raise ERR "get_guar_names" "requirement name(s) not found";
+
+fun get_policy policyName jlist =
+ let fun property (AList list) =
+          if dropString(assoc "name" list) = policyName then
+            dest_exp (assoc "expr" list)
+          else raise ERR "get_policy" ""
+       | property otherwise = raise ERR "get_policy" ""
+ in mapfilter property jlist
+ end
 
 fun get_monitor (AList alist) =
      (case (assoc "name" alist,
@@ -676,11 +685,13 @@ fun get_monitor (AList alist) =
        of (String fname, List ports, monitor_names, List annexen)
           => let val qid = dest_qid fname
                  val portL = map get_monitor_port ports
+                 val policyName = snd qid^"_policy"
                  val stmts = List.concat (map get_annex_stmts annexen)
+                 val [policy] = get_policy policyName stmts
+                 val tmp_monitor_names = [String"Req001_GeoMonitorEvent"]
+                 val guars = get_named_guarantees tmp_monitor_names stmts
              in
-              case get_named_guarantees monitor_names stmts
-               of [] => raise ERR "get_monitor" "not a monitor spec"
-                | glist => MonitorDec(qid, portL, glist)
+                MonitorDec(qid, portL, ("monitor_policy",policy)::guars)
              end
        | otherwise => raise ERR "get_monitor" "unexpected syntax")
   | get_monitor otherwise = raise ERR "get_monitor" "unexpected syntax"
@@ -837,7 +848,7 @@ val AList alist = jpkg;
 val pkgs = dropList (assoc "modelUnits" alist);
 
 val (opkgs as [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7,
-               pkg8, pkg9, pkg10, pkg11,pkg12,pkg13,pkg14,pkg15]) = rev (topsort uses pkgs);
+               pkg8, pkg9, pkg10, pkg11,pkg12,pkg13,pkg14]) = rev (topsort uses pkgs);
 
 val declist = mapfilter scrape opkgs;
 
