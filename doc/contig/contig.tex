@@ -646,21 +646,22 @@ and applied when the decoder terminates.
 
 \begin{remark}[Half-baked performance idea]
   The matcher implementation requires expression evaluators
-  $\mathit{evalExp}$, $\mathit{evalBexp}$ which access the $\theta$
+  $\mathit{evalExp}$ and $\mathit{evalBexp}$ which access the $\theta$
   being built up for values of already-processed fields. Since
   $\theta$ is defined in terms of L-values, it should be easy to model
-  in the runtime data representation of whatever compiler the matcher
-  is running on. If so, then expression evaluation---rather than
-  running in interpreted style over the user-defined $\mathit{exp}$
-  datatype---could use the host language evaluator on compiled
-  expressions. The formal details need to be worked out; especially
-  interesting would be building a correctness story for such a
-  transformation in the context of the CakeML compiler.
+  it in the runtime data representation of whatever compiler the
+  matcher is running on. If so, then expression evaluation---rather
+  than running in interpreted style over the user-defined
+  $\mathit{exp}$ datatype---could use the host language evaluator on
+  compiled host language arithmetic and boolean expressions. The
+  formal details need to be worked out; especially interesting would
+  be building a correctness story for such a transformation in the
+  context of the CakeML compiler.
 \end{remark}
 
 \section{Filtering}
 
-Given the matching algorith, the building blocks for expressing
+Given the matching algorithm, the building blocks for expressing
 message filters are already in place. A simple approach we are
 investigating is to add a new ``assertion'' constructor to the
 definition of $\tau$:
