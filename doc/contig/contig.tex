@@ -1,9 +1,9 @@
 \documentclass[svgnames]{llncs}
 
-\newcommand{\ie}{i.e.}
-\newcommand{\eg}{e.g.}
-\newcommand{\etal}{et al.}
-\newcommand{\etc}{etc.}
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\etc}{\textit{etc.}}
 \newcommand{\adhoc}{\textit{ad hoc}}
 
 \usepackage{xspace}
@@ -46,7 +46,7 @@
 
 
 %% Title information
-\title{Specifying Message Formats with \\ Contiguity Types}
+\title{Specifying Message Formats with \\ Contiguity Types  \\ (PRELIMINARY DRAFT)}
 
 \author{Konrad Slind}
 \institute{Trusted Systems Group \\ Collins Aerospace}
@@ -57,7 +57,7 @@ We introduce \emph{Contiguity Types}, a formalism for network message
 formats. Contiguity types provide an intermediate layer between
 programming language data structures and messages, offering a helpful
 setting from which to automatically generate decoders, filters, and
-message generators (fuzzers). L-values and R-values provide valuable
+message generators. L-values and R-values provide valuable
 support in handling common self-describing message formats.
 \end{abstract}
 
@@ -69,19 +69,21 @@ support in handling common self-describing message formats.
 
 \section{Introduction}\label{sec:intro}
 
-Network messages are used to convey information over a network. As a
-result, there have been innumerable libraries and tools created that
-use high level specifications as a basis for automating the creation,
-validation, and decoding of such messages. Usually, these high level
-specifications describe the format of a message in terms of how the
-elements (fields) of the message are packed side-by-side to make the
-full message. When the size of each field is known in advance, there
-are really no conceptual difficulties. However, messages can be more
-complicated than that.
+Serialized data, for example network messages, is an important
+component in many computer systems.  As a result, innumerable
+libraries and tools have been created that use high level
+specifications as a basis for automating the creation, validation, and
+decoding of such data.\footnote{We will use \emph{message} to stand in
+  for any such format.} Usually, these high level specifications
+describe the format of a message in terms of how the elements (fields)
+of the message are packed side-by-side to make the full message. When
+the size of each field is known in advance, there are really no
+conceptual difficulties. However, messages can be more complicated
+than that.
 
 The main source of difficulty is \emph{self-describing} messages:
 those where information embedded in fields of the message determines
-the structure of the message. Two of the main culprits are
+the final structure of the message. Two of the main culprits are
 variable-length arrays and unions. A \emph{variable-length array} is a
 field where the number of elements in the field depends on the value
 of some already-seen field (or, more generally, as the result of a
@@ -89,35 +91,38 @@ computation involving previously-seen information in the message).
 The length is therefore a value determined at runtime. A \emph{union}
 is deployed when some information held in a message is used to
 determine the structure of later portions of the message. For example,
-this can be used to support versioning where version $i$ has $n$
-fields, and version $i+1$ has $n+1$. In cases where both versions need
-to be supported, it can make sense to encode the version handling
-inside the message, and unions are how this can be specified.
+unions can be used to support versioning where version $i$ has $n$
+fields, and version $i+1$ has $n+1$. In settings where both versions
+need to be supported in a single format, it can make sense to encode
+the version handling inside the message, and unions are how this can
+be specified.
 
 We think that tools and techniques from formal language theory such as
-regular expressions, automata, grammars, parser generators, \etc\, are
-an effective way to tackle message formats, and have been using the
-acronym \konst{SPLAT} (Semantic Properties for Language and Automata
-Theory) to refer to this approach. For example, we have used regular
-expressions as a specification language for simple message formats,
-with arithmetic constraints on the values allowed in
+regular expressions, automata, grammars, parser generators, \etc\, can
+provide an effective way to tackle message formats, and have been
+using the acronym \konst{SPLAT} (Semantic Properties for Language and
+Automata Theory) to refer to this approach. For example, we have used
+regular expressions as a specification language for message formats
+having simple interval constraints on the values allowed in
 fields. Generation of the corresponding DFA results in an efficient
 table-driven automaton implementing the specified constraints \cite{},
 with a solid proof certificate connecting the original constraints
 with the DFA behavior.
 
-However, as mentioned above, many message formats remain outside the
-realm of common formal language techniques.  Note that variable-length
-fields can't be directly handled by regular or context-free means; it
-seems that context-sensitive grammars can, in principle, specify such
-information, but there are few tools supporting context sensitive
-languages. Another possibility would be to use \emph{parser
+However, self-describing data formats fall outside the realm of common
+formal language techniques; \eg, variable-length fields clearly aren't
+able to be described by regular or context-free languages. (These
+language classes encompass repetitions of a fixed or unbounded size,
+but not repetitions of a size determined by parts of the input
+string.) It seems that context-sensitive grammars can, in principle,
+specify such information, but there are few tools supporting context
+sensitive languages. Another possibility would be to use \emph{parser
   combinators} in order to quickly stitch together a parser; it seems
-likely that parsing combinators can be instrumented to gather and
-propagate contextual information. However, we are seeking a higher
-level of formal specification and automation, while still being rooted
-in formal languages, with their emphasis on sets of strings as the
-basic notion.
+likely that the combinators can be instrumented to gather and
+propagate contextual information. However, we are seeking a high level
+of formal specification and automation, while still being rooted in
+formal languages, with their emphasis on sets of strings as the basic
+notion.
 
 \section {Contiguity Types}
 
@@ -145,10 +150,11 @@ common base types (booleans, characters, signed and unsigned integers,
 \caption{Contiguity types}
 \end{figure}
 
-(We will use the terms ``\emph{contiguity type}, \emph{c-type}, and $\tau$
-interchangeably.) Notice that $\tau$ is defined in terms of a type of
-arithmetic expressions $\mathit{exp}$ and also $\mathit{bexp}$,
-boolean expressions built from $\mathit{exp}$. Now consider
+\noindent (We will use the terms ``\emph{contiguity type},
+\emph{c-type}, and $\tau$ interchangeably.) Notice that $\tau$ is
+defined in terms of a type of arithmetic expressions $\mathit{exp}$
+and also $\mathit{bexp}$, boolean expressions built from
+$\mathit{exp}$. Now consider
 
 \[
  \konst{Array} \; \tau \; \mathit{exp} \ .
@@ -164,20 +170,19 @@ similar to a problem that programming language designers had in the
 60s and 70s, resolved by the notions of \emph{L-value} and
 \emph{R-value}. The idea is originally due to Christopher Strachey in
 CPL and developed subsequently, for example by Dennis Ritchie in
-C.\footnote{https://www.bell-labs.com/usr/dmr/www/chist.html} Before
-getting into formal details, we discuss a few examples.
+C.\footnote{https://www.bell-labs.com/usr/dmr/www/chist.html}
 
-\subsection{Examples}
-
-We will use familiar notation: records are lists of $\mathit{name} :
+Before getting into formal details, we discuss a few examples.  We
+will use familiar notation: records are lists of $\mathit{name} :
 \tau$ elements enclosed by braces while an array field
-$\konst{Array}\;c\;\mathit{dim}$ is written $c [\mathit{dim}]$.\footnote{Our
-current toolset for c-types supports the syntax on output but we have
-yet to implement a parser.}
+$\konst{Array}\;c\;\mathit{dim}$ is written $c
+    [\mathit{dim}]$.\footnote{Our current toolset for c-types supports
+      the syntax on output but we have yet to implement a parser.}
 
 \begin{enumerate}
 
-\item A straightforward record where each field is of a statically known size.
+\item The following is a record with no self-describing aspects: each
+  field is of a statically known size.
 
 \begin{verbatim}
   {A : u8
@@ -190,11 +195,12 @@ yet to implement a parser.}
 The \verb+A+ field is specified to be an unsigned int of width 8 bits,
 the \verb+B+ field is a record, the first element of which is a
 character array of size 13, and the second element of which is a 32
-bit integer; finally the last field is specified to be a
+bit integer; the last field is specified to be a
 boolean.
 
-\item Variable-sized strings. The \verb+len+ field determines the
- length of the \verb+elts+ field.
+\item Variable-sized strings are a classic self-describing aspect. In
+  this example the contents of the \verb+len+ field determines the
+  number of elements in the \verb+elts+ field.
 
 \begin{verbatim}
   { len : u16
@@ -203,15 +209,15 @@ boolean.
 \end{verbatim}
 
 
-\item The following shows how the \konst{Union} construct might be
-  used for multiple versions.  Messages with the value of field
-  \verb+versionID+ being less than 14 have three fields in the message,
-  while all others have two.
+\item The following examples shows the \konst{Union} construct being
+  used to support multiple versions in a single format.  Messages with
+  the value of field \verb+versionID+ being less than 14 have three
+  fields in the message, while all others have two.
 
 \begin{verbatim}
   {versionID : u8
    versions : Union {
-      (versionID < 14, { A : i32, B : u16})
+      (versionID < 14,  { A : i32, B : u16})
       (versionID >= 14, { Vec : char [13]})
     }
   }
@@ -239,7 +245,7 @@ boolean.
 In programming languages, an \emph{L-value} is an expression that can
 occur on the left-hand side of an assignment statement. Similarly,
 \emph{R-value} designates expressions occurring on the right-hand side
-of assignments. A few examples:
+of assignments. Following are a few examples:
 
 \begin{verbatim}
     x := x + 1
@@ -247,18 +253,11 @@ of assignments. A few examples:
     A[x].lens.fst[7] := MAX_LEN * 1024 + B.y
 \end{verbatim}
 
-An L-value denotes an \emph{offset} from the beginning of a
-data structure, plus a \emph{width}. In an R-value, an occurrence of an
-L-value is mapped to the value of the patch of memory between
-$\mathit{offset}$ and $\mathit{offset} + \mathit{width}$. For the
-purpose of specifying message formats, it may not be immediately
-obvious that a notation supporting assignment in imperative languages
-can help, but there is indeed a form of assignment lurking.
-
-An L-value can be a variable, an array index, or a record field
-access. R-values are arithmetic expressions that can contain L-values
-(we will use $\mathit{exp}$ interchangeably with R-value). Thus the
-definitions of $\mathit{lval}$, $\mathit{exp}$ and $\mathit{bexp}$ are
+Figure \ref{Lvalues} presents the formal syntax for L-values, R-values,
+and the boolean expressions we will use.  An L-value can be
+a variable, an array index, or a record field access. R-values are
+arithmetic expressions that can contain L-values (we will use
+$\mathit{exp}$ interchangeably with R-value).
 
 \begin{figure}
 \[
@@ -282,14 +281,26 @@ definitions of $\mathit{lval}$, $\mathit{exp}$ and $\mathit{bexp}$ are
 \end{array}
 \]
 \caption{L-values, expressions, and boolean expressions}
+\label{Lvalues}
 \end{figure}
 
-Given environments $\theta: \mathit{lval} \to \konst{string}$, binding
-L-values to strings, $\Delta : \konst{string} \to \mathbb{N}$, binding
-constant names to numbers, and function
-$\konst{toN}:\konst{string}\to\mathbb{N}$, which interprets ASCII
-characters strings as binary-encoded numbers, expression evaluation
-and boolean expression evaluation proceed conventionally:
+An L-value denotes an \emph{offset} from the beginning of a
+data structure, plus a \emph{width}. In an R-value, an occurrence of an
+L-value is mapped to the value of the patch of memory between
+$\mathit{offset}$ and $\mathit{offset} + \mathit{width}$. For the
+purpose of specifying message formats, it may not be immediately
+obvious that a notation supporting assignment in imperative languages
+can help, but there is indeed a form of assignment lurking.
+
+The above explanation of L-values centers on indices into a byte
+buffer; in the following we will give a mild variant of this: instead
+of indices into the buffer, we lift out the designated slices. Thus, given
+environments $\theta: \mathit{lval} \to \konst{string}$ (binding
+L-values to strings), $\Delta : \konst{string} \to \mathbb{N}$
+(binding constant names to numbers) and function
+$\konst{toN}:\konst{string}\to\mathbb{N}$ (which interprets byte
+sequences to numbers), expression evaluation and boolean expression
+evaluation have conventional definitions:
 
 \[
 \begin{array}{l}
@@ -321,23 +332,23 @@ and boolean expression evaluation proceed conventionally:
 \end{array}
 \]
 
-%\noindent\textbf{Remark}.
-
 
 
 \subsection{Semantics}
 
-In spite of the structural similarity, a contiguity type is not a
-type: it is a formal language. A type is usually understood to
-represent a set (or domain) of values, \eg, the type \konst{int32}
-represents a set of integers. In contrast, the contiguity type
-\konst{i32} represents the set of strings of width 32 bits. An element
-of a contiguity type can be turned into an element of a type by
-providing interpretations for all the strings at the leaves and
-interpreting the \konst{Recd} and \konst{Array} constructors into the
-corresponding type constructs. Thus, contiguity types
-sit---conveniently---between the types in a programming language and
-the strings used to make messages.
+ We now confess to misleading the reader: in spite of the notational
+ similarity, a contiguity type is \emph{not} a type: it is a formal
+ language. A type is usually understood to represent a set (or domain)
+ of values, \eg, the type \konst{int32} represents a set of
+ integers. In contrast, the contiguity type \konst{i32} represents the
+ set of strings of width 32 bits. An element of a contiguity type can
+ be turned into an element of a type by providing interpretations for
+ all the strings at the leaves and interpreting the \konst{Recd} and
+ \konst{Array} constructors into the corresponding type constructs. (A
+ base contiguity type therefore serves mainly as a \emph{tag} to be
+ interpreted as a width and also as an intended target type.) Thus,
+ contiguity types sit---conveniently---between the types in a
+ programming language and the strings used to make messages.
 
 The semantics definition depends on a few basic notions familiar from
 language theory: language concatenation, and iterated language
@@ -388,8 +399,9 @@ occurring in $\tau$.
 \end{definition}
 
 \begin{example}
-Consider the following schema for an \emph{optional} contiguity
-type. The record associated with boolean expression $b$ has no fields.
+Consider the following schema for an \emph{option} contiguity
+type. The empty record \verb+{}+ associated with boolean expression
+$b$ has no fields.
 
 \begin{verbatim}
   Union { (b, {})
@@ -397,28 +409,31 @@ type. The record associated with boolean expression $b$ has no fields.
    }
 \end{verbatim}
 
-In case $\mathit{b}$ evaluates to \konst{true}, no portion of the
-string is consumed; otherwise, $c$ is processed. It is instructive to
-consider how this type works with arrays. For example, the following
-c-type
+\noindent In case $\mathit{b}$ evaluates to \konst{true}, no portion of the
+string is consumed; otherwise, $c$ specifies the remainder of the
+processing. It is instructive to consider how this type works with
+arrays. For example, the following c-type
 
 \begin{verbatim}
   (Union { (b, {}), (not(b), i32) }) [3]
 \end{verbatim}
 
-is an array that has three elements, all of which are either of size
-zero or of size four bytes.
+\noindent specifies an array that has three elements, all of which are either of
+size zero or of size four (bytes).
 
 \end{example}
 
 \section{Algorithms}
 
-We are working on the following algorithms over contiguity types.
+The following problems involving contiguity types are worth
+investigating. At present we have been working on decoding and
+filtering.
 
 \begin{description}
 
-\item [Parsing] (Also, decoding.) Breaks a sequence of bytes up and puts the
-  pieces into a parse tree, or some useful data structure.
+\item [Decoding] A decoder breaks a sequence of bytes up and puts the
+  pieces into a useful data structure, typically a parse tree. We will
+  discuss this in more detail in Section \ref{decoding}.
 
 \item [Filtering] Computes an answer to the question: ``does a
   sequence of bytes meet the specification of a given contiguity
@@ -427,48 +442,58 @@ We are working on the following algorithms over contiguity types.
   the language. More powerful filters enforce that certain fields of a
   message, when interpreted, meet specific semantic properties.
 
-\item [Serialization] (Also, encoding.) Given a data structure, write a compact
-  binary version to a message.
+\item [Serialization] Given a contiguity type, synthesize a function
+  that writes a compact binary version of a data structure to a message.
 
-\item [Fuzzing] (Also, test generation.) Given a contiguity type, generate
-  byte sequences that do (or do not) meet its specification and feed
-  the sequences to implementations in order to observe their behaviour.
+\item [Test generation] Given a contiguity type, generate byte
+  sequences that do (or do not) meet its specification and feed the
+  sequences to implementations in order to observe their behaviour.
+
+\item [Learning] Given training sets of message buffers that are
+  accepted/rejected by an implementation, attempt to discover a
+  contiguity type for the entire set of messages.
 
 \end{description}
 
-\subsection{Parsing, decoding, and matching}
+\subsection{Decoding}
+\label{decoding}
 
-Let us recall the distinction between \emph{parsing}, which discovers
-structure (parse trees), and \emph{matching}, which is given structure
-and calculates assignments (substitutions).\footnote{Thus the notion
-  of matching discussed here is in the tradition of term rewriting
-  \cite{nipkow-trs-book}, the main difference being that our
-  substitutions are applied to $\mathit{lvar}$s rather than
-  variables.} Giving some types makes the difference clear:
+Above we mentioned that decoding can result in parse trees; however,
+self-describing messages allow a different conceptual framework to be
+brought to bear. There is an important distinction between
+\emph{parsing}, which discovers structure (parse trees), and
+\emph{matching}, which is given structure and calculates assignments
+(substitutions).\footnote{Thus the notion of matching discussed here
+  is in the tradition of term rewriting \cite{nipkow-trs-book}, the
+  main difference being that our substitutions are applied to
+  $\mathit{lvar}$s rather than variables.} Giving some types helps
+make the difference clear:
 
 \begin{align*}
   \konst{parse} &: \mathit{grammar} \to \konst{string} \to \mathit{parse tree} \\
   \konst{match} &: \mathit{AST} \to \konst{string} \to \mathit{assignments}
 \end{align*}
 
-The central algorithm for contiguity types is a \emph{matcher}: given a
-contiguity type $\tau$ and a string $s$, the matcher will either fail,
-or succeed with an assignment $\theta : \mathit{lval} \mapsto
-\konst{string}$ mapping each L-value in $\tau$ to its corresponding
-slice of $s$.
+For contiguity types, the central decoding algorithm is a
+\emph{matcher}: given a contiguity type $\tau$ and a string $s$, the
+matcher will either fail, or succeed with an assignment $\theta :
+\mathit{lval} \mapsto \konst{string}$ mapping each L-value in $\tau$
+to its corresponding slice of $s$. The assignment $\theta$ can be
+post-processed to yield a standard parse tree, but its novelty and
+strength is that $\theta$ can be dynamically consulted to access the
+values needed to guide the processing of self-describing messages.
 
 \begin{definition}[Matching algorithm]
 
 The matching algorithm operates over a triple $(\mathit{worklist},
 \mathit{str}, \theta)$ where $\mathit{worklist}$ is a stack used to
-linearize the input contiguity type $\tau$, $\mathit{str}$
-represents the remainder of the input string, and $\theta$ is the
-assignment being built up. Each element of the $\mathit{worklist}$ is
-in fact a $(\tau,\mathit{lval})$ pair, where $\tau$ is a c-type, and
-$\mathit{lval}$ is the path growing down from the root to $\tau$. We
-will use the notation $(\lval \mapsto \mathit{slice}) \bullet \theta$
-to mean the addition of binding $\lval \mapsto \mathit{slice}$ to
-assignment $\theta$.
+linearize the input contiguity type $\tau$, $\mathit{str}$ represents
+the remainder of the input string, and $\theta$ is the assignment
+being built up. Each element of the $\mathit{worklist}$ is in fact a
+$(\tau,\mathit{lval})$ pair, where $\tau$ is a c-type, and
+$\mathit{lval}$ is the path growing down from the root to $\tau$. The
+notation $(\lval \mapsto \mathit{slice}) \bullet \theta$ denotes the
+addition of binding $\lval \mapsto \mathit{slice}$ to $\theta$.
 
 We examine the cases in turn:
 
@@ -504,7 +529,6 @@ We examine the cases in turn:
   ([(\tau_1,\lval.f_1), \cdots , (\tau_n,\lval.f_n)] @ t,\mathit{str}, \theta)
 \end{align*}
 
-
 \item The first element of the worklist is an array. The dimension
   expression is evaluated to get the width $d$, then $d$ copies are
   pushed onto the stack, where each path is extended with the array
@@ -526,13 +550,12 @@ We examine the cases in turn:
   ((\tau_i,\lval)::t,\mathit{str}, \theta)
 \end{align*}
 
-
 \end{enumerate}
 
 \noindent The matcher function, \konst{match} begins with an initial state
 
 \[
-  \mathit{state}_0 = ([(\tau,\mathit{root})],\mathit{str}_0,\emptyset)
+  \mathit{state}_0 = ([(\mathit{root},\tau)],\mathit{str}_0,\emptyset)
 \]
 
 where the initial path is a default \lval{} variable named
@@ -540,6 +563,12 @@ $\mathit{root}$, the initial string is $\mathit{str}_0$, and the
 initial assignment has no bindings.
 
 \end{definition}
+
+\begin{theorem}[Matcher termination]
+Termination is a nice application of the multiset ordering to the
+worklist component of the state, as the handling of the \konst{Array}
+construct is a version of the Hercules-Hydra problem.
+\end{theorem}
 
 The correctness statement for the matcher is similar to those found in
 the term rewriting literature.
@@ -568,33 +597,84 @@ $\theta$ that admit strings into $\LangTheta{\tau}$.
 
 \end{theorem}
 
-A matcher with the above properties will break up the input string in
-accordance with the specification; it also generates a sequence of
-assignments that, when executed, will populate a data structure with
-the specified data in the specified places. Therefore it is not really
-necessary to generate parse trees to decode: one merely needs a data
-structure to write data into. The correctness property will ensure
-that \emph{all} fields are written, and with the specified data. The
-assignments can be incrementally evaluated as the decoder runs, or can
-be stored and applied when the decoder terminates.\footnote{Beware: in
-  the incremental approach, if the decoder fails at some point, the
-  result will be a partly filled data structure.}
+\begin{example}
+Given the c-type
+\begin{verbatim}
+   {A : Bool
+    B : Char
+    len : u16
+    elts : i32 [len]
+  }
+\end{verbatim}
+\noindent and an input string (listed in hex)
+\begin{verbatim}
+  [0wx1, 0wx67, 0wx0, 0wx5, 0wx0, 0wx0, 0wx0, 0wx19, 0wx0, 0wx0,
+   0wx9, 0wx34, 0wx0, 0wx0, 0wx30, 0wx39, 0wx0, 0wx0, 0wxD4,
+   0wx31, 0wxFF, 0wxFF, 0wxFE, 0wxB3]
+\end{verbatim}
+created by encoding: the boolean \verb+true+, the letter \verb+g+, the
+number 5 (MSB 2 byte unsigned), and the five MSB 4 byte signed twos complement
+integers 25, 2356, 12345, 54321, and -333, the matcher creates the
+following assignment of $\mathit{lval}$s to substrings of the input
+(each element of the list is of the form
+$(\mathit{lval}, (\mathit{tag},\mathit{bytes}))$):
 
-%\begin{example}
-%\end{example}
+\begin{verbatim}
+ [(root.A,       (Bool, [0wx1])),
+  (root.B,       (Char, [0wx67])),
+  (root.len,     (u16,  [0wx0, 0wx5])),
+  (root.elts[0], (i32,  [0wx0, 0wx0, 0wx0, 0wx19])),
+  (root.elts[1], (i32,  [0wx0, 0wx0, 0wx9, 0wx34])),
+  (root.elts[2], (i32,  [0wx0, 0wx0, 0wx30, 0wx39])),
+  (root.elts[3], (i32,  [0wx0, 0wx0, 0wxD4, 0wx31])),
+  (root.elts[4], (i32,  [0wxFF, 0wxFF, 0wxFE, 0wxB3]))
+ ]
+\end{verbatim}
 
+\end{example}
+
+Thus the matcher will break up the input string in accordance with the
+specification; it also generates a sequence of assignments that, when
+executed, will populate a data structure with the specified data in
+the specified places. Therefore it is not really necessary to generate
+parse trees to in order to decode: one merely needs a target data
+structure to write data into. (In fact, when filtering, no target data
+structure is needed at all.) The correctness property will ensure that
+\emph{all} fields are written with the specified data. The assignments
+can be incrementally evaluated as the decoder runs, or can be stored
+and applied when the decoder terminates.
+
+\begin{remark}[Half-baked performance idea]
+  The matcher implementation requires expression evaluators
+  $\mathit{evalExp}$, $\mathit{evalBexp}$ which access the $\theta$
+  being built up for values of already-processed fields. Since
+  $\theta$ is defined in terms of L-values, it should be easy to model
+  in the runtime data representation of whatever compiler the matcher
+  is running on. If so, then expression evaluation---rather than
+  running in interpreted style over the user-defined $\mathit{exp}$
+  datatype---could use the host language evaluator on compiled
+  expressions. The formal details need to be worked out; especially
+  interesting would be building a correctness story for such a
+  transformation in the context of the CakeML compiler.
+\end{remark}
 
 \section{Filtering}
 
-The building blocks for expressing message filters are already in
-place. A simple approach we are investigating is to add a new
-``assertion'' constructor to the definition of $\tau$:
+Given the matching algorith, the building blocks for expressing
+message filters are already in place. A simple approach we are
+investigating is to add a new ``assertion'' constructor to the
+definition of $\tau$:
 
 \[
   \konst{Assert}(\mathit{bexp})
 \]
 
-\noindent The semantics of \konst{Assert} are straightforward:
+\noindent The semantics of \konst{Assert} can already be expressed
+with the notion of an empty record, and $\emptyset$, the empty
+language.
+\[\konst{Assert}\; P = \konst{Union} \; (P, \{\,\}) \ (\neg P, \emptyset) \]
+
+\noindent The implementation mirrors this closely
 \[
 \LangTheta{\konst{Assert}\; \mathit{bexp}} =
  \left\{
@@ -610,10 +690,10 @@ illustrative purposes) assertion language over R-values. For example,
 the following c-type
 
 \begin{verbatim}
-    { A : i32
-      B : i32
-      C : Assert (A + B <= 42)
-    }
+  { A : i32
+    B : i32
+    C : Assert (A + B <= 42)
+  }
 \end{verbatim}
 
 \noindent includes field \verb+C+, which is processed after fields
@@ -627,13 +707,13 @@ unchanged. Each \konst{Assert} expression is evaluated when it is
 encountered; if the result is true, processing continues, otherwise
 an error has been found.
 
-Notice that successful match of a message against a c-type is a
-minimal (syntactic) well-formedness check. \konst{Assert} fields
-provide a basis for checking user-specified well-formedness properties
-on messages. It also is worth noting that certain features of c-types
-require checks no matter what kind of user-specified properties are
-required: both enumerations and arrays have side-conditions that
-\konst{Assert} can enforce.
+Notice that successful match of a message against a c-type amounts to
+a minimal well-formedness check: the message string is long enough to
+match the c-type. \konst{Assert} fields provide a basis for deeper
+semantic checks. It is also worth noting that certain features of
+c-types require checks no matter what kind of user-specified
+properties are required: both enumerations and arrays have
+side-conditions that \konst{Assert} can enforce.
 
 \begin{example}
 C-types support enumerations. An \emph{enumeration} declaration
