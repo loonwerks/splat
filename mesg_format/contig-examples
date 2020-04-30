@@ -55,6 +55,10 @@ val SOME(segs, remaining, lvalMap) = segments E contig string;
 
 Redblackmap.listItems lvalMap;
 
+fun foo (a,(b,c)) = (a,(b,Byte.stringToBytes c));
+
+map foo (Redblackmap.listItems lvalMap);
+
 val SOME(segs, remaining, lvalMap) = segments E contig string;
 
 val (ptree,remaining,_) = parse E contig string;
@@ -66,8 +70,8 @@ val string = String.concat
    mk_i32 25,
    mk_i32 2356,
    mk_i32 12345,
-   mk_i32 12345,
-   mk_i32 12345
+   mk_i32 54321,
+   mk_i32 (~333)
   ];
 
 val SOME(segs, remaining, lvalMap) = segments E contig string;

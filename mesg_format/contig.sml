@@ -662,13 +662,13 @@ fun substFn E theta path contig =
      val (Consts,Decls,atomicWidths,valueFn) = E
  in
   case contig
-   of FAIL     => raise ERR "substFn" "contig admits no assignment"
+   of FAIL     => raise ERR "substFn" "FAIL"
     | Basic _  => thetaFn path
     | Raw _    => thetaFn path
     | Assert b =>
        let val b' = resolveBexp theta path b
        in if evalBexp (Consts,theta,valueFn) b' then
-            ""
+              ""
           else raise ERR "substFn" "Assert failure"
        end
     | Scanner _ => thetaFn path

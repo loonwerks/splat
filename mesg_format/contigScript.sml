@@ -67,8 +67,8 @@ Datatype:
        | Signed num
        | Unsigned num
        | Enum string
-       | Blob
-       | Scanned
+       | Blob num
+       | Scanned num
 End
 
 Datatype:
@@ -178,8 +178,8 @@ Definition optFirst_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Does a partial lval resolve to something in the lvalMap? This is a kind   *)
-(* of dynamic scoping.                                                       *)
+(* Attempt to extend a partial lval to something in the lvalMap. This is a   *)
+(* kind of dynamic scoping.                                                  *)
 (*---------------------------------------------------------------------------*)
 
 Definition resolve_lval_def :
@@ -230,7 +230,7 @@ Termination
  WF_REL_TAC `measure (\(a,b). b+1n - a)`
 End
 
-Theorem upto_thm :
+Theorem upto_interval_thm :
  !lo hi. set(upto lo hi) = {n | lo <= n /\ n <= hi}
 Proof
  recInduct upto_ind
@@ -242,8 +242,8 @@ QED
 
 (*---------------------------------------------------------------------------*)
 (* Size of a contig. The system-generated contig_size goes through a lot of  *)
-(* other types, including strings (field names) and they shouldn't be counted*)
-(* because field name size shouldn't count in the size of the expression.    *)
+(* other types, including field names, and those shouldn't be counted because*)
+(* field name size shouldn't count in the size of the expression.            *)
 (*---------------------------------------------------------------------------*)
 
 val contig_size_def = fetch "-" "contig_size_def";
@@ -313,9 +313,72 @@ Termination
    >- fs [FILTER_EQ_CONS,list_size_append,list_size_def]
 End
 
-
 (*
 fun wellformed E contig s = predFn E ([(VarName"root",contig)],s,empty_lvalMap);
 *)
+
+(*---------------------------------------------------------------------------*)
+(* Apply a substitution to a contig.                                         *)
+(*---------------------------------------------------------------------------*)
+
+Definition substFn_def :
+ substFn valueFn theta path contig =
+  case contig
+   of FAIL     => ""
+    | Basic _  => THE(lookup lval_compare path theta)
+    | Recd fields =>
+       CONCAT (MAP (\(fName,c). substFn valueFn theta (RecdProj path fName) c)
+                   fields)
+    | Array c exp =>
+      let exp' = resolveExp theta path exp ;
+          dim = evalExp (theta,valueFn) exp';
+       in CONCAT (MAP (\i. substFn valueFn theta (ArraySub path (numLit i)) c)
+                      (upto 0 (dim - 1)))
+    | Union choices =>
+       (case FILTER (\(bexp,c). evalBexp (theta,valueFn) (resolveBexp theta path bexp)) choices
+         of [(_,c)] => substFn valueFn theta path c
+          |  otherwise => ARB)
+Termination
+ WF_REL_TAC `measure (csize o SND o SND o SND)`
+   >> rw [csize_def]
+   >- (Induct_on `fields` >> rw[list_size_def] >> rw[] >> fs[])
+   >- (Induct_on `choices` >> rw[list_size_def] >> fs[])
+End
+
+
+fun matchFn (atomicWidths,valueFn) (worklist,s,theta) =
+ case worklist
+  of [] => SOME (s,theta)
+   | (_,FAIL)::_ => NONE
+   | (path,Basic a)::t =>
+        (case tdrop (atomicWidths a) s
+          of NONE => NONE
+           | SOME (segment,rst) =>
+              matchFn (atomicWidths,valueFn)
+                      (t,rst, Redblackmap.insert(theta,path,(a,segment)))
+       end
+   | (path,Recd fields)::t =>
+       let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
+       in matchFn E (map fieldFn fields @ t,s,theta)
+       end
+   | (path,Array (c,exp))::t =>
+       let val exp' = resolveExp theta path exp
+           val dim = evalExp (Consts,theta,valueFn) exp'
+           fun indexFn i = (ArraySub(path,intLit i),c)
+       in matchFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
+       end
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             let val bexp' = resolveBexp theta path bexp
+             in evalBexp (Consts,theta,valueFn) bexp'
+             end
+       in case filter choiceFn choices
+           of [(_,c)] => matchFn E ((path,c)::t,s,theta)
+            | otherwise => raise ERR "matchFn" "expected exactly one successful choice"
+       end
+ end
+;
+
+fun match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap);
 
 val _ = export_theory();

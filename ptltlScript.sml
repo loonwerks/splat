@@ -198,9 +198,9 @@ End
 
 Definition dfa_loop_def :
  dfa_loop delta form elms st =
-   (case elms
+   case elms
      of [] => MEM form st
-      | elm :: elms' => dfa_loop delta form elms' (delta st elm))
+      | elm :: elms' => dfa_loop delta form elms' (delta st elm)
 End
 
 

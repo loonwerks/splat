@@ -20,7 +20,7 @@ sig
     = FilterDec of qid * (string * ty * string * string) list * (string * exp) list
 
  datatype monitor
-    = MonitorDec of qid * (string * ty * string * string) list * (string * exp) list
+    = MonitorDec of qid * (string * ty * string * string) list * bool * (string * exp) list
 
  type decls =
   (* pkgName *)  string *

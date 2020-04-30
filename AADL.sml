@@ -30,7 +30,7 @@ in end;
     = FilterDec of qid * (string * ty * string * string) list * (string * exp) list
 
  datatype monitor
-    = MonitorDec of qid * (string * ty * string * string) list * (string * exp) list
+    = MonitorDec of qid * (string * ty * string * string) list * bool * (string * exp) list
 
  type decls =
   (* pkgName *)  string *
@@ -184,6 +184,7 @@ fun mk_binop (opr,e1,e2) =
          | ">="  => GreaterEqual
 	 | "=>"  => Imp
          | "="   => Equal
+         | "<=>" => Equal
          | "and" => And
          | "or"  => Or
          | other => raise ERR "mk_binop"
@@ -219,6 +220,9 @@ fun mk_and a b = mk_binop("and",a,b);
 (*---------------------------------------------------------------------------*)
 
 val _ = defaultNumKind := AST.Int NONE;
+
+fun dropBool (Boolean b) = b
+  | dropBool otherwise = raise ERR "dropBool" "not a json Boolean application";
 
 fun dropString (String s) = s
   | dropString otherwise = raise ERR "dropString" "not a json String application";
@@ -258,8 +262,10 @@ fun dest_exp e =
    | AList [("kind", String "RecordLitExpr"),
             ("recordType", rty), ("value", AList jfields)]
        => RecdExp(dest_named_ty (dest_ty rty), map mk_field jfields)
-   | AList [("kind", String "Selection"), ("target", target), ("field", String fname)]
-       => RecdProj (dest_exp target, fname)
+   | AList [("kind", String "Selection"), ("target", lval), ("field", String fname)]
+       => RecdProj (dest_exp lval, fname)
+   | AList [("kind", String "ArraySubExpr"), ("array", aexp), ("index", iexp)]
+       => ArrayIndex(dest_exp aexp, [dest_exp iexp])
    | AList [("kind", String "CallExpr"),
             ("function", AList alist),
             ("args", List args)]
@@ -298,7 +304,7 @@ fun dest_param param =
   of AList [("name", String pname), ("type", ty)] => (pname,dest_ty ty)
    | otherwise => raise ERR "dest_param" "unexpected input";
 
-fun mk_fun_def pkgName json =
+fun mk_fun_def compName json =
  case json
   of AList (("kind", String "FnDef")::binds) =>
      (case (assoc "name" binds,
@@ -306,16 +312,16 @@ fun mk_fun_def pkgName json =
             assoc "type" binds,
             assoc "expr" binds)
        of (String fname, List params, ty, body) =>
-           FnDec((pkgName,fname), map dest_param params, dest_ty ty, dest_exp body)
+           FnDec((compName,fname), map dest_param params, dest_ty ty, dest_exp body)
        |  otherwise => raise ERR "mk_fun_def" "unexpected input")
    | otherwise => raise ERR "mk_fun_def" "unexpected input";
 
-fun mk_const_def pkgName json =
+fun mk_const_def compName json =
  case json
   of AList [("kind", String "ConstStatement"),
             ("name", String cname),
             ("type", ty),
-            ("expr", body)] => ConstDec((pkgName,cname), dest_ty ty, dest_exp body)
+            ("expr", body)] => ConstDec((compName,cname), dest_ty ty, dest_exp body)
   |  otherwise => raise ERR "mk_const_def" "unexpected input";
 
 fun dest_feature (AList alist) =
@@ -357,11 +363,11 @@ fun mk_eq_stmt_def compName features (AList alist) =
   | mk_eq_stmt_def any other thing = raise ERR "mk_eq_stmt_def" "unexpected syntax"
 ;
 
-fun mk_def pkgName features json =
-  mk_const_def pkgName json    handle HOL_ERR _ =>
-  mk_fun_def pkgName json      handle HOL_ERR _ =>
-  mk_property_stmt_def pkgName features json handle HOL_ERR _ =>
-  mk_eq_stmt_def pkgName features json handle HOL_ERR _ =>
+fun mk_def compName features json =
+  mk_const_def compName json    handle HOL_ERR _ =>
+  mk_fun_def compName json      handle HOL_ERR _ =>
+  mk_property_stmt_def compName features json handle HOL_ERR _ =>
+  mk_eq_stmt_def compName features json handle HOL_ERR _ =>
   raise ERR "mk_def" "unexpected syntax";
 
 fun get_annex_stmts (AList alist) =
@@ -373,27 +379,27 @@ fun get_annex_stmts (AList alist) =
        | otherwise => raise ERR "get_annex_stmts" "unexpected syntax")
   | get_annex_stmts otherwise = raise ERR "get_annex_stmts" "unexpected syntax"
 
-fun mk_annex_defs pkgName features annex =
-  mapfilter (mk_def pkgName features) (get_annex_stmts annex)
+fun mk_annex_defs compName features annex =
+  mapfilter (mk_def compName features) (get_annex_stmts annex)
 
 (*---------------------------------------------------------------------------*)
 (* compName is of the form "<pkgName>::<actual_compName>", so futz around to *)
 (* get the name into the form "<pkgName>__<actual_compName".                 *)
 (*---------------------------------------------------------------------------*)
 
+val futz = String.map (fn ch => if ch = #":" then #"_" else ch)
+
 fun mk_comp_defs comp =  (* annex inside package component *)
- let val futz = String.map (fn ch => if ch = #":" then #"_" else ch)
- in
  case comp
   of AList alist =>
      let val compName = dropString (assoc "name" alist) handle _ => ""
+         val compName' = futz compName
          val features = dropList (assoc "features" alist) handle _ => []
          val annexes = dropList (assoc "annexes" alist)
-     in List.concat(map (mk_annex_defs (futz compName) features) annexes)
+     in List.concat(map (mk_annex_defs compName' features) annexes)
      end
    | otherwise => raise ERR "mk_comp_defs" "unexpected annex format"
- end;
-
+;
 
 (*
 val [d1,d2,d3,d4,d5,d6,d7,d8,d9,d10] = decls;
@@ -538,40 +544,15 @@ fun get_port port =
       => (pname,dest_tyqid tyqidstring,flowdir,conn_style)
     | otherwise => raise ERR "get_port" "unexpected port format"
 
-(*---------------------------------------------------------------------------*)
-(* This enables "Req001_Filter" to be equal to "Req001_RadioDriver_Filter"   *)
-(*---------------------------------------------------------------------------*)
-
-fun filter_req_name_eq s1 s2 =
- let fun is_underscore ch = (ch = #"_")
-     val s1_tokens = String.tokens is_underscore s1
-     val s2_tokens = String.tokens is_underscore s2
- in not (null s1_tokens) andalso not(null s2_tokens) andalso
-    hd s1_tokens = hd s2_tokens andalso
-    last s1_tokens = last s2_tokens
- end;
-
-fun get_guarantee (String rname) stmt =
-   (case stmt
-     of AList [("kind", String "GuaranteeStatement"),
-               ("name", String gname),
-               ("label", String gdoc),
-               ("expr", gprop)]
-        => if filter_req_name_eq rname gname
-            then (gdoc, dest_exp gprop)
-           else raise ERR "get_guarantee"
-		   (String.concat["expected named guarantee ", Lib.quote rname,
-				  " but encountered ", Lib.quote gname])
-     | otherwise => raise ERR "get_guarantee" "unexpected input format"
-   )
-  | get_guarantee _ _ = raise ERR "get_guarantee"
-                                "expected a String in first argument"
-;
-
-fun get_named_guarantees rnames stmts =
- let fun gtees_of rname = mapfilter (get_guarantee rname) stmts
+fun get_named_props name_equivFn rnames stmts =
+ let fun get_named_exp rname (AList alist) =
+         if name_equivFn rname (assoc "name" alist) then
+            (dropString rname, dest_exp (assoc "expr" alist))
+         else raise ERR "get_named_exp" "not found"
+       | get_named_exp _ _ = raise ERR "get_named_exp" "expected an AList"
+     fun prop_of rname = tryfind (get_named_exp rname) stmts
  in
-    List.concat (map gtees_of rnames)
+    mapfilter prop_of rnames
  end
 
 (*---------------------------------------------------------------------------*)
@@ -586,6 +567,21 @@ fun get_annex_stmts (AList alist) =
       of (String "agree", AList [("statements", List decls)]) => decls
        | otherwise => raise ERR "get_annex_stmts" "unexpected syntax")
   | get_annex_stmts otherwise = raise ERR "get_annex_stmts" "unexpected syntax"
+
+(*---------------------------------------------------------------------------*)
+(* This enables "Req001_Filter" to be equal to "Req001_RadioDriver_Filter"   *)
+(*---------------------------------------------------------------------------*)
+
+fun filter_req_name_eq js1 js2 =
+ let val s1 = dropString js1
+     val s2 = dropString js2
+     fun is_underscore ch = (ch = #"_")
+     val s1_tokens = String.tokens is_underscore s1
+     val s2_tokens = String.tokens is_underscore s2
+ in not (null s1_tokens) andalso not(null s2_tokens) andalso
+    hd s1_tokens = hd s2_tokens andalso
+    last s1_tokens = last s2_tokens
+ end;
 
 fun get_filter decl =
  case decl
@@ -604,7 +600,7 @@ fun get_filter decl =
           mem pname2 ["CASE_Properties::COMP_SPEC","CASE_Properties::Component_Spec"]
        then
        let val stmts = List.concat (map get_annex_stmts annexen)
-       in case get_named_guarantees rnames stmts
+       in case get_named_props filter_req_name_eq rnames stmts
            of [] => raise ERR "get_filter" "no properties!"
             | glist => FilterDec(dest_qid fname, map get_port ports, glist)
        end
@@ -657,16 +653,31 @@ fun get_monitor_port port =
           end
    | otherwise => raise ERR "get_monitor_port" "unexpected port format"
 
-fun get_guar_names json =
- case json
-  of List (AList [("name", String "CASE_Properties_stub::Component_Type"), _,
-                  ("value", String "MONITOR")]
-           ::
-           AList [("name", String "CASE_Properties_stub::Component_Spec"), _,
-                  ("value", List TL_guarantee_names)]
-           :: _)
-      => TL_guarantee_names
-   | otherwise => raise ERR "get_guar_names" "requirement name(s) not found";
+fun get_guar_names (List jlist) =
+ let fun property (AList list) =
+          if dropString(assoc "name" list) = "CASE_Properties_stub::Component_Spec"
+           then
+             dropList (assoc "value" list)
+          else raise ERR "get_guar_names" ""
+       | property otherwise = raise ERR "get_guar_names" ""
+ in tryfind property jlist
+ end
+
+fun get_latched (List jlist) =
+ let fun isaLatch (AList list) =
+          dropString(assoc "name" list) = "CASE_Properties_stub::Monitor_Latched"
+          andalso dropBool (assoc "value" list) = true
+       | isaLatch otherwise = false
+ in exists isaLatch jlist
+ end
+
+fun is_monitor (List jlist) =
+ let fun isaMon (AList list) =
+          dropString(assoc "name" list) = "CASE_Properties_stub::Component_Type"
+          andalso dropString (assoc "value" list) = "MONITOR"
+       | isaMon otherwise = false
+ in exists isaMon jlist
+ end
 
 fun get_policy policyName jlist =
  let fun property (AList list) =
@@ -674,25 +685,31 @@ fun get_policy policyName jlist =
             dest_exp (assoc "expr" list)
           else raise ERR "get_policy" ""
        | property otherwise = raise ERR "get_policy" ""
- in mapfilter property jlist
+ in tryfind property jlist
  end
 
+fun jname_eq s1 s2 = (dropString s1 = dropString s2)
+
 fun get_monitor (AList alist) =
-     (case (assoc "name" alist,
-            assoc "features" alist,
-            get_guar_names(assoc "properties" alist),
-            assoc "annexes" alist)
-       of (String fname, List ports, monitor_names, List annexen)
-          => let val qid = dest_qid fname
-                 val portL = map get_monitor_port ports
-                 val policyName = snd qid^"_policy"
-                 val stmts = List.concat (map get_annex_stmts annexen)
-                 val [policy] = get_policy policyName stmts
-                 val tmp_monitor_names = [String"Req001_GeoMonitorEvent"]
-                 val guars = get_named_guarantees tmp_monitor_names stmts
-             in
-                MonitorDec(qid, portL, ("monitor_policy",policy)::guars)
-             end
+    (case (assoc "name" alist,
+           assoc "features" alist,
+           assoc "properties" alist,
+           assoc "annexes" alist)
+     of (String fname, List ports, properties, List annexen)
+        => let val _ = if is_monitor properties then ()
+                       else raise ERR "get_monitor" "unable to find MONITOR property"
+               val qid = dest_qid fname
+               val portL = map get_monitor_port ports
+               val monitor_names = get_guar_names properties
+               val is_latched = get_latched properties
+               val stmts = List.concat (map get_annex_stmts annexen)
+               val policyName = snd qid^"_policy"
+               val policy = get_policy policyName stmts
+               val tmp_monitor_names = (String "alert_condition"::monitor_names)
+               val guars = get_named_props jname_eq tmp_monitor_names stmts
+           in
+                MonitorDec(qid, portL, is_latched, (policyName,policy)::guars)
+           end
        | otherwise => raise ERR "get_monitor" "unexpected syntax")
   | get_monitor otherwise = raise ERR "get_monitor" "unexpected syntax"
 ;
@@ -927,8 +944,8 @@ fun amn_monitor_dec fdec =
  let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
      fun amn_cprop (s,e) = (s,amn_exp e)
  in case fdec
-     of MonitorDec(qid, ports, cprops) =>
-        MonitorDec(qid, map amn_port ports, map amn_cprop cprops)
+     of MonitorDec(qid, ports, b, cprops) =>
+        MonitorDec(qid, map amn_port ports, b, map amn_cprop cprops)
  end
 ;
 
@@ -1436,45 +1453,70 @@ fun fromMLbool b = if b then T else F;
 (* ptltl formulas are handled separately, even the boolean structure.        *)
 (*---------------------------------------------------------------------------*)
 
-fun trans_ptLTL pkgName varE formula =
-    case formula
-     of Fncall(("AGREE_PLTL","Yesterday"),[e]) =>
-          ptltlSyntax.mk_Yester(trans_ptLTL pkgName varE e)
-      | Fncall(("AGREE_PLTL","Zyesterday"),[e]) =>
-         ptltlSyntax.mk_Zyester(trans_ptLTL pkgName varE e)
-      | Fncall(("AGREE_PLTL","Historically"),[e]) =>
-         ptltlSyntax.mk_Histor(trans_ptLTL pkgName varE e)
+fun trans_ptLTL frmula =
+ let open ptltlSyntax
+     fun mk_obsVar i = ("obsVar_"^Int.toString i)
+     val obStrm = Lib.mk_istream (fn x => x+1) 1 mk_obsVar
+  fun sweep form bindings =
+    case form
+     of Fncall(("AGREE_PLTL","Yesterday"),[e]) => (mk_Yester ## I) (sweep e bindings)
+      | Fncall(("AGREE_PLTL","Zyesterday"),[e]) => (mk_Zyester ## I) (sweep e bindings)
+      | Fncall(("AGREE_PLTL","Historically"),[e]) => (mk_Histor ## I) (sweep e bindings)
       | Fncall(("AGREE_PLTL","Since"),[e1,e2]) =>
-         ptltlSyntax.mk_Since
-              (trans_ptLTL pkgName varE e1,
-               trans_ptLTL pkgName varE e2)
+          let val (tm1,binds1) = sweep e1 bindings
+              val (tm2,binds2) = sweep e2 binds1
+          in (mk_Since (tm1, tm2), binds2)
+          end
       | Fncall(("AGREE_PLTL","Trigger"),[e1,e2]) =>
-         ptltlSyntax.mk_Trigger
-              (trans_ptLTL pkgName varE e1,
-               trans_ptLTL pkgName varE e2)
-      | Fncall(("AGREE_PLTL",s),_) =>
-        raise ERR "trans_ptLTL" ("unknown AGREE_PTLTL operator: "^Lib.quote s)
-      | VarExp id => ptltlSyntax.mk_Eid (stringSyntax.fromMLstring id)  (* temporary *)
-      | ConstExp (BoolLit b) => ptltlSyntax.mk_Prim (fromMLbool b)
-      | Unop(Not,e) => ptltlSyntax.mk_Not(trans_ptLTL pkgName varE e)
+          let val (tm1,binds1) = sweep e1 bindings
+              val (tm2,binds2) = sweep e2 binds1
+          in (mk_Trigger (tm1, tm2), binds2)
+          end
+      | Fncall(("AGREE_PLTL",s),_) => raise ERR "trans_ptLTL"
+              ("unknown AGREE_PTLTL operator: "^Lib.quote s)
+      | VarExp id => (mk_Eid (stringSyntax.fromMLstring id), bindings)
+      | ConstExp (BoolLit b) => (mk_Prim (fromMLbool b), bindings)
+      | Unop(Not,e) => (mk_Not ## I) (sweep e bindings)
       | Binop(Equal,e1,e2) =>
-         ptltlSyntax.mk_Equiv
-              (trans_ptLTL pkgName varE e1,
-               trans_ptLTL pkgName varE e2)
+          let val (tm1,binds1) = sweep e1 bindings
+              val (tm2,binds2) = sweep e2 binds1
+          in (mk_Equiv (tm1, tm2), binds2)
+          end
       | Binop(Imp,e1,e2) =>
-         ptltlSyntax.mk_Imp
-              (trans_ptLTL pkgName varE e1,
-               trans_ptLTL pkgName varE e2)
+          let val (tm1,binds1) = sweep e1 bindings
+              val (tm2,binds2) = sweep e2 binds1
+          in (mk_Imp (tm1, tm2), binds2)
+          end
       | Binop(Or,e1,e2) =>
-         ptltlSyntax.mk_Or
-              (trans_ptLTL pkgName varE e1,
-               trans_ptLTL pkgName varE e2)
+          let val (tm1,binds1) = sweep e1 bindings
+              val (tm2,binds2) = sweep e2 binds1
+          in (mk_Or (tm1, tm2), binds2)
+          end
       | Binop(And,e1,e2) =>
-         ptltlSyntax.mk_And
-              (trans_ptLTL pkgName varE e1,
-               trans_ptLTL pkgName varE e2)
+          let val (tm1,binds1) = sweep e1 bindings
+              val (tm2,binds2) = sweep e2 binds1
+          in (mk_And (tm1, tm2), binds2)
+          end
       | otherwise =>
-        raise ERR "trans_ptLTL" "unknown syntax inside AGREE_PTLTL operator"
+          let val obsvar = Lib.state obStrm
+              val obsvarTL = mk_Eid (stringSyntax.fromMLstring obsvar)
+              val obsvar  = VarExp obsvar
+              val _ = Lib.next obStrm
+          in (obsvarTL, (form,obsvar)::bindings)
+          end
+ in sweep frmula []
+ end
+
+fun mk_array_access(A,[]) = A
+  | mk_array_access(A,h::t) =
+      let val ty = type_of h
+          val i =
+           if ty = numSyntax.num then h else
+           if ty = intSyntax.int_ty then intSyntax.mk_Num h
+           else raise ERR "mk_array_access" "expected a num or int"
+      in
+       mk_array_access(fcpSyntax.mk_fcp_index(A,i),t)
+      end
 
 datatype expect = Unknown | Expected of hol_type;
 
@@ -1515,6 +1557,13 @@ fun transExp pkgName varE ety exp =
              val fld_proj = prim_mk_const{Name=projName,Thy=pkgName}
          in
             mk_comb(fld_proj,t)
+         end
+    | ArrayIndex(A,indices) =>
+         let open fcpSyntax
+               val Atm = transExp pkgName varE Unknown A
+               val inds = map (transExp pkgName varE (Expected numSyntax.num)) indices
+         in
+            mk_array_access(Atm,inds)
          end
     | RecdExp(qid,fields) =>
       let val rty = mk_type (snd qid,[])
@@ -1566,15 +1615,16 @@ fun transExp pkgName varE ety exp =
       in list_mk_comb(fcp_exists_tm',[mk_abs(v,Pbody), A])
       end
     | Fncall ((_,"Array_Exists"),_) => raise ERR "transExp" "Array_Exists: unexpected syntax"
-    | Fncall ((_,"Event"),_) => raise ERR "transExp" "Event"
-    | Fncall (("AGREE_PLTL",_),args) => trans_ptLTL pkgName varE exp
+    | Fncall ((_,"Event"),[arg]) =>
+         optionSyntax.mk_is_some (transExp pkgName varE Unknown arg)
+    | Fncall ((_,"Event"),_) => raise ERR "transExp" "Event: unexpected number of args"
+    | Fncall (("AGREE_PLTL",_),_) => raise ERR "transExp" "AGREE_PTLTL unexpected"
     | Fncall ((thyname,cname),expl) =>
        (let val thyname' = if thyname = "" then pkgName else thyname
             val c = prim_mk_const{Thy=thyname',Name=cname}
         in list_mk_comb(c,map (transExp pkgName varE Unknown) expl)
         end handle e as HOL_ERR _ => raise wrap_exn "" "transExp" e)
     | ConstExp (IdConst qid) => undef "ConstExp: IdConst"
-    | ArrayIndex(A,indices) => undef "ArrayIndex"
     | ArrayExp elist => undef "ArrayExp"
     | Quantified(quant,qvars,exp) => undef "Quantified"
 
@@ -1706,20 +1756,52 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
     end
     handle e => raise wrap_exn "AADL" "mk_filter_spec" e;
 ;
+
+fun is_event kind = mem kind ["EventPort","EventDataPort"];
+fun is_event_port (_,_,_,kind) = is_event kind;
+
+fun build_mon_dfa (policyName,policy_exp) =
+ let val (policy_tm,obsBinds) = trans_ptLTL policy_exp
+     val policy_def = TotalDefn.Define
+          `^(mk_eq(mk_var(fname^"_POLICY",ptltlSyntax.formula), policy_tm))`
+     val mk_dfa_input = ptltlSyntax.mk_table_data1
+                           (ptltlSyntax.mk_relational_data(policy_tm,T))
+      val _ = print "\ngenerating monitor DFA ... "
+      val dfa_thm = EVAL mk_dfa_input
+      val _ = print " done.\n"
+      val [state_to_index, elm_to_idx, finals, table, start_idx]
+          = pairSyntax.strip_pair (rhs (concl dfa_thm))
+      val dfa_stepFn =
+      val dfa_acceptFn =
+ in
+   (dfa_stepFn,dfa_acceptFn,dfa_thm)
+ end;
+
 fun mk_monitor_spec (thyName,tyEnv,fn_defs)
-                    (MonitorDec ((pkgName,fname), ports, cprops)) =
-    let val outport = Lib.first (fn (_,_,dir,_) => (dir = "out")) ports
-	val inport = Lib.first (fn (_,_,dir,_) => (dir = "in")) ports
-        val iname = #1 inport
-        val oname = #1 outport
-        val ty = transTy tyEnv (#2 outport)
-        val varIn = (iname,mk_var(iname,ty))
-        val varOut = (oname,mk_var(oname,ty))
-        val prop = end_itlist mk_and (map #2 cprops)
-        val spec = transExp thyName [varIn,varOut] (Expected bool) prop
+                    (MonitorDec ((pkgName,fname), ports, is_latched, cprops)) =
+    let val is_latched_def_tm = mk_eq(mk_var(fname^"_is_latched",bool),
+				      if is_latched then T else F)
+        val is_latched_def = Define `^is_latched_def_tm`
+        val outports = filter (fn (_,_,dir,_) => (dir = "out")) ports
+	val inports = filter (fn (_,_,dir,_) => (dir = "in")) ports
+        fun mk_port_binding(s,ty,dir,kind) =
+           let val holty = transTy tyEnv ty
+               val holty' =
+                  if is_event kind then
+                    optionSyntax.mk_option holty
+                  else holty
+           in (s,mk_var(s,holty'))
+           end
+        val portEnv = map mk_port_binding (inports @ outports)
+        val policy = hd cprops
+        val (dfa_stepfn,dfa_acceptfn) = build_mon_dfa policy
+        val prop = end_itlist mk_and (map snd (tl cprops))
+
+(*        val inportVars = map mk_port_var inports
+        val outportVars = map mk_port_var outports
+        val spec = transExp thyName portEnv (Expected bool) prop
         val spec_thm = QCONV (PURE_REWRITE_CONV fn_defs) spec
-        val spec_def = TotalDefn.Define
-                        `^(mk_eq(mk_var(fname^"_MONITOR_SPEC",ptltlSyntax.formula), spec))’
+
 (*        val array_forall_expanded =
              spec_thm
 (*               |> SIMP_RULE (srw_ss()) [splatTheory.fcp_every_thm] *)
@@ -1728,8 +1810,9 @@ fun mk_monitor_spec (thyName,tyEnv,fn_defs)
                      GSYM CONJ_ASSOC,GSYM DISJ_ASSOC]
 *)
         val full_name = String.concatWith "__" [pkgName,fname]
+*)
     in
-       ((pkgName,fname),spec_def)
+       ((pkgName,fname),policy_def)
     end
     handle e => raise wrap_exn "AADL" "mk_monitor_spec" e;
 ;
@@ -1767,8 +1850,7 @@ fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
 fun pkgs2hol thyName list =
  let fun iter [] acc = acc
        | iter (pkg::t) (tyE,tyD,tmD,fS,mS) =
-          let val (tyEnv',tydefs,fndefs,filtspecs,monspecs)
-                = mk_pkg_defs thyName tyE pkg
+          let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
           in iter t (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS, monspecs@mS)
           end
  in iter list ([],[],[],[],[])

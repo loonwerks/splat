@@ -69,6 +69,8 @@ fun synthesize_monitor monitor =
 
 
 (*
+val args = ["examples_monitor/geo_monitor.json"];
+val args = ["examples_monitor/req_resp_monitor.json"];
 val args = ["examples_monitor/Coord-Mon.json"];
 val args = ["examples_monitor/Resp-Mon.json"];
 val args = ["examples_monitor/Coord-Mon.json"];

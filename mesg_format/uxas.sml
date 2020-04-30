@@ -190,9 +190,21 @@ fun uxasBoundedArray contig bound = Recd [
  ];
 
 (*---------------------------------------------------------------------------*)
-(* Wrapper for a contig, with message type specified. Essentially an option. *)
-(* Notice that we are only checking the message type. A more stringent check *)
-(* would also check the seriesID and seriesVersion, as follows.              *)
+(* Option type                                                               *)
+(*---------------------------------------------------------------------------*)
+
+fun Option contig = Recd
+ [("present", Basic Bool),
+  ("contents", Union [
+     (BLoc (VarName "present"), contig),
+     (Bnot(BLoc (VarName "present")), SKIP)
+     ])
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* Wrapper for a contig, with message type specified. Notice that we only    *)
+(* check the message type. A more stringent check would also check the       *)
+(* seriesID and seriesVersion, as follows.                                   *)
 (*                                                                           *)
 (*  ("check-mesg-numbers", Assert                                            *)
 (*   (Band(Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesID"),           *)
@@ -200,19 +212,16 @@ fun uxasBoundedArray contig bound = Recd [
 (*         Beq(Loc(VarName "seriesVersion"),ConstName "CMASISeriesVersion")) *)
 (*---------------------------------------------------------------------------*)
 
-fun mesgOption mesgtyName contig = Recd [
- ("present", Basic Bool),
- ("contents", Union [
-   (Bnot(BLoc (VarName "present")), SKIP),
-   (BLoc (VarName "present"), Recd[
-     ("seriesID", i64),
-     ("mesgType", u32),
-     ("seriesVersion",  u16),
-     ("check-mesg-type",
-       Assert (Beq(Loc(VarName "mesgType"),ConstName mesgtyName))),
-     ("payload",  contig)])
-   ])
+fun uxasMesg mesgtyName contig = Recd [
+   ("seriesID", i64),
+   ("mesgType", u32),
+   ("seriesVersion",  u16),
+   ("check-mesg-type",
+    Assert (Beq(Loc(VarName "mesgType"),ConstName mesgtyName))),
+   ("mesg",  contig)
  ];
+
+fun mesgOption name = Option o uxasMesg name;
 
 (*---------------------------------------------------------------------------*)
 (* uxAS strings                                                              *)
@@ -247,14 +256,11 @@ val uxasEnv =
 (*---------------------------------------------------------------------------*)
 
 val altitude_type = ("AltitudeType", enumList ["AGL","MSL"]);
-
-val speed_type = ("SpeedType", enumList ["AirSpeed","GroundSpeed"]);
-
-val turn_type = ("TurnType", enumList ["TurnShort", "FlyOver"]);
+val speed_type    = ("SpeedType",    enumList ["AirSpeed","GroundSpeed"]);
+val turn_type     = ("TurnType",     enumList ["TurnShort", "FlyOver"]);
 
 val wavelength_band =
  ("WavelengthBand", enumList ["AllAny","EO","LWIR","SWIR","MWIR","Other"]);
-
 
 val navigation_mode =
  ("NavigationMode",
