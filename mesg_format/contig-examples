@@ -2,12 +2,25 @@ load "regexpLib";   (* To get access to Regexp_Numerics *)
 
 use "contig.sml";
 
-fun valueFn s =
- let open Regexp_Numerics
- in IntInf.toInt(string2iint Unsigned MSB s)
+fun valFn a s =
+ let fun uvalFn s = IntInf.toInt
+         (Regexp_Numerics.string2iint Regexp_Numerics.Unsigned Regexp_Numerics.MSB s)
+     fun ivalFn s = IntInf.toInt
+         (Regexp_Numerics.string2iint Regexp_Numerics.Twos_comp Regexp_Numerics.MSB s)
+ in case a
+  of Bool => uvalFn s
+   | Char => uvalFn s
+   | Enum s => uvalFn s
+   | Signed w => ivalFn s
+   | Unsigned w => uvalFn s
+   | Float => raise ERR "valFn" "Float"
+   | Double => raise ERR "valFn" "Double"
+   | Blob => raise ERR "valFn" "Blob"
+   | Scanned => raise ERR "valFn" "Scanned"
  end
+;
 
-val E = ([],[],atomic_widths,valueFn);
+val E = ([],[],atomic_widths,valFn);
 
 (*---------------------------------------------------------------------------*)
 (* Support for making test messages                                          *)
@@ -28,7 +41,7 @@ fun mk_char c =
 fun mk_string s =
     mk_u16 (String.size s) :: map mk_char (String.explode s);
 fun mk_enum E (s,constr) =
- let val (Consts,Decls,atomicWidths,valueFn) = E
+ let val (Consts,Decls,atomicWidths,valFn) = E
  in mk_u8 (assoc (s ^ "'" ^ constr) Consts)
  end
 end;
@@ -111,7 +124,7 @@ val String =  (* varying length strings *)
         ("elts", Array(Basic Char,Loc (VarName"len")))
 ];
 
-val E = ([],[("String",String)],atomic_widths,valueFn);
+val E = ([],[("String",String)],atomic_widths,valFn);
 
 val contig = Recd [
    ("len", u16),
@@ -139,7 +152,7 @@ val KeyValuePairRecd =
   Recd [("key", Declared "String"),
         ("value", Declared "String")];
 
-val E = ([],[("String",String), ("KeyValuePair", KeyValuePairRecd)],atomic_widths,valueFn);
+val E = ([],[("String",String), ("KeyValuePair", KeyValuePairRecd)],atomic_widths,valFn);
 
 val contig = Recd [
    ("len", u16),
