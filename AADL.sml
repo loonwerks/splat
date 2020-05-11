@@ -688,6 +688,32 @@ fun get_policy policyName jlist =
  in tryfind property jlist
  end
 
+fun dest_property_stmt (AList alist) =
+    (case (assoc "kind" alist, assoc "name" alist, assoc "expr" alist)
+       of (String "PropertyStatement", String pname, e) => (pname,dest_exp e)
+        | otherwise => raise ERR "dest_property_stmt" "unexpected syntax")
+  | dest_property_stmt any_other_thing = raise ERR "dest_property_stmt" "unexpected syntax"
+;
+
+fun dest_eq_stmt (AList alist) =
+    (case (assoc "kind" alist, assoc "left" alist, assoc "expr" alist)
+       of (String "EqStatement", List [AList LHS], e) =>
+           let val eqName = dropString(assoc "name" LHS)
+               val lhs_ty = dest_ty (assoc "type" LHS)
+           in (eqName,lhs_ty,dest_exp e)
+           end
+        | otherwise => raise ERR "dest_eq_stmt" "unexpected syntax")
+  | dest_eq_stmt any_other_thing = raise ERR "dest_eq_stmt" "unexpected syntax"
+;
+
+fun dest_guar_stmt (AList alist) =
+    (case (assoc "kind" alist, assoc "name" alist, assoc "label" alist, assoc "expr" alist)
+       of (String "GuaranteeStatement", String gname, String label, e) =>
+            (gname,dest_exp e)
+        | otherwise => raise ERR "dest_guar_stmt" "unexpected syntax")
+  | dest_guar_stmt any_other_thing = raise ERR "dest_guar_stmt" "unexpected syntax"
+;
+
 fun jname_eq s1 s2 = (dropString s1 = dropString s2)
 
 fun get_monitor (AList alist) =
@@ -700,15 +726,19 @@ fun get_monitor (AList alist) =
                        else raise ERR "get_monitor" "unable to find MONITOR property"
                val qid = dest_qid fname
                val portL = map get_monitor_port ports
-               val monitor_names = get_guar_names properties
                val is_latched = get_latched properties
                val stmts = List.concat (map get_annex_stmts annexen)
+               val eq_stmts   = mapfilter dest_eq_stmt stmts
+               val prop_stmts = mapfilter dest_property_stmt stmts
+               val guar_stmts = mapfilter dest_guar_stmt stmts
                val policyName = snd qid^"_policy"
-               val policy = get_policy policyName stmts
-               val tmp_monitor_names = (String "alert_condition"::monitor_names)
-               val guars = get_named_props jname_eq tmp_monitor_names stmts
+               val (policy,prop_stmts') = pluck(equal policyName o fst) prop_stmts
+               val monitor_names = map dropString (get_guar_names properties)
+               val monitor_guars = filter (C mem monitor_names o #1) guar_stmts
+
+(*               val guars = get_named_props jname_eq tmp_monitor_names stmts *)
            in
-                MonitorDec(qid, portL, is_latched, (policyName,policy)::guars)
+                MonitorDec(qid, portL, is_latched, policy::monitor_guars)
            end
        | otherwise => raise ERR "get_monitor" "unexpected syntax")
   | get_monitor otherwise = raise ERR "get_monitor" "unexpected syntax"
@@ -865,7 +895,7 @@ val AList alist = jpkg;
 val pkgs = dropList (assoc "modelUnits" alist);
 
 val (opkgs as [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7,
-               pkg8, pkg9, pkg10, pkg11,pkg12,pkg13,pkg14]) = rev (topsort uses pkgs);
+               pkg8, pkg9, pkg10, pkg11,pkg12,pkg13]) = rev (topsort uses pkgs);
 
 val declist = mapfilter scrape opkgs;
 
@@ -882,8 +912,7 @@ scrape pkg10;
 scrape pkg11;
 scrape pkg12;
 scrape pkg13;
-scrape pkg14;
-scrape pkg15;
+
 *)
 
 (*---------------------------------------------------------------------------*)
@@ -1760,7 +1789,7 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
 fun is_event kind = mem kind ["EventPort","EventDataPort"];
 fun is_event_port (_,_,_,kind) = is_event kind;
 
-fun build_mon_dfa (policyName,policy_exp) =
+(*fun build_mon_dfa (policyName,policy_exp) =
  let val (policy_tm,obsBinds) = trans_ptLTL policy_exp
      val policy_def = TotalDefn.Define
           `^(mk_eq(mk_var(fname^"_POLICY",ptltlSyntax.formula), policy_tm))`
@@ -1816,6 +1845,9 @@ fun mk_monitor_spec (thyName,tyEnv,fn_defs)
     end
     handle e => raise wrap_exn "AADL" "mk_monitor_spec" e;
 ;
+*)
+
+fun mk_monitor_spec _ _ = raise ERR "mk_monitor" ""
 
 val is_datatype =
     same_const (prim_mk_const{Thy="bool",Name="DATATYPE"}) o rator o concl;
