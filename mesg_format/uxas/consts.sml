@@ -1,0 +1,16 @@
+val OPERATING_REGION_ID_MIN : int = 0;
+val OPERATING_REGION_ID_MAX : int = 500;
+val KEEP_IN_ZONE_ID_MIN : int = 0;
+val KEEP_IN_ZONE_ID_MAX : int = 500;
+val KEEP_OUT_ZONE_ID_MIN : int = 0;
+val KEEP_OUT_ZONE_ID_MAX : int = 500;
+val TASK_ID_MIN : int = 0;
+val TASK_ID_MAX : int = 500;
+val ENTITY_ID_MIN : int = 0;
+val ENTITY_ID_MAX : int = 500;
+val ALTITUDE_MIN : real = 0.0;
+val ALTITUDE_MAX : real = 15000.0;
+val LATITUDE_MIN : real = ~90.0;
+val LATITUDE_MAX : real = 90.0;
+val LONGITUDE_MIN : real = ~180.0;
+val LONGITUDE_MAX : real = ~180.0;

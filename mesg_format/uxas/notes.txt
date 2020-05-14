@@ -1,0 +1,5 @@
+A. Difference between AAmesg source-entity-id, which is a string, e.g., "500", and the
+   bounds on it, which is a number in interval [0,500]
+
+B. Operating Region messages: no bounds given on number of elements in keep-in-areas
+   and keep-out-areas.
