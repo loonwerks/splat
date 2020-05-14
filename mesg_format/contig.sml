@@ -202,7 +202,7 @@ fun evalBexp (E as (Delta,lvalMap,valFn)) bexp =
 (*---------------------------------------------------------------------------*)
 
 datatype contig
-  = FAIL  (* empty set of strings *)
+  = VOID  (* empty set of strings *)
   | Basic of atom
   | Declared of string
   | Raw of exp
@@ -246,7 +246,7 @@ fun segFn E path contig state =
      val (segs,s,WidthValMap) = state
  in
  case contig
-  of FAIL => NONE
+  of VOID => NONE
    | Basic a =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
@@ -437,7 +437,7 @@ fun pp_contig contig =
  let open PP
  in
    case contig
-    of FAIL => add_string "FAIL"
+    of VOID => add_string "VOID"
      | Basic atom => pp_atom atom
      | Declared s => add_string s
      | Raw exp => block CONSISTENT 1
@@ -495,7 +495,7 @@ fun take_drop n list =
 (*   Consts : maps constant names to integers                                *)
 (*   Decls  : maps names to previously declared contigs                      *)
 (*   atomicWidths : gives width info for basic types                         *)
-(*   valFn : function for computing a value                                *)
+(*   valFn : function for computing a value                                  *)
 (*             stored at the designated location in the string.              *)
 (*                                                                           *)
 (* parseFn operates on a state tuple (segs,s,wvMap)                          *)
@@ -512,7 +512,7 @@ fun parseFn E path contig state =
      val (stk,s,WidthValMap) = state
  in
  case contig
-  of FAIL => NONE
+  of VOID => NONE
    | Basic a =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
@@ -601,7 +601,7 @@ fun matchFn E (state as (worklist,s,theta)) =
  in
  case worklist
   of [] => SOME (s,theta)
-   | (_,FAIL)::_ => NONE
+   | (_,VOID)::_ => NONE
    | (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
@@ -665,7 +665,7 @@ fun substFn E theta path contig =
      val (Consts,Decls,atomicWidths,valFn) = E
  in
   case contig
-   of FAIL     => raise ERR "substFn" "FAIL"
+   of VOID     => raise ERR "substFn" "VOID"
     | Basic _  => thetaFn path
     | Raw _    => thetaFn path
     | Assert b =>
@@ -713,12 +713,12 @@ fun predFn E (state as (worklist,s,theta)) =
  let val (Consts,Decls,atomicWidths,valFn) = E
  in
  case worklist
-   of [] => true
-   |  (path,FAIL)::t => false
+   of [] => PASS (s,theta)
+   |  (path,VOID)::t => FAIL state
    |  (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
-           of NONE => false
+           of NONE => FAIL state
             | SOME (segment,rst) =>
               predFn E (t,rst,
                         Redblackmap.insert(theta,path,(a,segment)))
@@ -728,7 +728,7 @@ fun predFn E (state as (worklist,s,theta)) =
        let val exp' = resolveExp theta path exp
            val width = evalExp (Consts,theta,valFn) exp'
        in case tdrop width s
-           of NONE => false
+           of NONE => FAIL state
             | SOME (segment,rst) =>
               predFn E (t,rst,
                         Redblackmap.insert(theta,path,(Blob,segment)))
@@ -737,11 +737,11 @@ fun predFn E (state as (worklist,s,theta)) =
        let val bexp' = resolveBexp theta path bexp
        in if evalBexp (Consts,theta,valFn) bexp'
             then predFn E (t,s,theta)
-            else false
+            else FAIL state
        end
    | (path,Scanner scanFn)::t =>
       (case scanFn s
-        of NONE => false
+        of NONE => FAIL state
          | SOME(segment,rst) =>
              predFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
    | (path,Recd fields)::t =>
@@ -761,12 +761,16 @@ fun predFn E (state as (worklist,s,theta)) =
              end
        in case filter choiceFn choices
            of [(_,c)] => predFn E ((path,c)::t,s,theta)
-            | otherwise => false
+            | otherwise => FAIL state
        end
  end
 ;
 
-fun wellformed E contig s = predFn E ([(VarName"root",contig)],s,empty_lvalMap);
+fun wellformed E contig s =
+ case predFn E ([(VarName"root",contig)],s,empty_lvalMap)
+  of PASS _ => true
+   | FAIL _ => false;
+
 
 (*---------------------------------------------------------------------------*)
 (* Generation of strings conforming to a contig.                             *)
@@ -803,7 +807,7 @@ val default_u64_range  = defaultNatRange 61;  (* convenient for now, but goal is
 
 val default_i16_range = defaultIntRange 16;
 val default_i32_range = defaultIntRange 32;
-val default_i64_range = defaultIntRange 62;  (* convenient for now, but goals is 64 *)
+val default_i64_range = defaultIntRange 61;  (* convenient for now, but goals is 64 *)
 
 fun atom_range atm =
  case atm
@@ -841,15 +845,40 @@ fun last_path_elt path =
 fun vname_of (Loc(VarName s)) = s
   | vname_of otherwise = raise ERR "vname_of" "expected Loc(VarName ...)"
 
-fun interval_of path bexp =
+fun specified_field path e = (last_path_elt path = vname_of e)
+
+fun find_range default path bexp (E as (Consts,theta,valFn)) =
  case bexp
-  of Beq (Loc a,intLit n) => if path=a then SOME(n,n) else NONE
-   | Beq (intLit n,Loc a) => if path=a then SOME(n,n) else NONE
+  of Beq (e1,e2) =>
+       if specified_field path e1 then
+          let val i = evalExp E e2
+          in (i,i)
+          end else
+       if specified_field path e2 then
+          let val i = evalExp E e1
+          in (i,i)
+          end
+       else default
+   | Blt (e1,e2) =>
+       if specified_field path e1 then
+          let val i = evalExp E e2
+          in if 0 < i then (0,i-1) else default
+          end
+       else default
+   | Ble (e1,e2) =>
+       if specified_field path e1 then
+          let val i = evalExp E e2
+          in if 0 <= i then (0,i) else default
+          end
+       else default
    | Band(Ble(e1,e2),Ble(e3,e4)) =>
-      if last_path_elt path = vname_of e2 andalso e2=e3 then
-       dest_endpoints(e1,e4)
-      else NONE
-   | otherwise => NONE
+      if specified_field path e2 andalso e2=e3 then
+        let val i = evalExp E e1
+            val j = evalExp E e4
+        in if i <= j then (i,j) else default
+        end
+      else default
+   | otherwise => default;
 ;
 
 (*---------------------------------------------------------------------------*)
@@ -857,33 +886,31 @@ fun interval_of path bexp =
 (*---------------------------------------------------------------------------*)
 
 fun randFn E (worklist,theta,acc) =
- let val (Consts,Decls,atomicWidths,valFn,repFn,gn) = E
+ let val (Consts,Decls,atomicWidths,valFn,repFn,scanRandFn,gn) = E
  in
  case worklist
-   of [] => acc
-   |  (path,FAIL)::t => raise ERR "randFn" "FAIL construct encountered"
+  of [] => rev acc
+   |  (path,VOID)::t => raise ERR "randFn" "VOID construct encountered"
    |  (path,Basic a)::(_,Assert bexp)::t =>
-       let val default_range = atom_range a
-           val (lo,hi) = (case interval_of path bexp of SOME p => p | NONE => default_range)
-           val (lo',hi') = intersect_intervals (lo,hi) default_range
-           val randElt = Random.range (lo',hi'+1) gn  (* RNG from Paulson's book gives [lo,hi) *)
+       let val (lo,hi) = find_range (atom_range a) path bexp (Consts,theta,valFn)
+           val randElt = Random.range (lo,hi+1) gn  (* RNG from Paulson's book gives [lo,hi) *)
            val segment = repFn a randElt
        in
-          randFn E (t,Redblackmap.insert(theta,path,(a,segment)),acc@[segment])
+          randFn E (t,Redblackmap.insert(theta,path,(a,segment)),segment :: acc)
        end
   |  (path,Basic a)::t =>
        let val (lo,hi) = atom_range a
            val randElt = Random.range  (lo,hi+1) gn
            val segment = repFn a randElt
        in
-          randFn E (t,Redblackmap.insert(theta,path,(a,segment)),acc@[segment])
+          randFn E (t,Redblackmap.insert(theta,path,(a,segment)),segment::acc)
        end
    | (path,Raw exp)::t =>
        let val exp' = resolveExp theta path exp
            val width = evalExp (Consts,theta,valFn) exp'
            val elts = List.tabulate (width, fn i => Random.range default_u8_range gn)
            val segment = String.implode (List.map Char.chr elts)
-       in randFn E (t, Redblackmap.insert(theta,path,(Blob,segment)),acc@[segment])
+       in randFn E (t, Redblackmap.insert(theta,path,(Blob,segment)),segment::acc)
        end
    | (path,Declared name)::t => randFn E ((path,assoc name Decls)::t,theta,acc)
    | (path,Assert bexp)::t =>
@@ -892,7 +919,10 @@ fun randFn E (worklist,theta,acc) =
             then randFn E (t,theta,acc)
             else raise ERR "randFn" "Assert failure"
        end
-   | (path,Scanner scanFn)::t => raise ERR "randFn" "unable to deal with Scanner node"
+   | (path,Scanner scanFn)::t =>
+       let val segment = scanRandFn path
+       in randFn E (t, Redblackmap.insert(theta,path,(Scanned,segment)),segment::acc)
+       end
    | (path,Recd fields)::t =>
        let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
        in randFn E (map fieldFn fields @ t,theta,acc)

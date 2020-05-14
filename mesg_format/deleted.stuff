@@ -1,0 +1,85 @@
+fun resolve_lvals Decls path (contig,lvalSet) =
+ case contig
+  of Basic _ => (contig,Redblackset.add(lvalSet,path))
+   | Declared s => resolve_lvals Decls path (assoc s Decls,lvalSet)
+   | Recd fields =>
+     let fun fieldFn (fName,c) (fields,lvset) =
+            let val path' = RecdProj(path,fName)
+                val (c',lvset') = resolve_lvals Decls path' (c,lvset)
+            in ((fName,c')::fields,lvset')
+            end
+         val (rfields',lvset') = rev_itlist fieldFn fields ([],lvalSet)
+     in
+        (Recd(rev rfields'),lvset')
+     end
+   | Array (c,e) =>
+     let val e' = resolve_exp_lvals lvalSet path e
+         val (c', lvset') = resolve_lvals Decls path (c,lvset)
+     in (Array (c',e'),lvset')
+   | Union choices =>
+       Union (map (resolve_exp_lvals E path##resolve_lvals E path) choices)
+
+---------------------------------------------------------------------------
+
+         let open Regexp_Numerics
+                 val segval = IntInf.toInt(string2iint Unsigned dir segment)
+             in SOME(segs@[(segment,segval)],rst,
+                     Redblackmap.insert(WidthValMap,path,segval))
+             end
+       end
+
+---------------------------------------------------------------------------
+
+fun interval_of path bexp =
+ case bexp
+  of Beq (e,intLit n) => if is_usable path e then SOME(n,n) else NONE
+   | Beq (intLit n,e) => if is_usable path e then SOME(n,n) else NONE
+   | Blt (e,intLit n) =>
+      if is_usable path e andalso 0 < n then
+        SOME(0,n-1)
+      else NONE
+   | Ble (e,intLit n) =>
+      if is_usable path e andalso 0 <= n then
+        SOME(0,n)
+      else NONE
+   | Band(Ble(e1,e2),Ble(e3,e4)) =>
+      if is_usable path e2 andalso e2=e3 then
+       dest_endpoints(e1,e4)
+      else NONE
+   | otherwise => NONE
+;
+ case bexp
+  of Beq (e,intLit n) => if is_usable path e then SOME(n,n) else NONE
+   | Beq (intLit n,e) => if is_usable path e then SOME(n,n) else NONE
+   | Blt (e,intLit n) =>
+      if is_usable path e andalso 0 < n then
+        SOME(0,n-1)
+      else NONE
+   | Ble (e,intLit n) =>
+      if is_usable path e andalso 0 <= n then
+        SOME(0,n)
+      else NONE
+   | Band(Ble(e1,e2),Ble(e3,e4)) =>
+      if is_usable path e2 andalso e2=e3 then
+       dest_endpoints(e1,e4)
+      else NONE
+   | otherwise => NONE
+;
+
+fun repFn a i =
+ let val u2string = Regexp_Numerics.iint2string
+                        Regexp_Numerics.Unsigned Regexp_Numerics.MSB
+     val i2string = Regexp_Numerics.iint2string
+                        Regexp_Numerics.Twos_comp Regexp_Numerics.MSB
+ in case a
+  of Bool => u2string 1 (LargeInt.fromInt i)
+   | Char => u2string 1 (LargeInt.fromInt i)
+   | Enum s => u2string 1 (LargeInt.fromInt i)
+   | Signed w => i2string w (LargeInt.fromInt i)
+   | Unsigned w => u2string w (LargeInt.fromInt i)
+   | Float => raise ERR "repFn" "Float"
+   | Double => raise ERR "repFn" "Double"
+   | Blob => raise ERR "repFn" "Blob"
+   | Scanned => Int.toString i  (* this is probably unnecessary *)
+ end
+;
