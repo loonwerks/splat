@@ -47,6 +47,7 @@ annex agree {**
 end CASE_AttestationGate_thr;
 -----------------------------------------------------------------------------*)
 
+(*
 val AAmesg = Recd [
    ("address",           Scanner (scanTo "$")),
    ("contentType",       Scanner (scanTo "|")),
@@ -58,55 +59,114 @@ val AAmesg = Recd [
  ];
 
 val trusted_ids = Array(i32,intLit 3);
+*)
 
 (*---------------------------------------------------------------------------*)
-(* Parsing                                                                   *)
+(* Parsing. Break input into A$B|C|D|E|F$G                                   *)
 (*---------------------------------------------------------------------------*)
 
-fun dest_string s =
-    SOME(String.sub(s,0),String.extract(s,1,NONE)) handle _ => NONE;
-
-fun getID ptree =
- case ptree
-  of RECD [("address",           LEAF(Scanned, _)),
-           ("contentType",       LEAF(Scanned, _)),
-           ("descriptor",        LEAF(Scanned, _)),
-           ("source_group",      LEAF(Scanned, _)),
-           ("source_entity_ID",  LEAF(Scanned, ssID)),
-           ("source_service_ID", LEAF(Scanned, _)),
-           ("all_the_rest",      LEAF(Scanned, _))]
-     => (case Int.scan StringCvt.DEC dest_string ssID
-          of NONE => raise ERR "getID" "expected decimal integer string"
-           | SOME (i,_) => i)
-   | otherwise => raise ERR "getID" "";
-
-fun parse_AAmesg_ID string =
- let val (ptree,_,_) = parse uxasEnv AAmesg string
- in getID ptree
- end
-
-val readID = parse_AAmesg_ID o Byte.bytesToString;
-
-fun parse_trusted_ids string =
- let fun parse_leaf (LEAF (tg, s)) = uxas_valFn tg s
-       | parse_leaf otherwise = raise ERR "parse_leaf" ""
- in case parse uxasEnv trusted_ids string
-     of (ARRAY ptrees,_,_) => Array.fromList (map parse_leaf ptrees)
-      | otherwise => raise ERR "parse_trusted_ids" ""
+fun seekFrom V w8 i =
+ let val K = Word8Vector.length V
+     fun seek j =
+       if j < K then
+          (if Word8Vector.sub(V,j) = w8 then SOME j else seek (j+1))
+       else NONE
+ in seek i
  end;
 
-val read_trusted_ids = parse_trusted_ids o Byte.bytesToString;
+fun seekFrom S c i =
+ let val K = String.size S
+     fun seek j =
+       if j < K then
+          (if String.sub(S,j) = c then SOME j else seek (j+1))
+       else NONE
+ in seek i
+ end;
+
+fun scan S =
+ case seekFrom S #"$" 0
+  of NONE => NONE
+   | SOME i1 =>
+ case seekFrom S #"|" (i1+1)
+  of NONE => NONE
+   | SOME i2 =>
+ case seekFrom S #"|" (i2+1)
+  of NONE => NONE
+   | SOME i3 =>
+ case seekFrom S #"|" (i3+1)
+  of NONE => NONE
+   | SOME i4 =>
+ case seekFrom S #"|" (i4+1)
+  of NONE => NONE
+   | SOME i5 =>
+ case seekFrom S #"$" (i5+1)
+  of NONE => NONE
+   | SOME i6 =>
+     SOME(String.substring(S,0,i1+1),
+          String.substring(S,i1+1,i2-i1),
+          String.substring(S,i2+1,i3-i2),
+          String.substring(S,i3+1,i4-i3),
+          String.substring(S,i4+1,i5-i4),
+          String.substring(S,i5+1,i6-i5),
+          String.extract(S,i6+1,NONE))
+;
+
+fun fromDecimal s =
+ let val s' = String.substring(s,0,String.size s - 1) (* drop vertical bar *)
+ in Int.fromString s'
+ end
+
+fun getID S =
+ case scan S
+  of NONE => NONE
+   | SOME (address,contentType,descriptor,
+           source_group, source_entity_ID,
+           source_service_ID, all_the_rest) => fromDecimal source_entity_ID
+;
+
+val readID = getID o Byte.bytesToString;
+
+(* Tests *)
+
+val SOME 500 = getID "A$B|C|D|500|F$G";
+val SOME 500 = getID "A$B||D|500|F$G";
+val SOME 500 = getID "199.0.0.1$p--q--r|foo|A!D!CD|500|FRED$GHIJ";
+
+(*---------------------------------------------------------------------------*)
+(* Map 3 adjacent 4-byte chunks to 3 ints                                    *)
+(*---------------------------------------------------------------------------*)
+
+fun get_trusted_ids s =
+ if String.size s = 12 then
+   let val s1 = String.substring(s,0,4)
+       val s2 = String.substring(s,4,4)
+       val s3 = String.substring(s,8,4)
+   in case Int.fromString s1
+       of NONE => NONE
+        | SOME i1 =>
+      case Int.fromString s2
+       of NONE => NONE
+        | SOME i2 =>
+      case Int.fromString s3
+       of NONE => NONE
+        | SOME i3 =>
+      SOME(Array.fromList[i1,i2,i3])
+   end
+ else NONE
+
+val readTIDs = get_trusted_ids o Byte.bytesToString;
 
 (*---------------------------------------------------------------------------*)
 (* The actual check being made.                                              *)
 (*---------------------------------------------------------------------------*)
 
 fun check tids bytes =
- let val ID = readID bytes
- in if Array.exists (equal ID) tids then
-      SOME bytes
-    else NONE
- end;
+ case readID bytes
+  of NONE => NONE
+   | SOME ID =>
+      if Array.exists (equal ID) tids
+      then SOME bytes
+      else NONE
 
 type inports
    = Word8Vector.vector *
@@ -126,18 +186,19 @@ type outports
 
 val Att_Gate_Single_Ordered : inports -> outports =
 fn (trusted_id_bytes,OpRegion,LST,AutoRqt) =>
-  let val tids = read_trusted_ids trusted_id_bytes
-  in
-    case OpRegion
-     of SOME bytes => (check tids bytes,NONE,NONE)
-      | NONE =>
-    case LST
-     of SOME bytes => (NONE,check tids bytes,NONE)
-      | NONE =>
-    case AutoRqt
-     of SOME bytes => (NONE,NONE,check tids bytes)
-      | NONE => (NONE,NONE,NONE)
- end;
+  case readTIDs trusted_id_bytes
+   of NONE => (NONE,NONE,NONE)
+    | SOME tids =>
+  case OpRegion
+   of SOME bytes => (check tids bytes,NONE,NONE)
+    | NONE =>
+  case LST
+   of SOME bytes => (NONE,check tids bytes,NONE)
+    | NONE =>
+  case AutoRqt
+   of SOME bytes => (NONE,NONE,check tids bytes)
+    | NONE       => (NONE,NONE,NONE)
+;
 
 (*---------------------------------------------------------------------------*)
 (* Look at all events in an unordered manner. Pass along all that meet the   *)
@@ -145,8 +206,10 @@ fn (trusted_id_bytes,OpRegion,LST,AutoRqt) =>
 (*---------------------------------------------------------------------------*)
 
 fun Att_Gate_Multi (trusted_id_bytes,OpRegion,LST,AutoRqt) =
- let val tids = read_trusted_ids trusted_id_bytes
-     val checkFn = Option.mapPartial (check tids)
- in
-   (checkFn AutoRqt,checkFn OpRegion,checkFn LST)
- end;
+ case readTIDs trusted_id_bytes
+   of NONE => (NONE,NONE,NONE)
+    | SOME tids =>
+      let val checkFn = Option.mapPartial (check tids)
+      in
+        (checkFn AutoRqt,checkFn OpRegion,checkFn LST)
+      end;

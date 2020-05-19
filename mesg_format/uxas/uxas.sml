@@ -168,17 +168,9 @@ fun uxas_valFn a s =
    | Enum s => uvalFn s
    | Signed w => ivalFn s
    | Unsigned w => uvalFn s
-   | Float   => raise ERR "uxas_valFn" "Float"
-   | Double  => raise ERR "uxas_valFn" "Double"
-   | Blob    => raise ERR "uxas_valFn" "Blob"
-   | Scanned => raise ERR "uxas_valFn" "Scanned"
+   | otherwise  => raise ERR "uxas_valFn" "unexpected input"
  end
 ;
-
-fun bounded c (i,j) = Recd [
-  ("val", c),
-  ("check", Assert (Interval "val" (i,j)))
- ];
 
 (*---------------------------------------------------------------------------*)
 (* Environment of functions mapping ints to various representation strings   *)
@@ -195,13 +187,29 @@ fun uxas_repFn a i =
    | Enum s => u2string 1 (LargeInt.fromInt i)
    | Signed w => i2string w (LargeInt.fromInt i)
    | Unsigned w => u2string w (LargeInt.fromInt i)
-   | other => raise ERR "uxas_repFn" ""
+   | Double => u2string 8 (LargeInt.fromInt i)  (* hack *)
  end
 ;
 
+(*---------------------------------------------------------------------------*)
+(* Doubles                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun dvalFn Double s = PackRealBig.fromBytes (Byte.stringToBytes s)
+  | dvalFn other s = raise ERR "dvalFn" "expected Double"
+;
+fun drepFn Double r = Byte.bytesToString (PackRealBig.toBytes r)
+  | drepFn other s = raise ERR "drepFn" "expected Double"
+;
+
+fun bounded c (i,j) = Recd [
+  ("val", c),
+  ("check", Assert (Interval "val" (i,j)))
+ ];
+
 fun add_contig_decl E (s,d) =
- let val (Consts,Decls,aW,vFn) = E
- in (Consts,(s,d)::Decls,aW,vFn)
+ let val (Consts,Decls,aW,vFn,dvFn) = E
+ in (Consts,(s,d)::Decls,aW,vFn,dvFn)
  end
 
 fun enumList elts = zip elts (upto 0 (length elts - 1));
@@ -224,7 +232,7 @@ fun uxasArray contig = Recd [
 
 fun uxasBoundedArray contig bound = Recd [
   ("len", u16),
-  ("len-check",  Assert (Ble(Loc(VarName "len"), intLit (bound-1)))),
+  ("len-check",  Assert (Ble(Loc(VarName "len"), intLit bound))),
   ("elts", Array(contig, Loc (VarName"len")))
  ];
 
@@ -312,7 +320,7 @@ val CommandStatusType = Declared "CommandStatusType";
 (*---------------------------------------------------------------------------*)
 
 val uxasEnv =
-  (uxas_constants_map,[],atomic_widths,uxas_valFn)
+  (uxas_constants_map,[],atomic_widths,uxas_valFn,dvalFn)
      |> C add_contig_decl ("String",StringRecd)
      |> C add_contig_decl ("KeyValuePair", KeyValuePairRecd)
      |> C add_enum_decl altitude_type
@@ -334,11 +342,11 @@ val operating_region = Recd [
   ];
 
 val automation_request = Recd [
-  ("EntityList",           uxasBoundedArray i64 16),
-  ("TaskList",             uxasBoundedArray i64 32),
-  ("TaskRelationShips",    String),
-  ("OperatingRegion",      i64),
-  ("RedoAllTasks",         Basic Bool)
+  ("EntityList",        uxasBoundedArray i64 16),
+  ("TaskList",          uxasBoundedArray i64 32),
+  ("TaskRelationShips", String),
+  ("OperatingRegion",   i64),
+  ("RedoAllTasks",      Basic Bool)
   ];
 
 val Wedge = Recd [
@@ -384,6 +392,11 @@ val linesearch_task = Recd [
 (*---------------------------------------------------------------------------*)
 (* AutomationResponse message                                                *)
 (*---------------------------------------------------------------------------*)
+
+val Polygon = Recd [
+  ("BoundaryPointsList",
+   uxasBoundedArray (mesgOption "LOCATION3D" Location3D) 64)
+ ];
 
 val VehicleAction = Recd [
   ("AssociatedTaskList", uxasBoundedArray i64 8)
@@ -530,3 +543,182 @@ val fullAutomationResponseMesg =
 
 val fullAirVehicleStateMesg =
   full_mesg (mesgOption "AIRVEHICLESTATE" airvehicle_state);
+
+
+(*===========================================================================*)
+(* Parsing. First define target datastructures.                              *)
+(*===========================================================================*)
+
+type i64 = Int.int;
+type real32 = Real32.real;
+type real64 = Real.real;
+type KeyValPair = string * string;
+
+(*---------------------------------------------------------------------------*)
+(* Enumerations                                                              *)
+(*---------------------------------------------------------------------------*)
+
+datatype SpeedType = AirSpeed | GroundSpeed;
+datatype TurnType = TurnShort | FlyOver;
+
+datatype AltitudeType = AGL | MSL;
+
+datatype WavelengthBand = AllAny | EO | LWIR | SWIR | MWIR | Other;
+
+datatype NavigationMode =
+	 Waypoint | Loiter | FlightDirector | TargetTrack | FollowLeader | LostComm;
+
+datatype CommandStatusType = Pending | Approved | InProcess | Executed | Cancelled;
+
+type Location3D =
+     {Latitude  : real64,
+      Longitude : real64,
+      Altitude  : real32,
+      AltitudeType : AltitudeType};
+
+type Polygon = Location3D array;
+
+type Waypoint =
+  {Location    : Location3D,
+   Number      : i64,
+   NextWaypoint: i64,
+   Speed       : real32,
+   SpeedType   : SpeedType,
+   ClimbRate   : real32,
+   TurnType    : TurnType,
+   VehicleActionList    : i64 array array,
+   ContingencyWaypointA : i64,
+   ContingencyWaypointB : i64,
+   AssociatedTasks      : i64 array
+ };
+
+type MissionCommand =
+ {CommandID         : i64,
+  VehicleID         : i64,
+  VehicleActionList : i64 array array,
+  Status            : CommandStatusType,
+  WaypointList      : Waypoint array,
+  FirstWaypoint     : i64};
+
+
+type VehicleAction = i64 array;
+
+type VehicleActionCommand =
+ {CommandID : i64,
+  VehicleID : i64,
+  VehicleActionList : VehicleAction array,
+  Status : CommandStatusType}
+
+type AutomationResponse =
+     {MissionCommandList : MissionCommand array,
+      VehicleCommandList : VehicleActionCommand array,
+      Info : KeyValPair array}
+
+(*---------------------------------------------------------------------------*)
+(* Parsing                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun get_elt_gps
+fun get_gps ptree =
+ case ptree
+  of RECD [_, ("elts", elts)] = get_elt_gps elts
+   | otherwise => raise ERR "get_gps" "";
+
+val PhaseII_Polygon = Array(Location3D, intLit 2);
+
+fun parse_polygon string =
+ let val (ptree,remaining,theta) = parse uxasEnv PhaseII_Polygon string
+ in case ptree
+     of RECD [("BoundaryPointsList", ARRAY ptrees)]
+	 => Array.fromList (map mk_location3D ptrees)
+      | otherwise => raise ERR "parse_polygon" ""
+ end;
+
+randFn uxasEnv Polygon string
+
+fun scanRandFn (path:lval) = "!!UNEXPECTED!!"
+
+val randEnv =
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = uxasEnv
+ in (Consts,Decls,atomicWidths,valFn,dvalFn,
+     uxas_repFn,scanRandFn,Random.newgen())
+ end;
+
+fun gen_double() = String.concat
+    (randFn randEnv
+        ([(VarName"root",f64)], empty_lvalMap, []));
+
+fun gen_polygon () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",Polygon)], empty_lvalMap, []));
+
+fun parse_automation_response bytes : AutomationResponse =
+    raise ERR "parse_automation_response" "stub";
+
+val read_polygon = parse_polygon o Byte.bytesToString;
+val read_automation_response = parse_automation_response o Byte.bytesToString;
+
+fun mk_gps ptree =
+ case ptree
+  of RECD [("latitude",  RECD [("val", LEAF (Double, s1))]),
+           ("longitude", RECD [("val", LEAF (Double, s2))]),
+           ("altitude",  RECD [("val", LEAF (Float, s3))])]
+     => {latitude  = PackRealBig.fromBytes (Byte.stringToBytes s1),
+         longitude = PackRealBig.fromBytes (Byte.stringToBytes s2),
+         altitude  = Real32.fromInt 42}
+   | otherwise => raise ERR "mk_gps" "";
+
+fun mk_zone ptree : zone =
+ case ptree
+  of ARRAY recds => Array.fromList (map mk_gps recds)
+   | otherwise => raise ERR "mk_zone" "";
+
+fun mk_mission ptree : mission =
+ case ptree
+  of RECD [("len", _), ("elts", ARRAY recds)]
+      => Array.fromList (map mk_gps recds)
+   | otherwise => raise ERR "mk_mission" "";
+
+fun parse_zone string =
+  let val (ptree,_,_) = parse uxasEnv zone string
+  in mk_zone ptree
+  end
+
+fun parse_mission string =
+  let val (ptree,_,_) = parse uxasEnv mission string
+  in mk_mission ptree
+  end
+
+val read_zone = parse_zone o Byte.bytesToString;
+val read_mission = parse_mission o Byte.bytesToString;
+
+(*---------------------------------------------------------------------------*)
+(* Some parsing tests, using random message generator randFn.                *)
+(*                                                                           *)
+(* Special-case strings to be put into fields that result from guest         *)
+(* scanners, when generating random message. This is highly specific to      *)
+(* uxAS address-attributed messages.                                         *)
+(*---------------------------------------------------------------------------*)
+(*
+fun scanRandFn (path:lval) = "!!UNEXPECTED!!"
+
+val randEnv =
+ let val (Consts,Decls,atomicWidths,valFn) = uxasEnv
+ in (Consts,Decls,atomicWidths,valFn,
+     uxas_repFn,scanRandFn,Random.newgen())
+ end;
+
+fun gen_mission () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",mission)], empty_lvalMap, []));
+
+fun gen_zone () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",zone)], empty_lvalMap, []));
+
+val zone = parse_zone (gen_zone());
+val mission = parse_mission (gen_mission());
+*)
