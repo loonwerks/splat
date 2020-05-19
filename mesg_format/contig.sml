@@ -26,9 +26,11 @@ datatype bexp
   | Band of bexp * bexp
   | Beq  of exp * exp
   | Blt  of exp * exp
-  | Bgt of exp * exp
-  | Ble of exp * exp
-  | Bge of exp * exp
+  | Bgt  of exp * exp
+  | Ble  of exp * exp
+  | Bge  of exp * exp
+  | DleA of Real.real * exp  (* Basic relations on doubles *)
+  | DleB of exp * Real.real
 ;
 
 (*---------------------------------------------------------------------------*)
@@ -125,7 +127,10 @@ fun resolveBexp lvalMap p bexp =
    | Bgt (e1,e2) => Bgt(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
    | Ble (e1,e2) => Ble(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
    | Bge (e1,e2) => Bge(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
+   | DleA (r,e)  => DleA (r,resolveExp lvalMap p e)
+   | DleB (e,r)  => DleB (resolveExp lvalMap p e,r)
 ;
+
 
 (*---------------------------------------------------------------------------*)
 (* Expression evaluation                                                     *)
@@ -172,30 +177,45 @@ val empty_lvalMap
   : (lval,atom * string) Redblackmap.dict = Redblackmap.mkDict lval_compare;
 
 (*---------------------------------------------------------------------------*)
-(* Atomic formulas                                                           *)
+(* Formulas.                                                                 *)
 (*---------------------------------------------------------------------------*)
 
-fun evalBexp (E as (Delta,lvalMap,valFn)) bexp =
- case bexp
-  of boolLit b => b
-   | BLoc lval =>
-      (case Redblackmap.peek(lvalMap,lval)
-         of SOME (Bool,s) =>
+fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) bexp =
+ let val evalE = evalExp (Delta,lvalMap,valFn)
+   fun eval bexp =
+    case bexp
+     of boolLit b => b
+      | BLoc lval =>
+         (case Redblackmap.peek(lvalMap,lval)
+           of SOME (Bool,s) =>
                let val bint = valFn Bool s
                in if bint = 0 then false else true
                end
-          | SOME (atom,_) =>
+            | SOME (atom,_) =>
                raise ERR "evalBexp" "expected Bool location"
-          | NONE => raise ERR "evalBexp" "Lval binding failure")
-   | Bnot b      => not (evalBexp E b)
-   | Bor(b1,b2)  => (evalBexp E b1 orelse evalBexp E b2)
-   | Band(b1,b2) => (evalBexp E b1 andalso evalBexp E b2)
-   | Beq (e1,e2) => (evalExp E e1 = evalExp E e2)
-   | Blt (e1,e2) => (evalExp E e1 < evalExp E e2)
-   | Bgt (e1,e2) => (evalExp E e1 > evalExp E e2)
-   | Ble (e1,e2) => (evalExp E e1 <= evalExp E e2)
-   | Bge (e1,e2) => (evalExp E e1 >= evalExp E e2)
-;
+            | NONE => raise ERR "evalBexp" "Lval binding failure")
+      | Bnot b      => not (eval b)
+      | Bor(b1,b2)  => (eval b1 orelse eval b2)
+      | Band(b1,b2) => (eval b1 andalso eval b2)
+      | Beq (e1,e2) => (evalE e1 = evalE e2)
+      | Blt (e1,e2) => (evalE e1 < evalE e2)
+      | Bgt (e1,e2) => (evalE e1 > evalE e2)
+      | Ble (e1,e2) => (evalE e1 <= evalE e2)
+      | Bge (e1,e2) => (evalE e1 >= evalE e2)
+      | DleA (r,Loc lval) =>
+         (case Redblackmap.peek(lvalMap,lval)
+            of SOME (Double,s) => Real.<=(r,dvalFn Double s)
+             | SOME (atom,_)   => raise ERR "evalBexp(DleA)" "expected Double location"
+             | NONE => raise ERR "evalBexp" "DleA: lval binding failure")
+      | DleB (Loc lval,r) =>
+         (case Redblackmap.peek(lvalMap,lval)
+           of SOME (Double,s) => Real.<=(dvalFn Double s,r)
+            | SOME (atom,_)   => raise ERR "evalBexp(DleB)" "expected Double location"
+            | NONE => raise ERR "evalBexp" "DleB: lval binding failure")
+      | otherwise  => raise ERR "evalBexp" "expected an lval expression in comparison"
+ in
+  eval bexp
+ end;
 
 (*---------------------------------------------------------------------------*)
 (* Contiguity types                                                          *)
@@ -229,8 +249,8 @@ fun tdrop n s =
 (*   Consts : maps constant names to integers                                *)
 (*   Decls  : maps names to previously declared contigs                      *)
 (*   atomicWidths : gives width info for basic types                         *)
-(*   valFn : function for computing a value                                *)
-(*             stored at the designated location in the string.              *)
+(*   valFn : function for computing a integer value stored at the            *)
+(*           designated location in the string.                              *)
 (*                                                                           *)
 (* segFn operates on a state tuple (segs,s,wvMap)                            *)
 (*                                                                           *)
@@ -242,7 +262,7 @@ fun tdrop n s =
 (*---------------------------------------------------------------------------*)
 
 fun segFn E path contig state =
- let val (Consts,Decls,atomicWidths,valFn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
      val (segs,s,WidthValMap) = state
  in
  case contig
@@ -268,7 +288,7 @@ fun segFn E path contig state =
        end
    | Assert bexp =>
        let val bexp' = resolveBexp WidthValMap path bexp
-           val tval = evalBexp (Consts,WidthValMap,valFn) bexp'
+           val tval = evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
        in
          if tval then SOME state
          else (print "Assertion failure"; NONE)
@@ -294,7 +314,7 @@ fun segFn E path contig state =
    | Union choices =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolveBexp WidthValMap path bexp
-             in evalBexp (Consts,WidthValMap,valFn) bexp'
+             in evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
              end
        in case filter choiceFn choices
            of [(_,c)] => segFn E path c state
@@ -324,15 +344,15 @@ val u64 = Basic(Unsigned 8);
 val i16 = Basic(Signed 2);
 val i32 = Basic(Signed 4);
 val i64 = Basic(Signed 8);
-val float = Basic(Signed 4);
-val double = Basic(Signed 8);
+val f32 = Basic Float;
+val f64 = Basic Double;
 
 fun add_enum_decl E (s,bindings) =
- let val (Consts,Decls,atomicWidths,valFn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
      val enum = Basic(Enum s)
      val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
  in
-   (bindings' @ Consts, (s,enum)::Decls, atomicWidths,valFn)
+   (bindings' @ Consts, (s,enum)::Decls, atomicWidths,valFn,dvalFn)
  end
 
 
@@ -399,8 +419,10 @@ fun pp_lval lval =
      | Mult (e1,e2) => pp_binop "*" (pp_exp e1) (pp_exp e2)
 end
 
+
 fun pp_bexp bexp =
  let open PP
+     fun pp_real r = add_string(Real.toString r)
  in
    case bexp
     of boolLit b => add_string (Bool.toString b)
@@ -409,11 +431,13 @@ fun pp_bexp bexp =
                      [add_string"not", paren 0 0 "(" ")" [pp_bexp b]]
      | Bor(b1,b2)  => pp_binop "or" (pp_bexp b1) (pp_bexp b2)
      | Band(b1,b2) => pp_binop "and" (pp_bexp b1) (pp_bexp b2)
-     | Beq (e1,e2) => pp_binop "=" (pp_exp e1) (pp_exp e2)
-     | Blt (e1,e2) => pp_binop "<" (pp_exp e1) (pp_exp e2)
-     | Bgt(e1,e2) => pp_binop ">" (pp_exp e1) (pp_exp e2)
-     | Ble(e1,e2) => pp_binop "<=" (pp_exp e1) (pp_exp e2)
-     | Bge(e1,e2) => pp_binop ">=" (pp_exp e1) (pp_exp e2)
+     | Beq (e1,e2) => pp_binop "="  (pp_exp e1) (pp_exp e2)
+     | Blt (e1,e2) => pp_binop "<"  (pp_exp e1) (pp_exp e2)
+     | Bgt(e1,e2)  => pp_binop ">"  (pp_exp e1) (pp_exp e2)
+     | Ble(e1,e2)  => pp_binop "<=" (pp_exp e1) (pp_exp e2)
+     | Bge(e1,e2)  => pp_binop ">=" (pp_exp e1) (pp_exp e2)
+     | DleA(r,e)   => pp_binop "<=" (pp_real r) (pp_exp e)
+     | DleB(e,r)   => pp_binop "<=" (pp_exp e) (pp_real r)
  end;
 
 fun pp_atom atom =
@@ -508,7 +532,7 @@ fun take_drop n list =
 (*---------------------------------------------------------------------------*)
 
 fun parseFn E path contig state =
- let val (Consts,Decls,atomicWidths,valFn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
      val (stk,s,WidthValMap) = state
  in
  case contig
@@ -534,7 +558,7 @@ fun parseFn E path contig state =
        end
    | Assert bexp =>
        let val bexp' = resolveBexp WidthValMap path bexp
-           val tval = evalBexp (Consts,WidthValMap,valFn) bexp'
+           val tval = evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
        in
          if tval then SOME state
          else (print "Assertion failure"; NONE)
@@ -576,7 +600,7 @@ fun parseFn E path contig state =
    | Union choices =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolveBexp WidthValMap path bexp
-             in evalBexp (Consts,WidthValMap,valFn) bexp'
+             in evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
              end
        in case filter choiceFn choices
            of [(_,c)] => parseFn E path c state
@@ -597,7 +621,7 @@ fun parse E contig s =
 (*---------------------------------------------------------------------------*)
 
 fun matchFn E (state as (worklist,s,theta)) =
- let val (Consts,Decls,atomicWidths,valFn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
  in
  case worklist
   of [] => SOME (s,theta)
@@ -622,7 +646,7 @@ fun matchFn E (state as (worklist,s,theta)) =
        end
    | (path,Assert bexp)::t =>
        let val bexp' = resolveBexp theta path bexp
-       in if evalBexp (Consts,theta,valFn) bexp'
+       in if evalBexp (Consts,theta,valFn,dvalFn) bexp'
             then matchFn E (t,s,theta)
             else raise ERR "matchFn" "Assert evaluates to false"
        end
@@ -644,7 +668,7 @@ fun matchFn E (state as (worklist,s,theta)) =
    | (path,Union choices)::t =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn) bexp'
+             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
              end
        in case filter choiceFn choices
            of [(_,c)] => matchFn E ((path,c)::t,s,theta)
@@ -662,7 +686,7 @@ fun match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap);
 
 fun substFn E theta path contig =
  let fun thetaFn lval = snd (Redblackmap.find(theta,lval))
-     val (Consts,Decls,atomicWidths,valFn) = E
+     val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
  in
   case contig
    of VOID     => raise ERR "substFn" "VOID"
@@ -670,7 +694,7 @@ fun substFn E theta path contig =
     | Raw _    => thetaFn path
     | Assert b =>
        let val b' = resolveBexp theta path b
-       in if evalBexp (Consts,theta,valFn) b' then
+       in if evalBexp (Consts,theta,valFn,dvalFn) b' then
               ""
           else raise ERR "substFn" "Assert failure"
        end
@@ -689,7 +713,7 @@ fun substFn E theta path contig =
    | Union choices =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn) bexp'
+             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
              end
        in case filter choiceFn choices
            of [(_,c)] => substFn E theta path c
@@ -710,7 +734,7 @@ fun check_match E contig s =
 (*---------------------------------------------------------------------------*)
 
 fun predFn E (state as (worklist,s,theta)) =
- let val (Consts,Decls,atomicWidths,valFn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
  in
  case worklist
    of [] => PASS (s,theta)
@@ -735,7 +759,7 @@ fun predFn E (state as (worklist,s,theta)) =
        end
    | (path,Assert bexp)::t =>
        let val bexp' = resolveBexp theta path bexp
-       in if evalBexp (Consts,theta,valFn) bexp'
+       in if evalBexp (Consts,theta,valFn,dvalFn) bexp'
             then predFn E (t,s,theta)
             else FAIL state
        end
@@ -757,7 +781,7 @@ fun predFn E (state as (worklist,s,theta)) =
    | (path,Union choices)::t =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn) bexp'
+             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
              end
        in case filter choiceFn choices
            of [(_,c)] => predFn E ((path,c)::t,s,theta)
@@ -825,8 +849,8 @@ fun atom_range atm =
        if i = 4 then default_u32_range else
        if i = 8 then default_u64_range
        else raise ERR "atom_range" "unexpected number of bytes")
-   | Float => raise ERR "atom_range" "Float"
-   | Double => raise ERR "atom_range" "Double"
+   | Float  => default_u32_range
+   | Double => default_u64_range
    | Blob => raise ERR "atom_range" "Blob"
    | Scanned => raise ERR "atom_range" "Scanned"
 ;
@@ -847,61 +871,85 @@ fun vname_of (Loc(VarName s)) = s
 
 fun specified_field path e = (last_path_elt path = vname_of e)
 
-fun find_range default path bexp (E as (Consts,theta,valFn)) =
+fun gen_segment a path bexp (Consts,lvalMap,valFn,repFn,gn) =
+ let val E = (Consts,lvalMap,valFn)
+     fun randElt (lo,hi) = Random.range (lo,hi+1) gn
+     fun randRealElt (lo,hi) =
+       let open Real
+       in if lo <= hi then
+              lo + (Random.random gn * (hi - lo))
+          else raise ERR "randRealElt" ""
+       end
+     fun randRep a = repFn a (randElt (atom_range a))
+ in
  case bexp
   of Beq (e1,e2) =>
        if specified_field path e1 then
-          let val i = evalExp E e2
-          in (i,i)
-          end else
+          repFn a (evalExp E e2)
+       else
        if specified_field path e2 then
-          let val i = evalExp E e1
-          in (i,i)
-          end
-       else default
+          repFn a (evalExp E e1)
+       else randRep a
    | Blt (e1,e2) =>
        if specified_field path e1 then
           let val i = evalExp E e2
-          in if 0 < i then (0,i-1) else default
+          in if 0 < i then
+               repFn a (randElt (0,i-1))
+             else
+               randRep a
           end
-       else default
+       else randRep a
    | Ble (e1,e2) =>
        if specified_field path e1 then
           let val i = evalExp E e2
-          in if 0 <= i then (0,i) else default
+          in if 0 <= i then
+               repFn a (randElt (0,i))
+             else
+               randRep a
           end
-       else default
+       else randRep a
    | Band(Ble(e1,e2),Ble(e3,e4)) =>
       if specified_field path e2 andalso e2=e3 then
         let val i = evalExp E e1
             val j = evalExp E e4
-        in if i <= j then (i,j) else default
+        in if i <= j then
+             repFn a (randElt (i,j))
+            else
+             randRep a
         end
-      else default
-   | otherwise => default;
+      else randRep a
+   | Band(DleA(r1,e2),DleB(e3,r2)) =>
+      if specified_field path e2 andalso e2=e3 then
+        (if Real.<=(r1,r2) then
+            Byte.bytesToString
+              (PackRealBig.toBytes
+                 (randRealElt (r1,r2)))
+         else randRep a)
+      else randRep a
+   | otherwise => raise ERR "gen_segment" "unexpected case"
+end
 ;
+
 
 (*---------------------------------------------------------------------------*)
 (* Counterpart to matchFn that generates random, but conforming, messages.   *)
 (*---------------------------------------------------------------------------*)
 
 fun randFn E (worklist,theta,acc) =
- let val (Consts,Decls,atomicWidths,valFn,repFn,scanRandFn,gn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn,repFn,scanRandFn,gn) = E
  in
  case worklist
   of [] => rev acc
-   |  (path,VOID)::t => raise ERR "randFn" "VOID construct encountered"
-   |  (path,Basic a)::(_,Assert bexp)::t =>
-       let val (lo,hi) = find_range (atom_range a) path bexp (Consts,theta,valFn)
-           val randElt = Random.range (lo,hi+1) gn  (* RNG from Paulson's book gives [lo,hi) *)
-           val segment = repFn a randElt
+   | (path,VOID)::t => raise ERR "randFn" "VOID construct encountered"
+   | (path,Basic a)::(_,Assert bexp)::t =>
+       let val env = (Consts,theta,valFn,repFn,gn)
+           val segment = gen_segment a path bexp env
        in
           randFn E (t,Redblackmap.insert(theta,path,(a,segment)),segment :: acc)
        end
   |  (path,Basic a)::t =>
-       let val (lo,hi) = atom_range a
-           val randElt = Random.range  (lo,hi+1) gn
-           val segment = repFn a randElt
+       let fun randElt (lo,hi) = Random.range (lo,hi+1) gn
+           val segment = repFn a (randElt (atom_range a))
        in
           randFn E (t,Redblackmap.insert(theta,path,(a,segment)),segment::acc)
        end
@@ -915,7 +963,7 @@ fun randFn E (worklist,theta,acc) =
    | (path,Declared name)::t => randFn E ((path,assoc name Decls)::t,theta,acc)
    | (path,Assert bexp)::t =>
        let val bexp' = resolveBexp theta path bexp
-       in if evalBexp (Consts,theta,valFn) bexp'
+       in if evalBexp (Consts,theta,valFn,dvalFn) bexp'
             then randFn E (t,theta,acc)
             else raise ERR "randFn" "Assert failure"
        end
@@ -936,7 +984,7 @@ fun randFn E (worklist,theta,acc) =
    | (path,Union choices)::t =>
        let fun choiceFn(bexp,c) =
              let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn) bexp'
+             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
              end
        in case filter choiceFn choices
            of [(_,c)] => randFn E ((path,c)::t,theta,acc)

@@ -13,14 +13,18 @@ fun valFn a s =
    | Enum s => uvalFn s
    | Signed w => ivalFn s
    | Unsigned w => uvalFn s
-   | Float => raise ERR "valFn" "Float"
-   | Double => raise ERR "valFn" "Double"
-   | Blob => raise ERR "valFn" "Blob"
-   | Scanned => raise ERR "valFn" "Scanned"
+   | otherwise => raise ERR "valFn" "unexpected input"
  end
 ;
 
-val E = ([],[],atomic_widths,valFn);
+fun dvalFn Double s = PackRealBig.fromBytes (Byte.stringToBytes s)
+  | dvalFn other s = raise ERR "dvalFn" "expected Double"
+;
+fun drepFn Double r = (Byte.bytesToString (PackRealBig.toBytes r)
+  | drepFn other s = raise ERR "drepFn" "expected Double"
+;
+
+val E = ([],[],atomic_widths,valFn,dvalFn);
 
 (*---------------------------------------------------------------------------*)
 (* Support for making test messages                                          *)
@@ -41,9 +45,10 @@ fun mk_char c =
 fun mk_string s =
     mk_u16 (String.size s) :: map mk_char (String.explode s);
 fun mk_enum E (s,constr) =
- let val (Consts,Decls,atomicWidths,valFn) = E
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
  in mk_u8 (assoc (s ^ "'" ^ constr) Consts)
  end
+fun mk_double r = Byte.bytesToString(PackRealBig.toBytes r);
 end;
 
 (*===========================================================================*)
@@ -124,7 +129,7 @@ val String =  (* varying length strings *)
         ("elts", Array(Basic Char,Loc (VarName"len")))
 ];
 
-val E = ([],[("String",String)],atomic_widths,valFn);
+val E = ([],[("String",String)],atomic_widths,valFn,dvalFn);
 
 val contig = Recd [
    ("len", u16),
@@ -152,7 +157,7 @@ val KeyValuePairRecd =
   Recd [("key", Declared "String"),
         ("value", Declared "String")];
 
-val E = ([],[("String",String), ("KeyValuePair", KeyValuePairRecd)],atomic_widths,valFn);
+val E = ([],[("String",String), ("KeyValuePair", KeyValuePairRecd)],atomic_widths,valFn,dvalFn);
 
 val contig = Recd [
    ("len", u16),
@@ -264,3 +269,30 @@ Redblackmap.listItems lvalMap;
 val (ptree,remaining,_) = parse E' contig string;
 
 (*===========================================================================*)
+
+
+val gps =  Recd [
+  ("lat", f64),
+  ("lon", f64),
+  ("alt", f64),
+  ("gps-check", Assert
+    (Band (Band(DleA(~90.0,Loc(VarName"lat")),
+                DleB(Loc(VarName"lat"),90.0)),
+     Band (Band(DleA(~180.0,Loc(VarName"lon")),
+                DleB(Loc(VarName"lat"),180.0)),
+           Band(DleA(0.0,Loc(VarName"alt")),
+                DleB(Loc(VarName"lat"),15000.0))))))
+ ];
+
+
+val string = String.concat
+ [mk_double 32.4, mk_double ~32.4, mk_double 10000.0];
+
+val SOME(segs, remaining, lvalMap) = segments E gps string;
+
+wellformed E gps string;
+
+val string = String.concat
+ [mk_double 324.3, mk_double ~32.4, mk_double 10000.0];
+
+not (wellformed E gps string);

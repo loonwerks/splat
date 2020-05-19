@@ -12,10 +12,7 @@ fun valFn a s =
    | Enum s => uvalFn s
    | Signed w => ivalFn s
    | Unsigned w => uvalFn s
-   | Float => raise ERR "valFn" "Float"
-   | Double => raise ERR "valFn" "Double"
-   | Blob => raise ERR "valFn" "Blob"
-   | Scanned => raise ERR "valFn" "Scanned"
+   | otherwise => raise ERR "valFn" ""
  end
 ;
 
@@ -28,11 +25,15 @@ fun repFn a i =
    | Enum s => u2string 1 (LargeInt.fromInt i)
    | Signed w => i2string w (LargeInt.fromInt i)
    | Unsigned w => u2string w (LargeInt.fromInt i)
-   | Float => raise ERR "repFn" "Float"
-   | Double => raise ERR "repFn" "Double"
-   | Blob => raise ERR "repFn" "Blob"
-   | Scanned => raise ERR "repFn" "Scanned"
+   | other => raise ERR "repFn" ""
  end
+;
+
+fun dvalFn Double s = PackRealBig.fromBytes (Byte.stringToBytes s)
+  | dvalFn other s = raise ERR "dvalFn" "expected Double"
+;
+fun drepFn Double r = Byte.bytesToString (PackRealBig.toBytes r)
+  | drepFn other s = raise ERR "drepFn" "expected Double"
 ;
 
 fun scanRandFn path = "foo";

@@ -463,11 +463,11 @@ val airvehicle_state = Recd [
 (*---------------------------------------------------------------------------*)
 
 val attributes = Recd [
- ("contentType",      Scanner (scanTo "|")),
- ("descriptor",       Scanner (scanTo "|")),
- ("source_group",     Scanner (scanTo "|")),
- ("source_entity_ID", Scanner (scanTo "|")),
- ("source_service_ID",Scanner (scanTo "$"))
+ ("contentType",       Scanner (scanTo "|")),
+ ("descriptor",        Scanner (scanTo "|")),
+ ("source_group",      Scanner (scanTo "|")),
+ ("source_entity_ID",  Scanner (scanTo "|")),
+ ("source_service_ID", Scanner (scanTo "$"))
  ];
 
 fun full_mesg contig = Recd [
