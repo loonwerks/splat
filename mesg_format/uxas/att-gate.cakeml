@@ -1,0 +1,209 @@
+structure Attestation_Gate =
+struct
+
+(*---------------------------------------------------------------------------*)
+(* Contiguity types for the trusted_ids input and the address-attributed     *)
+(* messages.                                                                 *)
+(*                                                                           *)
+(* val trusted_ids = Array(i32,intLit 3)                                     *)
+(*                                                                           *)
+(* val AAmesg = Recd [                                                       *)
+(*   ("address",           Scanner (scanTo "$")),                            *)
+(*   ("contentType",       Scanner (scanTo "|")),                            *)
+(*   ("descriptor",        Scanner (scanTo "|")),                            *)
+(*   ("source_group",      Scanner (scanTo "|")),                            *)
+(*   ("source_entity_ID",  Scanner (scanTo "|")),                            *)
+(*   ("source_service_ID", Scanner (scanTo "$")),                            *)
+(*   ("all_the_rest",      Scanner (fn s => SOME(s,"")))                     *)
+(* ]                                                                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Look for x element in arr, starting from i and going up.                  *)
+(*---------------------------------------------------------------------------*)
+
+fun seekFrom arr x i =
+ let val top = Word8Array.length arr
+     fun seek j =
+       if j >= top then None else
+       if Word8Array.sub arr j = x then Some j
+       else seek (j+1)
+ in seek i
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing. Break input into A$B|C|D|E|F$G, where the letters stand for      *)
+(* arbitrary strings not having the delimiter that folllows, e.g. "$" or "|" *)
+(* Return sub-string E, which corresponds to source-entity-ID above.         *)
+(*---------------------------------------------------------------------------*)
+
+fun w8_of c = Word8.fromInt (Char.ord c);
+
+fun scan arr =
+ case seekFrom arr (w8_of #"$") 0
+  of None => None
+   | Some segA =>
+ case seekFrom arr (w8_of #"|") (segA+1)
+  of None => None
+   | Some segB =>
+ case seekFrom arr (w8_of #"|") (segB+1)
+  of None => None
+   | Some segC =>
+ case seekFrom arr (w8_of #"|") (segC+1)
+  of None => None
+   | Some segD =>
+ case seekFrom arr (w8_of #"|") (segD+1)
+  of None => None
+   | Some segE =>
+ case seekFrom arr (w8_of #"$") (segE+1)
+  of None => None
+   | Some segF =>
+     Some(Word8Array.substring arr (segD+1) (segE-segD));
+
+
+fun fromDecimal s =
+ let val s' = String.substring s 0 (String.size s - 1) (* drop vertical bar *)
+ in Int.fromString s'
+ end
+
+fun getID arr =
+ case scan arr
+  of None => None
+   | Some ssID => fromDecimal ssID
+;
+
+(*---------------------------------------------------------------------------*)
+(* Tests                                                                     *)
+(*---------------------------------------------------------------------------*)
+(*
+
+fun string_to_bytes s =
+ let val arr = Word8Array.array (String.size s) (Word8.fromInt 0)
+     val _ = Word8Array.copyVec s 0 (String.size s) arr 0
+ in
+    arr
+ end
+
+val test1 = (Some 500 = getID (string_to_bytes "A$B|C|D|500|F$G"));
+val test2 = (Some 500 = getID (string_to_bytes "A$B||D|500|F$G"));
+val test3 = (Some 500 = getID (string_to_bytes "199.0.0.1$p--q--r|foo|A!D!CD|500|FRED$GHIJ"));
+
+val _ = if test1 andalso test2 andalso test3 then
+         TextIO.print "\ngetID: tests passed.\n"
+        else
+         TextIO.print "\ngetID: tests failed.\n"
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Map 3 adjacent 4-byte chunks in arr to an array of 3 ints                 *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_tid_array arr =
+  if Word8Array.length arr <> 12 then None
+  else
+  let val s1 = Word8Array.substring arr 0 4
+      val s2 = Word8Array.substring arr 4 4
+      val s3 = Word8Array.substring arr 8 4
+  in case (Int.fromString s1,
+           Int.fromString s2,
+           Int.fromString s3)
+      of (Some i1, Some i2, Some i3)
+          => Some(Array.fromList[i1,i2,i3])
+       | otherwise => None
+   end;
+
+fun equal a b = (a=b);
+
+(*---------------------------------------------------------------------------*)
+(* Look at a uxas AA message: if it's not got an input, return False; if it  *)
+(* does, return whether or not the input's ID is in the tid array. But       *)
+(* before the membership check, ensure that the ID is not zero.              *)
+(*---------------------------------------------------------------------------*)
+
+fun check tidArr bytesOpt =
+ case bytesOpt
+  of None => False
+   | Some bytes =>
+ case getID bytes
+  of None => False
+   | Some i => i <> 0 andalso Array.exists (equal i) tidArr;
+
+
+(*---------------------------------------------------------------------------*)
+(* Look at events in the following order: opregion; lst; autorqt. Pass along *)
+(* only the first one that meets the criterion.                              *)
+(*---------------------------------------------------------------------------*)
+
+fun att_gate_seq tids opregionOpt lstOpt autorqtOpt =
+  case mk_tid_array tids
+   of None => (False,False,False)
+    | Some tidArr =>
+      if check tidArr opregionOpt then
+         (True,False,False)
+      else
+      if check tidArr lstOpt then
+         (False,True,False)
+      else
+      if check tidArr autorqtOpt then
+         (False,False,True)
+      else
+         (False,False,False)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Look at all events in a parallel manner. Pass along all that meet the     *)
+(* criterion.                                                                *)
+(*---------------------------------------------------------------------------*)
+
+fun att_gate_par tids opregionOpt lstOpt autorqtOpt =
+  case mk_tid_array tids
+   of None => (False,False,False)
+    | Some tidArr => (check tidArr opregionOpt,
+                      check tidArr lstOpt,
+                      check tidArr autorqtOpt)
+
+(*---------------------------------------------------------------------------*)
+(* Stubbed-out IO calls. Assumed types:                                      *)
+(*                                                                           *)
+(*  get_trusted_ids : unit -> byte_array                                     *)
+(*  get_opregion    : unit -> byte_array option                              *)
+(*  get_lst         : unit -> byte_array option                              *)
+(*  get_autorqt     : unit -> byte_array option                              *)
+(*                                                                           *)
+(*  put_opregion    : byte_array -> unit                                     *)
+(*  put_lst         : byte_array -> unit                                     *)
+(*  put_autorqt     : byte_array -> unit                                     *)
+(*                                                                           *)
+(*--------------------------------------------------------------------------*)
+
+exception HAMR_CALL;
+
+fun get_trusted_ids() = raise HAMR_CALL;
+fun get_opregion()    = raise HAMR_CALL;
+fun get_lst()         = raise HAMR_CALL;
+fun get_autorqt()     = raise HAMR_CALL;
+
+fun put_opregion bytes = raise HAMR_CALL;
+fun put_lst bytes      = raise HAMR_CALL;
+fun put_autorqt bytes  = raise HAMR_CALL;
+
+
+(*---------------------------------------------------------------------------*)
+(* Get the inputs, do the check(s), and perform the outputs. Can swap in     *)
+(* att_gate_par for att_gate_seq if that behavior is wanted.                 *)
+(*---------------------------------------------------------------------------*)
+
+fun att_gate () =
+ let val tids        = get_trusted_ids()
+     val opregionOpt = get_opregion()
+     val lstOpt      = get_lst()
+     val autorqtOpt  = get_autorqt()
+     val (a,b,c)     = att_gate_seq tids opregionOpt lstOpt autorqtOpt
+ in
+    (if a then put_opregion (Option.valOf opregionOpt) else())
+  ; (if b then put_lst      (Option.valOf lstOpt)      else())
+  ; (if c then put_autorqt  (Option.valOf autorqtOpt)  else())
+ end
+
+end

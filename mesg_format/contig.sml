@@ -737,16 +737,13 @@ fun predFn E (state as (worklist,s,theta)) =
  let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
  in
  case worklist
-   of [] => PASS (s,theta)
-   |  (path,VOID)::t => FAIL state
-   |  (path,Basic a)::t =>
-       let val awidth = atomicWidths a
-       in case tdrop awidth s
-           of NONE => FAIL state
-            | SOME (segment,rst) =>
-              predFn E (t,rst,
-                        Redblackmap.insert(theta,path,(a,segment)))
-       end
+  of [] => PASS (s,theta)
+   | (path,VOID)::t => FAIL state
+   | (path,Basic a)::t =>
+       (case tdrop (atomicWidths a) s
+         of NONE => FAIL state
+          | SOME (segment,rst) =>
+              predFn E (t,rst,Redblackmap.insert(theta,path,(a,segment))))
    | (path,Declared name)::t => predFn E ((path,assoc name Decls)::t,s,theta)
    | (path,Raw exp)::t =>
        let val exp' = resolveExp theta path exp

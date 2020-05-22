@@ -88,7 +88,6 @@ end CASE_Monitor_Geo;
 *)
 
 use "uxas.sml";
-load "Regexp_Numerics";
 
 val ERR = mk_HOL_ERR "geofence-monitor";
 

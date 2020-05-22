@@ -156,16 +156,16 @@ val uxas_constants_map =
 (*---------------------------------------------------------------------------*)
 
 fun uxas_valFn a s =
- let fun uvalFn s = IntInf.toInt
+ let fun uvalFn w = IntInf.toInt
          (Regexp_Numerics.string2iint Regexp_Numerics.Unsigned
-                                      Regexp_Numerics.MSB s)
-     fun ivalFn s = IntInf.toInt
+                                      Regexp_Numerics.MSB w)
+     fun ivalFn w = IntInf.toInt
          (Regexp_Numerics.string2iint Regexp_Numerics.Twos_comp
-                                      Regexp_Numerics.MSB s)
+                                      Regexp_Numerics.MSB w)
  in case a
   of Bool => uvalFn s
    | Char => uvalFn s
-   | Enum s => uvalFn s
+   | Enum _ => uvalFn s
    | Signed w => ivalFn s
    | Unsigned w => uvalFn s
    | otherwise  => raise ERR "uxas_valFn" "unexpected input"
@@ -181,13 +181,16 @@ fun uxas_repFn a i =
                         Regexp_Numerics.Unsigned Regexp_Numerics.MSB
      val i2string = Regexp_Numerics.iint2string
                         Regexp_Numerics.Twos_comp Regexp_Numerics.MSB
+     val j = LargeInt.fromInt i
  in case a
-  of Bool => u2string 1 (LargeInt.fromInt i)
-   | Char => u2string 1 (LargeInt.fromInt i)
-   | Enum s => u2string 1 (LargeInt.fromInt i)
-   | Signed w => i2string w (LargeInt.fromInt i)
-   | Unsigned w => u2string w (LargeInt.fromInt i)
-   | Double => u2string 8 (LargeInt.fromInt i)  (* hack *)
+  of Bool => u2string 1 j
+   | Char => u2string 1 j
+   | Enum s => u2string 1 j
+   | Signed w => i2string w j
+   | Unsigned w => u2string w j
+   | Float => u2string 4 j  (* hack *)
+   | Double => u2string 8 j  (* hack *)
+   | otherwise => raise ERR "uxas_repFn" "unexpected case"
  end
 ;
 
@@ -363,6 +366,23 @@ val Location3D = Recd [
   ("AltitudeType", AltitudeType)
 ];
 
+val Checked_Location3D = Recd [
+  ("Latitude",  real64),
+  ("Lat-check", Assert (
+    Band(DleA(~90.0,Loc(VarName"Latitude")),
+         DleB(Loc(VarName"Latitude"),90.0)))),
+  ("Longitude", real64),
+  ("Lon-check", Assert (
+    Band(DleA(~180.0,Loc(VarName"Longitude")),
+         DleB(Loc(VarName"Longitude"),180.0)))),
+  ("Altitude",  real32),
+  ("AltitudeType", AltitudeType),
+  ("AltitudeType-check", Assert (
+    Ble(Loc(VarName"AltitudeType"),intLit 1)))
+];
+
+val Location3D = Checked_Location3D;
+
 (*---------------------------------------------------------------------------*)
 (* LineSearchTask message                                                    *)
 (*---------------------------------------------------------------------------*)
@@ -393,11 +413,6 @@ val linesearch_task = Recd [
 (* AutomationResponse message                                                *)
 (*---------------------------------------------------------------------------*)
 
-val Polygon = Recd [
-  ("BoundaryPointsList",
-   uxasBoundedArray (mesgOption "LOCATION3D" Location3D) 64)
- ];
-
 val VehicleAction = Recd [
   ("AssociatedTaskList", uxasBoundedArray i64 8)
 ];
@@ -406,7 +421,8 @@ val VehicleActionCommand = Recd [
   ("CommandID",         i64),
   ("VehicleID",         i64),
   ("VehicleActionList", uxasBoundedArray (mesgOption "VEHICLEACTION" VehicleAction) 8),
-  ("Status",            CommandStatusType)
+  ("Status",            CommandStatusType),
+  ("check-status",      Assert (Ble(Loc(VarName"Status"),intLit 4)))
  ];
 
 val Waypoint = Recd [
@@ -415,8 +431,10 @@ val Waypoint = Recd [
   ("NextWaypoint",        i64),
   ("Speed",               real32),
   ("SpeedType",           SpeedType),
+  ("check-speed-type",    Assert (Ble(Loc(VarName"SpeedType"),intLit 1))),
   ("ClimbRate",           real32),
   ("TurnType",            TurnType),
+  ("check-turn-type",     Assert (Ble(Loc(VarName"TurnType"),intLit 1))),
   ("VehicleActionList",   uxasBoundedArray (mesgOption "VEHICLEACTION" VehicleAction) 8),
   ("ContingencyWaypointA",i64),
   ("ContingencyWaypointB",i64),
@@ -566,7 +584,7 @@ datatype AltitudeType = AGL | MSL;
 datatype WavelengthBand = AllAny | EO | LWIR | SWIR | MWIR | Other;
 
 datatype NavigationMode =
-	 Waypoint | Loiter | FlightDirector | TargetTrack | FollowLeader | LostComm;
+	 WAYPOINT | Loiter | FlightDirector | TargetTrack | FollowLeader | LostComm;
 
 datatype CommandStatusType = Pending | Approved | InProcess | Executed | Cancelled;
 
@@ -618,23 +636,245 @@ type AutomationResponse =
 (* Parsing                                                                   *)
 (*---------------------------------------------------------------------------*)
 
-fun get_elt_gps
-fun get_gps ptree =
+val mk_i64   = uxas_valFn  (Signed 8);
+fun mk_float s = Real32.fromInt 42;
+fun mk_double s = dvalFn Double s;
+
+fun mk_leaf f (LEAF(_,s)) = f s
+  | mk_leaf f otherwise = raise ERR "mk_leaf" ""
+
+fun mk_bounded_array eltFn ptree =
  case ptree
-  of RECD [_, ("elts", elts)] = get_elt_gps elts
-   | otherwise => raise ERR "get_gps" "";
+  of RECD [("len",_),("elts", ARRAY elts)] => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise ERR "mk_bounded_array" "";
+
+fun dest_header ptree =
+ case ptree
+  of RECD [("seriesID",_),
+           ("mesgType",_),
+           ("seriesVersion",_),
+           ("mesg", pt)] => pt
+   | otherwise => raise ERR "dest_header" "";
+
+fun mk_uxasOption eltFn ptree =
+ case ptree
+  of RECD [("present", _), ("contents", elt)] =>
+        (case elt
+          of RECD [] => NONE
+           | contig  => SOME(eltFn contig))
+   | otherwise => raise ERR "mk_uxasOption" "";
+
+fun mk_bounded_mesgOption_array eltFn ptree =
+ case ptree
+  of RECD [("len",_),("elts", ARRAY elts)]
+      => Array.fromList
+           (List.mapPartial (mk_uxasOption (eltFn o dest_header)) elts)
+   | otherwise  => raise ERR "mk_bounded_mesgOption_array" "";
+
+fun decodeCommandStatusType s =
+  let val i = uxas_valFn (Enum "CommandStatusType") s
+  in if i = 0 then Pending else
+     if i = 1 then Approved else
+     if i = 2 then InProcess else
+     if i = 3 then Executed else
+     if i = 4 then Cancelled
+     else raise ERR "decodeCommandStatusType" ""
+  end;
+
+fun decodeAltitudeType s =
+  let val i = uxas_valFn (Enum "AltitudeType") s
+  in if i = 0 then AGL else
+     if i = 1 then MSL
+     else raise ERR "decodeAltitudeType" ""
+  end;
+
+fun decodeSpeedType s =
+  let val i = uxas_valFn (Enum "SpeedType") s
+  in if i = 0 then AirSpeed else
+     if i = 1 then GroundSpeed
+     else raise ERR "decodeSpeedType" ""
+  end;
+
+fun decodeTurnType s =
+  let val i = uxas_valFn (Enum "TurnType") s
+  in if i = 0 then TurnShort else
+     if i = 1 then FlyOver
+     else raise ERR "decodTurnType" ""
+  end;
+
+fun mk_location3D ptree =
+ case ptree
+  of RECD [("Latitude", lat),
+           ("Longitude", lon),
+           ("Altitude",  alt),
+           ("AltitudeType", alt_type)]
+     => {Latitude  = mk_leaf mk_double lat,
+         Longitude = mk_leaf mk_double lon,
+         Altitude  = mk_leaf mk_float alt,
+         AltitudeType = mk_leaf decodeAltitudeType alt_type}
+   | otherwise => raise ERR "mk_location3D" "";
+
+
+(*---------------------------------------------------------------------------*)
+(* Geofence monitor input                                                    *)
+(*---------------------------------------------------------------------------*)
 
 val PhaseII_Polygon = Array(Location3D, intLit 2);
 
-fun parse_polygon string =
- let val (ptree,remaining,theta) = parse uxasEnv PhaseII_Polygon string
- in case ptree
-     of RECD [("BoundaryPointsList", ARRAY ptrees)]
-	 => Array.fromList (map mk_location3D ptrees)
-      | otherwise => raise ERR "parse_polygon" ""
+(*---------------------------------------------------------------------------*)
+(* Decode polygon encoded with uxas encoding                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun parse_uxas_polygon string =
+ let fun contents_of ptree =
+       (case ptree
+         of RECD [("present", _), ("contents", RECD elts)] => elts
+          | otherwise => raise ERR "contents_of" "")
+      fun mesgs_of alist = map snd (filter (equal "mesg" o fst) alist)
+ in
+   case parseFn uxasEnv (VarName"root") Polygon ([],string,empty_lvalMap)
+    of NONE => NONE
+     | SOME ([ptree],remaining,theta) =>
+         (case ptree
+           of RECD [("BoundaryPointsList",
+                    RECD[("len", _), ("elts", ARRAY recds)])] =>
+                    let val contents = List.concat (map contents_of recds)
+                        val mesgs = mesgs_of contents
+                    in SOME (Array.fromList (map mk_location3D mesgs))
+                    end
+            | otherwise => NONE)
+     | otherwise => NONE
  end;
 
-randFn uxasEnv Polygon string
+fun mk_phase2_polygon ptree =
+  case ptree
+   of ARRAY recds => Array.fromList (map mk_location3D recds)
+    | otherwise => raise ERR "mk_phase2_polygon" ""
+
+fun parse_phase2_polygon string =
+  case parseFn uxasEnv (VarName"root") PhaseII_Polygon ([],string,empty_lvalMap)
+   of NONE => raise ERR "parse_phase2_polygon" ""
+    | SOME ([ptree],remaining,theta) => mk_phase2_polygon ptree
+    | otherwise => raise ERR "parse_phase2_polygon" ""
+
+(*---------------------------------------------------------------------------*)
+(* VehicleAction =                                                           *)
+(*  Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]                    *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_VA ptree =
+ case ptree
+  of RECD [("AssociatedTaskList",RECD [("len", _),("elts",ARRAY elts)])]
+       => Array.fromList (map (mk_leaf mk_i64) elts)
+   | otherwise  => raise ERR "mk_VA" "";
+
+(*---------------------------------------------------------------------------*)
+(* VehicleActionCommand = Recd [                                             *)
+(*  ("CommandID",         i64),                                              *)
+(*  ("VehicleID",         i64),                                              *)
+(*  ("VehicleActionList", uxasBoundedArray                                   *)
+(*                            (mesgOption "VEHICLEACTION" VehicleAction) 8), *)
+(*  ("Status",            CommandStatusType)                                 *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_VAC ptree : VehicleActionCommand =
+ case ptree
+  of RECD [("CommandID",cid),
+           ("VehicleID", vid),
+           ("VehicleActionList", valist),
+           ("Status", status)]
+      => {CommandID         = mk_leaf mk_i64 cid,
+          VehicleID         = mk_leaf mk_i64 vid,
+          VehicleActionList = mk_bounded_mesgOption_array mk_VA valist,
+          Status            = mk_leaf decodeCommandStatusType status}
+   | otherwise  => raise ERR "mk_VAC" ""
+
+(*---------------------------------------------------------------------------*)
+(* Waypoint = Recd [                                                         *)
+(*  ("Location",            Location3D),                                     *)
+(*  ("Number",              i64),                                            *)
+(*  ("NextWaypoint",        i64),                                            *)
+(*  ("Speed",               real32),                                         *)
+(*  ("SpeedType",           SpeedType),                                      *)
+(*  ("check-speed-type",    Assert (Ble(Loc(VarName"SpeedType"),intLit 1))), *)
+(*  ("ClimbRate",           real32),                                         *)
+(*  ("TurnType",            TurnType),                                       *)
+(*  ("check-turn-type",     Assert (Ble(Loc(VarName"TurnType"),intLit 1))),  *)
+(*  ("VehicleActionList",   uxasBoundedArray                                 *)
+(*                             (mesgOption "VEHICLEACTION" VehicleAction) 8),*)
+(*  ("ContingencyWaypointA",i64),                                            *)
+(*  ("ContingencyWaypointB",i64),                                            *)
+(*  ("AssociatedTasks",     uxasBoundedArray i64 8)                          *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_Waypoint ptree =
+  case ptree
+   of RECD [("Location", loc3d), ("Number", n),
+            ("NextWaypoint",     next_wpt), ("Speed", speed),
+            ("SpeedType", speed_type), ("ClimbRate",climbrate),
+            ("TurnType",turn_type), ("VehicleActionList", valist),
+            ("ContingencyWaypointA",cwptA), ("ContingencyWaypointB",cwptB),
+            ("AssociatedTasks",  atasks)]
+      => {Location     = mk_location3D loc3d,
+          Number       = mk_leaf mk_i64 n,
+          NextWaypoint = mk_leaf mk_i64 next_wpt,
+          Speed        = mk_leaf mk_float speed,
+          SpeedType    = mk_leaf decodeSpeedType speed_type,
+          ClimbRate    = mk_leaf mk_float climbrate,
+          TurnType     = mk_leaf decodeTurnType turn_type,
+          VehicleActionList    = mk_bounded_mesgOption_array mk_VA valist,
+          ContingencyWaypointA = mk_leaf mk_i64 cwptA,
+          ContingencyWaypointB = mk_leaf mk_i64 cwptB,
+          AssociatedTasks      = mk_bounded_array (mk_leaf mk_i64) atasks}
+      | otherwise => raise ERR "mk_Waypoint" ""
+
+
+
+(*---------------------------------------------------------------------------*)
+(*  MissionCommand = Recd [                                                  *)
+(* ("VehicleActionCommand", VehicleActionCommand),                           *)
+(* ("WaypointList",                                                          *)
+(*     uxasBoundedArray(mesgOption "WAYPOINT" Waypoint) 1024),               *)
+(* ("FirstWaypoint", i64)                                                    *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_MC ptree =
+  case ptree
+   of RECD [("VehicleActionCommand", vac),
+            ("WaypointList", wpts),
+            ("FirstWaypoint",fst_wpt)]
+       => {VehicleActionCommand = mk_VAC vac,
+           WaypointList = mk_bounded_mesgOption_array mk_Waypoint wpts,
+           FirstWaypoint = mk_leaf mk_i64 fst_wpt}
+    | otherwise => raise ERR "mk_mission_command" ""
+
+(*---------------------------------------------------------------------------*)
+(* automation_response = Recd [                                              *)
+(*  ("MissionCommandList",                                                   *)
+(*      uxasBoundedArray (mesgOption "MISSIONCOMMAND" MissionCommand) 16),   *)
+(*  ("VehicleCommandList",                                                   *)
+(*      uxasBoundedArray                                                     *)
+(*           (mesgOption "VEHICLEACTIONCOMMAND" VehicleActionCommand) 64),   *)
+(*  ("Info", uxasBoundedArray (mesgOption "KEYVALUEPAIR" KeyValuePair) 8)    *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_automation_response ptree =
+  case ptree
+   of RECD [("MissionCommandList",mclist),
+            ("VehicleCommandList",vaclist), ("Info", infolist)]
+       => {MissionCommandList = mk_bounded_mesgOption_array mk_MC wpts mclist,
+           VehicleCommandList = mk_bounded_mesgOption_array mk_VAC vaclist,
+           Info = ilist}
+    | otherwise => raise ERR "mk_automation_response" ""
+
+
+(*---------------------------------------------------------------------------*)
+(* Generate messages to test the parser on.                                  *)
+(*---------------------------------------------------------------------------*)
 
 fun scanRandFn (path:lval) = "!!UNEXPECTED!!"
 
@@ -644,81 +884,54 @@ val randEnv =
      uxas_repFn,scanRandFn,Random.newgen())
  end;
 
-fun gen_double() = String.concat
-    (randFn randEnv
-        ([(VarName"root",f64)], empty_lvalMap, []));
-
-fun gen_polygon () =
+fun gen_phase2_polygon () =
   String.concat
     (randFn randEnv
-        ([(VarName"root",Polygon)], empty_lvalMap, []));
+        ([(VarName"root",PhaseII_Polygon)], empty_lvalMap, []));
 
-fun parse_automation_response bytes : AutomationResponse =
-    raise ERR "parse_automation_response" "stub";
+parse_phase2_polygon (gen_phase2_polygon());
+
+fun gen_VA () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",VehicleAction)], empty_lvalMap, []));
+
+val (ptree,remaining,theta) = parse uxasEnv VehicleAction (gen_VA());
+mk_VA ptree;
+
+fun gen_VAC () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",VehicleActionCommand)], empty_lvalMap, []));
+
+val (ptree,remaining,theta) = parse uxasEnv VehicleActionCommand (gen_VAC());
+mk_VAC ptree;
+
+fun gen_waypoint () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",Waypoint)], empty_lvalMap, []));
+
+val (ptree,remaining,theta) = parse uxasEnv Waypoint (gen_waypoint());
+mk_Waypoint ptree;
+
+
+fun gen_MC () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",MissionCommand)], empty_lvalMap, []));
+
+val (ptree,remaining,theta) = parse uxasEnv MissionCommand (gen_MC());
+mk_MC ptree;
+
+fun gen_keyvalpair () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",KeyValuePair)], empty_lvalMap, []));
+
 
 val read_polygon = parse_polygon o Byte.bytesToString;
 val read_automation_response = parse_automation_response o Byte.bytesToString;
 
-fun mk_gps ptree =
- case ptree
-  of RECD [("latitude",  RECD [("val", LEAF (Double, s1))]),
-           ("longitude", RECD [("val", LEAF (Double, s2))]),
-           ("altitude",  RECD [("val", LEAF (Float, s3))])]
-     => {latitude  = PackRealBig.fromBytes (Byte.stringToBytes s1),
-         longitude = PackRealBig.fromBytes (Byte.stringToBytes s2),
-         altitude  = Real32.fromInt 42}
-   | otherwise => raise ERR "mk_gps" "";
-
-fun mk_zone ptree : zone =
- case ptree
-  of ARRAY recds => Array.fromList (map mk_gps recds)
-   | otherwise => raise ERR "mk_zone" "";
-
-fun mk_mission ptree : mission =
- case ptree
-  of RECD [("len", _), ("elts", ARRAY recds)]
-      => Array.fromList (map mk_gps recds)
-   | otherwise => raise ERR "mk_mission" "";
-
-fun parse_zone string =
-  let val (ptree,_,_) = parse uxasEnv zone string
-  in mk_zone ptree
-  end
-
-fun parse_mission string =
-  let val (ptree,_,_) = parse uxasEnv mission string
-  in mk_mission ptree
-  end
-
 val read_zone = parse_zone o Byte.bytesToString;
 val read_mission = parse_mission o Byte.bytesToString;
-
-(*---------------------------------------------------------------------------*)
-(* Some parsing tests, using random message generator randFn.                *)
-(*                                                                           *)
-(* Special-case strings to be put into fields that result from guest         *)
-(* scanners, when generating random message. This is highly specific to      *)
-(* uxAS address-attributed messages.                                         *)
-(*---------------------------------------------------------------------------*)
-(*
-fun scanRandFn (path:lval) = "!!UNEXPECTED!!"
-
-val randEnv =
- let val (Consts,Decls,atomicWidths,valFn) = uxasEnv
- in (Consts,Decls,atomicWidths,valFn,
-     uxas_repFn,scanRandFn,Random.newgen())
- end;
-
-fun gen_mission () =
-  String.concat
-    (randFn randEnv
-        ([(VarName"root",mission)], empty_lvalMap, []));
-
-fun gen_zone () =
-  String.concat
-    (randFn randEnv
-        ([(VarName"root",zone)], empty_lvalMap, []));
-
-val zone = parse_zone (gen_zone());
-val mission = parse_mission (gen_mission());
-*)

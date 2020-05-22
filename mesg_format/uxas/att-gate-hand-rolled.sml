@@ -121,7 +121,7 @@ fun getID S =
   of NONE => NONE
    | SOME (address,contentType,descriptor,
            source_group, source_entity_ID,
-           source_service_ID, all_the_rest) => fromDecimal source_entity_ID
+           source_service_ID, all_the_restxp) => fromDecimal source_entity_ID
 ;
 
 val readID = getID o Byte.bytesToString;
@@ -182,6 +182,8 @@ type outports
 (*---------------------------------------------------------------------------*)
 (* Look at all events in an ordered manner: OpRegion; LST; AutoRqt. Pass     *)
 (* only the first one that meets the criterion.                              *)
+(*                                                                           *)
+(* NB! att_gate_seq in att-gate-cakeml has a better version of this function *)
 (*---------------------------------------------------------------------------*)
 
 val Att_Gate_Single_Ordered : inports -> outports =

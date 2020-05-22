@@ -83,3 +83,42 @@ fun repFn a i =
    | Scanned => Int.toString i  (* this is probably unnecessary *)
  end
 ;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing. The data in this example is extremely simple; it is not worth it *)
+(* to apply the contig-type machinery. Therefore we hand-roll byte buffer    *)
+(* parsing.                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+fun uvalueFn s =  (* make an unsigned number (MSB) from ASCII string *)
+ let open Regexp_Numerics
+ in IntInf.toInt(string2iint Unsigned MSB s)
+ end
+
+fun ivalueFn s =  (* make a signed number (2scomp, MSB) *)
+ let open Regexp_Numerics
+ in IntInf.toInt(string2iint Twos_comp MSB s)
+ end
+
+fun charAt bytes j =
+  Char.chr (Word8.toInt (Word8Vector.sub(bytes,j)))
+
+fun read_u16 bytes i =  (* read a u16 value starting at index i in bytes *)
+ if i+2 <= Word8Vector.length bytes then
+   uvalueFn (String.implode(List.map (charAt bytes) [i,i+1]))
+ else
+    raise ERR "read_u16" "";
+
+fun read_i32 bytes (i:int) = (* read an i32 value starting at index i *)
+ if i+4 <= Word8Vector.length bytes then
+     ivalueFn (String.implode(List.map (charAt bytes) [i,i+1,i+2,i+3]))
+ else
+     raise ERR "read_i32" "";
+
+fun read_waypoint bytes i =  (* (i32)^3 -> waypoint *)
+  if i+12 <= Word8Vector.length bytes then
+     {latitude =  read_i32 bytes i,
+      longitude = read_i32 bytes (i+4),
+      altitude =  read_i32 bytes (i+8)}
+   else
+       raise ERR "read_waypoint" "";

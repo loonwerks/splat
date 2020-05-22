@@ -40,7 +40,7 @@ fun scanRandFn path = "foo";
 
 val E = ([]:(string*int)list,
          []:(string*contig)list,
-         atomic_widths,valFn,repFn,scanRandFn,Random.newgen());
+         atomic_widths,valFn,dvalFn,repFn,scanRandFn,Random.newgen());
 
 fun genString contig =
   String.concat (randFn E ([(VarName"root",contig)],empty_lvalMap,[]));
