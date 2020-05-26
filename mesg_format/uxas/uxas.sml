@@ -274,22 +274,34 @@ fun uxasMesg mesgtyName contig = Recd [
 fun mesgOption name = Option o uxasMesg name;
 
 (*---------------------------------------------------------------------------*)
-(* uxAS strings                                                              *)
+(* uxAS strings. The short version is good for random message generation.    *)
 (*---------------------------------------------------------------------------*)
 
-val StringRecd = uxasArray (Basic Char);
+val FullString = uxasArray (Basic Char);
 
-val String = Declared "StringRecd";
+val ShortString = uxasBoundedArray (Basic Char) 26;
+
+(*---------------------------------------------------------------------------*)
+(* The following gives a layer of indirection: by changing the "String"      *)
+(* binding in the Decls part of the environment, all mentions of String will *)
+(* resolve to the new binding. An example of where this is useful is in mesg *)
+(* generation, where a random String would in general be so big that it      *)
+(* would be clumsy to deal with. In that case, we can change the binding of  *)
+(* String in Decls to ShortString and then all String mentions will be to    *)
+(* short strings, and then a randomly generated string field would be <= 26  *)
+(* in length.                                                                *)
+(*---------------------------------------------------------------------------*)
+
+
+val String = Declared "String";
 
 (*---------------------------------------------------------------------------*)
 (* pairs of strings                                                          *)
 (*---------------------------------------------------------------------------*)
 
-val KeyValuePairRecd =  (* pairs of varying length strings *)
+val KeyValuePair =  (* pairs of varying length strings *)
   Recd [("key",   String),
         ("value", String)];
-
-val KeyValuePair = Declared "KeyValuePair";
 
 (*---------------------------------------------------------------------------*)
 (* Enumerations                                                              *)
@@ -324,8 +336,8 @@ val CommandStatusType = Declared "CommandStatusType";
 
 val uxasEnv =
   (uxas_constants_map,[],atomic_widths,uxas_valFn,dvalFn)
-     |> C add_contig_decl ("String",StringRecd)
-     |> C add_contig_decl ("KeyValuePair", KeyValuePairRecd)
+     |> C add_contig_decl ("String",FullString)
+     |> C add_contig_decl ("KeyValuePair", KeyValuePair)
      |> C add_enum_decl altitude_type
      |> C add_enum_decl wavelength_band
      |> C add_enum_decl navigation_mode
@@ -503,7 +515,7 @@ val airvehicle_state = Recd [
 (* Full uxAS operating region message looks like the following               *)
 (* (Eric Mercer dug this info out):                                          *)
 (*                                                                           *)
-(*  <address> $ <attributes> $ <mesg-object>                                 *)
+(*  <address> $ <attributes> $ <mesg>                                        *)
 (*                                                                           *)
 (* where                                                                     *)
 (*                                                                           *)
@@ -594,7 +606,9 @@ type Location3D =
       Altitude  : real32,
       AltitudeType : AltitudeType};
 
-type Polygon = Location3D array;
+type Polygon = Location3D array
+
+type VehicleAction = i64 array
 
 type Waypoint =
   {Location    : Location3D,
@@ -610,22 +624,17 @@ type Waypoint =
    AssociatedTasks      : i64 array
  };
 
-type MissionCommand =
- {CommandID         : i64,
-  VehicleID         : i64,
-  VehicleActionList : i64 array array,
-  Status            : CommandStatusType,
-  WaypointList      : Waypoint array,
-  FirstWaypoint     : i64};
-
-
-type VehicleAction = i64 array;
-
 type VehicleActionCommand =
  {CommandID : i64,
   VehicleID : i64,
   VehicleActionList : VehicleAction array,
   Status : CommandStatusType}
+
+type MissionCommand =
+ {VehicleActionCommand : VehicleActionCommand,
+  WaypointList  : Waypoint array,
+  FirstWaypoint : i64};
+
 
 type AutomationResponse =
      {MissionCommandList : MissionCommand array,
@@ -636,7 +645,7 @@ type AutomationResponse =
 (* Parsing                                                                   *)
 (*---------------------------------------------------------------------------*)
 
-val mk_i64   = uxas_valFn  (Signed 8);
+val mk_i64     = uxas_valFn (Signed 8);
 fun mk_float s = Real32.fromInt 42;
 fun mk_double s = dvalFn Double s;
 
@@ -664,12 +673,24 @@ fun mk_uxasOption eltFn ptree =
            | contig  => SOME(eltFn contig))
    | otherwise => raise ERR "mk_uxasOption" "";
 
+fun mk_mesgOption eltFn = mk_uxasOption (eltFn o dest_header);
+
 fun mk_bounded_mesgOption_array eltFn ptree =
  case ptree
   of RECD [("len",_),("elts", ARRAY elts)]
-      => Array.fromList
-           (List.mapPartial (mk_uxasOption (eltFn o dest_header)) elts)
+      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
    | otherwise  => raise ERR "mk_bounded_mesgOption_array" "";
+
+fun AA_mesg mesgFn ptree =
+ case ptree
+  of RECD [("address",_),
+           ("attributes",_),
+           ("controlString",_),
+           ("mesgSize",_),
+           ("mesg", pt),
+           ("checksum",_)] => mesgFn pt
+   | otherwise => raise ERR "AA_mesg" "";
+
 
 fun decodeCommandStatusType s =
   let val i = uxas_valFn (Enum "CommandStatusType") s
@@ -724,27 +745,6 @@ val PhaseII_Polygon = Array(Location3D, intLit 2);
 (*---------------------------------------------------------------------------*)
 (* Decode polygon encoded with uxas encoding                                 *)
 (*---------------------------------------------------------------------------*)
-
-fun parse_uxas_polygon string =
- let fun contents_of ptree =
-       (case ptree
-         of RECD [("present", _), ("contents", RECD elts)] => elts
-          | otherwise => raise ERR "contents_of" "")
-      fun mesgs_of alist = map snd (filter (equal "mesg" o fst) alist)
- in
-   case parseFn uxasEnv (VarName"root") Polygon ([],string,empty_lvalMap)
-    of NONE => NONE
-     | SOME ([ptree],remaining,theta) =>
-         (case ptree
-           of RECD [("BoundaryPointsList",
-                    RECD[("len", _), ("elts", ARRAY recds)])] =>
-                    let val contents = List.concat (map contents_of recds)
-                        val mesgs = mesgs_of contents
-                    in SOME (Array.fromList (map mk_location3D mesgs))
-                    end
-            | otherwise => NONE)
-     | otherwise => NONE
- end;
 
 fun mk_phase2_polygon ptree =
   case ptree
@@ -809,7 +809,7 @@ fun mk_VAC ptree : VehicleActionCommand =
 (* ]                                                                         *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_Waypoint ptree =
+fun mk_Waypoint ptree : Waypoint =
   case ptree
    of RECD [("Location", loc3d), ("Number", n),
             ("NextWaypoint",     next_wpt), ("Speed", speed),
@@ -831,7 +831,6 @@ fun mk_Waypoint ptree =
       | otherwise => raise ERR "mk_Waypoint" ""
 
 
-
 (*---------------------------------------------------------------------------*)
 (*  MissionCommand = Recd [                                                  *)
 (* ("VehicleActionCommand", VehicleActionCommand),                           *)
@@ -841,7 +840,7 @@ fun mk_Waypoint ptree =
 (* ]                                                                         *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_MC ptree =
+fun mk_MC ptree : MissionCommand =
   case ptree
    of RECD [("VehicleActionCommand", vac),
             ("WaypointList", wpts),
@@ -862,15 +861,35 @@ fun mk_MC ptree =
 (* ]                                                                         *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_automation_response ptree =
+fun hdchar s = String.sub(s,0);
+
+val mk_char = mk_leaf hdchar;
+
+fun mk_string ptree =
+ case ptree
+  of RECD [("len",_),("elts", ARRAY elts)] => String.implode (List.map mk_char elts)
+   | otherwise  => raise ERR "mk_string" "";
+
+fun mk_KV_pair ptree =
+ case ptree
+  of RECD [("key", kstr), ("value", vstr)]
+       => (mk_string kstr,mk_string vstr)
+   | otherwise => raise ERR "mk_KV_pair" ""
+
+fun mk_automation_response ptree : AutomationResponse =
   case ptree
    of RECD [("MissionCommandList",mclist),
-            ("VehicleCommandList",vaclist), ("Info", infolist)]
-       => {MissionCommandList = mk_bounded_mesgOption_array mk_MC wpts mclist,
+            ("VehicleCommandList",vaclist),
+            ("Info", infolist)]
+       => {MissionCommandList = mk_bounded_mesgOption_array mk_MC mclist,
            VehicleCommandList = mk_bounded_mesgOption_array mk_VAC vaclist,
-           Info = ilist}
+           Info = mk_bounded_mesgOption_array mk_KV_pair infolist}
     | otherwise => raise ERR "mk_automation_response" ""
 
+fun mk_AR_event ptree : AutomationResponse option =
+ case mk_uxasOption I ptree (* strip off leading "isEvent" byte *)
+  of NONE => NONE
+   | SOME aatree => AA_mesg (mk_mesgOption mk_automation_response) aatree;
 
 (*---------------------------------------------------------------------------*)
 (* Generate messages to test the parser on.                                  *)
@@ -878,11 +897,38 @@ fun mk_automation_response ptree =
 
 fun scanRandFn (path:lval) = "!!UNEXPECTED!!"
 
+fun override_decl (s,c) alist =
+ case Lib.partition (equal s o fst) alist
+  of ([_],list) => (s,c)::list
+   | ([],list) => raise ERR "override_decl" "binding to override not found"
+   | otherwise => raise ERR "override_decl" "multiple bindings to override found"
+;
+
+(*---------------------------------------------------------------------------*)
+(* Put short strings into Decls. See discussion where String declared above  *)
+(*---------------------------------------------------------------------------*)
+
 val randEnv =
  let val (Consts,Decls,atomicWidths,valFn,dvalFn) = uxasEnv
- in (Consts,Decls,atomicWidths,valFn,dvalFn,
+     val Decls' = override_decl ("String",ShortString) Decls
+ in (Consts,Decls',atomicWidths,valFn,dvalFn,
      uxas_repFn,scanRandFn,Random.newgen())
  end;
+
+fun gen_string () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",String)], empty_lvalMap, []));
+
+fun gen_kvpair () =
+  String.concat
+    (randFn randEnv
+        ([(VarName"root",KeyValuePair)], empty_lvalMap, []));
+
+let val (ptree,remaining,theta) = parse uxasEnv KeyValuePair (gen_kvpair())
+in
+  mk_KV_pair ptree
+end;
 
 fun gen_phase2_polygon () =
   String.concat
@@ -896,42 +942,43 @@ fun gen_VA () =
     (randFn randEnv
         ([(VarName"root",VehicleAction)], empty_lvalMap, []));
 
-val (ptree,remaining,theta) = parse uxasEnv VehicleAction (gen_VA());
-mk_VA ptree;
+let val (ptree,remaining,theta) = parse uxasEnv VehicleAction (gen_VA())
+in mk_VA ptree
+end;
 
 fun gen_VAC () =
   String.concat
     (randFn randEnv
         ([(VarName"root",VehicleActionCommand)], empty_lvalMap, []));
 
-val (ptree,remaining,theta) = parse uxasEnv VehicleActionCommand (gen_VAC());
-mk_VAC ptree;
+let val (ptree,remaining,theta) = parse uxasEnv VehicleActionCommand (gen_VAC())
+in mk_VAC ptree
+end;
 
 fun gen_waypoint () =
   String.concat
     (randFn randEnv
         ([(VarName"root",Waypoint)], empty_lvalMap, []));
 
-val (ptree,remaining,theta) = parse uxasEnv Waypoint (gen_waypoint());
-mk_Waypoint ptree;
-
+let val (ptree,remaining,theta) = parse uxasEnv Waypoint (gen_waypoint())
+in mk_Waypoint ptree
+end;
 
 fun gen_MC () =
   String.concat
     (randFn randEnv
         ([(VarName"root",MissionCommand)], empty_lvalMap, []));
 
-val (ptree,remaining,theta) = parse uxasEnv MissionCommand (gen_MC());
-mk_MC ptree;
+let val (ptree,remaining,theta) = parse uxasEnv MissionCommand (gen_MC())
+in mk_MC ptree
+end;
 
-fun gen_keyvalpair () =
+fun gen_AResp () =
   String.concat
     (randFn randEnv
-        ([(VarName"root",KeyValuePair)], empty_lvalMap, []));
-
-
-val read_polygon = parse_polygon o Byte.bytesToString;
-val read_automation_response = parse_automation_response o Byte.bytesToString;
-
-val read_zone = parse_zone o Byte.bytesToString;
-val read_mission = parse_mission o Byte.bytesToString;
+        ([(VarName"root",automation_response)], empty_lvalMap, []));
+let
+val (ptree,remaining,theta) = parse uxasEnv automation_response (gen_AResp())
+in
+  mk_automation_response ptree
+end;

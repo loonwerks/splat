@@ -6,9 +6,9 @@
 structure API =
 struct
   val trusted_idSizeBytes         = 12
-  val operating_regionSizeBytes   = 10 * 1000
-  val linesearch_taskSizeBytes    = 10 * 1000
-  val automation_requestSizeBytes = 10 * 1000;
+  val operating_regionSizeBytes   = 10 * 1024
+  val linesearch_taskSizeBytes    = 10 * 1024
+  val automation_requestSizeBytes = 10 * 1024;
 end
 
 
@@ -60,15 +60,16 @@ fun clear buffer =
 (* ]                                                                         *)
 (*                                                                           *)
 (* AAmesg_port = Recd [                                                      *)
-(*   ("present", Basic Bool),                                                *)
+(*   ("isEvent", Basic Bool),                                                *)
 (*   ("contents", Union [                                                    *)
-(*       (BLoc (VarName "present"), AAmesg),                                 *)
-(*       (Bnot(BLoc (VarName "present")), SKIP)])                            *)
+(*       (BLoc (VarName "isEvent"), AAmesg),                                 *)
+(*       (Bnot(BLoc (VarName "isEvent")), SKIP)])                            *)
 (*  ]                                                                        *)
 (*---------------------------------------------------------------------------*)
 
 (*---------------------------------------------------------------------------*)
-(* Map 3 adjacent 4-byte chunks in trusted_id_buffer to an array of 3 ints   *)
+(* Map 3 adjacent 4-byte chunks in trusted_id_buffer to an array of 3 ints.  *)
+(* Each chunk is expected to be ASCII decimal, e.g., "1234"                  *)
 (*---------------------------------------------------------------------------*)
 
 fun mk_tid_array () =
