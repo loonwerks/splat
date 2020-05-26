@@ -1,0 +1,106 @@
+structure Contig =
+struct
+
+datatype lval
+  = VarName string
+  | RecdProj lval string
+  | ArraySub lval exp
+
+and exp
+  = Loc lval
+  | IntLit int
+  | ConstName string
+  | Add exp exp
+  | Mult exp exp
+;
+
+datatype bexp
+  = BoolLit bool
+  | BLoc lval
+  | Bnot bexp
+  | Bor  bexp bexp
+  | Band bexp bexp
+  | Beq  exp exp
+  | Blt  exp exp
+  | Bgt  exp exp
+  | Ble  exp exp
+  | Bge  exp exp
+  | DleA Double.double exp
+  | DleB exp Double.double
+;
+
+
+fun lval_compare (VarName s1) (VarName s2)  = String.compare s1 s2
+  | lval_compare (VarName x)  y             = Less
+  | lval_compare (RecdProj _ _) (VarName _) = Greater
+  | lval_compare (RecdProj e1 s1) (RecdProj e2 s2) =
+     (case lval_compare e1 e2
+       of Equal => String.compare s1 s2
+        | other => other)
+  | lval_compare (RecdProj _ _) _ = Less
+  | lval_compare (ArraySub a b) (ArraySub c d) =
+     (case lval_compare a c
+       of Equal => exp_compare b d
+        | other => other)
+  | lval_compare (ArraySub _ _) _ = Greater
+and
+    exp_compare (Loc lv1) (Loc lv2) = lval_compare lv1 lv2
+    exp_compare (Loc lv1) _ = Less
+    exp_compare (IntLit _) (Loc _) = Greater
+    exp_compare (IntLit m) (IntLit n) = Int.compare m n
+    exp_compare (IntLit _)  _ = Less
+    exp_compare (Add _ _) (Mult _ _) = Less
+    exp_compare (Add a b) (Add c d) =
+      (case exp_compare a c
+         of Equal => exp_compare b d
+          | other => other)
+    exp_compare (Add _ _) _ = Greater
+    exp_compare (Mult a b) (Mult c d) =
+       (case exp_compare a c
+         of Equal => exp_compare b d
+          | other => other)
+    exp_compare (Mult _ _) _ = Greater
+
+(*
+fun lval_compare pair =
+ case pair
+  of (VarName s1, VarName s2) => String.compare(s1,s2)
+   | (VarName _, _) => LESS
+   | (RecdProj _, VarName _) => GREATER
+   | (RecdProj (e1,s1),RecdProj (e2,s2)) =>
+       (case lval_compare(e1,e2)
+         of EQUAL => String.compare(s1,s2)
+	  | other => other)
+   | (RecdProj _,_) => LESS
+   | (ArraySub (a,b),ArraySub (c,d)) =>
+       (case lval_compare(a,c)
+         of EQUAL => exp_compare(b,d)
+	  | other => other)
+   | (ArraySub _, _) => GREATER
+and
+ exp_compare pair =
+ case pair
+  of (Loc lv1, Loc lv2) => lval_compare(lv1,lv2)
+   | (Loc lv1, _) => LESS
+   | (intLit _, Loc _) => GREATER
+   | (intLit i, intLit j) => Int.compare(i,j)
+   | (intLit i, other) => LESS
+   | (ConstName _, Loc _) => GREATER
+   | (ConstName _, intLit _) => GREATER
+   | (ConstName s1, ConstName s2) => String.compare(s1,s2)
+   | (ConstName s, _) => LESS
+   | (Add _, Mult _) => LESS
+   | (Add(a,b), Add(c,d)) =>
+       (case exp_compare(a,c)
+         of EQUAL => exp_compare(b,d)
+	  | other => other)
+   | (Add _, _) => GREATER
+   | (Mult(a,b), Mult(c,d)) =>
+       (case exp_compare(a,c)
+         of EQUAL => exp_compare(b,d)
+	  | other => other)
+   | (Mult _, _) => GREATER
+;
+*)
+
+end (* Contig *)
