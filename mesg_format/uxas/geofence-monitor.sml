@@ -88,6 +88,7 @@ end CASE_Monitor_Geo;
 *)
 
 use "uxas.sml";
+use "consts.sml";
 
 val ERR = mk_HOL_ERR "geofence-monitor";
 
@@ -104,9 +105,9 @@ val dfaState = ref 14;    (* Computed from Thomas' MG *)
 (* Observation functions                                                     *)
 (*---------------------------------------------------------------------------*)
 
-fun WAYPOINT_IN_ZONE_RECTANGLE (waypoint:Location3D) (zone:Polygon) =
+fun WAYPOINT_IN_ZONE_RECTANGLE (locn:Location3D) (zone:Polygon) =
  let open Real
-     val {Latitude,Longitude,Altitude,AltitudeType} = waypoint
+     val {Latitude,Longitude,Altitude,AltitudeType} = locn
      val LL = Array.sub(zone,0)
      val UR = Array.sub(zone,1)
  in
