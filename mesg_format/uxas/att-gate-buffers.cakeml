@@ -70,13 +70,18 @@ fun clear buffer =
 (*---------------------------------------------------------------------------*)
 (* Map 3 adjacent 4-byte chunks in trusted_id_buffer to an array of 3 ints.  *)
 (* Each chunk is expected to be ASCII decimal, e.g., "1234"                  *)
+(* PS: Eric Mercer has found out that these are C-style strings, terminated  *)
+(* by a \0, which thus derails Int.fromString. Therefore we trim any ending  *)
+(* character which is not a digit. There is nothing to be proud of here.     *)
 (*---------------------------------------------------------------------------*)
+
+val mk_int = Option.mapPartial Int.fromString o String.fromCString;
 
 fun mk_tid_array () =
   let val project = Word8Array.substring trusted_id_buffer
-  in case (Int.fromString (project 0 4),
-           Int.fromString (project 4 4),
-           Int.fromString (project 8 4))
+  in case (mk_int (project 0 4),
+           mk_int (project 4 4),
+           mk_int (project 8 4))
       of (Some i1, Some i2, Some i3) => Some(Array.fromList[i1,i2,i3])
        | otherwise => None
    end;
@@ -103,10 +108,8 @@ fun seekFrom arr x i =
 
 fun w8_of c = Word8.fromInt (Char.ord c);
 
-fun scanAA arr i =
- let val offset = i+1
- in
- case seekFrom arr (w8_of #"$") i
+fun scanAA arr offset =
+ case seekFrom arr (w8_of #"$") offset
   of None => None
    | Some segA =>
  case seekFrom arr (w8_of #"|") (segA+offset)
@@ -125,7 +128,7 @@ fun scanAA arr i =
   of None => None
    | Some segF =>
      Some(Word8Array.substring arr (segD+offset) (segE-segD))
- end;
+;
 
 (*---------------------------------------------------------------------------*)
 (* Drop vertical bar at end of identifier, leaving only digits, I hope.      *)
@@ -162,11 +165,16 @@ fun string_to_bytes s =
 val test1 = (Some 500 = getID (string_to_bytes "A$B|C|D|500|F$G"));
 val test2 = (Some 500 = getID (string_to_bytes "A$B||D|500|F$G"));
 val test3 = (Some 500 = getID (string_to_bytes "199.0.0.1$p--q--r|foo|A!D!CD|500|FRED$GHIJ"));
+val test4 =      getID (string_to_bytes(String.concat
+      ["<address>$<contentType>|<descriptor>|",
+       "<source_group>|500|<source-service-ID>$<the-mesg>"]));
 
-val _ = if test1 andalso test2 andalso test3 then
+val _ = if test1 andalso test2 andalso test3 andalso test4 then
          TextIO.print "\ngetID: tests passed.\n"
         else
          TextIO.print "\ngetID: tests failed.\n"
+
+
 *)
 
 fun equal a b = (a=b);

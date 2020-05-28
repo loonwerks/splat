@@ -7,7 +7,6 @@ datatype lval
   = VarName string
   | RecdProj lval string
   | ArraySub lval exp
-
 and exp
   = Loc lval
   | IntLit int
@@ -60,6 +59,44 @@ datatype ptree
 ;
 
 datatype ('a,'b) verdict = PASS 'a | FAIL 'b;
+
+(*---------------------------------------------------------------------------*)
+(* Utilities                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun rev_itlist f list acc =
+ case list
+  of [] => acc
+   | h::t => rev_itlist f t (f h acc);
+
+fun itlist f list b =
+ case list
+  of [] => b
+   | h::t => f h (itlist f t b);
+
+fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
+
+fun first pred list =
+ case list
+  of [] => raise ERR "first" ""
+   | h::t => if pred h then h else first pred t;
+
+fun quote s = String.concat ["\"",s,"\""];
+
+fun tdrop n s =
+ if n <= String.size s
+  then Some(String.substring s 0 n,String.extract s n None)
+  else None;
+
+fun take_drop n list =
+ if n <= List.length list
+  then Some(List.take list n,List.drop list n)
+  else None;
+
+
+(*---------------------------------------------------------------------------*)
+(* Support for lval-map                                                      *)
+(*---------------------------------------------------------------------------*)
 
 fun lval_compare x y =
  case (x,y)
@@ -117,12 +154,6 @@ fun path_prefixes lval =
    | ArraySub arr dim => lval :: path_prefixes arr
 ;
 
-fun first pred list =
- case list
-  of [] => raise ERR "first" ""
-   | h::t => if pred h then h else first pred t;
-
-
 fun resolve_lval lvalMap path lval =
  let val prefixes = path_prefixes path
      val prospects = List.map (flip lval_append lval) prefixes @ [lval]
@@ -153,8 +184,6 @@ fun resolveBexp lvalMap p bexp =
    | DleA r e   => DleA r (resolveExp lvalMap p e)
    | DleB e r   => DleB (resolveExp lvalMap p e) r
 ;
-
-fun quote s = String.concat ["\"",s,"\""];
 
 fun evalExp env =
  let val (envDelta,lvalMap,valFn) = env
@@ -210,28 +239,6 @@ fun evalBexp env bexp =
  in
   evalB bexp
  end;
-
-fun rev_itlist f list acc =
- case list
-  of [] => acc
-   | h::t => rev_itlist f t (f h acc);
-
-fun itlist f list b =
- case list
-  of [] => b
-   | h::t => f h (itlist f t b);
-
-fun tdrop n s =
- if n <= String.size s
-  then Some(String.substring s 0 n,String.extract s n None)
-  else None;
-
-fun take_drop n list =
- if n <= List.length list
-  then Some(List.take list n,List.drop list n)
-  else None;
-
-fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
 
 fun parseFn env path contig state =
  let val (eConsts,eDecls,atomicWidths,valFn,dvalFn) = env
@@ -659,7 +666,7 @@ fun bounded c ivl = Recd [
 fun enumList elts = List.zip (elts, upto 0 (List.length elts - 1));
 
 (*---------------------------------------------------------------------------*)
-(* Arrays in uxAS are preceded by a length field.                            *)
+(* Arrays in uxAS messages are preceded by a length field.                   *)
 (*---------------------------------------------------------------------------*)
 
 fun uxasArray contig = Recd [
@@ -724,7 +731,7 @@ val shortString = uxasBoundedArray (Basic Char) 26;
 (* The following gives a layer of indirection: by changing the "String"      *)
 (* binding in the Decls part of the environment, all mentions of String will *)
 (* resolve to the new binding. An example of where this is useful is in mesg *)
-(* generation, where a random String would in general be so big that it      *)
+(* generation, where a random fullString would in general be so big that it  *)
 (* would be clumsy to deal with. In that case, we can change the binding of  *)
 (* String in Decls to ShortString and then all String mentions will be to    *)
 (* short strings, and then a randomly generated string field would be <= 26  *)
@@ -735,10 +742,10 @@ val shortString = uxasBoundedArray (Basic Char) 26;
 val uxasString = Declared "String";
 
 (*---------------------------------------------------------------------------*)
-(* pairs of strings                                                          *)
+(* pairs of varying-length strings                                           *)
 (*---------------------------------------------------------------------------*)
 
-val keyValuePair =  (* pairs of varying length strings *)
+val keyValuePair =
   Recd [("key",   uxasString),
         ("value", uxasString)];
 
@@ -784,7 +791,6 @@ val uxasEnv =
  end
 ;
 
-FOO;
 
 (*---------------------------------------------------------------------------*)
 (* Messages                                                                  *)
@@ -796,44 +802,51 @@ val operating_region = Recd [
   ("keep_out_areas", uxasBoundedArray u64 32)
   ];
 
+
 val automation_request = Recd [
   ("EntityList",        uxasBoundedArray i64 16),
   ("TaskList",          uxasBoundedArray i64 32),
-  ("TaskRelationShips", String),
+  ("TaskRelationShips", uxasString),
   ("OperatingRegion",   i64),
   ("RedoAllTasks",      Basic Bool)
   ];
 
-val Wedge = Recd [
+val wedge = Recd [
   ("AzimuthCenterline",  real32),
   ("VerticalCenterline", real32),
   ("AzimuthExtent",      real32),
   ("VerticalExtent",     real32)
  ];
 
-val Location3D = Recd [
+val location3D = Recd [
   ("Latitude",  real64),
   ("Longitude", real64),
   ("Altitude",  real32),
-  ("AltitudeType", AltitudeType)
+  ("AltitudeType", uxasAltitudeType)
 ];
 
-val Checked_Location3D = Recd [
+val neg90 = Double.fromString "~90.0";
+val pos90 = Double.fromString "90.0";
+val neg180 = Double.fromString "~180.0";
+val pos180 = Double.fromString "180.0";
+
+
+val checked_location3D = Recd [
   ("Latitude",  real64),
   ("Lat-check", Assert (
-    Band(DleA(~90.0,Loc(VarName"Latitude")),
-         DleB(Loc(VarName"Latitude"),90.0)))),
+    Band(DleA neg90 (Loc(VarName"Latitude")))
+        (DleB (Loc(VarName"Latitude")) pos90))),
   ("Longitude", real64),
   ("Lon-check", Assert (
-    Band(DleA(~180.0,Loc(VarName"Longitude")),
-         DleB(Loc(VarName"Longitude"),180.0)))),
+    Band(DleA neg180 (Loc(VarName"Longitude")))
+        (DleB (Loc(VarName"Longitude")) pos180))),
   ("Altitude",  real32),
-  ("AltitudeType", AltitudeType),
+  ("AltitudeType", uxasAltitudeType),
   ("AltitudeType-check", Assert (
-    Ble(Loc(VarName"AltitudeType"),intLit 1)))
+    Ble (Loc(VarName"AltitudeType")) (IntLit 1)))
 ];
 
-val Location3D = Checked_Location3D;
+val location3D = checked_location3D;
 
 (*---------------------------------------------------------------------------*)
 (* LineSearchTask message                                                    *)
@@ -842,79 +855,78 @@ val Location3D = Checked_Location3D;
 val linesearch_task = Recd [
   (* Task *)
   ("TaskID",           i64),
-  ("Label",            String),
+  ("Label",            uxasString),
   ("EligibleEntities", uxasBoundedArray i64 32),
   ("RevisitRate",      real32),
-  ("Parameters",       uxasBoundedArray (mesgOption "KEYVALUEPAIR" KeyValuePair) 8),
+  ("Parameters",       uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8),
   ("Priority",         u8),
   ("Required",         Basic Bool),
 
   (* SearchTask *)
-  ("DesiredWavelengthBands", uxasBoundedArray WavelengthBand 8),
+  ("DesiredWavelengthBands", uxasBoundedArray uxasWavelengthBand 8),
   ("DwellTime",              i64),
   ("GroundSampleDistance",   real32),
 
   (* LineSearchTask *)
-  ("PointList",     uxasBoundedArray (mesgOption "LOCATION3D" Location3D) 1024),
-  ("ViewAngleList", uxasBoundedArray (mesgOption "WEDGE" Wedge) 16),
+  ("PointList",     uxasBoundedArray (mesgOption "LOCATION3D" location3D) 1024),
+  ("ViewAngleList", uxasBoundedArray (mesgOption "WEDGE" wedge) 16),
   ("UseInertialViewAngles", Basic Bool)
 ];
-
 
 (*---------------------------------------------------------------------------*)
 (* AutomationResponse message                                                *)
 (*---------------------------------------------------------------------------*)
 
-val VehicleAction = Recd [
+val vehicleAction = Recd [
   ("AssociatedTaskList", uxasBoundedArray i64 8)
 ];
 
-val VehicleActionCommand = Recd [
+val vehicleActionCommand = Recd [
   ("CommandID",         i64),
   ("VehicleID",         i64),
-  ("VehicleActionList", uxasBoundedArray (mesgOption "VEHICLEACTION" VehicleAction) 8),
-  ("Status",            CommandStatusType),
-  ("check-status",      Assert (Ble(Loc(VarName"Status"),intLit 4)))
+  ("VehicleActionList", uxasBoundedArray (mesgOption "VEHICLEACTION" vehicleAction) 8),
+  ("Status",            uxasCommandStatusType),
+  ("check-status",      Assert (Ble(Loc(VarName"Status")) (IntLit 4)))
  ];
 
-val Waypoint = Recd [
-  ("Location",            Location3D),  (* Q: mesgOption this? A: Nope: extension base *)
+val waypoint = Recd [
+  ("Location",            location3D),  (* Q: mesgOption this? A: Nope: extension base *)
   ("Number",              i64),
   ("NextWaypoint",        i64),
   ("Speed",               real32),
-  ("SpeedType",           SpeedType),
-  ("check-speed-type",    Assert (Ble(Loc(VarName"SpeedType"),intLit 1))),
+  ("SpeedType",           uxasSpeedType),
+  ("check-speed-type",    Assert (Ble(Loc(VarName"SpeedType")) (IntLit 1))),
   ("ClimbRate",           real32),
-  ("TurnType",            TurnType),
-  ("check-turn-type",     Assert (Ble(Loc(VarName"TurnType"),intLit 1))),
-  ("VehicleActionList",   uxasBoundedArray (mesgOption "VEHICLEACTION" VehicleAction) 8),
+  ("TurnType",            uxasTurnType),
+  ("check-turn-type",     Assert (Ble(Loc(VarName"TurnType")) (IntLit 1))),
+  ("VehicleActionList",   uxasBoundedArray (mesgOption "VEHICLEACTION" vehicleAction) 8),
   ("ContingencyWaypointA",i64),
   ("ContingencyWaypointB",i64),
   ("AssociatedTasks",     uxasBoundedArray i64 8)
  ];
 
-val MissionCommand = Recd [
- ("VehicleActionCommand", VehicleActionCommand), (* Q: mesgOption this? Nope: extension base *)
- ("WaypointList",         uxasBoundedArray (mesgOption "WAYPOINT" Waypoint) 1024),
+val missionCommand = Recd [
+ ("VehicleActionCommand", vehicleActionCommand), (* Q: mesgOption this? Nope: extension base *)
+ ("WaypointList",         uxasBoundedArray (mesgOption "WAYPOINT" waypoint) 1024),
  ("FirstWaypoint",        i64)
 ];
 
 val automation_response = Recd [
- ("MissionCommandList", uxasBoundedArray (mesgOption "MISSIONCOMMAND" MissionCommand) 16),
- ("VehicleCommandList", uxasBoundedArray (mesgOption "VEHICLEACTIONCOMMAND" VehicleActionCommand) 64),
- ("Info",               uxasBoundedArray (mesgOption "KEYVALUEPAIR" KeyValuePair) 8)
+ ("MissionCommandList", uxasBoundedArray (mesgOption "MISSIONCOMMAND" missionCommand) 16),
+ ("VehicleCommandList", uxasBoundedArray (mesgOption "VEHICLEACTIONCOMMAND" vehicleActionCommand) 64),
+ ("Info",               uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8)
 ];
 
 (*---------------------------------------------------------------------------*)
 (* AirVehicleState message                                                   *)
 (*---------------------------------------------------------------------------*)
 
-val PayloadState = Recd [
+val payloadState = Recd [
  ("PayloadID",  i64),
- ("Parameters", uxasBoundedArray (mesgOption "KEYVALUEPAIR" KeyValuePair) 8)
+ ("Parameters", uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8)
 ];
 
-val EntityState = Recd [
+val entityState = Recd [
   ("ID",     i64),
   ("u",      real32),
   ("v",      real32),
@@ -930,21 +942,21 @@ val EntityState = Recd [
   ("r",      real32),
   ("Course", real32),
   ("Groundspeed",      real32),
-  ("Location",         mesgOption "LOCATION3D" Location3D),
+  ("Location",         mesgOption "LOCATION3D" location3D),
   ("EnergyAvailable",  real32),
   ("ActualEnergyRate", real32),
-  ("PayloadStateList", uxasBoundedArray(mesgOption "PAYLOADSTATE" PayloadState) 8),
+  ("PayloadStateList", uxasBoundedArray(mesgOption "PAYLOADSTATE" payloadState) 8),
   ("CurrentWaypoint",  i64),
   ("CurrentCommand",   i64),
-  ("Mode",             NavigationMode),
+  ("Mode",             uxasNavigationMode),
   ("AssociatedTasks",  uxasBoundedArray i64 8),
   ("Time",             i64),
-  ("Info", uxasBoundedArray(mesgOption "KEYVALUEPAIR" KeyValuePair) 32)
+  ("Info", uxasBoundedArray(mesgOption "KEYVALUEPAIR" keyValuePair) 32)
 ];
 
 
 val airvehicle_state = Recd [
-  ("EntityState",   EntityState),
+  ("EntityState",   entityState),
   ("Airspeed",      real32),
   ("VerticalSpeed", real32),
   ("WindSpeed",     real32),
@@ -978,18 +990,18 @@ val airvehicle_state = Recd [
 (*---------------------------------------------------------------------------*)
 
 val attributes = Recd [
- ("contentType",       Scanner (scanTo "|")),
- ("descriptor",        Scanner (scanTo "|")),
- ("source_group",      Scanner (scanTo "|")),
- ("source_entity_ID",  Scanner (scanTo "|")),
- ("source_service_ID", Scanner (scanTo "$"))
+ ("contentType",       Scanner (scanTo #"|")),
+ ("descriptor",        Scanner (scanTo #"|")),
+ ("source_group",      Scanner (scanTo #"|")),
+ ("source_entity_ID",  Scanner (scanTo #"|")),
+ ("source_service_ID", Scanner (scanTo #"$"))
  ];
 
 fun full_mesg contig = Recd [
-  ("address",      Scanner (scanTo "$")),
+  ("address",      Scanner (scanTo #"$")),
   ("attributes",   attributes),
-  ("controlString",i32),  (* = 0x4c4d4350 = valueFn "LMCP" *)
-  ("check",        Assert (Beq(Loc(VarName"controlString"),intLit 0x4c4d4350))),
+  ("controlString",i32),  (* = 0x4c4d4350 = valFn "LMCP" *)
+  ("check",        Assert (Beq(Loc(VarName"controlString")) (IntLit 1280131920))),
   ("mesgSize",     u32),
   ("mesg",         contig),
   ("checksum",     u32)
@@ -1014,5 +1026,623 @@ val fullAutomationResponseMesg =
 val fullAirVehicleStateMesg =
   full_mesg (mesgOption "AIRVEHICLESTATE" airvehicle_state);
 
-
 end (* Contig *)
+
+structure Geofence_Types =
+struct
+
+exception ERR string string;
+
+type i64 = int;
+
+type KeyValPair = string * string;
+
+(*---------------------------------------------------------------------------*)
+(* Enumerations                                                              *)
+(*---------------------------------------------------------------------------*)
+
+datatype SpeedType = AirSpeed | GroundSpeed;
+datatype TurnType = TurnShort | FlyOver;
+
+datatype AltitudeType = AGL | MSL;
+
+datatype WavelengthBand = AllAny | EO | LWIR | SWIR | MWIR | Other;
+
+datatype NavigationMode =
+	 WAYPOINT | Loiter | FlightDirector | TargetTrack | FollowLeader | LostComm;
+
+datatype CommandStatusType = Pending | Approved | InProcess | Executed | Cancelled;
+
+type real32 = Double.double; (* CakeML doesn't handle these, so pretend *)
+type real64 = Double.double;
+
+datatype Location3D = LOC3D real64 real64 real32 AltitudeType;
+
+type Polygon = Location3D array;
+
+type VehicleAction = i64 array;
+
+(*---------------------------------------------------------------------------*)
+(* type Waypoint =
+  {Location    : Location3D,
+   Number      : i64,
+   NextWaypoint: i64,
+   Speed       : real32,
+   SpeedType   : SpeedType,
+   ClimbRate   : real32,
+   TurnType    : TurnType,
+   VehicleActionList    : i64 array array,
+   ContingencyWaypointA : i64,
+   ContingencyWaypointB : i64,
+   AssociatedTasks      : i64 array
+ };
+*)
+(*---------------------------------------------------------------------------*)
+
+datatype Waypoint =
+ WPT Location3D
+     int
+     int
+     real32
+     SpeedType
+     real32
+     TurnType
+     (int array array)
+     int
+     int
+     (int array)
+;
+
+datatype VehicleActionCommand = VAC int int (VehicleAction array) CommandStatusType;
+
+datatype MissionCommand = MC VehicleActionCommand (Waypoint array) int;
+
+datatype AutomationResponse =
+  AR (MissionCommand array)
+     (VehicleActionCommand array)
+     (KeyValPair array);
+
+(*---------------------------------------------------------------------------*)
+(* Parsing                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+val valFn = Contig.valFn;
+val dvalFn = Contig.dvalFn;
+
+val mk_i64      = valFn (Contig.Signed 8);
+fun mk_float s  = Double.fromString "42.0";
+fun mk_double s = dvalFn s;
+
+fun mk_leaf f leaf =
+ case leaf
+  of Contig.LEAF _ s => f s
+   | otherwise => raise ERR "mk_leaf" ""
+
+fun mk_bounded_array eltFn ptree =
+ case ptree
+  of Contig.RECD
+       [("len",_), ("elts", Contig.ARRAY elts)] => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise ERR "mk_bounded_array" "";
+
+fun dest_header ptree =
+ case ptree
+  of Contig.RECD
+       [("seriesID",_),
+        ("mesgType",_),
+        ("seriesVersion",_),
+        ("mesg", pt)] => pt
+   | otherwise => raise ERR "dest_header" "";
+
+fun mk_uxasOption eltFn ptree =
+ case ptree
+  of Contig.RECD [("present", _), ("contents", elt)] =>
+        (case elt
+          of Contig.RECD [] => None
+           | contig  => Some(eltFn contig))
+   | otherwise => raise ERR "mk_uxasOption" "";
+
+fun mk_mesgOption eltFn = mk_uxasOption (eltFn o dest_header);
+
+fun mk_bounded_mesgOption_array eltFn ptree =
+ case ptree
+  of Contig.RECD [("len",_),("elts", Contig.ARRAY elts)]
+      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
+   | otherwise  => raise ERR "mk_bounded_mesgOption_array" "";
+
+fun aa_mesg mesgFn ptree =
+ case ptree
+  of Contig.RECD
+        [("address",_),
+         ("attributes",_),
+         ("controlString",_),
+         ("mesgSize",_),
+         ("mesg", pt),
+         ("checksum",_)] => mesgFn pt
+   | otherwise => raise ERR "aa_mesg" "";
+
+fun decodeCommandStatusType s =
+  let val i = valFn (Contig.Enum "CommandStatusType") s
+  in if i = 0 then Pending else
+     if i = 1 then Approved else
+     if i = 2 then InProcess else
+     if i = 3 then Executed else
+     if i = 4 then Cancelled
+     else raise ERR "decodeCommandStatusType" ""
+  end;
+
+fun decodeAltitudeType s =
+  let val i = valFn (Contig.Enum "AltitudeType") s
+  in if i = 0 then AGL else
+     if i = 1 then MSL
+     else raise ERR "decodeAltitudeType" ""
+  end;
+
+fun decodeSpeedType s =
+  let val i = valFn (Contig.Enum "SpeedType") s
+  in if i = 0 then AirSpeed else
+     if i = 1 then GroundSpeed
+     else raise ERR "decodeSpeedType" ""
+  end;
+
+fun decodeTurnType s =
+  let val i = valFn (Contig.Enum "TurnType") s
+  in if i = 0 then TurnShort else
+     if i = 1 then FlyOver
+     else raise ERR "decodTurnType" ""
+  end;
+
+fun mk_location3D ptree =
+ case ptree
+  of Contig.RECD
+       [("Latitude", lat),
+        ("Longitude", lon),
+        ("Altitude",  alt),
+        ("AltitudeType", alt_type)]
+     => LOC3D (mk_leaf mk_double lat)
+              (mk_leaf mk_double lon)
+              (mk_leaf mk_float alt)
+              (mk_leaf decodeAltitudeType alt_type)
+   | otherwise => raise ERR "mk_location3D" "";
+(*---------------------------------------------------------------------------*)
+(* Geofence monitor input                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val phaseII_Polygon = Contig.Array Contig.location3D (Contig.IntLit 2);
+
+(*---------------------------------------------------------------------------*)
+(* Decode polygon encoded with uxas encoding                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_phase2_polygon ptree =
+  case ptree
+   of Contig.ARRAY recds => Array.fromList (List.map mk_location3D recds)
+    | otherwise => raise ERR "mk_phase2_polygon" ""
+
+(*---------------------------------------------------------------------------*)
+(* VehicleAction =                                                           *)
+(*  Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]                    *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_VA ptree =
+ case ptree
+  of Contig.RECD [("AssociatedTaskList",
+                   Contig.RECD [("len", _),("elts",Contig.ARRAY elts)])]
+       => Array.fromList (List.map (mk_leaf mk_i64) elts)
+   | otherwise  => raise ERR "mk_VA" "";
+
+(*---------------------------------------------------------------------------*)
+(* VehicleActionCommand = Recd [                                             *)
+(*  ("CommandID",         i64),                                              *)
+(*  ("VehicleID",         i64),                                              *)
+(*  ("VehicleActionList", uxasBoundedArray                                   *)
+(*                            (mesgOption "VEHICLEACTION" VehicleAction) 8), *)
+(*  ("Status",            CommandStatusType)                                 *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_VAC ptree =
+ case ptree
+  of Contig.RECD
+       [("CommandID",cid),
+        ("VehicleID", vid),
+        ("VehicleActionList", valist),
+        ("Status", status)]
+      => VAC (mk_leaf mk_i64 cid)
+             (mk_leaf mk_i64 vid)
+             (mk_bounded_mesgOption_array mk_VA valist)
+             (mk_leaf decodeCommandStatusType status)
+   | otherwise  => raise ERR "mk_VAC" ""
+
+(*---------------------------------------------------------------------------*)
+(* Waypoint = Recd [                                                         *)
+(*  ("Location",            Location3D),                                     *)
+(*  ("Number",              i64),                                            *)
+(*  ("NextWaypoint",        i64),                                            *)
+(*  ("Speed",               real32),                                         *)
+(*  ("SpeedType",           SpeedType),                                      *)
+(*  ("check-speed-type",    Assert (Ble(Loc(VarName"SpeedType"),intLit 1))), *)
+(*  ("ClimbRate",           real32),                                         *)
+(*  ("TurnType",            TurnType),                                       *)
+(*  ("check-turn-type",     Assert (Ble(Loc(VarName"TurnType"),intLit 1))),  *)
+(*  ("VehicleActionList",   uxasBoundedArray                                 *)
+(*                             (mesgOption "VEHICLEACTION" VehicleAction) 8),*)
+(*  ("ContingencyWaypointA",i64),                                            *)
+(*  ("ContingencyWaypointB",i64),                                            *)
+(*  ("AssociatedTasks",     uxasBoundedArray i64 8)                          *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_Waypoint ptree =
+  case ptree
+   of Contig.RECD
+        [("Location", loc3d), ("Number", n),
+         ("NextWaypoint",     next_wpt), ("Speed", speed),
+         ("SpeedType", speed_type), ("ClimbRate",climbrate),
+         ("TurnType",turn_type), ("VehicleActionList", valist),
+         ("ContingencyWaypointA",cwptA), ("ContingencyWaypointB",cwptB),
+         ("AssociatedTasks",  atasks)]
+      => WPT (mk_location3D loc3d)
+             (mk_leaf mk_i64 n)
+             (mk_leaf mk_i64 next_wpt)
+             (mk_leaf mk_float speed)
+             (mk_leaf decodeSpeedType speed_type)
+             (mk_leaf mk_float climbrate)
+             (mk_leaf decodeTurnType turn_type)
+             (mk_bounded_mesgOption_array mk_VA valist)
+             (mk_leaf mk_i64 cwptA)
+             (mk_leaf mk_i64 cwptB)
+             (mk_bounded_array (mk_leaf mk_i64) atasks)
+      | otherwise => raise ERR "mk_Waypoint" ""
+
+
+(*---------------------------------------------------------------------------*)
+(*  MissionCommand = Recd [                                                  *)
+(* ("VehicleActionCommand", VehicleActionCommand),                           *)
+(* ("WaypointList",                                                          *)
+(*     uxasBoundedArray(mesgOption "WAYPOINT" Waypoint) 1024),               *)
+(* ("FirstWaypoint", i64)                                                    *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_MC ptree =
+  case ptree
+   of Contig.RECD
+        [("VehicleActionCommand", vac),
+         ("WaypointList", wpts),
+         ("FirstWaypoint",fst_wpt)]
+       => MC (mk_VAC vac)
+             (mk_bounded_mesgOption_array mk_Waypoint wpts)
+             (mk_leaf mk_i64 fst_wpt)
+    | otherwise => raise ERR "mk_mission_command" ""
+
+(*---------------------------------------------------------------------------*)
+(* automation_response = Recd [                                              *)
+(*  ("MissionCommandList",                                                   *)
+(*      uxasBoundedArray (mesgOption "MISSIONCOMMAND" MissionCommand) 16),   *)
+(*  ("VehicleCommandList",                                                   *)
+(*      uxasBoundedArray                                                     *)
+(*           (mesgOption "VEHICLEACTIONCOMMAND" VehicleActionCommand) 64),   *)
+(*  ("Info", uxasBoundedArray (mesgOption "KEYVALUEPAIR" KeyValuePair) 8)    *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+(* Map from C-style string to ML style string *)
+
+val stringTerminal = String.str (Char.chr 0);
+
+val mk_id = mk_leaf (fn s => if s = stringTerminal then "" else s)
+
+fun mk_string ptree =
+ case ptree
+  of Contig.RECD
+       [("len",_),
+        ("elts", Contig.ARRAY elts)]
+      => String.concat (List.map mk_id elts)
+   | otherwise  => raise ERR "mk_string" "";
+
+fun mk_KV_pair ptree =
+ case ptree
+  of Contig.RECD [("key", kstr), ("value", vstr)]
+       => (mk_string kstr,mk_string vstr)
+   | otherwise => raise ERR "mk_KV_pair" ""
+
+fun mk_automation_response ptree =
+  case ptree
+   of Contig.RECD
+        [("MissionCommandList",mclist),
+         ("VehicleCommandList",vaclist),
+         ("Info", infolist)]
+       => AR (mk_bounded_mesgOption_array mk_MC mclist)
+             (mk_bounded_mesgOption_array mk_VAC vaclist)
+             (mk_bounded_mesgOption_array mk_KV_pair infolist)
+    | otherwise => raise ERR "mk_automation_response" ""
+
+fun mk_AR_event ptree = (* : AutomationResponse option *)
+ case mk_uxasOption id ptree (* strip off leading "isEvent" byte *)
+  of None => None
+   | Some aatree => aa_mesg (mk_mesgOption mk_automation_response) aatree;
+
+end (* Geofence_Types *)
+
+
+structure API =
+struct
+  (* A Location3D record is exactly 21 bytes *)
+  val polygonSizeBytes = 42;
+
+  (* The actual max size of an automation response is huge *)
+  val automation_responseAASizeBytes = 10 * 1024
+
+(*---------------------------------------------------------------------------*)
+(* IO via faked-up CakeML FFI interface.                                     *)
+(*---------------------------------------------------------------------------*)
+
+exception FFI_CALL string;
+
+fun callFFI fname istr obuf = raise FFI_CALL fname;
+
+end  (* API *)
+
+
+structure Geofence_Monitor =
+struct
+
+exception ERR string string;
+
+val w8zero = Word8.fromInt 0;
+
+(*---------------------------------------------------------------------------*)
+(* Declare input buffers as global variables.                                *)
+(*---------------------------------------------------------------------------*)
+
+val kizone_buffer   = Word8Array.array API.polygonSizeBytes w8zero
+val kozone_buffer   = Word8Array.array API.polygonSizeBytes w8zero
+val observed_buffer = Word8Array.array
+                         API.automation_responseAASizeBytes w8zero
+
+val emptybuf = Word8Array.array 0 w8zero;
+
+fun clear buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Globals from the "business logic" of the monitor                          *)
+(*---------------------------------------------------------------------------*)
+
+val alerted = Ref False;  (* a pre(var) turns into a state-holding var *)
+val dfaState = Ref 14;    (* Computed from Thomas' MG *)
+
+(*---------------------------------------------------------------------------*)
+(* Observation functions                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun lat_of locn = case locn of Geofence_Types.LOC3D lat lon alt altTy => lat;
+fun lon_of locn = case locn of Geofence_Types.LOC3D lat lon alt altTy => lon;
+fun alt_of locn = case locn of Geofence_Types.LOC3D lat lon alt altTy => alt;
+
+fun location_of wpt =
+ case wpt
+  of Geofence_Types.WPT
+       loc3D n next_wpt speed speedTy
+       climbrate turnTy valist cwptA cwptB atasks
+     => loc3D;
+
+fun waypoints_of cmd = case cmd of Geofence_Types.MC vac wpts i => wpts;
+
+fun mclist_of aresp = case aresp of Geofence_Types.AR mclist vaclist kvs => mclist;
+
+fun waypoint_in_zone_rectangle
+       (locn:Geofence_Types.Location3D) (zone:Geofence_Types.Polygon) =
+ let val loLeft  = Array.sub zone 0
+     val upRight = Array.sub zone 1
+ in
+   Double.>= (lat_of locn) (lat_of loLeft)  andalso
+   Double.<= (lat_of locn) (lat_of upRight) andalso
+   Double.>= (lon_of locn) (lon_of loLeft)  andalso
+   Double.<= (lon_of locn) (lon_of upRight)
+   (* Real32 not supported so following not included :
+      andalso Real32.==(Altitude, #Altitude loLeft) *)
+ end;
+
+fun waypoints_in_zone missioncmd zone =
+  Array.all (fn wpt => waypoint_in_zone_rectangle (location_of wpt) zone)
+            (waypoints_of missioncmd)
+ ;
+
+fun waypoints_not_in_zone missioncmd zone =
+  Array.all (fn wpt => not (waypoint_in_zone_rectangle (location_of wpt) zone))
+            (waypoints_of missioncmd)
+ ;
+
+fun get_mission_command aresponse = Array.sub (mclist_of aresponse) 0
+
+(*---------------------------------------------------------------------------*)
+(* DFA generated from pLTL property. The property is violated when the DFA   *)
+(* is no longer in an accept state.                                          *)
+(*---------------------------------------------------------------------------*)
+
+val dfaTable =
+  Array.fromList
+   (List.map Array.fromList
+     [[12, 11, 5, 4, 3, 2, 1, 0],
+      [12, 11, 5, 4, 3, 2, 1, 0],
+      [12, 11, 5, 4, 3, 2, 1, 0],
+      [12, 11, 5, 4, 3, 2, 1, 0],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [10, 11, 5, 4, 9, 8, 7, 6],
+      [12, 11, 5, 4, 3, 2, 1, 0],
+      [13, 13, 13, 13, 13, 13, 13, 13],
+      [12, 11, 5, 4, 3, 2, 1, 0]]);
+
+val dfaAccepts = Array.fromList
+  [True,  True,  True,
+   True,  False, False,
+   False, False, False,
+   False, False, False,
+   True,  False, False];
+
+fun goodState i = (Array.sub dfaAccepts i = True);
+
+fun subset listA listB = List.all (fn a => List.member a listB) listA;
+
+(*---------------------------------------------------------------------------*)
+(* Map from a list of observations to a DFA alphabet symbol (a number)       *)
+(* Generated from Thomas' MG.                                                *)
+(*---------------------------------------------------------------------------*)
+
+fun obs2symbol obslist =
+ if subset ["obsVar_1", "obsVar_2","obsVar_3"] obslist then
+    0 else
+ if subset ["obsVar_1", "obsVar_2"] obslist then
+    1 else
+ if subset ["obsVar_1", "obsVar_3"] obslist then
+    2 else
+ if subset ["obsVar_1"] obslist then
+    3 else
+ if subset ["obsVar_2", "obsVar_3"] obslist then
+    4 else
+ if subset ["obsVar_2"] obslist then
+    5 else
+ if subset ["obsVar_3"] obslist then
+    6
+ else 7;
+
+fun dfaTransition  obsList state =
+  let fun is_true_pair (b,s) = (b=True)
+      val trueVars = List.map snd (List.filter is_true_pair obsList)
+  in
+     Array.sub (Array.sub dfaTable state) (obs2symbol trueVars)
+  end
+
+(*---------------------------------------------------------------------------*)
+(* Take one DFA step. Compute the observations and collect the True ones,    *)
+(* but only in case all "in-event-dataports" have data. If not, then each    *)
+(* observation is just set to False, without attempting the computations.    *)
+(*---------------------------------------------------------------------------*)
+
+fun stepDFA kizone kozone responseOpt =
+ let val v0 = Option.isSome responseOpt
+     val v1 = v0 andalso
+              waypoints_in_zone
+                  (get_mission_command(Option.valOf responseOpt)) kizone
+     val v2 = v0 andalso
+              waypoints_not_in_zone
+                (get_mission_command(Option.valOf responseOpt)) kozone
+     val obsVals = [(v0,"obsVar_1"),(v1,"obsVar_2"),(v2,"obsVar_3")]
+     val () = (dfaState := dfaTransition obsVals (!dfaState))
+ in
+   goodState (!dfaState)
+end
+
+(*---------------------------------------------------------------------------*)
+(* The core monitor function has the following type:                         *)
+(*                                                                           *)
+(*   stepMon : inports -> outports                                           *)
+(*                                                                           *)
+(* A stepMon step does the following: make one DFA step, then set new values *)
+(* for globals, then set the values of output ports.                         *)
+(*                                                                           *)
+(* Logic specification of stepMon behaviour follows. I'd dearly like to get  *)
+(* this by AADL scraping. MON_SPEC relates the pre-state and inputs to the   *)
+(* post-state (state') and outputs. The state is a record with fields        *)
+(*                                                                           *)
+(*  {dfaState : num, alerted : bool}                                         *)
+(*                                                                           *)
+(* MON_SPEC (state, inputs) (state',outputs) =                               *)
+(*  state'.dfaState = stepDFA(state.dfaState,inputs) /\                      *)
+(*  state'.alerted = (latched /\ state.alerted) \/ ~good(state'.dfaState) /\ *)
+(*  ((state'.alerted  /\ outputs = {dataOut=NONE, alertOut = SOME()}) \/     *)
+(*   (~state'.alerted /\ outputs = {dataOut=dataIn, alertOut = NONE}))       *)
+(*                                                                           *)
+(* Notice a slight subtlety: the last disjunct covers two cases. If the      *)
+(* system hasn't yet entered an alert state, then dataOut is equal to        *)
+(* dataIn, in case dataIn is NONE or in case it is SOME(-).                  *)
+(*                                                                           *)
+(* The code for stepMon can be improved by handling possible parse errors.   *)
+(*---------------------------------------------------------------------------*)
+
+val latched = True;   (* Typically obtained from architecture-level spec *)
+
+fun stepMon kizone kozone responseOpt =
+ let val troubleFound = not (stepDFA kizone kozone responseOpt)
+     val () = alerted := ((latched andalso !alerted) orelse troubleFound)
+ in
+   !alerted
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Move buf contents, less the first char (which represents eventishness),   *)
+(* to string, which becomes the argument to the selected FFI output call.    *)
+(* Would raise an exception if buf was of size 0, which we know isn't true.  *)
+(*---------------------------------------------------------------------------*)
+
+fun outFFI fname buf =
+ let val string = Word8Array.substring buf 1 (Word8Array.length buf - 1)
+ in
+   API.callFFI fname string emptybuf
+ end
+
+fun inFFI fname buf = (clear buf ; API.callFFI fname "" buf);
+
+fun fill_buffers() =
+ let in
+    inFFI "get_keep_in_zone"  kizone_buffer
+  ; inFFI "get_keep_out_zone" kozone_buffer
+  ; inFFI "get_observed"      observed_buffer
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Parse message buffers to datastructures                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun parse_buf contig mk_data buf =
+ let val string = Word8Array.substring buf 0 (Word8Array.length buf)
+ in
+  case Contig.parseFn Contig.uxasEnv (Contig.VarName"root") contig
+                      ([],string,Contig.mk_empty_lvalMap())
+   of Some ([ptree],remaining,theta) => mk_data ptree
+    | otherwise => raise ERR "parse_buf" ""
+ end
+
+fun mk_kizone() =
+    parse_buf Geofence_Types.phaseII_Polygon
+              Geofence_Types.mk_phase2_polygon kizone_buffer
+
+fun mk_kozone() =
+    parse_buf Geofence_Types.phaseII_Polygon
+              Geofence_Types.mk_phase2_polygon kozone_buffer;
+
+(*---------------------------------------------------------------------------*)
+(* A Some value returned means that there was an event, and that the buffer  *)
+(* translated to an AutomationResponse.                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_automation_response_event () =
+   parse_buf (Contig.uxasOption Contig.fullAutomationResponseMesg)
+             Geofence_Types.mk_AR_event observed_buffer;
+
+
+fun geofence_monitor () =
+ let val _           = fill_buffers()
+     val kizone      = mk_kizone()
+     val kozone      = mk_kozone()
+     val responseOpt = mk_automation_response_event()
+     val alertHi     = stepMon kizone kozone responseOpt
+ in
+   if alertHi
+    then API.callFFI "put_alert" "" emptybuf
+    else outFFI "put_output" observed_buffer
+ end
+
+end (* Geofence_Monitor *)

@@ -124,10 +124,10 @@ val w8zero = Word8.fromInt 0;
 (* Declare input buffers as global variables.                                *)
 (*---------------------------------------------------------------------------*)
 
-val kizone_buffer = Word8Array.array(API.polygonSizeBytes,w8zero);
-val kozone_buffer = Word8Array.array(API.polygonSizeBytes,w8zero);
-
-val observed_buffer = Word8Array.array(API.automation_responseAASizeBytes,w8zero)
+val kizone_buffer   = Word8Array.array(API.polygonSizeBytes,w8zero)
+val kozone_buffer   = Word8Array.array(API.polygonSizeBytes,w8zero)
+val observed_buffer = Word8Array.array
+                         (API.automation_responseAASizeBytes,w8zero)
 
 val emptybuf = Word8Array.array(0,w8zero);
 

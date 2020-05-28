@@ -63,8 +63,12 @@ val trusted_ids = Array(i32,intLit 3);
 
 (*---------------------------------------------------------------------------*)
 (* Parsing. Break input into A$B|C|D|E|F$G                                   *)
+(* scan (String.concat                                                       *)
+(*  ["<address>$<contentType>|<descriptor>|",                                *)
+(*   "<source_group>|<source-entity-ID>|<source-service-ID>$<the-mesg>"]);   *)
 (*---------------------------------------------------------------------------*)
 
+(*
 fun seekFrom V w8 i =
  let val K = Word8Vector.length V
      fun seek j =
@@ -73,6 +77,7 @@ fun seekFrom V w8 i =
        else NONE
  in seek i
  end;
+*)
 
 fun seekFrom S c i =
  let val K = String.size S
@@ -116,6 +121,14 @@ fun fromDecimal s =
  in Int.fromString s'
  end
 
+(*---------------------------------------------------------------------------*)
+(*
+     getID (String.concat
+      ["<address>$<contentType>|<descriptor>|",
+       "<source_group>|500|<source-service-ID>$<the-mesg>"]);
+*)
+(*---------------------------------------------------------------------------*)
+
 fun getID S =
  case scan S
   of NONE => NONE
@@ -133,21 +146,25 @@ val SOME 500 = getID "A$B||D|500|F$G";
 val SOME 500 = getID "199.0.0.1$p--q--r|foo|A!D!CD|500|FRED$GHIJ";
 
 (*---------------------------------------------------------------------------*)
-(* Map 3 adjacent 4-byte chunks to 3 ints                                    *)
+(* Map 3 adjacent 4-byte chunks to 3 ints. Eric Mercer has found out that    *)
+(* these are C-style strings, terminated with a \0, which thus derails       *)
+(* Int.fromString. Therefore we trim any ending character which is not a     *)
+(* digit. There is nothing to be proud of here.                              *)
 (*---------------------------------------------------------------------------*)
 
 fun get_trusted_ids s =
  if String.size s = 12 then
-   let val s1 = String.substring(s,0,4)
+   let val mk_int = Option.mapPartial Int.fromString o String.fromCString
+       val s1 = String.substring(s,0,4)
        val s2 = String.substring(s,4,4)
        val s3 = String.substring(s,8,4)
-   in case Int.fromString s1
+   in case mk_int s1
        of NONE => NONE
         | SOME i1 =>
-      case Int.fromString s2
+      case mk_int s2
        of NONE => NONE
         | SOME i2 =>
-      case Int.fromString s3
+      case mk_int s3
        of NONE => NONE
         | SOME i3 =>
       SOME(Array.fromList[i1,i2,i3])
