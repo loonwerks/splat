@@ -279,7 +279,7 @@ fun mesgOption name = Option o uxasMesg name;
 
 val FullString = uxasArray (Basic Char);
 
-val ShortString = uxasBoundedArray (Basic Char) 26;
+val ShortString = uxasBoundedArray (Basic Char) 12;
 
 (*---------------------------------------------------------------------------*)
 (* The following gives a layer of indirection: by changing the "String"      *)
@@ -582,7 +582,7 @@ val fullAirVehicleStateMesg =
 type i64 = Int.int;
 type real32 = Real32.real;
 type real64 = Real.real;
-type KeyValPair = string * string;
+type KeyValuePair = string * string;
 
 (*---------------------------------------------------------------------------*)
 (* Enumerations                                                              *)
@@ -624,6 +624,12 @@ type Waypoint =
    AssociatedTasks      : i64 array
  };
 
+type Wedge =
+ {AzimuthCenterline  : Real32.real,
+  VerticalCenterline : Real32.real,
+  AzimuthExtent      : Real32.real,
+  VerticalExtent     : Real32.real}
+
 type VehicleActionCommand =
  {CommandID : i64,
   VehicleID : i64,
@@ -635,17 +641,65 @@ type MissionCommand =
   WaypointList  : Waypoint array,
   FirstWaypoint : i64};
 
-
 type AutomationResponse =
      {MissionCommandList : MissionCommand array,
       VehicleCommandList : VehicleActionCommand array,
-      Info : KeyValPair array}
+      Info : KeyValuePair array}
+
+type OperatingRegion
+  = {ID : int,
+     keep_in_areas : int array,
+     keep_out_areas : int array}
+
+type AutomationRequest =
+    {EntityList : int array,
+     TaskList   : int array,
+     TaskRelationShips : string,
+     OperatingRegion : int,
+     RedoAllTasks : bool}
+
+type LineSearchTask =
+{ TaskID           : int,
+  Label            : string,
+  EligibleEntities : int array,
+  RevisitRate      : Real32.real,
+  Parameters       : KeyValuePair array,
+  Priority         : Word8.word,
+  Required         : bool,
+  DesiredWavelengthBands : WavelengthBand array,
+  DwellTime             : int,
+  GroundSampleDistance  : Real32.real,
+  PointList             : Location3D array,
+  ViewAngleList         : Wedge array,
+  UseInertialViewAngles : bool};
+
+datatype uxasMessage
+  = AResp of AutomationResponse
+  | AReqt of AutomationRequest
+  | OR of OperatingRegion
+  | LST of LineSearchTask;
+
+type attr_recd =
+ {contentType : string,
+  descriptor : string,
+  source_group : string,
+  source_entity_ID : string,
+  source_service_ID : string}
+
+type full_mesg =
+     {address : string,
+      attribute : attr_recd,
+      controlString : int,
+      mesgSize : int,
+      mesg : uxasMessage,
+      checksum : Word32.word}
 
 (*---------------------------------------------------------------------------*)
 (* Parsing                                                                   *)
 (*---------------------------------------------------------------------------*)
 
 val mk_i64     = uxas_valFn (Signed 8);
+val mk_u32     = uxas_valFn (Unsigned 4);
 fun mk_float s = Real32.fromInt 42;
 fun mk_double s = dvalFn Double s;
 
@@ -981,4 +1035,71 @@ let
 val (ptree,remaining,theta) = parse uxasEnv automation_response (gen_AResp())
 in
   mk_automation_response ptree
+end;
+
+(*---------------------------------------------------------------------------*)
+(* Full AA message generation.                                               *)
+(*---------------------------------------------------------------------------*)
+
+fun aa_scanRandFn path =
+ case path
+  of RecdProj(lval,"address") => "<address>$"
+   | RecdProj(RecdProj(lval,"attributes"),fName) =>
+      (case fName
+        of "contentType"       => "<contentType>|"
+         | "descriptor"        => "<descriptor>|"
+         | "source_group"      => "<source_group>|"
+         | "source_entity_ID"  => "500|"
+         | "source_service_ID" => "<source_service_ID$"
+         | otherwise => "!!UNEXPECTED!!")
+   | otherwise => "!!UNEXPECTED!!"
+;
+
+val aa_randEnv =
+ let val (Consts,Decls,atomicWidths,valFn,dvalFn) = uxasEnv
+     val Decls' = override_decl ("String",ShortString) Decls
+ in (Consts,Decls',atomicWidths,valFn,dvalFn,
+     uxas_repFn,aa_scanRandFn,Random.newgen())
+ end;
+
+fun gen_fullAResp () =
+  String.concat
+    (randFn aa_randEnv
+        ([(VarName"root",fullAutomationResponseMesg)], empty_lvalMap, []));
+
+fun mk_attr_recd ptree =
+ case ptree
+  of RECD [("contentType", ctype),
+           ("descriptor", descriptor),
+           ("source_group", src_grp),
+           ("source_entity_ID", seID),
+           ("source_service_ID", ssID)]
+      => {contentType = mk_leaf I ctype,
+          descriptor  = mk_leaf I descriptor,
+          source_group = mk_leaf I src_grp,
+          source_entity_ID = mk_leaf I seID,
+          source_service_ID = mk_leaf I ssID}
+   | otherwise => raise ERR "mk_attr_recd" "";
+
+fun mk_full_mesg mesgFn ptree =
+ case ptree
+  of RECD [
+      ("address", address),
+      ("attributes", attr_recd),
+      ("controlString", ctlstring),
+      ("mesgSize", msgSize),
+      ("mesg", mesg),
+      ("checksum", csum)]
+     => {address = mk_leaf I address,
+         attribute = mk_attr_recd attr_recd,
+         controlString = mk_leaf I ctlstring,
+         mesgSize = mk_leaf mk_u32 msgSize,
+         mesg  = mesgFn mesg,
+      checksum = mk_leaf mk_u32 csum}
+   | otherwise => raise ERR "mk_full_mesg" ""
+
+let
+val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg (gen_fullAResp())
+in
+  mk_full_mesg (mk_mesgOption mk_automation_response) ptree
 end;
