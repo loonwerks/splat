@@ -177,6 +177,46 @@ fun WAYPOINTS_NOT_IN_ZONE missioncmd zone =
             (waypoints_of missioncmd)
  ;
 
+(*---------------------------------------------------------------------------*)
+(* Extra credit. All waypoints have distinct coords.                         *)
+(*---------------------------------------------------------------------------*)
+
+fun locnEq loc1 loc2 =
+ let val {Latitude=lat1,Longitude=lon1,Altitude=alt1,AltitudeType=aty1} = loc1
+     val {Latitude=lat2,Longitude=lon2,Altitude=alt2,AltitudeType=aty2} = loc2
+ in
+    Real.==(lat1,lat2) andalso
+    Real.==(lon1,lon2) andalso
+    Real32.==(alt1,alt2) (* Not checking altType equal *)
+ end
+
+fun waypointEq wp1 wp2 = locnEq (location_of wp1) (location_of wp2);
+
+(*---------------------------------------------------------------------------*)
+(* Different indices map to different elements, i.e., no duplicates          *)
+(*---------------------------------------------------------------------------*)
+
+fun arrayInjective equiv arr =
+ let val len = Array.length arr
+     fun look i elts =
+       if i < len then
+          let val elt = Array.sub(arr,i)
+          in if List.exists (equiv elt) elts then false
+             else look (i+1) (elt::elts)
+          end
+       else true
+ in look 0 []
+ end;
+
+(*
+val test = arrayInjective (equal:int->int->bool);
+test (Array.fromList [1,2,3,4,5,6,7,8,9]);
+test (Array.fromList [1,2,3,4,9,6,7,8,9]);
+*)
+
+fun WAYPOINTS_DISTINCT missioncmd =
+    arrayInjective waypointEq (waypoints_of missioncmd);
+
 fun GET_MISSION_COMMAND (AR : AutomationResponse) : MissionCommand
     = Array.sub(#MissionCommandList AR,0);
 
@@ -362,5 +402,6 @@ fun geofence_monitor () =
     then API.callFFI "put_alert" "" emptybuf
     else outFFI "put_output" observed_buffer
  end
+
 
 end (* Geofence_Monitor *)

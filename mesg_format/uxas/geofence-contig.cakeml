@@ -457,7 +457,7 @@ fun atomic_widths atm =
    | Unsigned i => i
    | Float      => 4
    | Double     => 8
-   | Enum _     => 1
+   | Enum _     => 4
    | other      => raise ERR "atomic_widths" "Raw/Scanner do not have a fixed width"
 ;
 
@@ -1326,18 +1326,25 @@ fun mk_MC ptree =
 (* ]                                                                         *)
 (*---------------------------------------------------------------------------*)
 
-(* Map from C-style string to ML style string *)
+(*---------------------------------------------------------------------------*)
+(* Map from C-style \0-terminated string to ML style string                  *)
+(*---------------------------------------------------------------------------*)
 
-val stringTerminal = String.str (Char.chr 0);
+val char0 = Char.chr 0;
 
-val mk_id = mk_leaf (fn s => if s = stringTerminal then "" else s)
+fun fromC s =
+ if s = "" then s
+ else
+ if String.sub s (String.size s - 1) = char0 then
+   String.substring s 0 (String.size s - 1)
+ else s;
 
 fun mk_string ptree =
  case ptree
   of Contig.RECD
        [("len",_),
         ("elts", Contig.ARRAY elts)]
-      => String.concat (List.map mk_id elts)
+      => String.concat (List.map (mk_leaf id) elts)
    | otherwise  => raise ERR "mk_string" "";
 
 fun mk_KV_pair ptree =
@@ -1635,7 +1642,7 @@ fun mk_automation_response_event () =
 
 fun geofence_monitor () =
  let val _           = fill_buffers()
-    val kizone      = mk_kizone()
+     val kizone      = mk_kizone()
      val kozone      = mk_kozone()
      val responseOpt = mk_automation_response_event()
      val alertHi     = stepMon kizone kozone responseOpt

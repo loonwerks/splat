@@ -185,7 +185,7 @@ fun uxas_repFn a i =
  in case a
   of Bool => u2string 1 j
    | Char => u2string 1 j
-   | Enum s => u2string 1 j
+   | Enum s => u2string 4 j
    | Signed w => i2string w j
    | Unsigned w => u2string w j
    | Float => u2string 4 j  (* hack *)
@@ -1100,6 +1100,27 @@ fun mk_full_mesg mesgFn ptree =
 
 let
 val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg (gen_fullAResp())
+in
+  mk_full_mesg (mk_mesgOption mk_automation_response) ptree
+end;
+
+use "mesg-traces.sml";
+
+
+predFn uxasEnv ([(VarName"root",fullOperatingRegionMesg)],
+                operating_region_string,empty_lvalMap)
+
+predFn uxasEnv ([(VarName"root",fullAutomationRequestMesg)],
+                automation_request_string,empty_lvalMap)
+
+predFn uxasEnv ([(VarName"root",fullLineSearchTaskMesg)],
+                linesearch_task_string,empty_lvalMap)
+
+predFn uxasEnv ([(VarName"root",fullAutomationResponseMesg)],
+                automation_response_string,empty_lvalMap)
+
+let
+val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg automation_response_string
 in
   mk_full_mesg (mk_mesgOption mk_automation_response) ptree
 end;
