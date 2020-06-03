@@ -1095,7 +1095,7 @@ fun mk_full_mesg mesgFn ptree =
          controlString = mk_leaf I ctlstring,
          mesgSize = mk_leaf mk_u32 msgSize,
          mesg  = mesgFn mesg,
-      checksum = mk_leaf mk_u32 csum}
+         checksum = mk_leaf mk_u32 csum}
    | otherwise => raise ERR "mk_full_mesg" ""
 
 let
@@ -1104,6 +1104,7 @@ in
   mk_full_mesg (mk_mesgOption mk_automation_response) ptree
 end;
 
+(*
 use "mesg-traces.sml";
 
 
@@ -1124,3 +1125,4 @@ val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg automatio
 in
   mk_full_mesg (mk_mesgOption mk_automation_response) ptree
 end;
+*)

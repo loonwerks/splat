@@ -83,6 +83,11 @@ fun first pred list =
 
 fun quote s = String.concat ["\"",s,"\""];
 
+fun ordstring s =
+ let val slist = List.map (Int.toString o Char.ord) (String.explode s)
+ in String.concat ["[",String.concatWith "," slist,"]\n"]
+ end
+
 fun tdrop n s =
  if n <= String.size s
   then Some(String.substring s 0 n,String.extract s n None)
@@ -93,6 +98,11 @@ fun take_drop n list =
   then Some(List.take list n,List.drop list n)
   else None;
 
+fun lval_to_string lval =
+ case lval
+  of VarName s => s
+   | RecdProj lval s => lval_to_string lval^"."^s
+   | ArraySub lval (IntLit i) => lval_to_string lval^"["^Int.toString i^"]"
 
 (*---------------------------------------------------------------------------*)
 (* Support for lval-map                                                      *)
@@ -356,7 +366,18 @@ fun predFn env state =
        let val bexp' = resolveBexp theta path bexp
        in if evalBexp (eConsts,theta,valFn,dvalFn) bexp'
             then predFn env (t,s,theta)
-            else FAIL state
+            else (print ("Failing Assert at path "^lval_to_string path^"\n");
+                  let val path = RecdProj (RecdProj (VarName"root") "contents") "controlString"
+                  in case Map.lookup theta path
+                      of Some (_,str) => print ("controlString = "^ordstring str^"\n")
+                       | None => print "controlString not found"
+                  end;
+                  let val path = RecdProj (RecdProj (VarName"root") "contents") "address"
+                  in case Map.lookup theta path
+                      of Some (_,str) => print ("address = "^ordstring str^"\n")
+                       | None => print "address not found"
+                  end;
+                  FAIL state)
        end
    | (path,Scanner scanFn)::t =>
       (case scanFn s
@@ -425,7 +446,7 @@ fun valFn a s =
  case a
   of Bool => uvalFn s
    | Char => uvalFn s
-   | Enum s => uvalFn s
+   | Enum e => uvalFn s
    | Signed w => ivalFn s
    | Unsigned w => uvalFn s
    | otherwise => raise ERR "valFn" "unexpected input"
@@ -444,7 +465,7 @@ fun dvalFn s =
        val b7 = char2byte(String.sub s 6)
        val b8 = char2byte(String.sub s 7)
    in
-     Word64.concatAll b1 b2 b3 b4 b5 b6 b7 b8
+     Word64.concatAll b8 b7 b6 b5 b4 b3 b2 b1
    end
  else raise ERR "dvalFn" "expected 8 bytes";
 
@@ -504,7 +525,7 @@ fun scanTo delim string =
  in
    case seek 0
     of None => None
-     | Some n => tdrop n string
+     | Some n => tdrop (n+1) string
  end;
 
 val scanCstring = scanTo (Char.chr 0);
@@ -825,10 +846,10 @@ val location3D = Recd [
   ("AltitudeType", uxasAltitudeType)
 ];
 
-val neg90 = Double.fromString "~90.0";
 val pos90 = Double.fromString "90.0";
-val neg180 = Double.fromString "~180.0";
 val pos180 = Double.fromString "180.0";
+val neg90 = Double.~(pos90)
+val neg180 = Double.~(pos180);
 
 
 val checked_location3D = Recd [
@@ -1109,9 +1130,19 @@ datatype AutomationResponse =
 val valFn = Contig.valFn;
 val dvalFn = Contig.dvalFn;
 
-val mk_i64      = valFn (Contig.Signed 8);
+val mk_i64 = valFn (Contig.Signed 8);
+
+fun checkLen n s = if String.size s <> n then print "\n!checkLen ERROR!\n\n" else ()
+
 fun mk_float s  = Double.fromString "42.0";
-fun mk_double s = dvalFn s;
+
+fun mk_double s =
+ let val r = dvalFn s
+(*   val rstring = Double.toString r
+     val () = checkLen 8 s
+     val () = print ("mk_double("^s^") = "^rstring^"\n")
+*)
+ in r end
 
 fun mk_leaf f leaf =
  case leaf
@@ -1374,11 +1405,14 @@ end (* Geofence_Types *)
 
 structure API =
 struct
-  (* A Location3D record is exactly 21 bytes *)
-  val polygonSizeBytes = 42;
+  (* A Location3D record is exactly 24 bytes *)
+  val polygonSizeBytes = 48;
 
-  (* The actual max size of an automation response is huge *)
-  val automation_responseAASizeBytes = 10 * 1024
+  (* For the example, the full AResp message, plus one byte for "isEvent" = 7277.
+     The actual max size of an automation response is huge
+  *)
+  val automation_responseAASizeBytes = 7277;
+  val automation_responseAASizeBytes = 10 * 1024;
 
 (*---------------------------------------------------------------------------*)
 (* IO via faked-up CakeML FFI interface.                                     *)
@@ -1386,7 +1420,92 @@ struct
 
 exception FFI_CALL string;
 
-fun callFFI fname istr obuf = raise FFI_CALL fname;
+val flyZoneDBKeepInZone_ints =
+   [64, 70, 166, 115, 79, 130, 245, 18, 192, 94, 64, 242, 161, 114, 171, 239,
+    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 172, 52, 59, 112, 239, 86, 192, 94,
+    58, 101, 152, 225, 12, 246, 68, 122, 0, 0, 0, 0, 0, 1];
+
+val flyZoneDBKeepOutZone_ints =
+   [64, 70, 170, 161, 173, 100, 81, 185, 192, 94, 60, 9, 162, 64, 49, 72, 68,
+    122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 13, 119, 183, 200, 192, 94, 59,
+    202, 167, 88, 158, 254, 68, 122, 0, 0, 0, 0, 0, 1];
+
+(*---------------------------------------------------------------------------*)
+(* Isaac's uxas-generated values                                             *)
+(*
+Keep-In Zone:
+
+Bottom left: (45.30039972874535, -121.01472992576784)
+Top right  : (45.34531548097283, -120.91251955738149)
+
+
+Keep-Out Zone:
+
+Bottom left: (45.33305951104345, -120.93809578907548)
+Top right  : (45.3357544568948, -120.93426211970625)
+*)
+(*---------------------------------------------------------------------------*)
+
+val isaacKeepInZone_ints =
+   [64, 70, 166, 115, 127, 145, 88, 34, 192, 94, 64, 241, 85, 201, 92, 129,
+    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 172, 51, 76, 52, 202, 88, 192, 94, 58,
+    102, 184, 109, 250, 125, 68, 122, 0, 0, 0, 0, 0, 1];
+
+val isaacKeepOutZone_ints =
+   [64, 70, 170, 161, 177, 173, 198, 213, 192, 94, 60, 9, 194, 235, 166, 12,
+    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 0, 133, 236, 185, 192, 94,
+    59, 202, 243, 88, 129, 235, 68, 122, 0, 0, 0, 0, 0, 1];
+
+
+fun toString list = String.implode (List.map Char.chr list);
+
+val flyZoneDBKeepInZone = toString flyZoneDBKeepInZone_ints
+val flyZoneDBKeepOutZone = toString flyZoneDBKeepOutZone_ints
+val isaacKeepInZone = toString isaacKeepInZone_ints
+val isaacKeepOutZone = toString isaacKeepOutZone_ints;
+
+val automation_response_event_string =
+ let val istrm = TextIO.openIn "ARE"
+     val str = TextIO.inputAll istrm
+     val _ = TextIO.closeIn istrm
+(*     val _ = print ("Length of automation_response_event_string = "^
+                    Int.toString (String.size str)^"\n")
+*)
+ in str
+ end;
+
+fun callFFI fname istr obuf =
+ if fname = "get_keep_in_zone" then
+    let val inputLen = String.size isaacKeepInZone
+        val bufLen = Word8Array.length obuf
+    in if inputLen <= bufLen  then
+         Word8Array.copyVec isaacKeepInZone 0 inputLen obuf 0
+       else raise FFI_CALL "get_keep_in_zone: input too large for buffer"
+    end
+ else
+ if fname = "get_keep_out_zone" then
+    let val inputLen = String.size isaacKeepOutZone
+        val bufLen = Word8Array.length obuf
+    in if inputLen <= bufLen  then
+         Word8Array.copyVec isaacKeepOutZone 0 inputLen obuf 0
+       else raise FFI_CALL "get_keep_out_zone: input too large for buffer"
+    end
+ else
+ if fname = "get_observed" then
+    let val inputLen = String.size automation_response_event_string
+        val bufLen = Word8Array.length obuf
+    in if inputLen <= bufLen  then
+         Word8Array.copyVec automation_response_event_string 0 inputLen obuf 0
+       else raise FFI_CALL "get_observed: input too large for buffer"
+    end
+ else
+ if fname = "put_alert" then
+     TextIO.output TextIO.stdOut "\nALERT!\n"
+ else
+ if fname = "put_output" then
+     TextIO.output TextIO.stdOut "\nmoving observed input to output\n"
+ else
+ raise FFI_CALL "unknown FFI request"
 
 end  (* API *)
 
@@ -1615,6 +1734,19 @@ fun fill_buffers() =
 
 fun parse_buf contig mk_data buf =
  let val string = Word8Array.substring buf 0 (Word8Array.length buf)
+(*     val _ =
+      (case Contig.predFn Contig.uxasEnv
+             ([(Contig.VarName"root",contig)],string,Contig.mk_empty_lvalMap())
+        of Contig.PASS _ => print "predFn succeeded.\n"
+         | Contig.FAIL triple =>
+            let val (wklist,rst,theta) = triple
+            in
+               print "predFn failure! Remaining string has length : ";
+               print_int (String.size rst);
+               print "\n\n"; ()
+            end
+      )
+*)
  in
   case Contig.parseFn Contig.uxasEnv (Contig.VarName"root") contig
                       ([],string,Contig.mk_empty_lvalMap())
@@ -1641,11 +1773,11 @@ fun mk_automation_response_event () =
 
 
 fun geofence_monitor () =
- let val _           = fill_buffers()
-     val kizone      = mk_kizone()
-     val kozone      = mk_kozone()
-     val responseOpt = mk_automation_response_event()
-     val alertHi     = stepMon kizone kozone responseOpt
+ let val ()      = fill_buffers()
+     val kizone  = mk_kizone()
+     val kozone  = mk_kozone()
+     val respOpt = mk_automation_response_event()
+     val alertHi = stepMon kizone kozone respOpt
  in
    if alertHi
     then API.callFFI "put_alert" "" emptybuf
@@ -1653,3 +1785,6 @@ fun geofence_monitor () =
  end
 
 end (* Geofence_Monitor *)
+
+
+val _ = Geofence_Monitor.geofence_monitor();
