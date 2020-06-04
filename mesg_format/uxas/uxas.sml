@@ -1097,6 +1097,7 @@ fun mk_full_mesg mesgFn ptree =
          mesg  = mesgFn mesg,
          checksum = mk_leaf mk_u32 csum}
    | otherwise => raise ERR "mk_full_mesg" ""
+;
 
 let
 val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg (gen_fullAResp())

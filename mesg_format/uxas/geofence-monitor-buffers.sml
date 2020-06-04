@@ -99,7 +99,7 @@ val ERR = mk_HOL_ERR "geofence-monitor-buffers";
 structure API =
 struct
   (* A Location3D record is exactly 21 bytes *)
-  val polygonSizeBytes = 42;
+  val polygonSizeBytes = 48;
 
   (* The actual max size of an automation response is huge *)
   val automation_responseAASizeBytes = 10 * 1024
@@ -110,10 +110,82 @@ struct
 
 exception FFI_CALL of string
 
-fun callFFI fname istr obuf = raise FFI_CALL fname;
+val flyZoneDBKeepInZone_ints =
+   [64, 70, 166, 115, 79, 130, 245, 18, 192, 94, 64, 242, 161, 114, 171, 239,
+    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 172, 52, 59, 112, 239, 86, 192, 94,
+    58, 101, 152, 225, 12, 246, 68, 122, 0, 0, 0, 0, 0, 1];
+
+val flyZoneDBKeepOutZone_ints =
+   [64, 70, 170, 161, 173, 100, 81, 185, 192, 94, 60, 9, 162, 64, 49, 72, 68,
+    122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 13, 119, 183, 200, 192, 94, 59,
+    202, 167, 88, 158, 254, 68, 122, 0, 0, 0, 0, 0, 1];
+
+val isaacKeepInZone_ints =
+   [64, 70, 166, 115, 127, 145, 88, 34, 192, 94, 64, 241, 85, 201, 92, 129,
+    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 172, 51, 76, 52, 202, 88, 192, 94, 58,
+    102, 184, 109, 250, 125, 68, 122, 0, 0, 0, 0, 0, 1];
+
+val isaacKeepOutZone_ints =
+   [64, 70, 170, 161, 177, 173, 198, 213, 192, 94, 60, 9, 194, 235, 166, 12,
+    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 0, 133, 236, 185, 192, 94,
+    59, 202, 243, 88, 129, 235, 68, 122, 0, 0, 0, 0, 0, 1];
+
+
+fun toString list = String.implode (List.map Char.chr list);
+
+val flyZoneDBKeepInZone = toString flyZoneDBKeepInZone_ints
+val flyZoneDBKeepOutZone = toString flyZoneDBKeepOutZone_ints
+val isaacKeepInZone = toString isaacKeepInZone_ints
+val isaacKeepOutZone = toString isaacKeepOutZone_ints;
+
+val automation_response_event_string =
+ let val istrm = TextIO.openIn "ARE"
+     val str = TextIO.inputAll istrm
+     val _ = TextIO.closeIn istrm
+ in
+   str
+ end;
+
+fun copyVec s buf =
+    Word8Array.copyVec {src = Byte.stringToBytes s, dst = buf, di = 0};
+
+fun std_output s = TextIO.output(TextIO.stdOut,s);
+
+fun callFFI fname istr obuf =
+ if fname = "get_keep_in_zone" then
+    let val inputLen = String.size flyZoneDBKeepInZone
+        val bufLen = Word8Array.length obuf
+    in if inputLen <= bufLen  then
+         copyVec flyZoneDBKeepInZone obuf
+       else raise FFI_CALL "get_keep_in_zone: input too large for buffer"
+    end
+ else
+ if fname = "get_keep_out_zone" then
+    let val inputLen = String.size flyZoneDBKeepOutZone
+        val bufLen = Word8Array.length obuf
+    in if inputLen <= bufLen  then
+         copyVec flyZoneDBKeepOutZone obuf
+       else raise FFI_CALL "get_keep_out_zone: input too large for buffer"
+    end
+ else
+ if fname = "get_observed" then
+    let val inputLen = String.size automation_response_event_string
+        val bufLen = Word8Array.length obuf
+    in if inputLen <= bufLen  then
+         copyVec automation_response_event_string obuf
+       else raise FFI_CALL "get_observed: input too large for buffer"
+    end
+ else
+ if fname = "put_alert" then
+     std_output "\nALERT!\n"
+ else
+ if fname = "put_output" then
+     std_output "\nmoving observed input to output\n"
+ else
+ raise FFI_CALL "unknown IO request"
+
 
 end  (* API *)
-
 
 structure Geofence_Monitor =
 struct
