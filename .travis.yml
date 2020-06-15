@@ -13,7 +13,7 @@ env:
 
 before_script: .travis-scripts/install-poly.sh && .travis-scripts/acquire-hol.sh
 
-script: HOL/bin/Holmake
+script: travis_wait HOL/bin/Holmake
 
 deploy:
   # Deploy tagged releases
