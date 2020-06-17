@@ -222,7 +222,7 @@ fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) bexp =
 (*---------------------------------------------------------------------------*)
 
 datatype contig
-  = VOID  (* empty set of strings *)
+  = Void  (* empty set of strings *)
   | Basic of atom
   | Declared of string
   | Raw of exp
@@ -266,7 +266,7 @@ fun segFn E path contig state =
      val (segs,s,WidthValMap) = state
  in
  case contig
-  of VOID => NONE
+  of Void => NONE
    | Basic a =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
@@ -333,7 +333,7 @@ fun atomic_widths atm =
    | Unsigned i => i
    | Float      => 4
    | Double     => 8
-   | Enum _     => 1
+   | Enum _     => 4
    | other      => raise ERR "atomic_widths" "unknown width of Raw or Scanner"
 ;
 
@@ -461,7 +461,7 @@ fun pp_contig contig =
  let open PP
  in
    case contig
-    of VOID => add_string "VOID"
+    of Void => add_string "Void"
      | Basic atom => pp_atom atom
      | Declared s => add_string s
      | Raw exp => block CONSISTENT 1
@@ -536,7 +536,7 @@ fun parseFn E path contig state =
      val (stk,s,WidthValMap) = state
  in
  case contig
-  of VOID => NONE
+  of Void => NONE
    | Basic a =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
@@ -625,7 +625,7 @@ fun matchFn E (state as (worklist,s,theta)) =
  in
  case worklist
   of [] => SOME (s,theta)
-   | (_,VOID)::_ => NONE
+   | (_,Void)::_ => NONE
    | (path,Basic a)::t =>
        let val awidth = atomicWidths a
        in case tdrop awidth s
@@ -689,7 +689,7 @@ fun substFn E theta path contig =
      val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
  in
   case contig
-   of VOID     => raise ERR "substFn" "VOID"
+   of Void     => raise ERR "substFn" "Void"
     | Basic _  => thetaFn path
     | Raw _    => thetaFn path
     | Assert b =>
@@ -738,7 +738,7 @@ fun predFn E (state as (worklist,s,theta)) =
  in
  case worklist
   of [] => PASS (s,theta)
-   | (path,VOID)::t => FAIL state
+   | (path,Void)::t => FAIL state
    | (path,Basic a)::t =>
        (case tdrop (atomicWidths a) s
          of NONE => FAIL state
@@ -820,7 +820,7 @@ fun defaultIntRange n =
 
 val default_Bool_range = defaultNatRange 1;
 val default_Char_range = defaultNatRange 8;
-val default_Enum_range = defaultNatRange 8;
+val default_Enum_range = defaultNatRange 32;  (* uxas wants 4 bytes for enums *)
 val default_u8_range   = defaultNatRange 8;
 val default_u16_range  = defaultNatRange 16;
 val default_u32_range  = defaultNatRange 32;
@@ -937,7 +937,7 @@ fun randFn E (worklist,theta,acc) =
  in
  case worklist
   of [] => rev acc
-   | (path,VOID)::t => raise ERR "randFn" "VOID construct encountered"
+   | (path,Void)::t => raise ERR "randFn" "Void construct encountered"
    | (path,Basic a)::(_,Assert bexp)::t =>
        let val env = (Consts,theta,valFn,repFn,gn)
            val segment = gen_segment a path bexp env

@@ -72,7 +72,7 @@ Datatype:
 End
 
 Datatype:
-  contig = FAIL
+  contig = Void
          | Basic atom
          | Recd ((string # contig) list)
          | Array contig exp
@@ -117,39 +117,100 @@ Definition lval_compare_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Expression evaluation                                                     *)
+(* Expression evaluation. Looking up lvals is partial, which infects evalExp *)
 (*---------------------------------------------------------------------------*)
 
 Definition evalExp_def :
- evalExp (lvalMap,valueFn) (Loc lval) =
+ evalExp (lvalMap,valFn) (Loc lval) =
    (case lookup lval_compare lval lvalMap
-     of SOME s => valueFn s
-      | NONE => ARB) /\
- evalExp E (numLit n)   = n /\
- evalExp E (Add e1 e2)  = (evalExp E e1 + evalExp E e2) /\
- evalExp E (Mult e1 e2) = (evalExp E e1 * evalExp E e2)
+     of SOME s => valFn s
+      | NONE => NONE) /\
+ evalExp E (numLit n)  = SOME n /\
+ evalExp E (Add e1 e2) =
+   (case evalExp E e1
+     of NONE => NONE
+     |  SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1+n2)) /\
+ evalExp E (Mult e1 e2) =
+   (case evalExp E e1
+     of NONE => NONE
+     |  SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1 * n2))
 End
 
 
 (*---------------------------------------------------------------------------*)
-(* Boolean expression evaluation                                             *)
+(* Boolean expression evaluation. Also partial                               *)
 (*---------------------------------------------------------------------------*)
 
 Definition evalBexp_def :
- (evalBexp E (boolLit b)   = b) /\
- (evalBexp (lvalMap,valueFn) (BLoc lval) =
-   (case lookup lval_compare lval lvalMap
-     of SOME s => ~(valueFn s = 0n)
-      | NONE => ARB)) /\
- (evalBexp E (Bnot b)     = ~evalBexp E b) /\
- (evalBexp E (Bor b1 b2)  = (evalBexp E b1 \/ evalBexp E b2)) /\
- (evalBexp E (Band b1 b2) = (evalBexp E b1 /\ evalBexp E b2)) /\
- (evalBexp E (Beq e1 e2)  = (evalExp E e1 = evalExp E e2))  /\
- (evalBexp E (Blt e1 e2)  = (evalExp E e1 < evalExp E e2))  /\
- (evalBexp E (Bgt e1 e2)  = (evalExp E e1 > evalExp E e2))  /\
- (evalBexp E (Ble e1 e2)  = (evalExp E e1 <= evalExp E e2)) /\
- (evalBexp E (Bge e1 e2)  = (evalExp E e1 >= evalExp E e2))
+ (evalBexp E (boolLit b) = SOME b) /\
+ (evalBexp (lvalMap,valFn) (BLoc lval) =
+    case lookup lval_compare lval lvalMap
+     of NONE => NONE
+      | SOME s =>
+     case valFn s
+      of NONE => NONE
+      | SOME n => SOME (~(n = 0n))) /\
+ (evalBexp E (Bnot b) =
+   case evalBexp E b
+     of NONE => NONE
+      | SOME bval => SOME (~bval)) /\
+ (evalBexp E (Bor b1 b2) =
+   case evalBexp E b1
+     of NONE => NONE
+     |  SOME bv1 =>
+    case evalBexp E b2
+     of NONE => NONE
+      | SOME bv2 => SOME (bv1 \/ bv2)) /\
+ (evalBexp E (Band b1 b2) =
+   case evalBexp E b1
+     of NONE => NONE
+      | SOME bv1 =>
+    case evalBexp E b2
+     of NONE => NONE
+      | SOME bv2 => SOME (bv1 /\ bv2)) /\
+ (evalBexp E (Beq e1 e2) =
+   case evalExp E e1
+     of NONE => NONE
+      | SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1 = n2)) /\
+ (evalBexp E (Blt e1 e2) =
+   case evalExp E e1
+     of NONE => NONE
+      | SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1 < n2)) /\
+ (evalBexp E (Bgt e1 e2) =
+   case evalExp E e1
+     of NONE => NONE
+      | SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1 > n2)) /\
+ (evalBexp E (Ble e1 e2) =
+   case evalExp E e1
+     of NONE => NONE
+      | SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1 <= n2)) /\
+ (evalBexp E (Bge e1 e2) =
+   case evalExp E e1
+     of NONE => NONE
+      | SOME n1 =>
+    case evalExp E e2
+     of NONE => NONE
+      | SOME n2 => SOME (n1 >= n2))
 End
+
 
 (*---------------------------------------------------------------------------*)
 (* Location completion                                                       *)
@@ -178,36 +239,98 @@ Definition optFirst_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Attempt to extend a partial lval to something in the lvalMap. This is a   *)
-(* kind of dynamic scoping.                                                  *)
+(* Attempt to extend a partial lval to something in the lvalMap.             *)
 (*---------------------------------------------------------------------------*)
 
 Definition resolve_lval_def :
- resolve_lval lvalMap path lval =
+ resolve_lval lvMap path lval =
    let prefixes = path_prefixes path ;
        prospects = MAP (combin$C lval_append lval) prefixes ++ [lval] ;
-   in THE (optFirst (\p. lookup lval_compare p lvalMap) prospects)
+   in optFirst (\p. lookup lval_compare p lvMap) prospects
 End
 
 Definition resolveExp_def:
- resolveExp lvmap p (Loc lval) = Loc(resolve_lval lvmap p lval) /\
- resolveExp lvmap p (Add e1 e2) = Add (resolveExp lvmap p e1) (resolveExp lvmap p e2) /\
- resolveExp lvmap p (Mult e1 e2) = Mult (resolveExp lvmap p e1) (resolveExp lvmap p e2) /\
- resolveExp lvmap p (numLit n) = numLit n  /\
- resolveExp lvmap p (ConstName s) = ConstName s
+ resolveExp lvmap p (Loc lval) =
+    (case resolve_lval lvmap p lval
+      of NONE => NONE
+       | SOME full_lv => SOME (Loc full_lv)) /\
+ resolveExp lvmap p (Add e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Add e1' e2')) /\
+ resolveExp lvmap p (Mult e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Mult e1' e2')) /\
+ resolveExp lvmap p (numLit n) = SOME (numLit n)  /\
+ resolveExp lvmap p (ConstName s) = SOME (ConstName s)
 End
 
 Definition resolveBexp_def :
- resolveBexp lvmap p (boolLit b) = boolLit b /\
- resolveBexp lvmap p (BLoc lval) = BLoc (resolve_lval lvmap p lval) /\
- resolveBexp lvmap p (Bnot b)    = Bnot (resolveBexp lvmap p b) /\
- resolveBexp lvmap p (Bor b1 b2) = Bor (resolveBexp lvmap p b1) (resolveBexp lvmap p b2) /\
- resolveBexp lvmap p (Band b1 b2) = Band (resolveBexp lvmap p b1) (resolveBexp lvmap p b2) /\
- resolveBexp lvmap p (Beq e1 e2) = Beq (resolveExp lvmap p e1) (resolveExp lvmap p e2) /\
- resolveBexp lvmap p (Blt e1 e2) = Blt (resolveExp lvmap p e1) (resolveExp lvmap p e2) /\
- resolveBexp lvmap p (Bgt e1 e2) = Bgt (resolveExp lvmap p e1) (resolveExp lvmap p e2) /\
- resolveBexp lvmap p (Ble e1 e2) = Ble (resolveExp lvmap p e1) (resolveExp lvmap p e2) /\
- resolveBexp lvmap p (Bge e1 e2) = Bge (resolveExp lvmap p e1) (resolveExp lvmap p e2)
+ resolveBexp lvmap p (boolLit b) = SOME (boolLit b) /\
+ resolveBexp lvmap p (BLoc lval) =
+    (case resolve_lval lvmap p lval
+      of NONE => NONE
+       | SOME lval' => SOME (BLoc lval')) /\
+ resolveBexp lvmap p (Bnot b)    =
+    (case resolveBexp lvmap p b
+      of NONE => NONE
+       | SOME b' =>  SOME (Bnot b')) /\
+ resolveBexp lvmap p (Bor b1 b2) =
+    (case resolveBexp lvmap p b1
+      of NONE => NONE
+       | SOME b1' =>
+     case resolveBexp lvmap p b2
+      of NONE => NONE
+       | SOME b2' => SOME (Bor b1' b2')) /\
+ resolveBexp lvmap p (Band b1 b2) =
+    (case resolveBexp lvmap p b1
+      of NONE => NONE
+       | SOME b1' =>
+     case resolveBexp lvmap p b2
+      of NONE => NONE
+       | SOME b2' => SOME (Band b1' b2')) /\
+ resolveBexp lvmap p (Beq e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Beq e1' e2')) /\
+ resolveBexp lvmap p (Blt e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Blt e1' e2')) /\
+ resolveBexp lvmap p (Bgt e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Bgt e1' e2')) /\
+ resolveBexp lvmap p (Ble e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Ble e1' e2')) /\
+ resolveBexp lvmap p (Bge e1 e2) =
+    (case resolveExp lvmap p e1
+      of NONE => NONE
+       | SOME e1' =>
+     case resolveExp lvmap p e2
+      of NONE => NONE
+       | SOME e2' => SOME (Bge e1' e2'))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -251,7 +374,7 @@ val contig_size_def = fetch "-" "contig_size_def";
 val _ = DefnBase.add_cong list_size_cong;
 
 Definition csize_def :
-  (csize FAIL            = 0) /\
+  (csize Void            = 0) /\
   (csize (Basic a)       = 0) /\
   (csize (Recd fields)   = 1 + list_size (\(a,c). csize  c) fields) /\
   (csize (Array c dim)   = 1 + csize c) /\
@@ -259,10 +382,10 @@ Definition csize_def :
 Termination
   WF_REL_TAC `measure contig_size`
   >> rw_tac list_ss [contig_size_def]
-   >- (Induct_on `choices`
+  >- (Induct_on `choices`
         >> rw_tac list_ss [contig_size_def]
         >> full_simp_tac list_ss [contig_size_def])
-   >- (Induct_on `fields`
+  >- (Induct_on `fields`
         >> rw_tac list_ss [contig_size_def]
         >> full_simp_tac list_ss [contig_size_def])
 End
@@ -278,31 +401,35 @@ QED
 (*---------------------------------------------------------------------------*)
 
 Definition predFn_def :
- predFn (atomWidths,valueFn) (worklist,s,theta) =
+ predFn (atomWidths,valFn) (worklist,s,theta) =
   case worklist
    of [] => T
-    | (path,FAIL)::t => F
+    | (path,Void)::t => F
     | (path,Basic a)::t =>
         (case take_drop (atomWidths a) s
            of NONE => F
             | SOME (segment,rst) =>
-              predFn (atomWidths,valueFn)
-                     (t, rst, insert lval_compare path segment theta))
+              predFn (atomWidths,valFn)
+                     (t, rst,insert lval_compare path segment theta))
    | (path,Recd fields)::t =>
       let fieldFn (fName,c) = (RecdProj path fName,c)
-      in predFn (atomWidths,valueFn) (MAP fieldFn fields ++ t,s,theta)
+      in predFn (atomWidths,valFn)
+                (MAP fieldFn fields ++ t,s,theta)
    | (path,Array c exp)::t =>
-      let exp' = resolveExp theta path exp;
-          dim  = evalExp (theta,valueFn) exp';
-          indexFn n = (ArraySub path (numLit n),c)
-      in predFn (atomWidths,valueFn)
-                (MAP indexFn (upto 0 (dim - 1)) ++ t,s,theta)
+      (case resolveExp theta path exp
+        of NONE => F
+         | SOME exp' =>
+       let dim  = THE (evalExp (theta,valFn) exp');
+           indexFn n = (ArraySub path (numLit n),c)
+       in predFn (atomWidths,valFn)
+                 (MAP indexFn (upto 0 (dim - 1)) ++ t,s,theta))
    | (path,Union choices)::t =>
        let choiceFn (bexp,c) =
-             evalBexp (theta,valueFn)
-                      (resolveBexp theta path bexp)
+            (case resolveBexp theta path bexp
+              of NONE => F
+               | SOME bexp' => THE (evalBexp (theta,valFn) bexp'))
        in case FILTER choiceFn choices
-           of [(_,c)] => predFn (atomWidths,valueFn) ((path,c)::t,s,theta)
+           of [(_,c)] => predFn (atomWidths,valFn) ((path,c)::t,s,theta)
             | otherwise => F
 Termination
  WF_REL_TAC `inv_image (mlt_list (measure (csize o SND))) (FST o SND)`
@@ -321,64 +448,104 @@ fun wellformed E contig s = predFn E ([(VarName"root",contig)],s,empty_lvalMap);
 (* Apply a substitution to a contig.                                         *)
 (*---------------------------------------------------------------------------*)
 
+Definition concatOpt_def :
+ concatOpt optlist  =
+    if EXISTS (\x. x=NONE) optlist
+       then NONE
+    else SOME (CONCAT (MAP THE optlist))
+End
+
 Definition substFn_def :
- substFn valueFn theta path contig =
+ substFn valFn theta path contig =
   case contig
-   of FAIL     => ""
-    | Basic _  => THE(lookup lval_compare path theta)
+   of Void     => NONE
+    | Basic _  => lookup lval_compare path theta
     | Recd fields =>
-       CONCAT (MAP (\(fName,c). substFn valueFn theta (RecdProj path fName) c)
-                   fields)
+       concatOpt
+         (MAP (\(fName,c). substFn valFn theta (RecdProj path fName) c)
+              fields)
     | Array c exp =>
-      let exp' = resolveExp theta path exp ;
-          dim = evalExp (theta,valueFn) exp';
-       in CONCAT (MAP (\i. substFn valueFn theta (ArraySub path (numLit i)) c)
-                      (upto 0 (dim - 1)))
+        (case resolveExp theta path exp
+          of NONE => NONE
+           | SOME exp' =>
+         let dim = THE (evalExp (theta,valFn) exp')
+         in concatOpt (MAP (\i. substFn valFn theta (ArraySub path (numLit i)) c)
+                      (upto 0 (dim - 1))))
     | Union choices =>
-       (case FILTER (\(bexp,c). evalBexp (theta,valueFn) (resolveBexp theta path bexp)) choices
-         of [(_,c)] => substFn valueFn theta path c
-          |  otherwise => ARB)
+       let choiceFn (bexp,c) =
+            (case resolveBexp theta path bexp
+              of NONE => F
+               | SOME bexp' => THE (evalBexp (theta,valFn) bexp'))
+        in
+           case FILTER choiceFn choices
+            of [(_,c)] => substFn valFn theta path c
+             |  otherwise => NONE
 Termination
  WF_REL_TAC `measure (csize o SND o SND o SND)`
    >> rw [csize_def]
-   >- (Induct_on `fields` >> rw[list_size_def] >> rw[] >> fs[])
    >- (Induct_on `choices` >> rw[list_size_def] >> fs[])
+   >- (Induct_on `fields` >> rw[list_size_def] >> rw[] >> fs[])
 End
 
 
-fun matchFn (atomicWidths,valueFn) (worklist,s,theta) =
+Definition matchFn_def :
+ matchFn (atomicWidths,valFn) (worklist,s,theta) =
  case worklist
   of [] => SOME (s,theta)
-   | (_,FAIL)::_ => NONE
+   | (_,Void)::_ => NONE
    | (path,Basic a)::t =>
-        (case tdrop (atomicWidths a) s
-          of NONE => NONE
-           | SOME (segment,rst) =>
-              matchFn (atomicWidths,valueFn)
-                      (t,rst, Redblackmap.insert(theta,path,(a,segment)))
-       end
+       (case take_drop (atomicWidths a) s
+         of NONE => NONE
+          | SOME (segment,rst) =>
+              matchFn (atomicWidths,valFn)
+                      (t,rst, insert lval_compare path segment theta))
    | (path,Recd fields)::t =>
-       let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
-       in matchFn E (map fieldFn fields @ t,s,theta)
-       end
-   | (path,Array (c,exp))::t =>
-       let val exp' = resolveExp theta path exp
-           val dim = evalExp (Consts,theta,valueFn) exp'
-           fun indexFn i = (ArraySub(path,intLit i),c)
-       in matchFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
-       end
+       (let fieldFn (fName,c) = (RecdProj path fName,c)
+        in matchFn (atomicWidths,valFn)
+                   (MAP fieldFn fields ++ t,s,theta))
+   | (path,Array c exp)::t =>
+       (let indexFn n = (ArraySub path (numLit n),c)
+        in case resolveExp theta path exp
+            of NONE => NONE
+             | SOME exp' =>
+           let dim = THE (evalExp (theta,valFn) exp')
+           in matchFn (atomicWidths,valFn)
+                      (MAP indexFn (upto 0 (dim - 1)) ++ t,s,theta))
    | (path,Union choices)::t =>
-       let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valueFn) bexp'
-             end
-       in case filter choiceFn choices
-           of [(_,c)] => matchFn E ((path,c)::t,s,theta)
-            | otherwise => raise ERR "matchFn" "expected exactly one successful choice"
-       end
- end
-;
+       (let choiceFn (bexp,c) =
+            case resolveBexp theta path bexp
+             of NONE => F
+              | SOME bexp' => THE (evalBexp (theta,valFn) bexp')
+        in case FILTER choiceFn choices
+            of [(_,c)] => matchFn (atomicWidths,valFn) ((path,c)::t,s,theta)
+             | otherwise => NONE)
+Termination
+ WF_REL_TAC `inv_image (mlt_list (measure (csize o SND))) (FST o SND)`
+   >> rw [APPEND_EQ_SELF]
+   >> rw [csize_def]
+   >> fs [MEM_MAP,MEM_SPLIT]
+   >- (Cases_on `y` >> fs[list_size_append,list_size_def])
+   >- fs [FILTER_EQ_CONS,list_size_append,list_size_def]
+End
 
-fun match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap);
+
+(* match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap); *)
+
+g `!atomicWidths valFn wklist s theta path contig s1 s2 theta'.
+   (wklist = [(path,contig)]) ==>
+   matchFn (atomicWidths,valFn) (wklist,s,theta) = SOME (s2, theta')
+   ==>
+   (substFn valFn theta' path contig = SOME s1) /\ (s1 ++ s2 = s)`
+
+recInduct matchFn_ind>>rpt gen_tac>>strip_tac
+ >>simp_tac list_ss [Once matchFn_def]
+ >>rpt gen_tac>>disch_then subst_all_tac
+ >>every_case_tac
+ >>fs[]>>var_EQ_TAC
+ >- (simp_tac list_ss [matchFn_def,Once substFn_def]
+     >>strip_tac>>var_EQ_TAC>>every_case_tac>>fs[]>>var_EQ_TAC
+rw[]
+
+;
 
 val _ = export_theory();
