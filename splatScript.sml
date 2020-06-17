@@ -152,7 +152,7 @@ QED
 
 val split_zero_pad =
  list_constant_suffix
-   |> Q.ISPEC `0`
+   |> Q.ISPEC `0n`
    |> Q.ISPEC `MAP ORD s`
 
 Theorem enc_dec :
@@ -173,8 +173,7 @@ rw_tac list_ss [enc_def, dec_def,layout_def]
      >> qpat_k_assum `~EVERY _ _`
      >> rw_tac splat_ss [LOG_l2n_dropWhile]
      >> strip_assume_tac split_zero_pad >> rw_tac splat_ss [] >> fs[] >> rw_tac splat_ss []
-     >- (full_simp_tac splat_ss [EXISTS_MAP,EVERY_MAP]
-         >> metis_tac [NOT_EVERY, o_DEF])
+     >- (subst_all_tac (SYM (ETA_CONV ``\x. 0n = x``)) >> fs [] >> metis_tac [EVERY_NOT_EXISTS])
      >- (`EVERY ($= 0) (REVERSE l2)` by metis_tac [EVERY_REVERSE]
           >> rw_tac list_ss [dropWhile_APPEND_EVERY]
           >> `dropWhile ($= 0) (REVERSE l1) = REVERSE l1`
