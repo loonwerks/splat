@@ -11,15 +11,13 @@ RUN ./configure --prefix=/polyml-bin
 RUN make && make install
 
 WORKDIR /
-RUN git clone https://github.com/HOL-Theorem-Prover/HOL.git
+RUN git clone -b master --depth 1 https://github.com/HOL-Theorem-Prover/HOL.git HOL
 WORKDIR /HOL
-# RUN git checkout kananaskis-12
-RUN git checkout master
 RUN /polyml-bin/bin/poly < tools/smart-configure.sml
 RUN bin/build
 
 WORKDIR /
-RUN git clone https://github.com/loonwerks/splat.git
+RUN git clone --depth 1 https://github.com/loonwerks/splat.git
 WORKDIR /splat
 RUN /HOL/bin/Holmake
 
