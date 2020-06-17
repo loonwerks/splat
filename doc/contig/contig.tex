@@ -151,7 +151,7 @@ common base types (booleans, characters, signed and unsigned integers,
 \end{figure}
 
 \noindent (We will use the terms ``\emph{contiguity type},
-\emph{c-type}, and $\tau$ interchangeably.) Notice that $\tau$ is
+\konst{contig}, and $\tau$ interchangeably.) Notice that $\tau$ is
 defined in terms of a type of arithmetic expressions $\mathit{exp}$
 and also $\mathit{bexp}$, boolean expressions built from
 $\mathit{exp}$. Now consider
@@ -175,9 +175,9 @@ C.\footnote{https://www.bell-labs.com/usr/dmr/www/chist.html}
 Before getting into formal details, we discuss a few examples.  We
 will use familiar notation: records are lists of $\mathit{name} :
 \tau$ elements enclosed by braces while an array field
-$\konst{Array}\;c\;\mathit{dim}$ is written $c
-    [\mathit{dim}]$.\footnote{Our current toolset for c-types supports
-      the syntax on output but we have yet to implement a parser.}
+$\konst{Array}\;c\;\mathit{dim}$ is written
+$c [\mathit{dim}]$.\footnote{Our current toolset for \konst{contig}s supports
+the syntax on output but we have yet to implement a parser.}
 
 \begin{enumerate}
 
@@ -333,7 +333,6 @@ evaluation have conventional definitions:
 \]
 
 
-
 \subsection{Semantics}
 
  We now confess to misleading the reader: in spite of the notational
@@ -412,14 +411,14 @@ $b$ has no fields.
 \noindent In case $\mathit{b}$ evaluates to \konst{true}, no portion of the
 string is consumed; otherwise, $c$ specifies the remainder of the
 processing. It is instructive to consider how this type works with
-arrays. For example, the following c-type
+arrays. For example, a string meeting the following \konst{contig} specification
 
 \begin{verbatim}
   (Union { (b, {}), (not(b), i32) }) [3]
 \end{verbatim}
 
-\noindent specifies an array that has three elements, all of which are either of
-size zero or of size four (bytes).
+\noindent is either zero or twelve bytes in length (assuming that
+\verb+i32+ is four bytes wide).
 
 \end{example}
 
@@ -490,7 +489,7 @@ The matching algorithm operates over a triple $(\mathit{worklist},
 linearize the input contiguity type $\tau$, $\mathit{str}$ represents
 the remainder of the input string, and $\theta$ is the assignment
 being built up. Each element of the $\mathit{worklist}$ is in fact a
-$(\tau,\mathit{lval})$ pair, where $\tau$ is a c-type, and
+$(\tau,\mathit{lval})$ pair, where $\tau$ is a \konst{contig}, and
 $\mathit{lval}$ is the path growing down from the root to $\tau$. The
 notation $(\lval \mapsto \mathit{slice}) \bullet \theta$ denotes the
 addition of binding $\lval \mapsto \mathit{slice}$ to $\theta$.
@@ -500,7 +499,7 @@ We examine the cases in turn:
 \begin{enumerate}
 
 \item The worklist is empty; the match has been successful.
-
+%
 \begin{align*}
 ([], \mathit{str}, \theta) &\Rightarrow \konst{SOME}(\mathit{str}, \theta)
 \end{align*}
@@ -511,7 +510,7 @@ We examine the cases in turn:
   $\mathit{str} = (\mathit{slice},\mathit{rst})$ and insert the
   binding into $\theta$ before recursing. If the string is shorter
   than the requested number of bytes, fail.
-
+%
 \begin{align*}
 ((\konst{Basic}\;a, \lval)::t, \mathit{str}, \theta)
    &\Rightarrow
@@ -522,7 +521,7 @@ We examine the cases in turn:
   \konst{Recd}\;(f_1 : \tau_1) \ldots (f_n : \tau_n)$. Before
   recursing, the fields are pushed onto the stack, extending the path
   to each field element:
-
+%
 \begin{align*}
 ((\mathit{recd}, \lval)::t, \mathit{str}, \theta)
    &\Rightarrow
@@ -533,7 +532,7 @@ We examine the cases in turn:
   expression is evaluated to get the width $d$, then $d$ copies are
   pushed onto the stack, where each path is extended with the array
   index.
-
+%
 \begin{align*}
 ((\konst{Array}\; \tau \; \mathit{exp},\lval)::t, \mathit{str}, \theta)
    &\Rightarrow
@@ -543,7 +542,7 @@ We examine the cases in turn:
 \item The first element of the worklist is a union. The boolean guards
   are evaluated; if exactly one of them, $b_i$, evaluates to \konst{true}, the
   corresponding $\tau_i$ is pushed on to the stack. Otherwise, fail.
-
+%
 \begin{align*}
 ((\konst{Union}\; (b_1,\tau_1) \cdots (b_n,\tau_n), \lval)::t, \mathit{str}, \theta)
    &\Rightarrow
@@ -553,7 +552,7 @@ We examine the cases in turn:
 \end{enumerate}
 
 \noindent The matcher function, \konst{match} begins with an initial state
-
+%
 \[
   \mathit{state}_0 = ([(\mathit{root},\tau)],\mathit{str}_0,\emptyset)
 \]
@@ -598,7 +597,7 @@ $\theta$ that admit strings into $\LangTheta{\tau}$.
 \end{theorem}
 
 \begin{example}
-Given the c-type
+Given the \konst{contig}
 \begin{verbatim}
    {A : Bool
     B : Char
@@ -634,25 +633,28 @@ $(\mathit{lval}, (\mathit{tag},\mathit{bytes}))$):
 \end{example}
 
 Thus the matcher will break up the input string in accordance with the
-specification; it also generates a sequence of assignments that, when
-executed, will populate a data structure with the specified data in
-the specified places. Therefore it is not really necessary to generate
-parse trees to in order to decode: one merely needs a target data
-structure to write data into. (In fact, when filtering, no target data
-structure is needed at all.) The correctness property will ensure that
-\emph{all} fields are written with the specified data. The assignments
-can be incrementally evaluated as the decoder runs, or can be stored
-and applied when the decoder terminates.
+specification; the execution, in effect, generates a sequence of
+assignments that, if applied, would populate a data structure with the
+specified data in the specified places. Therefore it is not really
+necessary to generate parse trees to in order to decode messages: one
+merely needs a target data structure to write data into. (In fact,
+when filtering, no target data structure is needed at all.) The
+correctness property will ensure that \emph{all} fields are written
+with the specified data. The assignments can be incrementally
+evaluated as the decoder runs, or can be stored and applied when the
+decoder terminates.
 
 \begin{remark}[Half-baked performance idea]
   The matcher implementation requires expression evaluators
   $\mathit{evalExp}$ and $\mathit{evalBexp}$ which access the $\theta$
   being built up for values of already-processed fields. Since
-  $\theta$ is defined in terms of L-values, it should be easy to model
-  it in the runtime data representation of whatever compiler the
-  matcher is running on. If so, then expression evaluation---rather
-  than running in interpreted style over the user-defined
-  $\mathit{exp}$ datatype---could use the host language evaluator on
+  $\theta$ is defined in terms of L-values, it should be
+  straightforward to model it in the runtime data representation of
+  whatever compiler the matcher is built on. (Note, however, that
+  variable-sized arrays do not provide constant-time array indexing.)
+  If that assumption is true, then expression evaluation---rather than
+  running in interpreted style over the user-defined $\mathit{exp}$
+  datatype---might be able to use the host language evaluator on
   compiled host language arithmetic and boolean expressions. The
   formal details need to be worked out; especially interesting would
   be building a correctness story for such a transformation in the
@@ -688,7 +690,7 @@ language.
 
 The $\mathit{bexp}$ type provides a minimal (but adequate for
 illustrative purposes) assertion language over R-values. For example,
-the following c-type
+the following \konst{contig}
 
 \begin{verbatim}
   { A : i32
@@ -702,22 +704,22 @@ the following c-type
 
 Mirroring the semantics, almost no change to the matcher function is
 needed to support \konst{Assert} forms: the matcher's traversal of
-c-type and string arguments is unchanged, and the accumulation of
+\konst{contig} and string arguments is unchanged, and the accumulation of
 contextual information in the form of the map $\theta$ also is
 unchanged. Each \konst{Assert} expression is evaluated when it is
 encountered; if the result is true, processing continues, otherwise
 an error has been found.
 
-Notice that successful match of a message against a c-type amounts to
+Notice that successful match of a message against a \konst{contig} amounts to
 a minimal well-formedness check: the message string is long enough to
-match the c-type. \konst{Assert} fields provide a basis for deeper
+match the \konst{contig}. \konst{Assert} fields provide a basis for deeper
 semantic checks. It is also worth noting that certain features of
-c-types require checks no matter what kind of user-specified
+\konst{contig}s require checks no matter what kind of user-specified
 properties are required: both enumerations and arrays have
 side-conditions that \konst{Assert} can enforce.
 
 \begin{example}
-C-types support enumerations. An \emph{enumeration} declaration
+\konst{contig}s support enumerations. An \emph{enumeration} declaration
 introduces a new base contiguity type, and also adds the specified
 elements to the $\Delta$ map associating constant names to numbers.
 Suppose that enumerations are allowed to have up to 256 elements,
@@ -731,7 +733,7 @@ enumeration is taken from the uxAS project \cite{}:
 
 A field expecting a \verb+NavigationMode+ element will be 1 byte wide,
 and thus there are 250 byte patterns that should not be allowed in the
-field. Thus, the c-type
+field. Thus, the \konst{contig}
 
 \begin{verbatim}
   { A : NavigationMode }
@@ -746,7 +748,7 @@ should be replaced by
 \end{verbatim}
 
 \noindent in order to specify an on-the-fly check. A pass automatically
-inserting such checks into a c-type would be straightforward to
+inserting such checks into a \konst{contig} would be straightforward to
 implement.
 
 \end{example}
@@ -758,7 +760,7 @@ on array sizes.
 
 In uxAS messages the length of every array element is held in a
 separate \emph{length} field 2 bytes in size. Thus the following
-c-type, in the absence of any further constraint, supports arrays of
+\konst{contig}, in the absence of any further constraint, supports arrays of
 length up to 65536 elements, which the receiver system may not have
 adequate resources to accept.
 
@@ -769,7 +771,7 @@ adequate resources to accept.
 
 \noindent In the meta-data for such messages, there can be information
 about the maximum allowed size, usually a fairly small number. This
-can be directly expressed inside the c-type with an \konst{Assert}:
+can be directly expressed inside the \konst{contig} with an \konst{Assert}:
 
 \begin{verbatim}
   { len : u16
@@ -841,13 +843,13 @@ array could be blocked out in the following manner:
   \emph{unbounded iteration}. For example, C strings use the first
   ASCII character (0) as the terminal character. Since there are many
   other such conventions that may be used, it seemed useful to provide
-  a general ability to host scanning functions. This is accomplished via the following c-type:
+  a general ability to host scanning functions. This is accomplished via the following constructor:
 
   \[ \konst{Scanner}\;
      (\mathit{scanfn} : \konst{string} \to (\konst{string} \times \konst{string})\konst{option}) \]
 
   When a custom scanner is encountered during the matching process,
-  the given scanner is invoked on the input and should either fail or
+  the scanner is invoked on the input and should either fail or
   provide an $(s_1,s_2)$ pair representing a splitting of the
   input. Then $s_1$ is added to $\theta$ at the current \lval, and
   matching continues on $s_2$.
@@ -876,9 +878,8 @@ array could be blocked out in the following manner:
   messages that need to be indexed at the bit-level. Indeed some tools
   support mixtures of bits and bytes. Having a purely bit-centric
   version of contiguity types seems straightforward: since everything
-  runs on a notion of \emph{width} the only change would be to the
-  function that breaks a chunk off the input string. However,
-  supporting a mixture of bits and bytes might be more difficult.
+  runs on a notion of \emph{width}, the only change required would be
+  to the function that breaks a chunk off the input string.
 
 \item [Expression analysis] There are many opportunities to
   automatically analyze guards of union types for satisfiability and
@@ -900,7 +901,7 @@ creation of such bad formats.
 \item [Left-centricity] Currently, matching is left-centric: only
   fields to the left of the current input position are put in $\theta$
   and can determine what happens next. However, certain formats (\eg,
-  IPv4) refer ahead. Since matching visits every field in a c-type, it
+  IPv4) refer ahead. Since matching visits every field in a \konst{contig}, it
   could be that fields can be topologically sorted on dependency so
   that such anomalies can be handled. Such sorting should be able to
   be justified semantically.
@@ -912,8 +913,8 @@ creation of such bad formats.
   compiler with suitable FFI calls needed to accomplish IO. Ultimately
   what will be needed are implementations of basic maps from bytes
   into the base types of CakeML. Simultaneously, we will have to
-  integrate c-types into the \konst{SPLAT} AST level, so that AADL and
-  AGREE specifications are mapped into the correct c-types.
+  integrate \konst{contig}s into the \konst{SPLAT} AST level, so that AADL and
+  AGREE specifications are mapped into the correct \konst{contig}s.
 
 \end{description}
 

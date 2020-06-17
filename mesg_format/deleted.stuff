@@ -122,3 +122,145 @@ fun read_waypoint bytes i =  (* (i32)^3 -> waypoint *)
       altitude =  read_i32 bytes (i+8)}
    else
        raise ERR "read_waypoint" "";
+
+&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+fun parse_uxas_polygon string =
+ let fun contents_of ptree =
+       (case ptree
+         of RECD [("present", _), ("contents", RECD elts)] => elts
+          | otherwise => raise ERR "contents_of" "")
+      fun mesgs_of alist = map snd (filter (equal "mesg" o fst) alist)
+ in
+   case parseFn uxasEnv (VarName"root") Polygon ([],string,empty_lvalMap)
+    of NONE => NONE
+     | SOME ([ptree],remaining,theta) =>
+         (case ptree
+           of RECD [("BoundaryPointsList",
+                    RECD[("len", _), ("elts", ARRAY recds)])] =>
+                    let val contents = List.concat (map contents_of recds)
+                        val mesgs = mesgs_of contents
+                    in SOME (Array.fromList (map mk_location3D mesgs))
+                    end
+            | otherwise => NONE)
+     | otherwise => NONE
+ end;
+
+&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+(*---------------------------------------------------------------------------*)
+(* Declare input buffers as global variables.                                *)
+(*---------------------------------------------------------------------------*)
+
+val kizone = Word8Array.array API.polygonSizeBytes w8zero;
+val kozone = Word8Array.array API.polygonSizeBytes w8zero;
+
+val observed_buffer = Word8Array.array API.automation_responseAASizeBytes w8zero;
+
+val emptybuf = Word8Array.array 0 w8zero;
+
+fun clear buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+Word8Array.substring buf 1 (Word8Array.length buf - 1)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+fun seekFrom arr x i =
+ let val top = Word8Array.length arr
+     fun seek j =
+       if j >= top then NONE else
+       if Word8Array.sub(arr,j) = x then SOME j
+       else seek (j+1)
+ in seek i
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing the header of an address-attributed message. Breaks the input     *)
+(* into A$B|C|D|E|F$G, where the letters stand for arbitrary strings not     *)
+(* having the delimiter that folllows, e.g. "$" or "|". Return sub-string E, *)
+(* which corresponds to source-entity-ID above. NB: vertical bar attached.   *)
+(*---------------------------------------------------------------------------*)
+
+fun w8_of c = Word8.fromInt (Char.ord c);
+
+fun scanAA arr offset =
+ case seekFrom arr (w8_of #"$") offset
+  of NONE => NONE
+   | SOME segA =>
+ case seekFrom arr (w8_of #"|") (segA+offset)
+  of NONE => NONE
+   | SOME segB =>
+ case seekFrom arr (w8_of #"|") (segB+offset)
+  of NONE => NONE
+   | SOME segC =>
+ case seekFrom arr (w8_of #"|") (segC+offset)
+  of NONE => NONE
+   | SOME segD =>
+ case seekFrom arr (w8_of #"|") (segD+offset)
+  of NONE => NONE
+   | SOME segE =>
+ case seekFrom arr (w8_of #"$") (segE+offset)
+  of NONE => NONE
+   | SOME segF =>
+     let val baseIndex = segD+offset
+         val target =
+           Word8Array.tabulate(segE-segD,
+                 fn i => Word8Array.sub(arr,baseIndex+i))
+     in SOME(Byte.bytesToString(Word8Array.vector target))
+     end
+;
+
+(*---------------------------------------------------------------------------*)
+(* Drop vertical bar at end of identifier, leaving only digits, I hope.      *)
+(*---------------------------------------------------------------------------*)
+
+fun dropBar s = String.substring(s,0,String.size s - 1);
+
+(*---------------------------------------------------------------------------*)
+(* Map byte array into int option. Return a SOME if first element is non-zero*)
+(* and subsequent bytes decode properly according to scanAA.                 *)
+(*---------------------------------------------------------------------------*)
+
+val w8zero = Word8.fromInt 0;
+val w8one = Word8.fromInt 1;
+
+fun getID bytes =
+ if Word8Array.sub(bytes,0) = w8zero then
+   NONE
+ else
+  case scanAA bytes 1
+   of NONE => NONE
+    | SOME ssID => Int.fromString (dropBar ssID)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Tests                                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun string_to_bytes s =
+ let val arr = Word8Array.array (String.size s + 1,w8zero)
+     val _ = Word8Array.update(arr,0,w8one)
+     val _ = Word8Array.copyVec{src=Byte.stringToBytes s,dst=arr,di=1}
+ in
+    arr
+ end
+
+val test1 = (SOME 500 = getID (string_to_bytes "A$B|C|D|500|F$G"));
+val test2 = (SOME 500 = getID (string_to_bytes "A$B||D|500|F$G"));
+val test3 = (SOME 500 = getID (string_to_bytes "199.0.0.1$p--q--r|foo|A!D!CD|500|FRED$GHIJ"));
+
+val _ = if test1 andalso test2 andalso test3 then
+         TextIO.print "\ngetID: tests passed.\n"
+        else
+         TextIO.print "\ngetID: tests failed.\n"
+
+     getID (string_to_bytes(String.concat
+      ["<address>$<contentType>|<descriptor>|",
+       "<source_group>|500|<source-service-ID>$<the-mesg>"]));
+*)
