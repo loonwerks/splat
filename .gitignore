@@ -1,9 +1,17 @@
 *.ui
 *.uo
+*.dat
 *Theory.sig
 *Theory.sml
 *.pdf
 *.aux
 *.log
+*.nav
+*.out
+*.snm
+*.toc
+*.vrb
 splat
 splat-mon
+**/.HOLMK
+**/.hollogs
