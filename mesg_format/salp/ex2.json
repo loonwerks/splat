@@ -1,0 +1,1 @@
+{"File": {"name": "", "imports": [], "declarations": [{"Struct": {"name": "ex2", "fields": [{"Field": {"name": "len_", "type": "u16", "sizeof": "", "sizeInBits": "", "len": "", "constraints": []}}, {"Field": {"name": "elts", "type": {"ArrayType": {"type": "char_", "size": "len_"}}, "sizeof": "", "sizeInBits": "", "len": "", "constraints": []}}], "constraints": []}}]}}

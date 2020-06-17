@@ -1,0 +1,11 @@
+struct ex4 {
+	len_ : u16
+	A : ex4_substruct_1
+	B : char_[A->len_ * len_]
+	C : i32[A->elts[0]]
+}
+
+struct ex4_substruct_1 {
+	len_ : u16
+	elts : u16[len_]
+}

@@ -1,0 +1,16 @@
+struct ex3 {
+	versionID : u8
+	versions : union {
+		ex3_substruct_1 when versionID < 14,
+		ex3_substruct_2 when versionID >= 14
+	}
+}
+
+struct ex3_substruct_1 {
+	A : i32
+	B : u16
+}
+
+struct ex3_substruct_2 {
+	Vec : char_[13]
+}

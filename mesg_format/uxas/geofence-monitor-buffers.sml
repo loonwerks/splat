@@ -32,8 +32,11 @@
     -- property CASE_Monitor_Coord_policy =
          Historically
            (event(observed) =>
-            (WAYPOINTS_IN_ZONE(GET_MISSION_COMMAND(observed), keep_in_zones) and
-             WAYPOINTS_NOT_IN_ZONE(GET_MISSION_COMMAND(observed), keep_out_zones)));
+            (WAYPOINTS_IN_ZONE(GET_MISSION_COMMAND(observed), keep_in_zones)
+              and
+             WAYPOINTS_NOT_IN_ZONE(GET_MISSION_COMMAND(observed), keep_out_zones)
+              and
+             not DUPLICATES_IN_MISSION(GET_MISSION_COMMAND(observed))))
 
     -- Monitor guarantee (guarantees on the output ports in terms of the input ports
     -- and monitor policy)
@@ -73,6 +76,26 @@
            and (waypoint.Longitude >= (zone.BoundaryPointsList[0]).Longitude)
            and (waypoint.Longitude <= (zone.BoundaryPointsList[1]).Longitude)
            and (waypoint.Altitude >= (zone.BoundaryPointsList[0]).Altitude);
+
+
+    fun DUPLICATES_IN_MISSION(mission : CMASI::MissionCommand.i) : bool
+        = exists waypoint in mission.WaypointList,
+               not IS_LAST_WAYPOINT(waypoint) and IS_DUPLICATE(mission, waypoint) ;
+
+    fun IS_LAST_WAYPOINT(waypoint : CMASI::Waypoint.i) : bool
+        = (waypoint.Number = waypoint.NextWaypoint);
+
+    -- Checking if there exists a waypoint with the same lat,long,alt as a
+       given waypoint with the restriction that it follows immediately after
+       the given waypoint in the linked-list of waypoints.
+    fun IS_DUPLICATE(mission : CMASI::MissionCommand.i, waypoint : CMASI::Waypoint.i) : bool
+        = exists wp in mission.WaypointList,
+              not IS_LAST_WAYPOINT(wp) and
+              wp.Number = waypoint.NextWaypoint and
+              wp.Latitude = waypoint.Latitude and
+	      wp.Longitude = waypoint.Longitude and
+              wp.Altitude = waypoint.Altitude;
+
   **};
  end CASE_Monitor_Geo_thr;
 
@@ -250,9 +273,43 @@ fun WAYPOINTS_NOT_IN_ZONE missioncmd zone =
  ;
 
 (*---------------------------------------------------------------------------*)
-(* Extra credit. All waypoints have distinct coords.                         *)
+(* Define no duplicates property                                             *)
 (*---------------------------------------------------------------------------*)
 
+fun IS_LAST_WAYPOINT (wpt:Waypoint) = (#Number wpt = #NextWaypoint wpt);
+
+(*---------------------------------------------------------------------------*)
+(* Checking if there exists a waypoint with the same lat,long,alt as a       *)
+(* given waypoint with the restriction that it follows immediately after     *)
+(* the given waypoint in the linked-list of waypoints.                       *)
+(*---------------------------------------------------------------------------*)
+
+fun lat_of wpt = #Latitude(location_of wpt);
+fun lon_of wpt = #Longitude(location_of wpt);
+fun alt_of wpt = #Altitude(location_of wpt);
+fun number_of wpt = #Number (wpt:Waypoint);
+fun next_of wpt = #NextWaypoint (wpt:Waypoint);
+
+fun IS_DUPLICATE (cmd:MissionCommand) (wpt:Waypoint) =
+    Array.exists
+	(fn wp => not (IS_LAST_WAYPOINT wp)     andalso
+                  number_of wpt = next_of wpt   andalso
+                  Real.==(lat_of wp,lat_of wpt) andalso
+                  Real.==(lon_of wp,lon_of wpt) andalso
+                  Real32.==(alt_of wp,alt_of wpt))
+        (waypoints_of cmd)
+;
+
+fun DUPLICATES_IN_MISSION (cmd:MissionCommand) =
+ Array.exists
+   (fn wpt => not (IS_LAST_WAYPOINT wpt) andalso IS_DUPLICATE cmd wpt)
+   (waypoints_of cmd)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Extra credit. All waypoints have distinct coords.                         *)
+(*---------------------------------------------------------------------------*)
+(*
 fun locnEq loc1 loc2 =
  let val {Latitude=lat1,Longitude=lon1,Altitude=alt1,AltitudeType=aty1} = loc1
      val {Latitude=lat2,Longitude=lon2,Altitude=alt2,AltitudeType=aty2} = loc2
@@ -288,6 +345,7 @@ test (Array.fromList [1,2,3,4,9,6,7,8,9]);
 
 fun WAYPOINTS_DISTINCT missioncmd =
     arrayInjective waypointEq (waypoints_of missioncmd);
+*)
 
 fun GET_MISSION_COMMAND (AR : AutomationResponse) : MissionCommand
     = Array.sub(#MissionCommandList AR,0);
@@ -369,7 +427,9 @@ fun stepDFA kizone kozone responseOpt =
                   (GET_MISSION_COMMAND(Option.valOf responseOpt)) kizone
      val V2 = V0 andalso
               WAYPOINTS_NOT_IN_ZONE
-                (GET_MISSION_COMMAND(Option.valOf responseOpt)) kozone
+                (GET_MISSION_COMMAND(Option.valOf responseOpt)) kozone andalso
+             not(DUPLICATES_IN_MISSION
+                  (GET_MISSION_COMMAND(Option.valOf responseOpt)))
      val obsVals = [(V0,"obsVar_1"),(V1,"obsVar_2"),(V2,"obsVar_3")]
      val () = (dfaState := DFA_Transition(obsVals, !dfaState))
  in

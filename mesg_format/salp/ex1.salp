@@ -1,0 +1,10 @@
+struct ex1 {
+	A : u8
+	B : ex1_substruct
+	C : bool
+}
+
+struct ex1_substruct {
+	name : char_[13]
+	cell : i32
+}

@@ -1,0 +1,28 @@
+struct u8 {
+	value : int {
+		sizeof(value) = 1;
+	}
+}
+
+struct char_ {
+	value : string {
+		sizeof(value) = 1;
+	}
+}
+struct bool {
+	value : int {
+		sizeInBits(value) = 1;
+	}
+}
+
+struct u16 {
+	value : int {
+		sizeof(value) = 2;
+	}
+}
+
+struct i32 {
+	value : int {
+		sizeof(value) = 4;
+	}
+}

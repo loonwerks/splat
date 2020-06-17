@@ -39,7 +39,7 @@ val operating_region_string  = toString operating_region_trace;
 val linesearch_task_string   = toString linesearch_task_trace;
 val automation_request_string = toString automation_request_trace;
 val automation_response_string = toString automation_response_trace;
-val linesearch_task_event_string   = toString (0x1::linesearch_task_trace);
+val linesearch_task_event_string = toString (0x1::linesearch_task_trace);
 val automation_response_event_string = toString (0x1::automation_response_trace);
 
 val _ =

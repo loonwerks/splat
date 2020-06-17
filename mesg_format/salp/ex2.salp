@@ -1,0 +1,4 @@
+struct ex2 {
+	len_ : u16
+	elts : char_ [len_]
+}
