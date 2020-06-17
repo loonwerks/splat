@@ -2,3 +2,8 @@
 *.uo
 *Theory.sig
 *Theory.sml
+*.pdf
+*.aux
+*.log
+splat
+splat-mon
