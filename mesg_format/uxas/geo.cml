@@ -1266,8 +1266,8 @@ datatype AutomationResponse =
 (* Parsing                                                                   *)
 (*---------------------------------------------------------------------------*)
 
-val valFn = Contig.valFn;
-val dvalFn = Contig.dvalFn;
+val valFn = UXAS.valFn;
+val dvalFn = UXAS.dvalFn;
 
 val mk_i64 = valFn (Contig.Signed 8);
 
@@ -1301,7 +1301,7 @@ val string42 = String.implode (List.map Char.chr ints42);
 val float2double_buffer = Word8Array.array 8 (Word8.fromInt 0);
 
 fun mk_float s =
- let val () = API.clear_buf float2double_buffer
+ let val () = Utils.clear_buf float2double_buffer
      val () = #(float2double) s float2double_buffer
  in mk_double (Word8Array.substring float2double_buffer 0 8)
  end
@@ -1396,11 +1396,12 @@ fun mk_location3D ptree =
               (mk_leaf mk_float alt)
               (mk_leaf decodeAltitudeType alt_type)
    | otherwise => raise Utils.ERR "mk_location3D" "";
+
 (*---------------------------------------------------------------------------*)
 (* Geofence monitor input                                                    *)
 (*---------------------------------------------------------------------------*)
 
-val phaseII_Polygon = Contig.Array Contig.location3D (Contig.IntLit 2);
+val phaseII_Polygon = Contig.Array UXAS.location3D (Contig.IntLit 2);
 
 (*---------------------------------------------------------------------------*)
 (* Decode polygon encoded with uxas encoding                                 *)
@@ -1564,20 +1565,17 @@ fun mk_AR_event ptree = (* : AutomationResponse option *)
 
 end (* Geofence_Types *)
 
-
 structure Geofence_Monitor =
 struct
-
-exception ERR string string;
 
 (*---------------------------------------------------------------------------*)
 (* Declare input buffers as global variables.                                *)
 (*---------------------------------------------------------------------------*)
 
-val kizone_buffer   = Word8Array.array API.polygonSizeBytes API.w8zero
-val kozone_buffer   = Word8Array.array API.polygonSizeBytes API.w8zero
+val kizone_buffer   = Word8Array.array API.polygonSizeBytes Utils.w8zero
+val kozone_buffer   = Word8Array.array API.polygonSizeBytes Utils.w8zero
 val observed_buffer = Word8Array.array
-                         API.automation_responseAASizeBytes API.w8zero
+                         API.automation_responseAASizeBytes Utils.w8zero
 
 (*---------------------------------------------------------------------------*)
 (* Globals from the "business logic" of the monitor                          *)
@@ -1809,10 +1807,10 @@ fun stepMon kizone kozone responseOpt =
 fun outFFI fname buf =
  let val string = Word8Array.substring buf 1 (Word8Array.length buf - 1)
  in
-   API.callFFI fname string API.emptybuf
+   API.callFFI fname string Utils.emptybuf
  end
 
-fun inFFI fname buf = (API.clear_buf buf ; API.callFFI fname "" buf);
+fun inFFI fname buf = (Utils.clear_buf buf ; API.callFFI fname "" buf);
 
 fun fill_buffers() =
  let in
@@ -1827,21 +1825,8 @@ fun fill_buffers() =
 
 fun parse_buf contig mk_data buf =
  let val string = Word8Array.substring buf 0 (Word8Array.length buf)
-(*     val _ =
-      (case Contig.predFn Contig.uxasEnv
-             ([(Contig.VarName"root",contig)],string,Contig.mk_empty_lvalMap())
-        of Contig.PASS _ => print "predFn succeeded.\n"
-         | Contig.FAIL triple =>
-            let val (wklist,rst,theta) = triple
-            in
-               print "predFn failure! Remaining string has length : ";
-               print_int (String.size rst);
-               print "\n\n"; ()
-            end
-      )
-*)
  in
-  case Contig.parseFn Contig.uxasEnv (Contig.VarName"root") contig
+  case Contig.parseFn UXAS.uxasEnv (Contig.VarName"root") contig
                       ([],string,Contig.mk_empty_lvalMap())
    of Some ([ptree],remaining,theta) => mk_data ptree
     | otherwise => raise Utils.ERR  "parse_buf" ""
@@ -1861,7 +1846,7 @@ fun mk_kozone() =
 (*---------------------------------------------------------------------------*)
 
 fun mk_automation_response_event () =
-   parse_buf (Contig.uxasOption Contig.fullAutomationResponseMesg)
+   parse_buf (UXAS.uxasOption UXAS.fullAutomationResponseMesg)
              Geofence_Types.mk_AR_event observed_buffer;
 
 
@@ -1873,7 +1858,7 @@ fun geofence_monitor () =
      val alertHi = stepMon kizone kozone respOpt
  in
    if alertHi
-    then API.callFFI "put_alert" "" API.emptybuf
+    then API.callFFI "put_alert" "" Utils.emptybuf
     else
   if Option.isSome respOpt then
       outFFI "put_output" observed_buffer
@@ -1884,5 +1869,3 @@ end (* Geofence_Monitor *)
 
 
 val _ = Geofence_Monitor.geofence_monitor();
-
-*)
