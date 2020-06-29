@@ -539,7 +539,7 @@ val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
 (* Miscellaneous support stuff needed to make things work                    *)
 (*---------------------------------------------------------------------------*)
 
-fun atomic_widths atm =
+fun atom_width atm =
  case atm
   of Bool       => 1
    | Char       => 1

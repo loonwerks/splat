@@ -325,7 +325,7 @@ fun segFn E path contig state =
 
 fun segments E contig s = segFn E (VarName"root") contig ([],s,empty_lvalMap);
 
-fun atomic_widths atm =
+fun atom_width atm =
  case atm
   of Bool       => 1
    | Char       => 1
@@ -334,7 +334,7 @@ fun atomic_widths atm =
    | Float      => 4
    | Double     => 8
    | Enum _     => 4
-   | other      => raise ERR "atomic_widths" "unknown width of Raw or Scanner"
+   | other      => raise ERR "atom_width" "unknown width of Raw or Scanner"
 ;
 
 val u8  = Basic(Unsigned 1);

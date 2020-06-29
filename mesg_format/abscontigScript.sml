@@ -5,9 +5,7 @@ open arithmeticTheory listTheory rich_listTheory
      stringTheory combinTheory ASCIInumbersTheory
      numposrepTheory FormalLangTheory;
 
-open bagTheory;  (* For termination of predFn, need to use mlt_list *)
-
-open mlmapTheory;
+open finite_mapTheory bagTheory;  (* For termination of predFn, need to use mlt_list *)
 
 val _ = numLib.prefer_num();
 val _ = overload_on ("++", ``list$APPEND``);
@@ -29,7 +27,22 @@ val var_eq_tac = rpt BasicProvers.VAR_EQ_TAC;
 fun qspec q th = th |> Q.SPEC q
 fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
 
-val _ = new_theory "contig";
+val _ = new_theory "abscontig";
+
+Definition optFirst_def :
+  optFirst f [] = NONE /\
+  optFirst f (h::t) =
+    case f h
+     of NONE => optFirst f t
+      | SOME x => SOME h
+End
+
+Definition concatOpt_def :
+ concatOpt optlist  =
+    if EXISTS (\x. x=NONE) optlist
+       then NONE
+    else SOME (CONCAT (MAP THE optlist))
+End
 
 (*---------------------------------------------------------------------------*)
 (* The types of interest: lvals, arithmetic expressions over lvals, boolean  *)
@@ -43,7 +56,6 @@ Datatype:
   ;
   exp = Loc lval
       | numLit num
-      | ConstName string
       | Add exp exp
       | Mult exp exp
 End
@@ -56,21 +68,13 @@ Datatype:
        | Band bexp bexp
        | Beq exp exp
        | Blt exp exp
-       | Bgt exp exp
-       | Ble exp exp
-       | Bge exp exp
 End
 
 Datatype:
   atom = Bool
        | Char
-       | Float
-       | Double
        | Signed num
        | Unsigned num
-       | Enum string
-       | Blob num
-       | Scanned num
 End
 
 Datatype:
@@ -82,49 +86,12 @@ Datatype:
 End
 
 (*---------------------------------------------------------------------------*)
-(* comparison functions on lvals and exps                                    *)
-(*---------------------------------------------------------------------------*)
-
-Definition lval_compare_def :
- (lval_compare (VarName s1) (VarName s2) = string_compare s1 s2) /\
- (lval_compare (VarName _)  ____         = Less)      /\
- (lval_compare (RecdProj _ _) (VarName _)  = Greater) /\
- (lval_compare (RecdProj e1 s1) (RecdProj e2 s2) =
-     (case lval_compare e1 e2
-       of Equal => string_compare s1 s2
-        | other => other))                            /\
- (lval_compare (RecdProj _ _) ____ = Less)            /\
- (lval_compare (ArraySub a b) (ArraySub c d) =
-     (case lval_compare a c
-       of Equal => exp_compare b d
-        | other => other))                            /\
- (lval_compare (ArraySub _ _) ____ = Greater)
- /\
- (exp_compare (Loc lv1) (Loc lv2)   = lval_compare lv1 lv2) /\
- (exp_compare (Loc lv1) ____        = Less)                 /\
- (exp_compare (numLit _) (Loc _)    = Greater)              /\
- (exp_compare (numLit m) (numLit n) = num_compare m n)      /\
- (exp_compare (numLit _)  ____      = Less)                 /\
- (exp_compare (Add _ _) (Mult _ _)  = Less)                 /\
- (exp_compare (Add a b) (Add c d)   =
-    (case exp_compare a c
-      of Equal => exp_compare b d
-       | other => other))                                   /\
- (exp_compare (Add _ _) ____          = Greater)            /\
- (exp_compare (Mult a b) (Mult c d) =
-    (case exp_compare a c
-      of Equal => exp_compare b d
-       | other => other))                                   /\
- (exp_compare (Mult _ _) _____        = Greater)
-End
-
-(*---------------------------------------------------------------------------*)
 (* Expression evaluation. Looking up lvals is partial, which infects evalExp *)
 (*---------------------------------------------------------------------------*)
 
 Definition evalExp_def :
  evalExp (lvalMap,valFn) (Loc lval) =
-   (case lookup lval_compare lval lvalMap
+   (case FLOOKUP lvalMap lval
      of SOME s => valFn s
       | NONE => NONE) /\
  evalExp E (numLit n)  = SOME n /\
@@ -144,7 +111,6 @@ Definition evalExp_def :
       | SOME n2 => SOME (n1 * n2))
 End
 
-
 (*---------------------------------------------------------------------------*)
 (* Boolean expression evaluation. Also partial                               *)
 (*---------------------------------------------------------------------------*)
@@ -152,7 +118,7 @@ End
 Definition evalBexp_def :
  (evalBexp E (boolLit b) = SOME b) /\
  (evalBexp (lvalMap,valFn) (BLoc lval) =
-    case lookup lval_compare lval lvalMap
+    case FLOOKUP lvalMap lval
      of NONE => NONE
       | SOME s =>
      case valFn s
@@ -189,28 +155,7 @@ Definition evalBexp_def :
       | SOME n1 =>
     case evalExp E e2
      of NONE => NONE
-      | SOME n2 => SOME (n1 < n2)) /\
- (evalBexp E (Bgt e1 e2) =
-   case evalExp E e1
-     of NONE => NONE
-      | SOME n1 =>
-    case evalExp E e2
-     of NONE => NONE
-      | SOME n2 => SOME (n1 > n2)) /\
- (evalBexp E (Ble e1 e2) =
-   case evalExp E e1
-     of NONE => NONE
-      | SOME n1 =>
-    case evalExp E e2
-     of NONE => NONE
-      | SOME n2 => SOME (n1 <= n2)) /\
- (evalBexp E (Bge e1 e2) =
-   case evalExp E e1
-     of NONE => NONE
-      | SOME n1 =>
-    case evalExp E e2
-     of NONE => NONE
-      | SOME n2 => SOME (n1 >= n2))
+      | SOME n2 => SOME (n1 < n2))
 End
 
 
@@ -232,26 +177,19 @@ Definition path_prefixes_def :
   path_prefixes (ArraySub arr dim) = ArraySub arr dim :: path_prefixes arr
 End
 
-Definition optFirst_def :
-  optFirst f [] = NONE /\
-  optFirst f (h::t) =
-    case f h
-     of NONE => optFirst f t
-      | SOME x => SOME h
-End
-
 (*---------------------------------------------------------------------------*)
 (* Attempt to extend a partial lval to something in the lvalMap.             *)
 (*---------------------------------------------------------------------------*)
 
 Definition resolve_lval_def :
- resolve_lval lvMap path lval =
+ resolve_lval lvalMap path lval =
    let prefixes = path_prefixes path ;
        prospects = MAP (combin$C lval_append lval) prefixes ++ [lval] ;
-   in optFirst (\p. lookup lval_compare p lvMap) prospects
+   in optFirst (\p. FLOOKUP lvalMap p) prospects
 End
 
 Definition resolveExp_def:
+ resolveExp lvmap p (numLit n) = SOME (numLit n) /\
  resolveExp lvmap p (Loc lval) =
     (case resolve_lval lvmap p lval
       of NONE => NONE
@@ -269,9 +207,7 @@ Definition resolveExp_def:
        | SOME e1' =>
      case resolveExp lvmap p e2
       of NONE => NONE
-       | SOME e2' => SOME (Mult e1' e2')) /\
- resolveExp lvmap p (numLit n) = SOME (numLit n)  /\
- resolveExp lvmap p (ConstName s) = SOME (ConstName s)
+       | SOME e2' => SOME (Mult e1' e2'))
 End
 
 Definition resolveBexp_def :
@@ -311,28 +247,7 @@ Definition resolveBexp_def :
        | SOME e1' =>
      case resolveExp lvmap p e2
       of NONE => NONE
-       | SOME e2' => SOME (Blt e1' e2')) /\
- resolveBexp lvmap p (Bgt e1 e2) =
-    (case resolveExp lvmap p e1
-      of NONE => NONE
-       | SOME e1' =>
-     case resolveExp lvmap p e2
-      of NONE => NONE
-       | SOME e2' => SOME (Bgt e1' e2')) /\
- resolveBexp lvmap p (Ble e1 e2) =
-    (case resolveExp lvmap p e1
-      of NONE => NONE
-       | SOME e1' =>
-     case resolveExp lvmap p e2
-      of NONE => NONE
-       | SOME e2' => SOME (Ble e1' e2')) /\
- resolveBexp lvmap p (Bge e1 e2) =
-    (case resolveExp lvmap p e1
-      of NONE => NONE
-       | SOME e1' =>
-     case resolveExp lvmap p e2
-      of NONE => NONE
-       | SOME e2' => SOME (Bge e1' e2'))
+       | SOME e2' => SOME (Blt e1' e2'))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -345,9 +260,24 @@ Definition tdrop_def:
  tdrop (SUC n) (h::t) acc = tdrop n t (h::acc)
 End
 
+Theorem tdrop_thm :
+ ∀n list acc acc'.
+     tdrop n list acc = SOME (acc',suf) ⇒ acc' ++ suf = REVERSE acc ++ list
+Proof
+ recInduct tdrop_ind >> rw [tdrop_def]
+QED
+
 Definition take_drop_def :
   take_drop n list = tdrop n list []
 End
+
+Theorem take_drop_thm :
+  ∀n list.
+      take_drop n list = SOME (pref,suf) ⇒ pref ++ suf = list
+Proof
+  rw_tac list_ss [take_drop_def] >> imp_res_tac tdrop_thm >> fs []
+QED
+
 
 Definition upto_def:
   upto lo hi = if lo > hi then [] else lo::upto (lo+1) hi
@@ -411,8 +341,7 @@ Definition predFn_def :
         (case take_drop (atomWidths a) s
            of NONE => F
             | SOME (segment,rst) =>
-              predFn (atomWidths,valFn)
-                     (t, rst,insert lval_compare path segment theta))
+              predFn (atomWidths,valFn) (t, rst, theta |+ (path,segment)))
    | (path,Recd fields)::t =>
       let fieldFn (fName,c) = (RecdProj path fName,c)
       in predFn (atomWidths,valFn)
@@ -450,18 +379,11 @@ fun wellformed E contig s = predFn E ([(VarName"root",contig)],s,empty_lvalMap);
 (* Apply a substitution to a contig.                                         *)
 (*---------------------------------------------------------------------------*)
 
-Definition concatOpt_def :
- concatOpt optlist  =
-    if EXISTS (\x. x=NONE) optlist
-       then NONE
-    else SOME (CONCAT (MAP THE optlist))
-End
-
 Definition substFn_def :
  substFn valFn theta path contig =
   case contig
    of Void     => NONE
-    | Basic _  => lookup lval_compare path theta
+    | Basic _  => FLOOKUP theta path
     | Recd fields =>
        concatOpt
          (MAP (\(fName,c). substFn valFn theta (RecdProj path fName) c)
@@ -481,7 +403,7 @@ Definition substFn_def :
         in
            case FILTER choiceFn choices
             of [(_,c)] => substFn valFn theta path c
-             | otherwise => NONE
+             |  otherwise => NONE
 Termination
  WF_REL_TAC `measure (csize o SND o SND o SND)`
    >> rw [csize_def]
@@ -499,8 +421,7 @@ Definition matchFn_def :
        (case take_drop (atomicWidths a) s
          of NONE => NONE
           | SOME (segment,rst) =>
-              matchFn (atomicWidths,valFn)
-                      (t,rst, insert lval_compare path segment theta))
+              matchFn (atomicWidths,valFn) (t, rst, theta |+ (path,segment)))
    | (path,Recd fields)::t =>
        (let fieldFn (fName,c) = (RecdProj path fName,c)
         in matchFn (atomicWidths,valFn)
@@ -533,21 +454,26 @@ End
 
 (* match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap); *)
 
-g `!atomicWidths valFn wklist s theta path contig s1 s2 theta'.
+g `!atomicWidths valFn wklist s theta path contig s2 theta'.
    (wklist = [(path,contig)]) ==>
    matchFn (atomicWidths,valFn) (wklist,s,theta) = SOME (s2, theta')
    ==>
-   (substFn valFn theta' path contig = SOME s1) /\ (s1 ++ s2 = s)`
+   THE (substFn valFn theta' path contig) ++ s2 = s`
 
-recInduct matchFn_ind>>rpt gen_tac>>strip_tac
- >>simp_tac list_ss [Once matchFn_def]
- >>rpt gen_tac>>disch_then subst_all_tac
- >>every_case_tac
- >>fs[]>>var_eq_tac
- >- (simp_tac list_ss [matchFn_def,Once substFn_def]
-     >>strip_tac>>var_eq_tac>>every_case_tac>>fs[]>>var_eq_tac
-rw[]
-
+  recInduct matchFn_ind >> rpt gen_tac >> strip_tac >>
+  rw_tac list_ss [Once matchFn_def] >>
+  every_case_tac >> rw[]
+  >- (full_simp_tac list_ss [matchFn_def,Once substFn_def] >>
+      rw[] >>
+      fs[FLOOKUP_UPDATE] >>
+      metis_tac [take_drop_thm])
+  >- (Induct_on ‘l’  >> rw[]
+      >- (full_simp_tac list_ss [matchFn_def,Once substFn_def]
+          rw[concatOpt_def])
+      >- (namedCases_on ‘h’ ["fName c"] >>
+          full_simp_tac list_ss [] >>
+          full_simp_tac list_ss [Once matchFn_def,Once substFn_def] >>
+          rw[])
 ;
 
 

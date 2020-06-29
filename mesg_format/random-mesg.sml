@@ -40,7 +40,7 @@ fun scanRandFn path = "foo";
 
 val E = ([]:(string*int)list,
          []:(string*contig)list,
-         atomic_widths,valFn,dvalFn,repFn,scanRandFn,Random.newgen());
+         atom_width,valFn,dvalFn,repFn,scanRandFn,Random.newgen());
 
 fun genString contig =
   String.concat (randFn E ([(VarName"root",contig)],empty_lvalMap,[]));
@@ -48,7 +48,7 @@ fun genString contig =
 val parseEnv =
   ([]:(string*int)list,
    []:(string*contig)list,
-   atomic_widths,valFn);
+   atom_width,valFn);
 
 val parseContig = parse parseEnv;
 

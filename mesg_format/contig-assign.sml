@@ -294,7 +294,7 @@ fun segFn E path contig state =
 
 fun segments E contig s = segFn E (VarName"root") contig (SEGS[],s,empty_lvalMap);
 
-fun atomic_widths atm =
+fun atom_width atm =
  case atm
   of Bool       => 1
    | Char       => 1
