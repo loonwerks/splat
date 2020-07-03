@@ -252,6 +252,19 @@ fun Option contig = Recd
  ];
 
 (*---------------------------------------------------------------------------*)
+(* An AADL event data port message has a byte prefixed, which = "True" if    *)
+(* an event has indeed happened. This pattern tends to get used in filters   *)
+(* where isEvent is conjoined with the predicate on the message contents.    *)
+(* If isEvent is false, the contents aren't examined by predFn.              *)
+(*---------------------------------------------------------------------------*)
+
+fun eventData contig = Recd
+  [("isEvent", Basic Bool),
+   ("check-isEvent", Assert (BLoc (VarName "isEvent"))),
+   ("contents", contig)
+ ];
+
+(*---------------------------------------------------------------------------*)
 (* Wrapper for a contig, with message type specified. Notice that we only    *)
 (* check the message type. A more stringent check would also check the       *)
 (* seriesID and seriesVersion, as follows.                                   *)
@@ -335,7 +348,7 @@ val CommandStatusType = Declared "CommandStatusType";
 (*---------------------------------------------------------------------------*)
 
 val uxasEnv =
-  (uxas_constants_map,[],atomic_widths,uxas_valFn,dvalFn)
+  (uxas_constants_map,[],atom_width,uxas_valFn,dvalFn)
      |> C add_contig_decl ("String",FullString)
      |> C add_contig_decl ("KeyValuePair", KeyValuePair)
      |> C add_enum_decl altitude_type
@@ -344,6 +357,25 @@ val uxasEnv =
      |> C add_enum_decl speed_type
      |> C add_enum_decl turn_type
      |> C add_enum_decl command_status_type
+;
+
+val case_consts = [
+  ("OPERATING_REGION_ID_MIN", 0),
+  ("OPERATING_REGION_ID_MAX", 500),
+  ("KEEP_IN_ZONE_ID_MIN", 0),
+  ("KEEP_IN_ZONE_ID_MAX", 500),
+  ("KEEP_OUT_ZONE_ID_MIN",0),
+  ("KEEP_OUT_ZONE_ID_MAX",500),
+  ("TASK_ID_MIN",0),
+  ("TASK_ID_MAX",500),
+  ("ENTITY_ID_MIN", 0),
+  ("ENTITY_ID_MAX",500)
+ ];
+
+val caseEnv =
+ let val (consts,decls,widths,valFn,dvalFn) = uxasEnv
+ in (case_consts @ consts,decls,widths,valFn,dvalFn)
+ end
 ;
 
 (*---------------------------------------------------------------------------*)
@@ -402,6 +434,8 @@ val Location3D = Checked_Location3D;
 val linesearch_task = Recd [
   (* Task *)
   ("TaskID",           i64),
+  ("TaskID-check",     Assert
+                        (constInterval "TaskID" ("TASK_ID_MIN","TASK_ID_MAX"))),
   ("Label",            String),
   ("EligibleEntities", uxasBoundedArray i64 32),
   ("RevisitRate",      real32),
@@ -963,9 +997,9 @@ fun override_decl (s,c) alist =
 (*---------------------------------------------------------------------------*)
 
 val randEnv =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = uxasEnv
+ let val (Consts,Decls,atomicWidth,valFn,dvalFn) = uxasEnv
      val Decls' = override_decl ("String",ShortString) Decls
- in (Consts,Decls',atomicWidths,valFn,dvalFn,
+ in (Consts,Decls',atomicWidth,valFn,dvalFn,
      uxas_repFn,scanRandFn,Random.newgen())
  end;
 
@@ -1056,9 +1090,9 @@ fun aa_scanRandFn path =
 ;
 
 val aa_randEnv =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = uxasEnv
+ let val (Consts,Decls,atomicWidth,valFn,dvalFn) = uxasEnv
      val Decls' = override_decl ("String",ShortString) Decls
- in (Consts,Decls',atomicWidths,valFn,dvalFn,
+ in (Consts,Decls',atomicWidth,valFn,dvalFn,
      uxas_repFn,aa_scanRandFn,Random.newgen())
  end;
 
@@ -1126,4 +1160,16 @@ val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg automatio
 in
   mk_full_mesg (mk_mesgOption mk_automation_response) ptree
 end;
+
+val linesearch_task_event_string =
+ let val istrm = TextIO.openIn "LSTE"
+     val str = TextIO.inputAll istrm
+ in
+   TextIO.closeIn istrm;
+   str
+ end;
+
+predFn caseEnv
+    ([(VarName"root",eventData fullLineSearchTaskMesg)],
+     linesearch_task_event_string,empty_lvalMap)
 *)

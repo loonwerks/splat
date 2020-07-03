@@ -486,14 +486,6 @@ fun const_intervalExp fName pair =
          (Ble (Loc(VarName fName)) (ConstName s2))
   end
 
-fun doubleintervalExp fName pair =
- let val (s1,s2) = pair
- in Band (Ble (ConstName s1) (Loc(VarName fName)))
-         (Ble (Loc(VarName fName)) (ConstName s2))
-  end
-    band(Contig.DleA neg90 (varloc"Latitude"))
-        (Contig.DleB (varloc "Latitude") pos90))),
-
 end  (* Contig *)
 
 
@@ -881,10 +873,6 @@ val uxasEnv =
 	const LATITUDE_MAX : real = 90.0;
 	const LONGITUDE_MIN : real = -180.0;
 	const LONGITUDE_MAX : real = -180.0;
-	const AZIMUTH_CENTERLINE_MIN : real = -180.0;
-	const AZIMUTH_CENTERLINE_MAX : real = 180.0;
-	const VERTICAL_CENTERLINE_MIN : real = -180.0;
-	const VERTICAL_CENTERLINE_MAX : real = 180.0;
 *)
 
 val case_consts = [
@@ -907,42 +895,13 @@ val caseEnv =
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Laboriously construct some Double constants in order to avoid             *)
-(* Double.fromString.                                                        *)
-(*---------------------------------------------------------------------------*)
-
-val ints0BE = [0, 0, 0, 0, 0, 0, 0, 0];
-val ints90BE = [64, 86, 128, 0, 0, 0, 0, 0]
-val ints180BE = [64, 102, 128, 0, 0, 0, 0, 0]
-val ints15000BE = [64, 205, 76, 0, 0, 0, 0, 0]
-
-val s0 = String.implode (List.map Char.chr ints0BE)
-val s90 = String.implode (List.map Char.chr ints90BE)
-val s180 = String.implode (List.map Char.chr ints180BE)
-val s15K = String.implode (List.map Char.chr ints15000BE)
-
-val double_zero = dvalFn s0
-val pos90 = dvalFn s90
-val pos180 = dvalFn s180;
-val pos15K = dvalFn s15K;
-
-val neg90 = Double.~(pos90)
-val neg180 = Double.~(pos180);
-
-fun assert x = Contig.Assert x;
-fun band x y = Contig.Band x y;
-fun loc x = Contig.Loc x;
-fun varloc s = Contig.Loc(Contig.VarName s);
-
-
-(*---------------------------------------------------------------------------*)
 (* Messages                                                                  *)
 (*---------------------------------------------------------------------------*)
 
 val operating_region = Contig.Recd [
-  ("ID",             i64),
-  ("keep_in_areas",  uxasBoundedArray u64 32),
-  ("keep_out_areas", uxasBoundedArray u64 32)
+   ("ID",             i64),
+   ("keep_in_areas",  uxasBoundedArray u64 32),
+   ("keep_out_areas", uxasBoundedArray u64 32)
   ];
 
 val automation_request = Contig.Recd [
@@ -953,6 +912,43 @@ val automation_request = Contig.Recd [
   ("RedoAllTasks",      bool)
   ];
 
+(*---------------------------------------------------------------------------*)
+(* fun WELL_FORMED_AUTOMATION_REQUEST(msg:CMASI::AutomationRequest.i):bool = *)
+(*  (forall e in msg.EntityList, e>=ENTITY_ID_MIN and e<=ENTITY_ID_MAX) and  *)
+(*  (forall t in msg.TaskList, t >= TASK_ID_MIN and t <= TASK_ID_MAX) and    *)
+(*   msg.OperatingRegion >= OPERATING_REGION_ID_MIN and                      *)
+(*   msg.OperatingRegion <= OPERATING_REGION_ID_MAX;                         *)
+(*---------------------------------------------------------------------------*)
+
+val checked_entity = Contig.Recd [
+   ("entity", i64),
+   ("entity-check", Contig.Assert
+      (Contig.const_intervalExp "entity" ("ENTITY_ID_MIN","ENTITY_ID_MAX")))
+ ];
+
+val checked_task = Contig.Recd [
+   ("task", i64),
+   ("task-check", Contig.Assert
+      (Contig.const_intervalExp "task" ("TASK_ID_MIN","TASK_ID_MAX")))
+ ];
+
+val checked_OR = Contig.Recd [
+   ("OperatingRegion", i64),
+   ("OperatingRegion-check", Contig.Assert
+      (Contig.const_intervalExp "OperatingRegion"
+             ("OPERATING_REGION_ID_MIN","OPERATING_REGION_ID_MAX")))
+ ];
+
+val checked_automation_request = Contig.Recd [
+  ("EntityList",        uxasBoundedArray checked_entity 16),
+  ("TaskList",          uxasBoundedArray checked_task 32),
+  ("TaskRelationShips", uxasString),
+  ("OperatingRegion",   checked_OR),
+  ("RedoAllTasks",      bool)
+  ];
+
+val automation_request = checked_automation_request;
+
 val wedge = Contig.Recd [
   ("AzimuthCenterline",  real32),
   ("VerticalCenterline", real32),
@@ -960,34 +956,34 @@ val wedge = Contig.Recd [
   ("VerticalExtent",     real32)
  ];
 
-(*
-fun WELL_FORMED_LINE_SEARCH_TASK(msg : CMASI::LineSearchTask.i) : bool =
-		msg.TaskID >= TASK_ID_MIN and msg.TaskID <= TASK_ID_MAX and
-		(forall point in msg.PointList, WELL_FORMED_POINT(point)) and
-		(forall viewangle in msg.ViewAngleList, WELL_FORMED_VIEWANGLE(viewangle));
-
-fun WELL_FORMED_VIEWANGLE(viewangle : CMASI::Wedge.i) : bool =
- viewangle.AzimuthCenterline >= AZIMUTH_CENTERLINE_MIN and
- viewangle.AzimuthCenterline <= AZIMUTH_CENTERLINE_MAX and
- viewangle.VerticalCenterline >= VERTICAL_CENTERLINE_MIN and
- viewangle.VerticalCenterline <= VERTICAL_CENTERLINE_MAX;
-*)
-
-val checked_wedge = Contig.Recd [
-  ("AzimuthCenterline",  real32),
-  ("VerticalCenterline", real32),
-  ("AzimuthExtent",      real32),
-  ("VerticalExtent",     real32)
- ];
-
-val wedge = checked_wedge;
-
 val location3D = Contig.Recd [
   ("Latitude",  real64),
   ("Longitude", real64),
   ("Altitude",  real32),
   ("AltitudeType", uxasAltitudeType)
 ];
+
+(*---------------------------------------------------------------------------*)
+(* Laboriously construct some Double constants in order to avoid             *)
+(* Double.fromString.                                                        *)
+(*---------------------------------------------------------------------------*)
+
+val ints90BE = [64, 86, 128, 0, 0, 0, 0, 0]
+val ints180BE = [64, 102, 128, 0, 0, 0, 0, 0]
+
+val s90 = String.implode (List.map Char.chr ints90BE)
+val s180 = String.implode (List.map Char.chr ints180BE)
+
+val pos90 = dvalFn s90
+val pos180 = dvalFn s180;
+
+val neg90 = Double.~(pos90)
+val neg180 = Double.~(pos180);
+
+fun assert x = Contig.Assert x;
+fun band x y = Contig.Band x y;
+fun loc x = Contig.Loc x;
+fun varloc s = Contig.Loc(Contig.VarName s);
 
 val checked_location3D = Contig.Recd [
   ("Latitude",  real64),
@@ -1228,7 +1224,7 @@ fun callFFI fname istr obuf =
 end  (* API *)
 
 
-structure LST_Filter =
+structure AutomationRequest_Filter =
 struct
 
 (*---------------------------------------------------------------------------*)
@@ -1251,12 +1247,12 @@ fun filter_step () =
      val string = Utils.buf2string filter_in_buffer
  in
     if Contig.wellformed UXAS.caseEnv
-            (UXAS.eventData UXAS.fullLineSearchTaskMesg) string
+            (UXAS.eventData UXAS.fullAutomationRequestMesg) string
       then
         outFFI "put_filter_out" filter_in_buffer
     else (print"Filter rejects message.\n")
  end
 
-end (* LST_Filter *)
+end (* AutomationRequest_Filter *)
 
-val _ = LST_Filter.filter_step();
+val _ = AutomationRequest_Filter.filter_step();
