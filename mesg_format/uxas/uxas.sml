@@ -301,7 +301,7 @@ val ShortString = uxasBoundedArray (Basic Char) 12;
 (* generation, where a random String would in general be so big that it      *)
 (* would be clumsy to deal with. In that case, we can change the binding of  *)
 (* String in Decls to ShortString and then all String mentions will be to    *)
-(* short strings, and then a randomly generated string field would be <= 26  *)
+(* short strings, and then a randomly generated string field would be <= 12  *)
 (* in length.                                                                *)
 (*---------------------------------------------------------------------------*)
 
@@ -1172,4 +1172,5 @@ val linesearch_task_event_string =
 predFn caseEnv
     ([(VarName"root",eventData fullLineSearchTaskMesg)],
      linesearch_task_event_string,empty_lvalMap)
+
 *)

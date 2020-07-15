@@ -521,6 +521,11 @@ fun const_intervalExp fName pair =
 
 fun varloc s = Loc(VarName s);
 
+fun expBounded c (e1,e2) = Recd [
+   ("val", c),
+   ("check-val", Assert (Band (Ble e1 (varloc "val")) (Ble (varloc "val") e2)))
+ ]
+
 fun doubleintervalExp fName pair =
  let val (d1,d2) = pair
  in Band (DleA d1 (varloc fName)) (DleB (varloc fName) d2)
@@ -528,7 +533,6 @@ fun doubleintervalExp fName pair =
 
 
 end  (* Contig *)
-
 
 structure UXAS =
 struct
@@ -991,21 +995,32 @@ val constAZIMUTH_CENTERLINE_MAX = pos180;
 val constVERTICAL_CENTERLINE_MIN = neg180;
 val constVERTICAL_CENTERLINE_MAX = pos180;
 
-
 fun assert x = Contig.Assert x;
 fun band x y = Contig.Band x y;
-fun loc x = Contig.Loc x;
-fun varloc s = Contig.Loc(Contig.VarName s);
+fun loc x    = Contig.Loc x;
+val varloc   = Contig.varloc;
 
 
 (*---------------------------------------------------------------------------*)
 (* Messages                                                                  *)
 (*---------------------------------------------------------------------------*)
 
+val kizoneElt =
+  Contig.expBounded u64
+     (Contig.ConstName "KEEP_IN_ZONE_ID_MIN",
+      Contig.ConstName "KEEP_IN_ZONE_ID_MAX");
+
+val kozoneElt =
+  Contig.expBounded u64
+     (Contig.ConstName"KEEP_OUT_ZONE_ID_MIN",
+      Contig.ConstName"KEEP_OUT_ZONE_ID_MAX");
+
 val operating_region = Contig.Recd [
-  ("ID",             i64),
-  ("keep_in_areas",  uxasBoundedArray u64 32),
-  ("keep_out_areas", uxasBoundedArray u64 32)
+  ("ID", Contig.expBounded i64
+             (Contig.ConstName"OPERATING_REGION_ID_MIN",
+              Contig.ConstName"OPERATING_REGION_ID_MAX")),
+  ("keep_in_areas",  uxasBoundedArray kizoneElt 32),
+  ("keep_out_areas", uxasBoundedArray kozoneElt 32)
   ];
 
 val automation_request = Contig.Recd [
@@ -1016,25 +1031,49 @@ val automation_request = Contig.Recd [
   ("RedoAllTasks",      bool)
   ];
 
+(*---------------------------------------------------------------------------*)
+(* fun WELL_FORMED_AUTOMATION_REQUEST(msg:CMASI::AutomationRequest.i):bool = *)
+(*  (forall e in msg.EntityList, e>=ENTITY_ID_MIN and e<=ENTITY_ID_MAX) and  *)
+(*  (forall t in msg.TaskList, t >= TASK_ID_MIN and t <= TASK_ID_MAX) and    *)
+(*   msg.OperatingRegion >= OPERATING_REGION_ID_MIN and                      *)
+(*   msg.OperatingRegion <= OPERATING_REGION_ID_MAX;                         *)
+(*---------------------------------------------------------------------------*)
+
+val checked_entity = Contig.Recd [
+   ("entity", i64),
+   ("entity-check", Contig.Assert
+      (Contig.const_intervalExp "entity" ("ENTITY_ID_MIN","ENTITY_ID_MAX")))
+ ];
+
+val checked_task = Contig.Recd [
+   ("task", i64),
+   ("task-check", Contig.Assert
+      (Contig.const_intervalExp "task" ("TASK_ID_MIN","TASK_ID_MAX")))
+ ];
+
+val checked_OR = Contig.Recd [
+   ("OperatingRegion", i64),
+   ("OperatingRegion-check", Contig.Assert
+      (Contig.const_intervalExp "OperatingRegion"
+             ("OPERATING_REGION_ID_MIN","OPERATING_REGION_ID_MAX")))
+ ];
+
+val checked_automation_request = Contig.Recd [
+  ("EntityList",        uxasBoundedArray checked_entity 16),
+  ("TaskList",          uxasBoundedArray checked_task 32),
+  ("TaskRelationShips", uxasString),
+  ("OperatingRegion",   checked_OR),
+  ("RedoAllTasks",      bool)
+  ];
+
+val automation_request = checked_automation_request;
+
 val wedge = Contig.Recd [
   ("AzimuthCenterline",  real32),
   ("VerticalCenterline", real32),
   ("AzimuthExtent",      real32),
   ("VerticalExtent",     real32)
  ];
-
-(*
-fun WELL_FORMED_LINE_SEARCH_TASK(msg : CMASI::LineSearchTask.i) : bool =
-		msg.TaskID >= TASK_ID_MIN and msg.TaskID <= TASK_ID_MAX and
-		(forall point in msg.PointList, WELL_FORMED_POINT(point)) and
-		(forall viewangle in msg.ViewAngleList, WELL_FORMED_VIEWANGLE(viewangle));
-
-fun WELL_FORMED_VIEWANGLE(viewangle : CMASI::Wedge.i) : bool =
- viewangle.AzimuthCenterline >= AZIMUTH_CENTERLINE_MIN and
- viewangle.AzimuthCenterline <= AZIMUTH_CENTERLINE_MAX and
- viewangle.VerticalCenterline >= VERTICAL_CENTERLINE_MIN and
- viewangle.VerticalCenterline <= VERTICAL_CENTERLINE_MAX;
-*)
 
 val checked_wedge = Contig.Recd [
   ("AzimuthCenterline",  real32),
@@ -1262,11 +1301,11 @@ val fullAirVehicleStateMesg =
 
 end (* UXAS *)
 
+
 structure API =
 struct
 
-val linesearch_taskAASizeBytes = 3709;   (* actual size of example message *)
-val linesearch_taskAASizeBytes = 10 * 1024;
+val operating_regionAASizeBytes = 10 * 1024;  (* Set in architecture *)
 
 (*---------------------------------------------------------------------------*)
 (* IO via faked-up CakeML FFI interface.                                     *)
@@ -1275,17 +1314,15 @@ val linesearch_taskAASizeBytes = 10 * 1024;
 exception FFI string;
 
 fun getInput() =
- let val istrm = TextIO.openIn "LSTE"
+ let val istrm = TextIO.openIn "ORE"
      val str = TextIO.inputAll istrm
  in
    TextIO.closeIn istrm;
    str
  end;
 
-fun std_output s =
-
 fun callFFI fname istr obuf =
- if fname = "get_filter_in" then
+ if fname = "get_filter_in" then  (* get input, store it in obuf *)
     let val inputString = getInput()
         val inputLen = String.size inputString
         val bufLen = Word8Array.length obuf
@@ -1295,14 +1332,14 @@ fun callFFI fname istr obuf =
     end
  else
  if fname = "put_filter_out" then
-    TextIO.output TextIO.stdOut "Moving filter input to output.\n"
+     TextIO.output TextIO.stdOut "Moving filter input to output.\n"
  else
  raise FFI "unknown FFI request"
 
 end  (* API *)
 
 
-structure LST_Filter =
+structure OR_Filter =
 struct
 
 (*---------------------------------------------------------------------------*)
@@ -1310,7 +1347,7 @@ struct
 (*---------------------------------------------------------------------------*)
 
 val filterBuffer =
-  Word8Array.array API.linesearch_taskAASizeBytes Utils.w8zero;
+  Word8Array.array API.operating_regionAASizeBytes Utils.w8zero;
 
 fun filter_step () =
  let val () = Utils.clear_buf filterBuffer
@@ -1318,7 +1355,7 @@ fun filter_step () =
      val string = Utils.buf2string filterBuffer
  in
     if Contig.wellformed UXAS.caseEnv
-            (UXAS.eventData UXAS.fullLineSearchTaskMesg) string
+            (UXAS.eventData UXAS.fullOperatingRegionMesg) string
     then (* strip off leading event byte before sending along *)
         let val string = Word8Array.substring filterBuffer 1
                                         (Word8Array.length filterBuffer - 1)
@@ -1327,6 +1364,6 @@ fun filter_step () =
     else print"Filter rejects message.\n"
  end
 
-end (* LST_Filter *)
+end (* OR_Filter *)
 
-val _ = LST_Filter.filter_step();
+val _ = OR_Filter.filter_step();
