@@ -1,0 +1,28 @@
+Hand-written CakeML filters, along with input files. Although the
+filters are hand-written, they have been made highly schematic, so
+that a new uxas filter can be built by copy-pasting and changing a few
+lines.
+
+The following files are test inputs (just one input in a file) which get read in when
+the corresponding filter is executed.
+
+   ARQTE  -- automation request
+   ARSPE  -- automation response
+   ORE    -- operating region
+   LSTE   -- linesearch task
+   AVSE   -- airvehicle state   (no filter supplied)
+
+Filters.
+
+  - automation request
+  - automation response
+  - operating region
+  - linesearch task
+
+Basis FFI.
+
+We include a standard CakeML basis_ffi.c file, to which has been
+appended some code (ffifloat2double) for mapping 32-bit big-endian
+floats to 64-bit little-endian doubles. This ought to be part of a
+more general approach, e.g. as supported by SML structures
+implementing the PACK_REAL signature.
