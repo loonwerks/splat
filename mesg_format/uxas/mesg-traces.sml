@@ -47,22 +47,22 @@ val operating_region_event_string = toString (0x1::operating_region_trace);
 val air_vehicle_state_event_string = toString (0x1::air_vehicle_state_trace);
 
 val _ =
- let val AREstrm = TextIO.openOut "ARE"
+ let val ARSPEstrm = TextIO.openOut "ARSPE"
      val ARQTEstrm = TextIO.openOut "ARQTE"
      val LSTEstrm = TextIO.openOut "LSTE"
      val OREstrm = TextIO.openOut "ORE"
-     val AVEstrm = TextIO.openOut "AVE"
+     val AVSEstrm = TextIO.openOut "AVSE"
  in
-    TextIO.output(AREstrm,automation_response_event_string)
-  ; TextIO.output(ARQTEstrm,automation_request_event_string)
+    TextIO.output(ARQTEstrm,automation_request_event_string)
+  ; TextIO.output(ARSPEstrm,automation_response_event_string)
   ; TextIO.output(LSTEstrm,linesearch_task_event_string)
   ; TextIO.output(OREstrm,operating_region_event_string)
-  ; TextIO.output(AVEstrm,air_vehicle_event_string)
-  ; TextIO.closeOut AREstrm
+  ; TextIO.output(AVSEstrm,air_vehicle_state_event_string)
+  ; TextIO.closeOut ARSPEstrm
   ; TextIO.closeOut ARQTEstrm
   ; TextIO.closeOut LSTEstrm
   ; TextIO.closeOut OREstrm
-  ; TextIO.closeOut AVEstrm
+  ; TextIO.closeOut AVSEstrm
  end
 
 (*---------------------------------------------------------------------------*)
