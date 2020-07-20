@@ -248,10 +248,10 @@ void ffidouble_toString (unsigned char *c, long clen, unsigned char *a, long ale
   assert (bytes_written <= 255);
 }
 
-/*
-  double result = *((float*)parameter);
-  memcpy(output, (unsigned char*) &result, sizeof(double));
-*/
+/*---------------------------------------------------------------------------*/
+/* Ad hockery for UXAS examples:                                             */
+/* 32-bit big-endian float --> 64-bit little-endian double                   */
+/*---------------------------------------------------------------------------*/
 
 void ffifloat2double(unsigned char *parameter, long parameterSizeBytes,
                      unsigned char *output,    long outputSizeBytes)

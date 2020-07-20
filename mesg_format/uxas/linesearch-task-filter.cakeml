@@ -1282,8 +1282,6 @@ fun getInput() =
    str
  end;
 
-fun std_output s =
-
 fun callFFI fname istr obuf =
  if fname = "get_filter_in" then
     let val inputString = getInput()
@@ -1306,7 +1304,7 @@ structure LST_Filter =
 struct
 
 (*---------------------------------------------------------------------------*)
-(* Declare input buffers as global variables.                                *)
+(* Declare input buffer as global variable.                                  *)
 (*---------------------------------------------------------------------------*)
 
 val filterBuffer =

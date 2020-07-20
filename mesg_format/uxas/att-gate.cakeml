@@ -63,7 +63,7 @@ fun clear buffer =
 (*   ("isEvent", Basic Bool),                                                *)
 (*   ("contents", Union [                                                    *)
 (*       (BLoc (VarName "isEvent"), AAmesg),                                 *)
-(*       (Bnot(BLoc (VarName "isEvent")), SKIP)])                            *)
+(*       (Bnot(BLoc (VarName "isEvent")), VOID)])                            *)
 (*  ]                                                                        *)
 (*---------------------------------------------------------------------------*)
 
