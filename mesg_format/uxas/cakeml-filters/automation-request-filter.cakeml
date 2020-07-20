@@ -968,17 +968,29 @@ val location3D = Contig.Recd [
 (* Double.fromString.                                                        *)
 (*---------------------------------------------------------------------------*)
 
+val ints0BE = [0, 0, 0, 0, 0, 0, 0, 0];
 val ints90BE = [64, 86, 128, 0, 0, 0, 0, 0]
 val ints180BE = [64, 102, 128, 0, 0, 0, 0, 0]
+val ints15000BE = [64, 205, 76, 0, 0, 0, 0, 0]
 
+val s0 = String.implode (List.map Char.chr ints0BE)
 val s90 = String.implode (List.map Char.chr ints90BE)
 val s180 = String.implode (List.map Char.chr ints180BE)
+val s15K = String.implode (List.map Char.chr ints15000BE)
 
+val double_zero = dvalFn s0
 val pos90 = dvalFn s90
 val pos180 = dvalFn s180;
+val pos15K = dvalFn s15K;
 
 val neg90 = Double.~(pos90)
 val neg180 = Double.~(pos180);
+
+val constAZIMUTH_CENTERLINE_MIN = neg180;
+val constAZIMUTH_CENTERLINE_MAX = pos180;
+val constVERTICAL_CENTERLINE_MIN = neg180;
+val constVERTICAL_CENTERLINE_MAX = pos180;
+
 
 fun assert x = Contig.Assert x;
 fun band x y = Contig.Band x y;
@@ -995,6 +1007,9 @@ val checked_location3D = Contig.Recd [
     band(Contig.DleA neg180 (varloc"Longitude"))
         (Contig.DleB (varloc"Longitude") pos180))),
   ("Altitude",  real32),
+  ("Altitude-check", assert (
+    band(Contig.DleA double_zero (varloc"Altitude"))
+        (Contig.DleB (varloc"Altitude") pos15K))),
   ("AltitudeType", uxasAltitudeType),
   ("AltitudeType-check", assert (
     Contig.Ble (varloc"AltitudeType") (Contig.IntLit 1)))
