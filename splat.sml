@@ -13,7 +13,7 @@ val ERR = Feedback.mk_HOL_ERR "splat";
 fun printHelp() =
   stdErr_print
     ("Usage: splat [-alevel (basic | cake | hol | full)]\n\
-     \             [-codegen (C | SML | Ada | Slang | Java)]\n\
+     \             [-codegen (C | SML | Ada | Slang | Java | CakeML)]\n\
      \             [-checkprops]\n\
      \             [-outdir <dirname>]\n\
      \             [-intwidth <int> [optimize]]\n\
@@ -353,8 +353,10 @@ fun main () =
      fun filters_of (a,b,c,d,e) = d
      val filter_spec_thms = filters_of logic_defs
      val intformat = (valOf(!intwidth),valOf(!endian),valOf(!encoding))
-     val otherflags = (valOf(!checkprops),valOf(!codegen),
-                       valOf(!testgen),valOf(!alevel))
+     val otherflags = (valOf(!checkprops),
+                       valOf(!codegen),
+                       valOf(!testgen),
+                       valOf(!alevel))
      val results = map (process_filter intformat otherflags) filter_spec_thms
      val _ = Theory.export_theory()
      val _ = if invocDir = workingDir then ()

@@ -782,7 +782,7 @@ fun Interval fName (i,j) =
        Ble(Loc(VarName fName),intLit j));
 
 (* -------------------------------------------------------------------------- *)
-(* Needs fixing so that                                                                            *)
+(* Needs fixing so that Decls have Asserts deleted. Maybe.                    *)
 (*                                                                            *)
 (*                                                                            *)
 (* -------------------------------------------------------------------------- *)

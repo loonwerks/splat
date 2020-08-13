@@ -20,11 +20,11 @@ fun valFn a s =
 fun dvalFn Double s = PackRealBig.fromBytes (Byte.stringToBytes s)
   | dvalFn other s = raise ERR "dvalFn" "expected Double"
 ;
-fun drepFn Double r = (Byte.bytesToString (PackRealBig.toBytes r)
+fun drepFn Double r = Byte.bytesToString (PackRealBig.toBytes r)
   | drepFn other s = raise ERR "drepFn" "expected Double"
 ;
 
-val E = ([],[],atomic_widths,valFn,dvalFn);
+val E = ([],[],atomic_width,valFn,dvalFn);
 
 (*---------------------------------------------------------------------------*)
 (* Support for making test messages                                          *)

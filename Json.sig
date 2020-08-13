@@ -1,10 +1,10 @@
-signature Json = 
+signature Json =
 sig
   type substring = Substring.substring
 
  datatype number
     = Int of int
-    | Float of real (* Not supported by this parser *)
+    | Float of real
 
  datatype json
     = Null
@@ -15,7 +15,7 @@ sig
     | String of string
     | List of json list
     | AList of (string * json) list;
- 
+
   val fromSubstring  : substring -> json list * substring
   val fromString     : string -> json list * substring
   val fromFile       : string -> json list * substring

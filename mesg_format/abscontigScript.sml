@@ -1,8 +1,8 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib regexpLib ASCIInumbersLib;
 
-open arithmeticTheory listTheory rich_listTheory
-     stringTheory combinTheory ASCIInumbersTheory
+open pairTheory arithmeticTheory listTheory rich_listTheory
+     stringTheory combinTheory optionTheory ASCIInumbersTheory
      numposrepTheory FormalLangTheory;
 
 open finite_mapTheory bagTheory;  (* For termination of predFn, need to use mlt_list *)
@@ -29,6 +29,10 @@ fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
 
 val _ = new_theory "abscontig";
 
+(*---------------------------------------------------------------------------*)
+(* Some support definitions                                                  *)
+(*---------------------------------------------------------------------------*)
+
 Definition optFirst_def :
   optFirst f [] = NONE /\
   optFirst f (h::t) =
@@ -37,12 +41,81 @@ Definition optFirst_def :
       | SOME x => SOME h
 End
 
-Definition concatOpt_def :
- concatOpt optlist  =
+Definition concatPartial_acc_def :
+  concatPartial_acc [] acc = SOME acc /\
+  concatPartial_acc (NONE::t) acc = NONE /\
+  concatPartial_acc (SOME x::t) acc = concatPartial_acc t (x::acc)
+End
+
+Theorem concatPartial_acc_SOME :
+ !optlist acc list.
+  (concatPartial_acc optlist acc = SOME list)
+   <=>
+  EVERY IS_SOME optlist ∧
+  (list = REVERSE (MAP THE optlist) ++ acc)
+Proof
+recInduct concatPartial_acc_ind
+ >> rw[]
+ >> full_simp_tac list_ss [concatPartial_acc_def]
+ >> metis_tac []
+QED
+
+
+Theorem concatPartial_acc_NONE :
+ !optlist acc list.
+  (concatPartial_acc optlist acc = NONE)
+   <=>
+  EXISTS (\x. x=NONE) optlist
+Proof
+recInduct concatPartial_acc_ind
+ >> rw[]
+ >> full_simp_tac list_ss [concatPartial_acc_def]
+QED
+
+
+Definition concatPartial_def :
+  concatPartial optlist =
+    case concatPartial_acc optlist []
+     of NONE => NONE
+      | SOME list => SOME (FLAT (REVERSE list))
+End
+
+Theorem concatPartial_NONE :
+ !optlist.
+  (concatPartial optlist = NONE)
+   =
+  EXISTS (\x. x=NONE) optlist
+Proof
+  simp_tac list_ss [concatPartial_def,option_case_eq] >> metis_tac[concatPartial_acc_NONE]
+QED
+
+Theorem concatPartial_SOME :
+ !optlist list.
+  (concatPartial optlist = SOME list)
+  <=>
+  EVERY IS_SOME optlist ∧
+  (list = FLAT (MAP THE optlist))
+Proof
+  rw_tac list_ss [concatPartial_def,option_case_eq,concatPartial_acc_SOME]
+  >> metis_tac[]
+QED
+
+Triviality IS_SOME_NEG :
+ IS_SOME = \x. ~(x=NONE)
+Proof
+  rw [FUN_EQ_THM] >> metis_tac [NOT_IS_SOME_EQ_NONE]
+QED
+
+Theorem concatPartial_thm :
+ concatPartial optlist =
     if EXISTS (\x. x=NONE) optlist
        then NONE
     else SOME (CONCAT (MAP THE optlist))
-End
+Proof
+ rw[concatPartial_NONE,concatPartial_SOME]
+ >> fs [NOT_EXISTS,combinTheory.o_DEF,IS_SOME_NEG]
+QED
+
 
 (*---------------------------------------------------------------------------*)
 (* The types of interest: lvals, arithmetic expressions over lvals, boolean  *)
@@ -57,7 +130,6 @@ Datatype:
   exp = Loc lval
       | numLit num
       | Add exp exp
-      | Mult exp exp
 End
 
 Datatype:
@@ -78,11 +150,10 @@ Datatype:
 End
 
 Datatype:
-  contig = Void
-         | Basic atom
+  contig = Basic atom
          | Recd ((string # contig) list)
          | Array contig exp
-         | Union ((bexp # contig) list)
+         | Alt bexp contig contig
 End
 
 (*---------------------------------------------------------------------------*)
@@ -98,17 +169,11 @@ Definition evalExp_def :
  evalExp E (Add e1 e2) =
    (case evalExp E e1
      of NONE => NONE
-     |  SOME n1 =>
-    case evalExp E e2
-     of NONE => NONE
-      | SOME n2 => SOME (n1+n2)) /\
- evalExp E (Mult e1 e2) =
-   (case evalExp E e1
-     of NONE => NONE
       | SOME n1 =>
     case evalExp E e2
      of NONE => NONE
-      | SOME n2 => SOME (n1 * n2))
+      | SOME n2 => SOME (n1+n2))
+
 End
 
 (*---------------------------------------------------------------------------*)
@@ -200,14 +265,7 @@ Definition resolveExp_def:
        | SOME e1' =>
      case resolveExp lvmap p e2
       of NONE => NONE
-       | SOME e2' => SOME (Add e1' e2')) /\
- resolveExp lvmap p (Mult e1 e2) =
-    (case resolveExp lvmap p e1
-      of NONE => NONE
-       | SOME e1' =>
-     case resolveExp lvmap p e2
-      of NONE => NONE
-       | SOME e2' => SOME (Mult e1' e2'))
+       | SOME e2' => SOME (Add e1' e2'))
 End
 
 Definition resolveBexp_def :
@@ -306,20 +364,16 @@ val contig_size_def = fetch "-" "contig_size_def";
 val _ = DefnBase.add_cong list_size_cong;
 
 Definition csize_def :
-  (csize Void            = 0) /\
-  (csize (Basic a)       = 0) /\
-  (csize (Recd fields)   = 1 + list_size (\(a,c). csize  c) fields) /\
-  (csize (Array c dim)   = 1 + csize c) /\
-  (csize (Union choices) = 1 + list_size (\(b,c). csize c) choices)
+  (csize (Basic a)     = 0) /\
+  (csize (Recd fields) = 1 + list_size (\(a,c). csize  c) fields) /\
+  (csize (Array c dim) = 1 + csize c) /\
+  (csize (Alt b c1 c2)   = 1 + csize c1 + csize c2)
 Termination
   WF_REL_TAC `measure contig_size`
   >> rw_tac list_ss [contig_size_def]
-  >- (Induct_on `choices`
-        >> rw_tac list_ss [contig_size_def]
-        >> full_simp_tac list_ss [contig_size_def])
   >- (Induct_on `fields`
-        >> rw_tac list_ss [contig_size_def]
-        >> full_simp_tac list_ss [contig_size_def])
+      >> rw_tac list_ss [contig_size_def]
+      >> full_simp_tac list_ss [contig_size_def])
 End
 
 Triviality list_size_append :
@@ -327,6 +381,21 @@ Triviality list_size_append :
 Proof
  Induct_on ‘L1’ >> rw_tac list_ss [list_size_def]
 QED
+
+Definition choiceFn_def :
+  choiceFn theta valFn bexp =
+    case evalBexp (theta,valFn) bexp
+     of NONE => F
+      | SOME bval => bval
+End
+
+Definition indexFn_def :
+  indexFn lval c n = (ArraySub lval (numLit n),c)
+End
+
+Definition fieldFn_def :
+  fieldFn lval (fName,c) = (RecdProj lval fName,c)
+End
 
 (*---------------------------------------------------------------------------*)
 (* contig-specified predicate on strings.                                    *)
@@ -336,154 +405,235 @@ Definition predFn_def :
  predFn (atomWidths,valFn) (worklist,s,theta) =
   case worklist
    of [] => T
-    | (path,Void)::t => F
-    | (path,Basic a)::t =>
+    | (lval,Basic a)::t =>
         (case take_drop (atomWidths a) s
            of NONE => F
             | SOME (segment,rst) =>
-              predFn (atomWidths,valFn) (t, rst, theta |+ (path,segment)))
-   | (path,Recd fields)::t =>
-      let fieldFn (fName,c) = (RecdProj path fName,c)
-      in predFn (atomWidths,valFn)
-                (MAP fieldFn fields ++ t,s,theta)
-   | (path,Array c exp)::t =>
-      (case resolveExp theta path exp
+              predFn (atomWidths,valFn) (t, rst, theta |+ (lval,segment)))
+   | (lval,Recd fields)::t =>
+       predFn (atomWidths,valFn) (MAP (fieldFn lval) fields ++ t,s,theta)
+   | (lval,Array c exp)::t =>
+       (case evalExp (theta,valFn) exp
+         of NONE => F
+          | SOME dim =>
+            predFn (atomWidths,valFn)
+                   (MAP (indexFn lval c) (upto 0 (dim - 1)) ++ t,s,theta))
+   | (lval,Alt bexp c1 c2)::t =>
+       case evalBexp (theta,valFn) bexp
         of NONE => F
-         | SOME exp' =>
-       let dim  = THE (evalExp (theta,valFn) exp');
-           indexFn n = (ArraySub path (numLit n),c)
-       in predFn (atomWidths,valFn)
-                 (MAP indexFn (upto 0 (dim - 1)) ++ t,s,theta))
-   | (path,Union choices)::t =>
-       let choiceFn (bexp,c) =
-            (case resolveBexp theta path bexp
-              of NONE => F
-               | SOME bexp' => THE (evalBexp (theta,valFn) bexp'))
-       in case FILTER choiceFn choices
-           of [(_,c)] => predFn (atomWidths,valFn) ((path,c)::t,s,theta)
-            | otherwise => F
+         | SOME T => predFn (atomWidths,valFn) ((lval,c1)::t,s,theta)
+         | SOME F => predFn (atomWidths,valFn) ((lval,c2)::t,s,theta)
 Termination
  WF_REL_TAC `inv_image (mlt_list (measure (csize o SND))) (FST o SND)`
    >> rw [APPEND_EQ_SELF]
    >> rw [csize_def]
    >> fs [MEM_MAP,MEM_SPLIT]
-   >- (Cases_on `y` >> fs[list_size_append,list_size_def])
-   >- fs [FILTER_EQ_CONS,list_size_append,list_size_def]
+   >- (Cases_on `y` >> fs[list_size_append,list_size_def,fieldFn_def])
+   >- (Cases_on `y` >> fs[list_size_append,list_size_def,indexFn_def])
 End
 
-(*
-fun wellformed E contig s = predFn E ([(VarName"root",contig)],s,empty_lvalMap);
-*)
-
 (*---------------------------------------------------------------------------*)
-(* Apply a substitution to a contig.                                         *)
+(* Worklist-based matcher. When it comes to add a new (lval |-> string)      *)
+(* element to theta, it first checks that lval is not in FDOM(theta).        *)
 (*---------------------------------------------------------------------------*)
-
-Definition substFn_def :
- substFn valFn theta path contig =
-  case contig
-   of Void     => NONE
-    | Basic _  => FLOOKUP theta path
-    | Recd fields =>
-       concatOpt
-         (MAP (\(fName,c). substFn valFn theta (RecdProj path fName) c)
-              fields)
-    | Array c exp =>
-        (case resolveExp theta path exp
-          of NONE => NONE
-           | SOME exp' =>
-         let dim = THE (evalExp (theta,valFn) exp')
-         in concatOpt (MAP (\i. substFn valFn theta (ArraySub path (numLit i)) c)
-                      (upto 0 (dim - 1))))
-    | Union choices =>
-       let choiceFn (bexp,c) =
-            (case resolveBexp theta path bexp
-              of NONE => F
-               | SOME bexp' => THE (evalBexp (theta,valFn) bexp'))
-        in
-           case FILTER choiceFn choices
-            of [(_,c)] => substFn valFn theta path c
-             |  otherwise => NONE
-Termination
- WF_REL_TAC `measure (csize o SND o SND o SND)`
-   >> rw [csize_def]
-   >- (Induct_on `choices` >> rw[list_size_def] >> fs[])
-   >- (Induct_on `fields` >> rw[list_size_def] >> rw[] >> fs[])
-End
-
 
 Definition matchFn_def :
  matchFn (atomicWidths,valFn) (worklist,s,theta) =
  case worklist
   of [] => SOME (s,theta)
-   | (_,Void)::_ => NONE
-   | (path,Basic a)::t =>
+   | (lval,Basic a)::t =>
        (case take_drop (atomicWidths a) s
          of NONE => NONE
           | SOME (segment,rst) =>
-              matchFn (atomicWidths,valFn) (t, rst, theta |+ (path,segment)))
-   | (path,Recd fields)::t =>
-       (let fieldFn (fName,c) = (RecdProj path fName,c)
-        in matchFn (atomicWidths,valFn)
-                   (MAP fieldFn fields ++ t,s,theta))
-   | (path,Array c exp)::t =>
-       (let indexFn n = (ArraySub path (numLit n),c)
-        in case resolveExp theta path exp
-            of NONE => NONE
-             | SOME exp' =>
-           let dim = THE (evalExp (theta,valFn) exp')
-           in matchFn (atomicWidths,valFn)
-                      (MAP indexFn (upto 0 (dim - 1)) ++ t,s,theta))
-   | (path,Union choices)::t =>
-       (let choiceFn (bexp,c) =
-            case resolveBexp theta path bexp
-             of NONE => F
-              | SOME bexp' => THE (evalBexp (theta,valFn) bexp')
-        in case FILTER choiceFn choices
-            of [(_,c)] => matchFn (atomicWidths,valFn) ((path,c)::t,s,theta)
-             | otherwise => NONE)
+        if lval IN FDOM theta then
+            NONE
+        else matchFn (atomicWidths,valFn) (t, rst, theta |+ (lval,segment)))
+   | (lval,Recd fields)::t =>
+        matchFn (atomicWidths,valFn)
+                (MAP (fieldFn lval) fields ++ t,s,theta)
+   | (lval,Array c exp)::t =>
+       (case evalExp (theta,valFn) exp
+         of NONE => NONE
+          | SOME dim =>
+             matchFn (atomicWidths,valFn)
+                     (MAP (indexFn lval c) (upto 0 (dim - 1)) ++ t,s,theta))
+   | (lval,Alt bexp c1 c2)::t =>
+       case evalBexp (theta,valFn) bexp
+        of NONE => NONE
+         | SOME T => matchFn (atomicWidths,valFn) ((lval,c1)::t,s,theta)
+         | SOME F => matchFn (atomicWidths,valFn) ((lval,c2)::t,s,theta)
 Termination
  WF_REL_TAC `inv_image (mlt_list (measure (csize o SND))) (FST o SND)`
    >> rw [APPEND_EQ_SELF]
    >> rw [csize_def]
    >> fs [MEM_MAP,MEM_SPLIT]
-   >- (Cases_on `y` >> fs[list_size_append,list_size_def])
-   >- fs [FILTER_EQ_CONS,list_size_append,list_size_def]
+   >- (Cases_on `y` >> fs[list_size_append,list_size_def,fieldFn_def])
+   >- (Cases_on `y` >> fs[list_size_append,list_size_def,indexFn_def])
 End
 
 
-(* match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap); *)
+(*---------------------------------------------------------------------------*)
+(* Apply a substitution to a contig. And to a worklist.                      *)
+(*---------------------------------------------------------------------------*)
 
-g `!atomicWidths valFn wklist s theta path contig s2 theta'.
-   (wklist = [(path,contig)]) ==>
+Definition substFn_def :
+ substFn valFn theta (lval,contig) =
+  case contig
+   of Basic _  => FLOOKUP theta lval
+    | Recd fields =>
+       concatPartial
+         (MAP (\(fName,c). substFn valFn theta (RecdProj lval fName,c)) fields)
+    | Array c exp =>
+       (case evalExp (theta,valFn) exp
+         of NONE => NONE
+          | SOME dim =>
+            concatPartial
+               (MAP (\i. substFn valFn theta (ArraySub lval (numLit i), c))
+                    (upto 0 (dim - 1))))
+    | Alt bexp c1 c2 =>
+       (case evalBexp (theta,valFn) bexp
+         of NONE => NONE
+          | SOME T => substFn valFn theta (lval,c1)
+          | SOME F => substFn valFn theta (lval,c2))
+Termination
+ WF_REL_TAC `measure (csize o SND o SND o SND)`
+   >> rw [csize_def]
+   >- (Induct_on `fields`  >> rw[list_size_def] >> rw[] >> fs[])
+End
+
+Definition substWk_def :
+ substWk valFn theta wklist = concatPartial (MAP (substFn valFn theta) wklist)
+End
+
+Theorem match_submap :
+  !atomicWidths valFn wklist s theta s2 theta'.
    matchFn (atomicWidths,valFn) (wklist,s,theta) = SOME (s2, theta')
    ==>
-   THE (substFn valFn theta' path contig) ++ s2 = s`
+   finite_map$SUBMAP theta theta'
+Proof
+ recInduct matchFn_ind >>
+ rpt gen_tac >> strip_tac >>
+ rw_tac list_ss [Once matchFn_def] >>
+ every_case_tac
+  >> rw[]
+  >> fs [SUBMAP_FUPDATE]
+  >> rfs[]
+  >> rw[]
+  >> metis_tac [SUBMAP_DOMSUB_gen,DOMSUB_NOT_IN_DOM]
+QED
 
-  recInduct matchFn_ind >> rpt gen_tac >> strip_tac >>
-  rw_tac list_ss [Once matchFn_def] >>
-  every_case_tac >> rw[]
-  >- (full_simp_tac list_ss [matchFn_def,Once substFn_def] >>
-      rw[] >>
-      fs[FLOOKUP_UPDATE] >>
-      metis_tac [take_drop_thm])
-  >- (Induct_on ‘l’  >> rw[]
-      >- (full_simp_tac list_ss [matchFn_def,Once substFn_def]
-          rw[concatOpt_def])
-      >- (namedCases_on ‘h’ ["fName c"] >>
-          full_simp_tac list_ss [] >>
-          full_simp_tac list_ss [Once matchFn_def,Once substFn_def] >>
-          rw[])
-;
+Theorem evalExp_submap :
+ ∀e valFn theta1 theta2 v.
+   theta1 SUBMAP theta2 ∧
+   evalExp(theta1,valFn) e = SOME v
+   ⇒
+   evalExp(theta2,valFn) e = SOME v
+Proof
+Induct
+ >> rw [evalExp_def]
+ >> every_case_tac >> fs []
+ >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11]
+QED
+
+Theorem evalBexp_submap :
+ ∀bexp valFn theta1 theta2 v.
+   theta1 SUBMAP theta2 ∧
+   evalBexp(theta1,valFn) bexp = SOME v
+   ⇒
+   evalBexp(theta2,valFn) bexp = SOME v
+Proof
+Induct
+ >> rw [evalBexp_def]
+ >> every_case_tac
+ >> fs []
+ >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11,evalExp_submap]
+QED
 
 
+Theorem match_lem :
+!atomicWidths valFn wklist (s:string) theta s2 theta'.
+   matchFn (atomicWidths,valFn) (wklist,s,theta) = SOME (s2, theta')
+   ==>
+   ?s1. substWk valFn theta' wklist = SOME s1 /\  s1 ++ s2 = s
+Proof
+ simp_tac list_ss [substWk_def]
+ >> recInduct matchFn_ind
+ >> rpt gen_tac
+ >> strip_tac
+ >> rw_tac list_ss [Once matchFn_def]
+ >> every_case_tac
+ >> rw[] >> fs[] >> rfs[] >> rw []
+   >- rw[concatPartial_thm]
+   >- (rw[Once substFn_def]
+       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
+       >> rw []
+       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
+       >> metis_tac [NOT_EXISTS])
+   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
+       ‘evalExp (theta',valFn) e = SOME x’ by metis_tac [evalExp_submap]
+       >> rw[Once substFn_def]
+       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
+       >> rw []
+       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
+       >> metis_tac [NOT_EXISTS])
+   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+       >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
+       >> rw[]
+       >> ‘evalBexp (theta',valFn) b = SOME T’ by metis_tac [evalBexp_submap]
+       >> rw[Once substFn_def]
+       >> every_case_tac
+       >> rw [])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
+        >> rw[]
+        >> ‘evalBexp (theta',valFn) b = SOME F’ by metis_tac [evalBexp_submap]
+        >> rw[Once substFn_def]
+        >> every_case_tac
+        >> rw [])
+    >- (qexists_tac ‘q' ++ s1’
+        >> ‘s = STRCAT q' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
+        >> rw []
+        >> rw [Once substFn_def]
+        >> ‘(theta |+ (q,q')) SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘FLOOKUP (theta |+ (q,q')) q = SOME q'’ by metis_tac [FLOOKUP_UPDATE]
+        >> ‘FLOOKUP theta' q = SOME q'’ by metis_tac [FLOOKUP_SUBMAP]
+        >> rw[]
+        >> fs [concatPartial_thm])
+    >- (rw[Once substFn_def]
+        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
+        >> rw []
+        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
+        >> metis_tac [NOT_EXISTS])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
+        ‘evalExp (theta',valFn) e = SOME x’ by metis_tac [evalExp_submap]
+        >> rw[Once substFn_def]
+        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
+        >> rw []
+        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
+        >> metis_tac [NOT_EXISTS])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
+        >> rw[]
+        >> ‘evalBexp (theta',valFn) b = SOME T’ by metis_tac [evalBexp_submap]
+        >> rw[Once substFn_def]
+        >> every_case_tac
+        >> rw [])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
+        >> rw[]
+        >> ‘evalBexp (theta',valFn) b = SOME F’ by metis_tac [evalBexp_submap]
+        >> rw[Once substFn_def]
+        >> every_case_tac
+        >> rw [])
+QED
 
-(* -------------------------------------------------------------------------- *)
-(*                                                                            *)
-(* Set up lval-map support                                                    *)
-(*                                                                            *)
-(* -------------------------------------------------------------------------- *)
-
-val empty_lvMap = “mlmap$empty lval_compare”;
+Theorem match_sound :
+!atomicWidths valFn wklist (s:string) theta s2 theta'.
+   matchFn (atomicWidths,valFn) (wklist,s,theta) = SOME (s2, theta')
+   ==>
+     THE (substWk valFn theta' wklist) ++ s2 = s
+Proof
+ metis_tac [match_lem,optionTheory.THE_DEF]
+QED
 
 val _ = export_theory();

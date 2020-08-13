@@ -14,27 +14,27 @@ val ERR = Feedback.mk_HOL_ERR "Json";
 
 datatype number
    = Int of int
-   | Float of real (* Not totally sure about exact representation desired *)
+   | Float of real
 
 datatype json
-    = Null
-    | LBRACK  (* stack symbol only *)
-    | LBRACE  (* stack symbol only *)
-    | Boolean of bool
-    | Number of number     (* ints and floats *)
-    | String of string     (* should be unicode strings, per JSON spec *)
-    | List of json list
-    | AList of (string * json) list;
+   = Null
+   | LBRACK  (* stack symbol only *)
+   | LBRACE  (* stack symbol only *)
+   | Boolean of bool
+   | Number of number     (* ints and floats *)
+   | String of string     (* should be unicode strings, per JSON spec *)
+   | List of json list
+   | AList of (string * json) list;
 
 (*---------------------------------------------------------------------------*)
 (* Lexer                                                                     *)
 (*---------------------------------------------------------------------------*)
-		     
+
 datatype lexeme
   = lbrace
-  | rbrace 
+  | rbrace
   | lbrack
-  | rbrack 
+  | rbrack
   | colon
   | comma
   | nullLit
@@ -55,7 +55,7 @@ fun compose f NONE = NONE
 
 fun getNum ss =
  let fun toInt s =
-       (if s = "" then NONE else 
+       (if s = "" then NONE else
         if String.sub(s,0) = #"-" then
            (case Int.fromString (String.extract(s,1,NONE))
              of SOME i => SOME (Int.~(i))
@@ -63,13 +63,17 @@ fun getNum ss =
         else Int.fromString s
        )
       handle Overflow => NONE
+     fun toDouble s = Real.fromString s handle _ => NONE
  in
-   compose 
+   compose
       (fn s => fn ss' =>
-        case toInt s 
+        case toInt s
          of SOME i => SOME(numLit (Int i),ss')
-          |  NONE => NONE)
-      (takeWhile (fn c => Char.isDigit c orelse c = #"-") ss)
+          | NONE =>
+        case toDouble s
+         of NONE => NONE
+          | SOME r => SOME(numLit (Float r),ss'))
+      (takeWhile (fn c => Char.isDigit c orelse mem c [#"-", #".", #"e",#"E"]) ss)
  end;
 
 fun getKeyword ss =
@@ -83,7 +87,7 @@ fun getKeyword ss =
 
 fun getString strm list =
  let open Substring
- in case getc strm 
+ in case getc strm
      of NONE => raise ERR "lex (in getString)" "end of input, looking for \""
       | SOME(#"\"",strm') => SOME(stringLit(String.implode(rev list)),strm')
       | SOME(#"\\",strm') => (* backslashed chars possible *)
@@ -94,9 +98,9 @@ fun getString strm list =
       | SOME(ch,strm') =>  getString strm' (ch :: list)
  end;
 
-fun lex strm = 
+fun lex strm =
  let open Substring
- in 
+ in
    case getc strm
     of NONE => NONE
      | SOME (#"{",strm') => SOME(lbrace,strm')
@@ -111,7 +115,7 @@ fun lex strm =
      | SOME (#"\"",strm') => getString strm' []
      | SOME (ch,strm') =>
          if Char.isSpace ch then
-	     lex strm' 
+	     lex strm'
          else
 	     if Char.isDigit ch orelse ch = #"-" then
 		 getNum strm
@@ -120,11 +124,13 @@ fun lex strm =
 		     Substring.string strm)
  end
 
-fun lexemes ss =
-  (case lex ss of NONE => [] | SOME(l,ss') => l::lexemes ss')
-  handle HOL_ERR e => (print (Feedback.format_ERR e); []);
+fun lexemes ss acc =
+ case (lex ss handle _ => NONE)
+  of NONE => (rev acc, ss)
+   | SOME(l,ss') => lexemes ss' (l::acc);
 
-(* 
+
+(*
 lexemes (Substring.full "null [ \"foo\" : \"bar\" ]");
 lexemes (Substring.full "{ \"foo\" : 12, \"bar\" : 13  }");
 lexemes (Substring.full "[true,false, null, 123, -23, \"foo\"] ");
@@ -135,12 +141,12 @@ lexemes (Substring.full "[true,false, null, 123, -23, \"foo\"] ");
 (* Parsing                                                                   *)
 (*---------------------------------------------------------------------------*)
 
-fun PARSE_ERR s ss = 
+fun PARSE_ERR s ss =
  let open Substring
      val estring = String.concat
-         ["Json parser failed!\n   ",s, 
+         ["Json parser failed!\n   ",s,
           "\n   Remaining input: ", string ss, ".\n"]
- in 
+ in
    raise ERR "PARSE_ERR" estring
  end;
 
@@ -157,15 +163,15 @@ fun toAList (LBRACE::t,ss) acc = (AList acc::t,ss)
     raise PARSE_ERR "toAList: unexpected key-value pair structure" ss
   | toAList ([],ss) acc =
     raise PARSE_ERR "toAList: empty stack when trying to build an object" ss;
-					
+
 (*---------------------------------------------------------------------------*)
 (* The main parsing loop. Returns the final stack and the remaining input.   *)
 (* The stack should be of length 1, and it will have a json element. The     *)
 (* remaining input should be empty, or consist of whitespace.                *)
 (*---------------------------------------------------------------------------*)
 
-fun parse (stk,ss) = 
-  case lex ss 
+fun parse (stk,ss) =
+  case lex ss
    of NONE => (rev stk, Substring.dropl Char.isSpace ss)
     | SOME (nullLit,ss')     => (Null::stk,ss')
     | SOME (boolLit b,ss')   => (Boolean b::stk,ss')
@@ -174,15 +180,15 @@ fun parse (stk,ss) =
     | SOME (lbrack,ss') => parse_list (LBRACK::stk,ss')
     | SOME (lbrace,ss') => parse_alist (LBRACE::stk,ss')
     | SOME other  => raise PARSE_ERR "unexpected lexeme" ss
-and 
+and
  parse_list (stk,ss) = (* list --> eps | elt (, elts)* *)
-   case lex ss 
+   case lex ss
     of NONE => raise PARSE_ERR "parse_list: unexpected end of input" ss
      | SOME (rbrack,ss') => toList (stk,ss') []
      | SOME other => elts(stk,ss)
 and
  parse_alist (stk,ss) = (* alist --> eps | strLit : val (, strLit : val)* *)
-   case lex ss 
+   case lex ss
     of NONE => raise PARSE_ERR "parse_alist: unexpected end of input" ss
      | SOME (rbrace,ss') => toAList (stk,ss') []
      | SOME (stringLit _,_) => bindings (stk,ss)
@@ -201,7 +207,7 @@ and
   case lex ss
    of SOME (stringLit s,ss') =>
        (case lex ss'
-         of SOME(colon, ss'') => 
+         of SOME(colon, ss'') =>
 	    let val (stk',ss3) = parse (String s::stk,ss'')
             in case lex ss3
 	        of SOME(comma,ss4) => bindings (stk',ss4)
@@ -228,11 +234,11 @@ parse ([],Substring.full "{\"foo\" : [1, 23, 4], \"bar\" : 2}");
 (*---------------------------------------------------------------------------*)
 
 fun fromSubstring ss = parse ([], ss);
- 
+
 val fromString = fromSubstring o Substring.full;
 
 fun fromFile filename =
- let open TextIO Substring 
+ let open TextIO Substring
      val istrm = openIn filename
      val ss = full(inputAll istrm)
      val _ = closeIn istrm
@@ -245,7 +251,7 @@ fun fromFile filename =
 (* command line.                                                             *)
 (*---------------------------------------------------------------------------*)
 
-fun jsonFileName execName = 
+fun jsonFileName execName =
  let fun printHelp() = print ("Usage: "^execName^" <name>.json\n")
      fun fail() = (printHelp(); MiscLib.fail())
  in case CommandLine.arguments()
@@ -261,29 +267,29 @@ val pp_json =
       case json
        of Null => add_string "Null"
        |  Boolean b => add_string (Bool.toString b)
-       |  Number (Int i) => 
-             if i < 0 then 
+       |  Number (Int i) =>
+             if i < 0 then
                add_string("-"^Int.toString(Int.abs i))
              else add_string(Int.toString i)
        |  Number (Float _) => raise ERR "pp_json" "floats not presently supported"
        |  String s => add_string(String.concat ["\"",s,"\""])
-       |  List list => block INCONSISTENT 1 
-            (add_string "[" 
-             :: pr_list pp [add_string ",", add_break(0,0)] list 
+       |  List list => block INCONSISTENT 1
+            (add_string "["
+             :: pr_list pp [add_string ",", add_break(0,0)] list
              @ [add_string "]"])
-       |  AList alist => block INCONSISTENT 1 
-            (add_string "{" 
-             :: pr_list pp_bind [add_string ",", add_break(0,0)] alist 
+       |  AList alist => block INCONSISTENT 1
+            (add_string "{"
+             :: pr_list pp_bind [add_string ",", add_break(0,0)] alist
              @ [add_string "}"])
        | otherwise => raise ERR "pp_json" "stack tags not printed"
-     and 
-     pp_bind (s,j) = 
+     and
+     pp_bind (s,j) =
        block CONSISTENT 1
          [add_string (String.concat ["\"",s,"\" :"]), add_break(1,2), pp j]
  in
    pp
  end
-     
+
 val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn json => pp_json json);
 
 end (* Json *)

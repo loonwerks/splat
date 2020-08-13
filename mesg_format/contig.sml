@@ -994,6 +994,10 @@ fun Interval fName (i,j) =
   Band(Ble(intLit i,Loc(VarName fName)),
        Ble(Loc(VarName fName),intLit j));
 
+fun constInterval fName (s1,s2) =
+ Band (Ble (ConstName s1,Loc(VarName fName)),
+       Ble (Loc(VarName fName),ConstName s2));
+
 fun delete_asserts Decls contig =
  case contig
   of Declared s => delete_asserts Decls (assoc s Decls)
@@ -1011,3 +1015,27 @@ fun delete_asserts Decls contig =
    | Array (c,e) => Array (delete_asserts Decls c, e)
    | Union bclist => Union(map (fn (b,c) => (b, delete_asserts Decls c)) bclist)
    | otherwise => contig;
+
+fun lvals_of e =
+ case e
+  of Loc lval => [lval]
+   | Add (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | Mult (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | otherwise => []
+;
+
+fun lvals_of_bexp bexp =
+ case bexp
+  of boolLit _ => []
+   | BLoc lval => [lval]
+   | Bnot b => lvals_of_bexp b
+   | Bor (b1,b2) => union (lvals_of_bexp b1) (lvals_of_bexp b2)
+   | Band (b1,b2) => union (lvals_of_bexp b1) (lvals_of_bexp b2)
+   | Beq  (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | Blt  (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | Bgt  (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | Ble  (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | Bge  (e1,e2) => union (lvals_of e1) (lvals_of e2)
+   | DleA (r,e) => lvals_of e
+   | DleB (e,r) => lvals_of e
+;

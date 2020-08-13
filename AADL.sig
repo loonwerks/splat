@@ -11,13 +11,15 @@ sig
     = EnumDec of qid * string list
     | RecdDec of qid * (string * ty) list
     | ArrayDec of qid * ty
+(*     | UnionDec of qid * (string * ty) list *)
 
  datatype tmdec
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp
 
  datatype filter
-    = FilterDec of qid * (string * ty * string * string) list * (string * exp) list
+    = FilterDec (* (name,ports,props) *)
+        of qid * (string * ty * string * string) list * (string * exp) list
 
  datatype monitor
     = MonitorDec of qid * (string * ty * string * string) list * bool * (string * exp) list
