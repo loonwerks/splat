@@ -2279,9 +2279,9 @@ fun base_ty_name (BaseTy BoolTy)   = "bool"
   | base_ty_name (BaseTy RegexTy)  = "regex"
   | base_ty_name (BaseTy FloatTy)  = "float"
   | base_ty_name (BaseTy (IntTy (Nat NONE))) = "uint"
-  | base_ty_name (BaseTy (IntTy (Int NONE))) = "sint"
+  | base_ty_name (BaseTy (IntTy (Int NONE))) = "int"
   | base_ty_name (BaseTy (IntTy (Nat(SOME w)))) = "uint"^Int.toString w
-  | base_ty_name (BaseTy (IntTy (Int(SOME w)))) = "sint"^Int.toString w
+  | base_ty_name (BaseTy (IntTy (Int(SOME w)))) = "int"^Int.toString w
   | base_ty_name (NamedTy args) = pp_qid args
   | base_ty_name other = raise ERR "base_ty_name" "not a base type"
 
@@ -2319,8 +2319,8 @@ fun pp_ty depth ty =
           in case kind
               of Nat NONE => PrettyString (istr^"uint")
                | Nat (SOME w) => PrettyString (istr^"uint"^Int.toString w)
-               | Int NONE => PrettyString (istr^"sint")
-               | Int (SOME w) => PrettyString (istr^"sint"^Int.toString w)
+               | Int NONE => PrettyString (istr^"int")
+               | Int (SOME w) => PrettyString (istr^"int"^Int.toString w)
           end
       | ConstExp (FloatLit r) => PrettyString (Real.toString r)
       | ConstExp (RegexLit r) => PrettyString ("`"^r^"`")

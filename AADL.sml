@@ -20,7 +20,8 @@ in end;
  datatype tydec
     = EnumDec of qid * string list
     | RecdDec of qid * (string * ty) list
-    | ArrayDec of qid * ty;
+    | ArrayDec of qid * ty
+    | UnionDec of qid * (string * ty) list;
 
  datatype tmdec
     = ConstDec of qid * ty * exp
@@ -52,6 +53,9 @@ fun features_of (AList alist) = assoc "features" alist;
 fun properties_of (AList alist) = assoc "properties" alist;
 fun annexes_of (AList alist) = assoc "annexes" alist;
 fun value_of (AList alist) = assoc "value" alist;
+fun classifier_of (AList alist) = assoc "classifier" alist;
+fun dimensions_of (AList alist) = assoc "dimensions" alist;
+fun subcomponents_of (AList alist) = assoc "subcomponents" alist;
 
 fun ty_occurs ty1 ty2 =
  case ty2
@@ -261,6 +265,9 @@ val _ = defaultNumKind := AST.Int NONE;
 
 fun dropBool (Boolean b) = b
   | dropBool otherwise = raise ERR "dropBool" "not a json Boolean application";
+
+fun dropInt (Number (Int i)) = i
+  | dropInt otherwise = raise ERR "dropInt" "not a json integer";
 
 fun dropString (String s) = s
   | dropString otherwise = raise ERR "dropString" "not a json String application";
@@ -511,39 +518,54 @@ fun dest_extender (RecdDec (qid, ("--Extends--", NamedTy base_qid)::t)) =
 
 
 fun dest_field subcomp =
- let fun is_arr_spec spec = (* decoding arb-dim array spec *)
-      case spec
-       of List (x::_) =>
-            ((dropString (name_of x) = "Data_Model::Data_Representation"
-              andalso
-              dropString (value_of x) = "Array")
-             handle HOL_ERR _ => false)
-        | otherwise => false
+ let fun mk_ty typ =
+        case typ
+         of String tystr => fldty tystr
+          | Null => null_ty
+          | other => raise ERR "dest_field" "unexpected field classifier"
+     fun mk_dim [dim] = mk_intLit (dropInt (value_of dim))
+       | mk_dim otherwise = raise ERR "dest_field (mk_dim)"
+                "unexpected concrete array dimension"
+     fun is_array_spec spec = (* decoding arb-dim array spec *)
+      ("Array" = dropString (value_of (value_of (hd (dropList spec)))))
+      handle _ => false
  in
  case subcomp
   of AList (("name", String fldname) ::
             ("kind", String "Subcomponent") ::
-            ("category", String "data") ::
-            ("classifier", typ) ::t) =>
-              let val ty =
-                   (case typ
-                    of String tystr => fldty tystr
-                     | Null => null_ty
-                     | other => raise ERR "dest_field" "unexpected field classifier")
-              in case t
-                 of [] => (fldname,ty)
-                  | ("properties", spec)::_
-                    => if is_arr_spec spec
-                       then (fldname,ArrayTy(ty,[VarExp"--ARBSIZE--"]))
-                       else raise ERR "dest_field" "expected array type spec"
-                  | otherwise => raise ERR "dest_field" "unexpected field structure"
-              end
-   | AList [("name", String fldname),
-            ("kind", String "Subcomponent"),
-            ("category", String "data")] => (fldname, null_ty)
+            ("category", String "data") :: tail)
+     => if null tail then
+          (fldname, null_ty)
+        else
+         (case (Option.map snd (assoc1 "classifier" tail),
+                Option.map (dropList o snd) (assoc1 "dimensions" tail),
+                Option.map snd (assoc1 "properties" tail))
+           of (NONE,_,_) => raise ERR "dest_field" "can't extract field type"
+            | (SOME typ, NONE, NONE) => (fldname,mk_ty typ)
+            | (SOME typ, SOME dim, NONE) => (fldname,ArrayTy(mk_ty typ, [mk_dim dim]))
+            | (SOME typ, NONE, SOME spec) =>
+                if is_array_spec spec
+                 then (fldname,ArrayTy(mk_ty typ,[VarExp"--ARBSIZE--"]))
+                 else raise ERR "dest_field" "expected array type spec"
+            | (SOME _, SOME _, SOME _)
+               => raise ERR "dest_field" "confused, can't extract field type")
    | otherwise => raise ERR "dest_field" "expected a record field"
  end
 ;
+
+(*---------------------------------------------------------------------------*)
+(* There are several flavours of record declaration. A standard decl has a   *)
+(* list of fields. One can also declare a record to be an *extension* of     *)
+(* another record. In this case, we create a special "extender" field which  *)
+(* gets taken care of in post-processing (function extend_recd_decs).        *)
+(*                                                                           *)
+(* Fields can also have special processing. A field is usually a pair of a   *)
+(* field name and a type. It can happen that the type is instead Null,       *)
+(* indicating a partial record, to be filled in by post-processing           *)
+(* (function finalize_partial_recd_decs). It can also be that an array type  *)
+(* has an unspecified dimension, which results in a variable dimension being *)
+(* used. See dest_field for details.                                         *)
+(*---------------------------------------------------------------------------*)
 
 fun recd_decl pkgName names decl =
  case decl
@@ -568,7 +590,7 @@ fun recd_decl pkgName names decl =
              (case subcomps_maybe
               of [] => []
                | ("subcomponents", List scomps) :: _ => scomps
-               |  otherwise => raise ERR "recd_decl" "missing extension information")
+               | otherwise => raise ERR "recd_decl" "missing extension information")
         in
         case extension
           of String partial_recd_impl =>
@@ -594,6 +616,13 @@ fun recd_decl pkgName names decl =
      => RecdDec(dest_qid (Option.valOf (dropImpl name_impl)),[])
    | other => raise ERR "recd_decl" "expected a record declaration";
 
+fun dest_enum_props (alist1,alist2) =
+  if dropString (value_of (value_of alist1)) = "Enum" then
+     let val elist = value_of(value_of alist2)
+     in map (dropString o value_of) (dropList elist)
+     end
+  else raise ERR "dest_enum_props" "";
+
 fun enum_decl decl =
  case decl
   of AList (("name", String ename) ::
@@ -601,14 +630,10 @@ fun enum_decl decl =
             ("kind",String "ComponentType") ::
             ("category", String "data") ::
             ("extends", _) ::
-            ("properties",
-             List [AList [("name", String "Data_Model::Data_Representation"),
-                          ("kind", String "PropertyAssociation"),
-                          ("value", String "Enum")],
-                   AList [("name", String "Data_Model::Enumerators"),
-                          ("kind", String "PropertyAssociation"),
-                          ("value", List names)]]) :: _)
-      => EnumDec(dest_qid ename, map dropString names)
+            ("properties", List (alist1::alist2::_)) :: _)
+      => (case total dest_enum_props (alist1,alist2)
+           of NONE => raise ERR "enum_decl" "expected an enum declaration"
+            | SOME names => EnumDec(dest_qid ename, names))
   | other => raise ERR "enum_decl" "expected an enum declaration";
 
 fun array_decl decl =
@@ -617,21 +642,14 @@ fun array_decl decl =
             ("localName",_) ::
             ("kind",String "ComponentType") ::
             ("category", String "data") ::
-	    ("properties", List
-             [AList [("name", String "Data_Model::Data_Representation"),
-                     ("kind", String "PropertyAssociation"),
-                     ("value", String "Array")],
-              AList [("name", String "Data_Model::Base_Type"),
-                     ("kind", String "PropertyAssociation"),
-                     ("value", List [String baseTyName])],
-              AList [("name", String "Data_Model::Dimension"),
-                     ("kind", String "PropertyAssociation"),
-                     ("value", List [Number (Int d)])]]) :: _)
-     => let val basety = get_tyinfo [("kind", String "typeId"),
-                                     ("name", String baseTyName)]
-            val dim = mk_uintLit d
-        in ArrayDec(dest_qid name, ArrayTy(basety,[dim]))
-        end
+	    ("properties", List (alist1::alist2::alist3::_)) :: _)
+     => if SOME "Array" = total (dropString o value_of o value_of) alist1 then
+         let val jbasety = value_of(hd(dropList(value_of(value_of alist2))))
+             val basety = get_tyinfo[("kind",String"typeId"),("name",jbasety)]
+             val d = dropInt(value_of(hd(dropList(value_of(value_of alist3)))))
+         in ArrayDec(dest_qid name, ArrayTy(basety,[mk_uintLit d]))
+         end
+        else raise ERR "array_decl" "expected an array declaration"
   | other => raise ERR "array_decl" "expected an array declaration";
 
 fun data_decl_name decl =
@@ -642,6 +660,7 @@ fun data_decl_name decl =
            ("kind", String "ComponentImplementation") ::
            ("category", String "data") :: _) => dname
    | otherwise => raise ERR "data_decl_name" "";
+
 
 fun get_tydecl pkgName names thing =
    enum_decl thing handle HOL_ERR _ =>
@@ -671,43 +690,80 @@ fun enum_decls [] (edecs,comps) = (rev edecs, rev comps)
      of SOME edec => enum_decls t (edec::edecs,comps)
       | NONE => enum_decls t (edecs,h::comps)
 
-fun enum_qid (EnumDec (qid,elts)) = qid
-  | enum_qid otherwise = raise ERR "enum_qid" "";
+fun union_qids comps =
+ let fun pred comp =
+      ("Union" = dropString
+                   (value_of(value_of(hd (dropList (properties_of comp))))))
+      handle _ => false
+ in
+    map (dest_qid o dropString o name_of) (filter pred comps)
+ end;
 
-fun array_qid (ArrayDec (qid,_)) = qid
-  | array_qid otherwise = raise ERR "array_qid" "";
+fun union_decl uqids comp =
+  if dropString (kind_of comp) = "ComponentImplementation"
+     andalso
+     mem (dest_qid (dropString (name_of comp))) uqids
+  then
+    UnionDec
+      (dest_qid(dropString (name_of comp)),
+      List.map (fn sc => (dropString (name_of sc),
+                          NamedTy(dest_qid (dropString (classifier_of sc)))))
+               (dropList (subcomponents_of comp)))
+  else raise ERR "union_decl" "expected a Union implementation";
 
 fun drop_seen_comps qids complist =
  let fun seen comp = mem (dest_qid (dropString (name_of comp))) qids
  in filter (not o seen) complist
  end;
 
-fun drop_array_impls qids complist =
- let fun is_array_impl comp =
+fun drop_seen_impls qids complist =
+ let fun is_seen_impl comp =
        mem (dest_qid (dropString (name_of comp))) qids
        andalso
        dropString (kind_of comp) = "ComponentImplementation";
- in filter (not o is_array_impl) complist
+ in filter (not o is_seen_impl) complist
  end;
+
+fun dec_qid (EnumDec (qid,_)) = qid
+  | dec_qid (RecdDec (qid,_)) = qid
+  | dec_qid (ArrayDec(qid,_)) = qid
+  | dec_qid (UnionDec(qid,_)) = qid;
 
 fun tydec_usedBy tydec1 tydec2 =
  case (tydec1,tydec2)
   of (EnumDec _, _) => false
    | (_, EnumDec _) => false
-   | (RecdDec(qid,_),  RecdDec(_,flds)) => exists (ty_occurs (NamedTy qid)) (map snd flds)
-   | (ArrayDec(qid,_), RecdDec(_,flds)) => exists (ty_occurs (NamedTy qid)) (map snd flds)
-   | (RecdDec(qid,_),  ArrayDec(_,ty))  => ty_occurs (NamedTy qid) ty
-   | (ArrayDec(qid,_), ArrayDec(_,ty))  => ty_occurs (NamedTy qid) ty;
+   | (_, RecdDec(_,flds)) => exists (ty_occurs (NamedTy (dec_qid tydec1))) (map snd flds)
+   | (_, ArrayDec(_,ty)) => ty_occurs (NamedTy (dec_qid tydec1)) ty
+   | (_, UnionDec(_,ctrs)) => exists (ty_occurs (NamedTy (dec_qid tydec1))) (map snd ctrs)
+;
+
+(*---------------------------------------------------------------------------*)
+(* There is some ambiguity in type declarations. Unions, Enums, and Arrays   *)
+(* are declared as such in ComponentType declarations. Everything that needs *)
+(* to be known for Enums and Arrays is held in the ComponentType decl. For a *)
+(* Union type, the constructor information for the union is held in the      *)
+(* corresponding ComponentImplementation declaration. Everything that isn't  *)
+(* a Union, Enum, or Array is treated as a Recd. Recds are defined by their  *)
+(* fields, which are held in the ComponentImplementation declaration for the *)
+(* record. Because of obscure reasons having to do with the possibility of   *)
+(* empty records looking like implementations of some other kind of type, we *)
+(* drop all Union, Enum, and Array ComponentImplementation decls before      *)
+(* handling record declarations.                                             *)
+(*---------------------------------------------------------------------------*)
 
 fun get_tydecls pkgName complist =
- let val (enum_decs,comps1) = enum_decls complist ([],[])
+ let val uqids = union_qids complist
+     val udecs = mapfilter (union_decl uqids) complist
+     val comps0 = drop_seen_comps uqids complist
+     val (enum_decs,comps1) = enum_decls comps0 ([],[])
      val eqids = map enum_qid enum_decs
      val comps2 = drop_seen_comps eqids comps1
      val aqids = mapfilter (array_qid o array_decl) comps2
-     val comps3 = drop_array_impls aqids comps2
+     val comps3 = drop_seen_impls aqids comps2
      val names = mapfilter data_decl_name comps3
      val decs = mapfilter (get_tydecl pkgName names) comps3
-     val alldecs = enum_decs @ decs
+     val alldecs = enum_decs @ udecs @ decs
      val ordered_decs = topsort tydec_usedBy alldecs
  in
    ordered_decs
@@ -1045,7 +1101,7 @@ val [comp1,comp2,comp3,comp4,comp5,comp6,comp7,comp8,comp9,comp10,
 
 (*---------------------------------------------------------------------------*)
 (* For any declaration of a partial record type there should be a later      *)
-(* declaration of an extension to that type, giving the supplementary fields *)
+(* declaration of an completion of that type, giving the missing field(s)    *)
 (* to be added. We remove the first declaration and add its fields to the    *)
 (* given extension fields.                                                   *)
 (*---------------------------------------------------------------------------*)
@@ -1053,7 +1109,7 @@ val [comp1,comp2,comp3,comp4,comp5,comp6,comp7,comp8,comp9,comp10,
 fun dest_recd_dec (RecdDec args) = args
   | dest_recd_dec other = raise ERR "dest_recd_dec" ""
 
-fun refine_recd_decs declist =
+fun finalize_partial_recd_decs declist =
  let fun is_extensible tydec =
       case tydec
        of RecdDec (qid,flds) => exists (fn (s,ty) => eqTy(ty,null_ty)) flds
@@ -1135,7 +1191,7 @@ fun scrape_pkgs json =
      fun run pkgs =
       let val opkgs = rev (topsort uses pkgs)
           val modlist = mapfilter scrape opkgs
-          val modlist' = refine_recd_decs modlist
+          val modlist' = finalize_partial_recd_decs modlist
           val modlist'' = map extend_recd_decs modlist'
       in
 	modlist''
@@ -1163,7 +1219,7 @@ val pkgs = dropList (assoc "modelUnits" alist);
 val (opkgs as
  [pkg1, pkg2, pkg3, pkg4, pkg5, pkg6, pkg7,pkg8, pkg9, pkg10,
   pkg11,pkg12, pkg13,pkg14,pkg15,pkg16,pkg17, pkg18, pkg19, pkg20,
-  pkg21, pkg22,pkg23, pkg24, pkg25, pkg26,pkg27,pkg28,pkg29,pkg30]) = rev (topsort uses pkgs);
+  pkg21, pkg22,pkg23, pkg24, pkg25, pkg26,pkg27,pkg28,pkg29]) = rev (topsort uses pkgs);
 
 map name_of opkgs;
 
@@ -2210,7 +2266,6 @@ val template_ss =
     in TextIO.closeIn istrm;
        Substring.full string
     end;
-
 
 (*---------------------------------------------------------------------------*)
 (* New file: chunk0 . port-contig-type .                                     *)

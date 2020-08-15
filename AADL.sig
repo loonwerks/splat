@@ -11,7 +11,7 @@ sig
     = EnumDec of qid * string list
     | RecdDec of qid * (string * ty) list
     | ArrayDec of qid * ty
-(*     | UnionDec of qid * (string * ty) list *)
+    | UnionDec of qid * (string * ty) list
 
  datatype tmdec
     = ConstDec of qid * ty * exp
