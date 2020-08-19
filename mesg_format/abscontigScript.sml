@@ -2,8 +2,7 @@ open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib regexpLib ASCIInumbersLib;
 
 open pairTheory arithmeticTheory listTheory rich_listTheory
-     stringTheory combinTheory optionTheory ASCIInumbersTheory
-     numposrepTheory FormalLangTheory;
+     stringTheory combinTheory optionTheory numposrepTheory FormalLangTheory;
 
 open finite_mapTheory bagTheory;  (* For termination of predFn, need to use mlt_list *)
 
@@ -145,7 +144,6 @@ End
 Datatype:
   atom = Bool
        | Char
-       | Signed num
        | Unsigned num
 End
 
@@ -320,9 +318,11 @@ End
 
 Theorem tdrop_thm :
  ∀n list acc acc'.
-     tdrop n list acc = SOME (acc',suf) ⇒ acc' ++ suf = REVERSE acc ++ list
+     tdrop n list acc = SOME (acc',suf)
+     ⇒ (acc' ++ suf = REVERSE acc ++ list) /\
+        (LENGTH acc' = n + LENGTH acc)
 Proof
- recInduct tdrop_ind >> rw [tdrop_def]
+ recInduct tdrop_ind >> rw [tdrop_def] >> metis_tac [LENGTH_REVERSE]
 QED
 
 Definition take_drop_def :
@@ -331,7 +331,7 @@ End
 
 Theorem take_drop_thm :
   ∀n list.
-      take_drop n list = SOME (pref,suf) ⇒ pref ++ suf = list
+      take_drop n list = SOME (pref,suf) ⇒ pref ++ suf = list /\ (n = LENGTH pref)
 Proof
   rw_tac list_ss [take_drop_def] >> imp_res_tac tdrop_thm >> fs []
 QED
@@ -627,7 +627,7 @@ Proof
         >> rw [])
 QED
 
-Theorem match_sound :
+Theorem match_subst_thm :
 !atomicWidths valFn wklist (s:string) theta s2 theta'.
    matchFn (atomicWidths,valFn) (wklist,s,theta) = SOME (s2, theta')
    ==>
@@ -636,4 +636,257 @@ Proof
  metis_tac [match_lem,optionTheory.THE_DEF]
 QED
 
+
+(*---------------------------------------------------------------------------*)
+(* Formal language of a contiguity type. The definition is somewhat non-self-*)
+(* contained, i.e., its theta parameter is a map that may lead to partiality.*)
+(* But a theta computed by matchFn will be OK. I call this a "double-clutch" *)
+(* semantics, since one has to process a string to get theta, then use theta *)
+(* in the semantics.                                                         *)
+(*---------------------------------------------------------------------------*)
+
+Definition atomWidth_def:
+ atomWidth Bool = 1 /\
+ atomWidth Char = 1 /\
+ atomWidth (Unsigned n) = n
+End
+
+val layout_def =  (* LSB with padding to width *)
+ Define
+  `layout b n width = PAD_RIGHT 0n width (n2l b n)`;
+
+val repFn_def = Define `repFn w n = MAP CHR (layout 256 n w)`;
+val valFn_def = Define `valFn s = if s = "" then NONE else SOME (l2n 256 (MAP ORD s))`;
+
+val n2l_256 = save_thm
+("n2l_256",
+ n2l_def
+  |> Q.SPECL [`n`,`256`]
+  |> SIMP_RULE arith_ss []
+  |> Q.GEN `n`
+);
+
+Theorem ORD_EQ :
+ !c n. (ORD c = n) <=> ((CHR n = c) /\ n < 256)
+Proof
+  metis_tac [CHR_ORD,ORD_CHR_RWT,ORD_BOUND]
+QED
+
+Theorem ord_mod_256 :
+ !c. ORD c MOD 256 = ORD c
+Proof
+ rw_tac arith_ss [ORD_BOUND]
+QED
+
+Theorem valFn_char :
+  !c. valFn [c] = SOME (ORD c)
+Proof
+ rw_tac list_ss [valFn_def,l2n_def,ord_mod_256]
+QED
+
+Theorem valFn_rec :
+  valFn [] = NONE /\
+  valFn [c] = SOME (ORD c) /\
+  valFn (c1::c2::t) = SOME (ORD c1 + 256 * THE (valFn (c2::t)))
+Proof
+  rw_tac list_ss [valFn_def,l2n_def,ORD_BOUND]
+QED
+
+Theorem valFn_bound :
+  !s. s <> "" ==> (THE (valFn s) < 256 ** (STRLEN s))
+Proof
+simp_tac std_ss [valFn_def]
+  >> Induct
+  >> rw_tac list_ss [l2n_def,ord_mod_256,EXP]
+  >> `ORD h < 256` by metis_tac [ORD_BOUND]
+  >> Cases_on ‘s=""’
+     >- rw[]
+     >- (res_tac >> decide_tac)
+QED
+
+Theorem contig_size_lem:
+ !plist s c. MEM (s,c) plist ==> contig_size c < contig1_size plist
+Proof
+ Induct >> rw_tac list_ss [contig_size_def]
+ >- rw_tac list_ss [contig_size_def]
+ >- (‘contig_size c < contig1_size plist’ by metis_tac[]
+     >> decide_tac)
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Semantics (formal language style)                                         *)
+(*---------------------------------------------------------------------------*)
+
+Definition Contig_Lang_def:
+  Contig_Lang theta (Basic a) = {s | LENGTH s = atomWidth a} /\
+  Contig_Lang theta (Recd fields) =
+    {CONCAT slist
+      | LIST_REL (\s fld. s IN Contig_Lang theta (SND fld)) slist fields} /\
+  Contig_Lang theta (Array c e) =
+    (case evalExp (theta,valFn) e
+      of NONE => {}
+       | SOME n =>
+     {CONCAT slist
+       | (LENGTH slist = n) /\ EVERY (Contig_Lang theta c) slist}) /\
+  Contig_Lang theta (Alt bexp c1 c2) =
+    (case evalBexp (theta,valFn) bexp
+      of NONE => {}
+       | SOME T => Contig_Lang theta c1
+       | SOME F => Contig_Lang theta c2)
+Termination
+  WF_REL_TAC ‘measure (contig_size o SND)’
+  >> rw_tac list_ss [contig_size_def]
+  >> imp_res_tac contig_size_lem
+  >> decide_tac
+End
+
+(* This is all wrong *)
+Theorem match_lang_thm :
+ !contig (s:string) theta lval fmap.
+   matchFn (atomWidth,valFn:string-> num option)
+           ([(lval, contig)],s,fmap) = SOME ("", theta)
+   ==>
+     s IN Contig_Lang theta contig
+Proof
+ Induct >> rw []
+  >- (fs [Once matchFn_def, Contig_Lang_def]
+      >> BasicProvers.every_case_tac
+      >- metis_tac[]
+      >- metis_tac[]
+      >- metis_tac[]
+      >- (fs [Once matchFn_def] >> rw[] >> imp_res_tac take_drop_thm >> rw[]))
+ > (fs [Once matchFn_def, Contig_Lang_def]
+      >> BasicProvers.every_case_tac
+QED
+
 val _ = export_theory();
+
+
+(*
+(*---------------------------------------------------------------------------*)
+(* Invertibility for valFn/repFn                                             *)
+(*---------------------------------------------------------------------------*)
+
+val MAP_ORD_CHR = Q.prove
+(`!list. EVERY ($> 256) list ==> (MAP (ORD o CHR) list = list)`,
+ Induct >> rw_tac list_ss [ORD_CHR_RWT]);
+
+val l2n_append_zeros = Q.prove
+(`!n list. l2n 256 (list ++ GENLIST (K 0) n) = l2n 256 list`,
+Induct
+ >> rw_tac list_ss [GENLIST]
+ >> metis_tac [APPEND_SNOC, qspec_arith `256` l2n_SNOC_0]);
+
+val valFn_repFn = Q.store_thm
+("valFn_repFn",
+ `!n w. valFn (repFn w n) = n`,
+ rw_tac list_ss [repFn_def, valFn_def,layout_def,MAP_MAP_o,
+    PAD_RIGHT,n2l_BOUND,EVERY_GENLIST,MAP_ORD_CHR,l2n_append_zeros,l2n_n2l]);
+
+Theorem REPLICATE_EQ_SELF :
+ !L x. REPLICATE (LENGTH L) x = L <=> EVERY ($= x) L
+Proof
+ Induct >> rw_tac list_ss [REPLICATE]
+QED
+
+Theorem LAST_ADD_ELT :
+ !P h L. ~(L=[]) ==> LAST L = LAST (h::L)
+Proof
+ntac 2 gen_tac
+ >> Induct
+ >> rw_tac list_ss []
+QED
+
+Theorem list_constant_suffix :
+ !x L. ?l1 l2. L = l1 ++ l2 /\ EVERY ($= x) l2 /\ (l1 = [] \/ (~(l1=[]) /\ ~(LAST l1 = x)))
+Proof
+ gen_tac
+   >> Induct
+   >> rw_tac list_ss []
+   >> Cases_on `h=x`
+   >> rw_tac list_ss []
+   >- (qexists_tac `[]` >> qexists_tac `h::l2` >> rw_tac list_ss [])
+   >- (qexists_tac `[h]` >> qexists_tac `l2` >> rw_tac list_ss [])
+   >- (qexists_tac `h::l1` >> qexists_tac `l2` >> rw_tac list_ss []
+        >> metis_tac [LAST_ADD_ELT])
+   >- (qexists_tac `h::l1` >> qexists_tac `l2` >> rw_tac list_ss []
+        >> metis_tac [LAST_ADD_ELT])
+QED
+
+val split_zero_pad =
+ list_constant_suffix
+   |> Q.ISPEC `0n`
+   |> Q.ISPEC `MAP ORD s`
+
+Theorem repFn_valFn :
+ !s. 0 < STRLEN s ==> repFn (STRLEN s) (valFn s) = s
+Proof
+rw_tac list_ss [repFn_def, valFn_def,layout_def]
+ >> `1 < 256` by EVAL_TAC
+ >> `EVERY ($> 256) (MAP ORD s)`
+     by (rw_tac list_ss [EVERY_MAP, SIMP_RULE std_ss [GSYM GREATER_DEF] ORD_BOUND])
+ >> rw_tac splat_ss [n2l_l2n,l2n_eq_0,EVERY_MAP,o_DEF, C_DEF]
+ >- (rw_tac splat_ss [PAD_RIGHT,GSYM REPLICATE_GENLIST,map_replicate,GSYM REPLICATE]
+     >> `SUC(STRLEN s - 1) = STRLEN s` by rw_tac list_ss [] >> pop_subst_tac
+     >> rw_tac list_ss [REPLICATE_EQ_SELF]
+     >> irule MONO_EVERY
+     >> qexists_tac `\x. 0 = ORD x`
+     >> rw_tac splat_ss [])
+ >- (`EXISTS (\y. ~(0 = y)) (MAP ORD s)` by fs [NOT_EVERY,o_DEF,EXISTS_MAP]
+     >> qpat_k_assum `~EVERY _ _`
+     >> rw_tac splat_ss [LOG_l2n_dropWhile]
+     >> strip_assume_tac split_zero_pad >> rw_tac splat_ss [] >> fs[] >> rw_tac splat_ss []
+     >- (subst_all_tac (SYM (ETA_CONV ``\x. 0n = x``)) >> fs [] >> metis_tac [EVERY_NOT_EXISTS])
+     >- (`EVERY ($= 0) (REVERSE l2)` by metis_tac [EVERY_REVERSE]
+          >> rw_tac list_ss [dropWhile_APPEND_EVERY]
+          >> `dropWhile ($= 0) (REVERSE l1) = REVERSE l1`
+              by (Cases_on `REVERSE l1`
+                >- full_simp_tac list_ss []
+                >- (rw_tac list_ss [dropWhile_def]
+                     >> `~(REVERSE l1 = [])` by rw_tac list_ss [REVERSE_EQ_NIL]
+                     >> `HD (REVERSE l1) = LAST l1` by metis_tac [LAST_REVERSE, REVERSE_REVERSE]
+                     >> metis_tac [HD]))
+          >> pop_subst_tac
+          >> pop_assum mp_tac
+          >> rw_tac list_ss []
+          >> `0 < LENGTH l1` by metis_tac [qdecide `~(x=0) <=> 0 < x`,LENGTH_NIL]
+          >> `SUC (PRE (LENGTH l1)) = LENGTH l1` by metis_tac [SUC_PRE]
+          >> pop_subst_tac
+          >> rw_tac list_ss [TAKE_APPEND]
+	  >> `STRLEN s = LENGTH l1 + LENGTH l2` by metis_tac [LENGTH_MAP,LENGTH_APPEND]
+          >> rw_tac splat_ss [PAD_RIGHT,GSYM REPLICATE_GENLIST,map_replicate,GSYM REPLICATE]
+          >> rw_tac list_ss [GSYM map_replicate]
+          >> rw_tac std_ss [GSYM MAP_APPEND]
+          >> `REPLICATE (LENGTH l2) 0 = l2` by metis_tac [REPLICATE_EQ_SELF]
+          >> pop_subst_tac
+          >> qpat_x_assum `MAP ORD s = _` (subst_all_tac o sym)
+          >> rw_tac splat_ss [MAP_MAP_o, o_DEF]
+        )
+     >- (`EVERY ($= 0) (REVERSE l2)` by metis_tac [EVERY_REVERSE]
+          >> rw_tac list_ss [dropWhile_APPEND_EVERY]
+          >> `dropWhile ($= 0) (REVERSE l1) = REVERSE l1`
+              by (Cases_on `REVERSE l1`
+                >- full_simp_tac list_ss []
+                >- (rw_tac list_ss [dropWhile_def]
+                     >> `~(REVERSE l1 = [])` by rw_tac list_ss [REVERSE_EQ_NIL]
+                     >> `HD (REVERSE l1) = LAST l1` by metis_tac [LAST_REVERSE, REVERSE_REVERSE]
+                     >> metis_tac [HD]))
+          >> pop_subst_tac
+          >> pop_assum mp_tac
+          >> rw_tac list_ss []
+          >> `0 < LENGTH l1` by metis_tac [qdecide `~(x=0) <=> 0 < x`,LENGTH_NIL]
+          >> `SUC (PRE (LENGTH l1)) = LENGTH l1` by metis_tac [SUC_PRE]
+          >> pop_subst_tac
+          >> rw_tac list_ss [TAKE_APPEND]
+	  >> `STRLEN s = LENGTH l1 + LENGTH l2` by metis_tac [LENGTH_MAP,LENGTH_APPEND]
+          >> rw_tac splat_ss [PAD_RIGHT,GSYM REPLICATE_GENLIST,map_replicate,GSYM REPLICATE]
+          >> rw_tac list_ss [GSYM map_replicate]
+          >> rw_tac std_ss [GSYM MAP_APPEND]
+          >> `REPLICATE (LENGTH l2) 0 = l2` by metis_tac [REPLICATE_EQ_SELF]
+          >> pop_subst_tac
+          >> qpat_x_assum `MAP ORD s = _` (subst_all_tac o sym)
+          >> rw_tac splat_ss [MAP_MAP_o, o_DEF]
+        )
+    )
+QED
+*)

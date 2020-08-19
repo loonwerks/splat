@@ -1,0 +1,14 @@
+open abscontigTheory;
+
+Definition atomWidth_def:
+ atomWidth Bool = 1 /\
+ atomWidth Char = 1 /\
+ atomWidth (Signed n) = n /\
+ atomWidth (Unsigned n) = n
+End
+
+
+val wklist = ``[(VarName"root", Basic Bool)]``;
+
+g `matchFn (atomWidth,valFn) (^wklist,s,{||}) = SOME (s2, theta)
+   ==> ?s1. (s = s1 ^ s2) /\ s1 IN Lang (atomWidth,valFn) theta contig
