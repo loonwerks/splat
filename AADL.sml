@@ -83,6 +83,11 @@ fun dest_qid s =
 
 val qid_compare = Lib.pair_compare (String.compare,String.compare);
 
+fun dec_qid (EnumDec (qid,_)) = qid
+  | dec_qid (RecdDec (qid,_)) = qid
+  | dec_qid (ArrayDec(qid,_)) = qid
+  | dec_qid (UnionDec(qid,_)) = qid;
+
 (* Principled approach, doing a one-for-one mapping between AADL integer types and,
    eventually, HOL types. Not sure how well it will work with all AGREE specs limited
    to be (unbounded) Integer. Example: a field "f : Integer_32" may be constrained by
@@ -724,11 +729,6 @@ fun drop_seen_impls qids complist =
  in filter (not o is_seen_impl) complist
  end;
 
-fun dec_qid (EnumDec (qid,_)) = qid
-  | dec_qid (RecdDec (qid,_)) = qid
-  | dec_qid (ArrayDec(qid,_)) = qid
-  | dec_qid (UnionDec(qid,_)) = qid;
-
 fun tydec_usedBy tydec1 tydec2 =
  case (tydec1,tydec2)
   of (EnumDec _, _) => false
@@ -757,9 +757,9 @@ fun get_tydecls pkgName complist =
      val udecs = mapfilter (union_decl uqids) complist
      val comps0 = drop_seen_comps uqids complist
      val (enum_decs,comps1) = enum_decls comps0 ([],[])
-     val eqids = map enum_qid enum_decs
+     val eqids = map dec_qid enum_decs
      val comps2 = drop_seen_comps eqids comps1
-     val aqids = mapfilter (array_qid o array_decl) comps2
+     val aqids = mapfilter (dec_qid o array_decl) comps2
      val comps3 = drop_seen_impls aqids comps2
      val names = mapfilter data_decl_name comps3
      val decs = mapfilter (get_tydecl pkgName names) comps3
