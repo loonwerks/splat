@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib regexpLib ASCIInumbersLib;
 
-open pairTheory arithmeticTheory listTheory rich_listTheory
+open pairTheory arithmeticTheory listTheory rich_listTheory pred_setTheory
      stringTheory combinTheory optionTheory numposrepTheory FormalLangTheory;
 
 open finite_mapTheory bagTheory;  (* For termination of predFn, need to use mlt_list *)
@@ -353,6 +353,18 @@ Proof
   >> rw [pred_setTheory.EXTENSION]
 QED
 
+Theorem length_upto :
+  !lo hi. lo <= hi ==> LENGTH(upto lo hi) = (hi-lo) + 1
+Proof
+ recInduct upto_ind
+  >> rw_tac list_ss []
+  >> rw_tac list_ss [Once upto_def]
+  >> fs[]
+  >> ‘lo=hi \/ lo+1 <= hi’ by decide_tac
+      >- rw[Once upto_def]
+      >- fs[]
+QED
+
 (*---------------------------------------------------------------------------*)
 (* Size of a contig. The system-generated contig_size goes through a lot of  *)
 (* other types, including field names, and those shouldn't be counted because*)
@@ -417,7 +429,7 @@ Definition predFn_def :
          of NONE => F
           | SOME dim =>
             predFn (atomWidths,valFn)
-                   (MAP (indexFn lval c) (upto 0 (dim - 1)) ++ t,s,theta))
+                   (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
    | (lval,Alt bexp c1 c2)::t =>
        case evalBexp (theta,valFn) bexp
         of NONE => F
@@ -456,7 +468,7 @@ Definition matchFn_def :
          of NONE => NONE
           | SOME dim =>
              matchFn (atomicWidths,valFn)
-                     (MAP (indexFn lval c) (upto 0 (dim - 1)) ++ t,s,theta))
+                     (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
    | (lval,Alt bexp c1 c2)::t =>
        case evalBexp (theta,valFn) bexp
         of NONE => NONE
@@ -489,7 +501,7 @@ Definition substFn_def :
           | SOME dim =>
             concatPartial
                (MAP (\i. substFn valFn theta (ArraySub lval (numLit i), c))
-                    (upto 0 (dim - 1))))
+                    (COUNT_LIST dim)))
     | Alt bexp c1 c2 =>
        (case evalBexp (theta,valFn) bexp
          of NONE => NONE
@@ -548,7 +560,6 @@ Induct
  >> fs []
  >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11,evalExp_submap]
 QED
-
 
 Theorem match_lem :
 !atomicWidths valFn wklist (s:string) theta s2 theta'.
@@ -705,12 +716,12 @@ simp_tac std_ss [valFn_def]
 QED
 
 Theorem contig_size_lem:
- !plist s c. MEM (s,c) plist ==> contig_size c < contig1_size plist
+ !plist p. MEM p plist ==> contig_size (SND p) < contig1_size plist
 Proof
- Induct >> rw_tac list_ss [contig_size_def]
+ simp_tac list_ss [FORALL_PROD] >> Induct
+ >> rw_tac list_ss [contig_size_def]
  >- rw_tac list_ss [contig_size_def]
- >- (‘contig_size c < contig1_size plist’ by metis_tac[]
-     >> decide_tac)
+ >- (‘contig_size p_2 < contig1_size plist’ by metis_tac[] >> decide_tac)
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -721,7 +732,7 @@ Definition Contig_Lang_def:
   Contig_Lang theta (Basic a) = {s | LENGTH s = atomWidth a} /\
   Contig_Lang theta (Recd fields) =
     {CONCAT slist
-      | LIST_REL (\s fld. s IN Contig_Lang theta (SND fld)) slist fields} /\
+      | LIST_REL (\s contig. s IN Contig_Lang theta contig) slist (MAP SND fields)} /\
   Contig_Lang theta (Array c e) =
     (case evalExp (theta,valFn) e
       of NONE => {}
@@ -735,29 +746,246 @@ Definition Contig_Lang_def:
        | SOME F => Contig_Lang theta c2)
 Termination
   WF_REL_TAC ‘measure (contig_size o SND)’
-  >> rw_tac list_ss [contig_size_def]
+  >> rw [contig_size_def,MEM_MAP]
   >> imp_res_tac contig_size_lem
   >> decide_tac
 End
 
-(* This is all wrong *)
-Theorem match_lang_thm :
- !contig (s:string) theta lval fmap.
-   matchFn (atomWidth,valFn:string-> num option)
-           ([(lval, contig)],s,fmap) = SOME ("", theta)
+Theorem IN_Contig_Lang :
+  ∀s.
+     (s IN Contig_Lang theta (Basic a) ⇔ LENGTH s = atomWidth a) /\
+     (s IN Contig_Lang theta (Recd fields) ⇔
+        ∃slist. s = CONCAT slist ∧
+                LIST_REL (\s contig. s IN Contig_Lang theta contig) slist (MAP SND fields)) /\
+     (s IN Contig_Lang theta (Array c e) ⇔
+        ∃slist.
+            evalExp (theta,valFn) e = SOME (LENGTH slist) ∧
+            s = CONCAT slist ∧
+            EVERY (Contig_Lang theta c) slist) /\
+     (s IN Contig_Lang theta (Alt bexp c1 c2) ⇔
+         ∃b. evalBexp (theta,valFn) bexp = SOME b ∧
+              if b then s IN Contig_Lang theta c1
+                   else s IN Contig_Lang theta c2)
+Proof
+ rw [Contig_Lang_def,EXTENSION]
+  >> every_case_tac
+  >> rw []
+  >> metis_tac[]
+QED
+
+Definition foo_recd_def:
+  foo_recd clist = Recd (MAP (\c. ("foo", c)) clist)
+End
+
+Theorem field_names_ignored:
+  ∀plist1 plist2 theta.
+     (MAP SND plist1 = MAP SND plist2)
+    ⇒
+    Contig_Lang theta (Recd plist1) = Contig_Lang theta (Recd plist2)
+Proof
+  fs [Contig_Lang_def]
+QED
+
+Triviality map_snd_fieldFn :
+∀plist x. MAP SND (MAP (fieldFn x) plist) = MAP SND plist
+Proof
+  Induct >> fs [fieldFn_def,FORALL_PROD]
+QED
+
+Triviality snd_indexFn :
+ !n q c. (SND o indexFn q c) n = c
+Proof
+ rw[combinTheory.o_DEF, indexFn_def]
+QED
+
+Triviality map_snd_indexFn :
+∀n q c. MAP SND (MAP (indexFn q c) (COUNT_LIST n)) = REPLICATE n c
+Proof
+  fs [MAP_MAP_o,MAP_COUNT_LIST,REPLICATE_GENLIST,GENLIST_FUN_EQ,snd_indexFn]
+QED
+
+Theorem every_list_rel_replicate :
+  !list a R.
+    EVERY (R a) list <=> LIST_REL (\x y. R y x)  list (REPLICATE (LENGTH list) a)
+Proof
+ Induct >> rw[]
+QED
+
+Triviality map_snd_lem :
+∀list x. MAP SND (MAP (\c. (x,c)) list) = list
+Proof
+  Induct >> fs []
+QED
+
+Theorem Recd_flatA :
+ ∀s plist1 plist2 theta fName.
+   s IN Contig_Lang theta (Recd ((fName,Recd plist1)::plist2)) ==>
+   s IN Contig_Lang theta (Recd (plist1 ++ plist2))
+Proof
+ rw [Contig_Lang_def]
+ >> qexists_tac ‘slist' ++ xs’
+ >> rw[] >> metis_tac [LIST_REL_APPEND_suff]
+QED
+
+Theorem Recd_flatB :
+ ∀s fields1 fields2 theta fName.
+    s IN Contig_Lang theta (Recd (fields1 ++ fields2))
+    ==>
+    s IN Contig_Lang theta (Recd ((fName,Recd fields1)::fields2))
+Proof
+ rw [Contig_Lang_def]
+ >> fs [LIST_REL_SPLIT2]
+ >> rw[PULL_EXISTS]
+ >> metis_tac []
+QED
+
+Theorem Recd_flat :
+ ∀s plist1 plist2 theta fName.
+   s IN Contig_Lang theta (Recd ((fName,Recd plist1)::plist2)) <=>
+   s IN Contig_Lang theta (Recd (plist1 ++ plist2))
+Proof
+ metis_tac [Recd_flatA,Recd_flatB]
+QED
+
+
+Theorem Recd_Array_flat :
+ ∀s e n c clist theta.
+  evalExp (theta,valFn) e = SOME n
    ==>
+   (s IN Contig_Lang theta (foo_recd (Array c e::clist))
+    <=>
+    s IN Contig_Lang theta (foo_recd (REPLICATE n c ⧺ clist)))
+Proof
+ rw[IN_Contig_Lang,foo_recd_def,EQ_IMP_THM,PULL_EXISTS]
+ >- (qexists_tac ‘slist' ++ xs’
+     >> fs[map_snd_lem]
+     >> match_mp_tac LIST_REL_APPEND_suff
+     >> rw[]
+     >> imp_res_tac every_list_rel_replicate
+     >> fs [IN_DEF])
+ >- (fs[map_snd_lem,LIST_REL_SPLIT2]
+     >> rw[]
+     >> qexists_tac ‘ys2’
+     >> qexists_tac ‘ys1’
+     >> rw[]
+     >- metis_tac [LENGTH_REPLICATE,LIST_REL_LENGTH]
+     >- (rw[every_list_rel_replicate]
+         >> ‘LENGTH ys1 = LENGTH (REPLICATE n c)’ by metis_tac [LIST_REL_LENGTH]
+         >> fs [LENGTH_REPLICATE,IN_DEF]))
+QED
+
+Theorem Recd_Alt_flatA :
+ ∀s b c1 c2 clist theta.
+  evalBexp (theta,valFn) b = SOME T
+   ==>
+   (s IN Contig_Lang theta (foo_recd (Alt b c1 c2::clist))
+    <=>
+    s IN Contig_Lang theta (foo_recd (c1::clist)))
+Proof
+ rw[IN_Contig_Lang,foo_recd_def,EQ_IMP_THM,PULL_EXISTS]
+QED
+
+Theorem Recd_Alt_flatB :
+ ∀s b c1 c2 clist theta.
+  evalBexp (theta,valFn) b = SOME F
+   ==>
+   (s IN Contig_Lang theta (foo_recd (Alt b c1 c2::clist))
+    <=>
+    s IN Contig_Lang theta (foo_recd (c2::clist)))
+Proof
+ rw[IN_Contig_Lang,foo_recd_def,EQ_IMP_THM,PULL_EXISTS]
+QED
+
+Theorem matchFn_wklist_sound :
+ !widths vFn wklist s fmap suffix theta.
+   (widths = atomWidth) ∧ (vFn = valFn)
+    ==>
+   matchFn (widths,vFn) (wklist,s,fmap) = SOME (suffix, theta)
+    ==>
+   ∃prefix. (s = prefix ++ suffix) ∧ prefix IN Contig_Lang theta (foo_recd (MAP SND wklist))
+Proof
+ recInduct matchFn_ind
+  >> simp_tac list_ss []
+  >> rpt gen_tac
+  >> strip_tac
+  >> simp_tac list_ss [Once matchFn_def]
+  >> every_case_tac
+  >> rw[] >> fs[] >> rfs[] >> rw []
+    >- rw [IN_Contig_Lang,foo_recd_def]
+    >- (fs[map_snd_fieldFn]
+        >> ‘Contig_Lang theta' (foo_recd (MAP SND l ⧺ MAP SND t)) =
+            Contig_Lang theta' (foo_recd (Recd l::MAP SND t))’
+            by (rw [foo_recd_def,Recd_flat,EXTENSION]
+                  >> AP_TERM_TAC
+                  >> match_mp_tac field_names_ignored
+                  >> rw[map_snd_lem])
+        >> metis_tac[])
+    >- (fs[map_snd_indexFn]
+        >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘evalExp (theta',valFn) e = SOME x’ by metis_tac [evalExp_submap]
+        >> ‘Contig_Lang theta' (foo_recd (Array c e::MAP SND t)) =
+            Contig_Lang theta' (foo_recd (REPLICATE x c ⧺ MAP SND t))’
+           by rw [EXTENSION,GSYM Recd_Array_flat]
+        >> pop_assum SUBST_ALL_TAC
+        >> metis_tac [map_snd_indexFn])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘evalBexp (theta',valFn) b = SOME T’ by metis_tac [evalBexp_submap]
+        >> rw [Recd_Alt_flatA])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘evalBexp (theta',valFn) b = SOME F’ by metis_tac [evalBexp_submap]
+        >> rw [Recd_Alt_flatB])
+    >- (qexists_tac ‘q' ++ prefix’
+        >> rw [IN_Contig_Lang,foo_recd_def,PULL_EXISTS]
+           >- (imp_res_tac take_drop_thm >> fs [])
+           >- (imp_res_tac take_drop_thm
+                >> fs [IN_Contig_Lang,foo_recd_def,PULL_EXISTS,map_snd_lem]
+                >> rw[]
+                >> metis_tac[]))
+    >- (fs[map_snd_fieldFn]
+        >> ‘Contig_Lang theta' (foo_recd (MAP SND l ⧺ MAP SND t)) =
+            Contig_Lang theta' (foo_recd (Recd l::MAP SND t))’
+            by (rw [foo_recd_def,Recd_flat,EXTENSION]
+                  >> AP_TERM_TAC
+                  >> match_mp_tac field_names_ignored
+                  >> rw[map_snd_lem])
+        >> metis_tac[])
+    >- (fs[map_snd_indexFn]
+        >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘evalExp (theta',valFn) e = SOME x’ by metis_tac [evalExp_submap]
+        >> ‘Contig_Lang theta' (foo_recd (Array c e::MAP SND t)) =
+            Contig_Lang theta' (foo_recd (REPLICATE x c ⧺ MAP SND t))’
+           by rw [EXTENSION,GSYM Recd_Array_flat]
+        >> pop_assum SUBST_ALL_TAC
+        >> metis_tac [map_snd_indexFn])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘evalBexp (theta',valFn) b = SOME T’ by metis_tac [evalBexp_submap]
+        >> rw [Recd_Alt_flatA])
+    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
+        >> ‘evalBexp (theta',valFn) b = SOME F’ by metis_tac [evalBexp_submap]
+        >> rw [Recd_Alt_flatB])
+QED
+
+Theorem Contig_Degenerate_Recd :
+ !s theta contig fName.
+     s IN Contig_Lang theta (Recd [(fName,contig)])
+      <=>
      s IN Contig_Lang theta contig
 Proof
- Induct >> rw []
-  >- (fs [Once matchFn_def, Contig_Lang_def]
-      >> BasicProvers.every_case_tac
-      >- metis_tac[]
-      >- metis_tac[]
-      >- metis_tac[]
-      >- (fs [Once matchFn_def] >> rw[] >> imp_res_tac take_drop_thm >> rw[]))
- > (fs [Once matchFn_def, Contig_Lang_def]
-      >> BasicProvers.every_case_tac
+ rw [IN_Contig_Lang,PULL_EXISTS]
 QED
+
+Theorem matchFn_sound :
+ !contig s theta.
+   matchFn (atomWidth,valFn) ([(VarName"root",contig)],s,FEMPTY) = SOME ("", theta)
+    ==>
+   s IN Contig_Lang theta contig
+Proof
+  rw[]
+  >> imp_res_tac (matchFn_wklist_sound |> SIMP_RULE std_ss [])
+  >> rw []
+  >> fs [foo_recd_def,Contig_Degenerate_Recd]
+QED
+
 
 val _ = export_theory();
 
