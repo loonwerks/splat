@@ -70,62 +70,107 @@ Johannes~{\AA}man~Pohjola~\textsuperscript{3} \and %
 \begin{frame}\frametitle{System Architecture}
 \begin{itemize}
 
-\item System architecture models provide a high-level setting in which
+\item General setting: \textbf{Architectural Design Languages}
+
+\item An ADL supports complete, highly abstract, views of a system,
+  including hardware, software, (and possibly humans)
+
+\item An architecture model should provide a high-level setting in which
   the \emph{whole picture} of a system can be surveyed
 
-\item A place where existing implementations, new design features, high-level
-  requirements, implementations, and verifications can be combined.
+\item Thus: a place where existing implementations, new design
+  features, high-level requirements, implementations, and
+  verifications can be combined.
+
+\item Not just boxes and arrows!
+
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{CASE}
+\begin{itemize}
 
 \item In the DARPA \textbf{CASE} project we are developing the idea of
   \emph{Security-Enhancing} transformations on such architectural
   descriptions.
 
-\item The goal is to develop architectural models for existing
-  (legacy) systems, and then improve system security by applying architectural
-  transformations
+\item The goal is to develop a methodology and case studies where
+  \begin{itemize}
+  \item [$\blacktriangleright$]
+       the structure of an existing (legacy) system is captured in an architectural model;
+
+ \item [$\blacktriangleright$] system security is automatically analyzed and any security
+   problems are addressed by applying architectural transformations
+ \end{itemize}
+
+\item A key aspect is use of formal specification languages and
+  automatic synthesis of security mechanisms
 
 \end{itemize}
-
-\end{frame}
-
-\begin{frame}\frametitle{Architecture Transformations}
-
-We have been developing a collection of
-\emph{architecture-to-architecture} maps that can be applied to
-provably \emph{increase} the security of a system.
-
-\includegraphics[width=90mm,height=50mm]{arch-trans.jpg}
 
 \end{frame}
 
 \begin{frame}\frametitle{AADL}
 
+We have been using Architecture Analysis and Design Language (AADL) as
+our architecture modelling language.
+
 \begin {itemize}
 \item Expressive: allows specification of
 \begin{itemize}
-     \item memory and buses
-     \item software (types + behavior)
-     \item communication
-     \item scheduling
-     \item  hierarchical organization of components
+     \item [$\blacktriangleright$] memory and buses
+     \item [$\blacktriangleright$] software (types + behavior)
+      \item[$\blacktriangleright$] hierarchical organization of components
+     \item [$\blacktriangleright$] communication
+     \item [$\blacktriangleright$] scheduling
 \end{itemize}
 \item Tool support in Eclipse (via OSATE)
-\item Extensible via \emph{annexes}
-\item At Collins we have developed two annexes being used on CASE
-\begin{itemize}
-\item AGREE  (Assume-Guarantee contracts on components)
-\item Resolute (Assurance cases)
+\item Popular: growing user base, tutorials, books, etc.
 \end{itemize}
-\end{itemize}
+
+\hspace*{30mm}
+\includegraphics[width=20mm,height=28mm]{book-title-0.jpg}
+\hspace*{5mm}
+\includegraphics[width=20mm,height=28mm]{book-cover.jpg}
+
+
 \end{frame}
 
+\begin{frame}\frametitle{AADL in CASE}
+
+AADL is extensible via \emph{annexes}. At Collins we have developed
+two annexes used on many projects in the Trusted Systems Group:
+
+\begin{description}
+\item [AGREE] SMT-based reasoning over Assume-Guarantee contracts on components
+\item [Resolute] Assurance cases as formal entities, using proof search to explore cases.
+\end{description}
+
+In CASE, AGREE is used to formulate behavioral security rqts.
+
+Resolute is used for structural properties, and also for linking
+results from disparate proof systems.
+
+\end{frame}
+
+\begin{frame}\frametitle{Architecture Transformations}
+
+We have been developing a collection of architecture-to-architecture maps that can be applied to
+\emph{provably increase} the security of a system.
+
+\vspace*{4mm}
+
+\includegraphics[width=90mm,height=50mm]{arch-trans.jpg}
+\end{frame}
 
 \begin{frame}\frametitle{Transformation: Message Filtering}
 
 A \emph{filter} is conceptually very simple: it checks validity of its input data.
-If the data is valid, then it is passed on. Otherwise it is dropped.
 
 \hspace*{10mm}\includegraphics[width=90mm,height=50mm]{filter.jpg}
+
+If the data is valid, then it is passed on. Otherwise it is dropped.
 
 \end{frame}
 
@@ -136,21 +181,38 @@ A \emph{monitor} checks to see that a relationship $\mathcal{R}$ holds
 over a collection of message streams through time. If the
 specification is violated, an \emph{alert} is sent out.
 
-\begin{itemize}
-  \item We currently use past-time temporal logic to specify monitors
-\end{itemize}
-
 \hspace*{10mm}\includegraphics[width=90mm,height=40mm]{monitor.jpg}
+
+We currently use past-time temporal logic to specify monitors
 
 \end{frame}
 
 
 \begin{frame}\frametitle{Transformation: Isolation of `at risk' components}
 
-An unprotected computational element can be \emph{memory protected} by
-transparently lifting it out of its context and mediating access via seL4.
+An unprotected computational element can be isolated by transparently
+lifting it out of its context and mediating access via seL4.
 
 \hspace*{10mm}\includegraphics[width=90mm,height=40mm]{vm.jpg}
+
+ Correctness of this transformation depends on formal guarantees provided by seL4.
+
+\end{frame}
+
+\begin{frame}\frametitle{seL4}
+
+\begin{itemize}
+\item seL4 microkernel guarantees partitioning of components and
+  communication, backed by computer-checked proofs
+
+\item seL4 guarantees no infiltration, exfiltration, eavesdropping,
+  interference, and provides fault containment for untrusted code
+
+\end{itemize}
+
+\vspace*{5mm}
+\hspace*{10mm}\includegraphics[width=15mm,height=15mm]{data61-logo.png}
+\hspace*{10mm}\includegraphics[width=15mm,height=15mm]{csiro--black.png}
 
 \end{frame}
 
@@ -164,10 +226,10 @@ an observer system.
 
 \end{frame}
 
-\begin{frame}[fragile]\frametitle{Example: uxAS}
+\begin{frame}[fragile]\frametitle{Example System: uxAS}
 
- Current example we have been using is \textbf{uxAS}, a framework for
-creating autonomous aerial systems from AFRL.
+ The example we have been using is \textbf{uxAS}, a framework for
+ creating autonomous aerial systems from AFRL.
 
 \begin{verbatim}
   https://github.com/afrl-rq/OpenUxAS
@@ -193,52 +255,63 @@ The initial system model we start from :
 \begin{frame}\frametitle{Notes on the model}
 
 \begin{itemize}
-\item UAV is preloaded with a collection of Operating Regions (Keep-in and Keep-out zones)
+\item UAV is preloaded with a collection of \emph{Operating Regions}
+  (Keep-in and Keep-out zones)
 \item Commands from GS:
-\begin{itemize}
-  \item OR : set focus of operations to be the area denoted by the OR identifier
-  \item LST : LineSearchTask: \emph{Follow the given sequence of points}
-  \item ARQT : AutomationRequest: \emph{Create a flight plan to
+\begin{description}
+  \item [OR] Set operating region
+  \item [LST] LineSearchTask: \emph{Follow the given sequence of points}
+  \item [ARQT] : AutomationRequest: \emph{Create a flight plan to
     achieve a high-level description, e.g., ``surveil the given OR in
     a grid pattern''}
-  \item ARSP : Response to an ARQT
-  \item VAC : VehicleActionCommand
-  \item MC : MissionCommand
-  \item AV-State: AirVehicleState
-\end{itemize}
+\end{description}
+
+\item Internal messages
+\begin{description}
+  \item [ARSP]  Response to Automation Request
+  \item [VAC]  VehicleActionCommand
+  \item [MC]  MissionCommand
+  \item [AV-State] AirVehicleState
+\end{description}
+
 \end{itemize}
 
 \end{frame}
 
 \begin{frame}\frametitle{Security Considerations}
 
-\begin{enumerate}
-\item An OR message should designate a known region
-\item Each point in a LST should be a valid GPS coordinate
-\item Each point in an ARSP should be in a keep-in zone and not in a keep-out zone
-\item Every point in an ARSP should be a valid GPS coord
-\item Every ARQT should have a corresponding ARSP
-\item uxAS software is open source and could be compromised
-\item Ground station could be compromised; UAV needs to defend against that
-\end{enumerate}
+\begin{itemize}[<+->]
+\item \textbf{Problem}: An Operating Region message should designate a known region
+\item \textbf{Solution}: Filter OR message to be valid regions
+
+\item \textbf{Problem}: Each point in a Line Search Task should be a valid GPS coordinate
+\item \textbf{Solution} Filter LST message on GSP coords
+
+\item \textbf{Problem}: Each point in an Automation Response should be
+  in a keep-in zone and not in a keep-out zone
+\item \textbf{Solution} Monitor ARSP messages wrt Keep-in and Keep-out zones
+
+\item \textbf{Problem}: Every point in an Automation Response should be a valid GPS coord
+\item \textbf{Solution} Filter ARSP message
+\end{itemize}
 
 \end{frame}
 
-\begin{frame}\frametitle{Transformations}
+\begin{frame}\frametitle{Security Considerations continued}
 
-\begin{enumerate}
-\item (Filter) An OR message should designate a known region
-\item (Filter) Each point in a LST should be a valid GPS coordinate
-\item (Filter) Each point in an ARSP should be in a keep-in zone and not in a keep-out zone
-\item (Filter) Every point in an Automation Response should be a valid GPS coord
-\item (Monitor) Every Automation Request message should have a corresponding Automation Response
-            message
-\item (VM) uxAS software is open source and could be compromised,
-      therefore compromising the Waypoint Manager
-\item (Attestation) Ground station could be compromised
-\end{enumerate}
+\begin{itemize}[<+->]
+\item \textbf{Problem}: Every Automation Request should have a corresponding Response
+\item \textbf{Solution}: Monitor ARQT and ARSP for responses matching requests
+
+\item \textbf{Problem}: uxAS software is open source and Waypoint manager could be compromised
+\item \textbf{Solution}: Isolate Waypoint Manager on a VM
+
+\item \textbf{Problem}: Ground station could be compromised; UAV needs to defend itself against that
+\item \textbf{Solution}: Attestation Manager on GS, talking to UAV
+\end{itemize}
 
 \end{frame}
+
 
 \begin{frame}\frametitle{Transformed uxAS}
 
@@ -246,6 +319,45 @@ The transformed model :
 
 \includegraphics[width=90mm,height=50mm]{final-arch.jpg}
 
+\end{frame}
+
+\begin{frame}\frametitle{Implementations and Build}
+
+As the transformations are applied, implementations and
+configuration information are generated.
+
+\begin{itemize}
+
+  \item For ``simple'' transformations code can be generated at transformation time.
+  \item For the VM and Attestation transforms, configuration
+    information can be generated, but the details of the
+    implementation are more involved.
+\end{itemize}
+
+Finally the \textbf{BUILD} can now be invoked.
+
+\includegraphics[width=20mm,height=20mm]{ksu.jpg}
+\includegraphics[width=20mm,height=20mm]{adventium.png}
+
+
+\end{frame}
+
+\begin{frame}\frametitle{Build}
+
+The build is very challenging. The \textbf{HAMR} toolsuite implements
+multi-stage translation architecture to address the following goals:
+\begin{itemize}
+
+\item Semantic consistency from model to execution ensures model-level
+  analysis applies to deployed code
+
+\item Build for multiple target platforms: seL4, Linux
+
+\item Same computational model across different platforms
+
+\item Same semantics for threading and communication
+
+\end{itemize}
 
 \end{frame}
 
@@ -262,11 +374,11 @@ Formal specification and proof to the rescue! (Mostly.)
 
 \end{frame}
 
-
-
 \section {Deep Dive: Message Filters}
 
 \begin{frame}\frametitle{Ports and Messages}
+
+Question: what does a filter operate over?
 
 \begin{itemize}
 
@@ -284,23 +396,7 @@ Formal specification and proof to the rescue! (Mostly.)
 
 \end{frame}
 
-\begin{frame}\frametitle{SPLAT}
-
-\begin{itemize}
-
-\item We need to span the gap between high level data and flat strings
-
-\item Our approach : \textbf{SPLAT} (Semantic Properties for Language and Automata Theory)
-
-\item We want to apply ideas from Formal Language Theory to showing
-  properties of operations on high-level data.
-
-\end{itemize}
-
-\end{frame}
-
-
-\begin{frame}[fragile]\frametitle{Example : Wellformed GPS coordinates}
+\begin{frame}[fragile]\frametitle{Example : Wellformed GPS coordinates in AGREE}
 
 {\small
 \begin{verbatim}
@@ -309,43 +405,55 @@ Formal specification and proof to the rescue! (Mostly.)
  Location3D = {
   Latitude  : real64,
   Longitude : real64,
-  Altitude  : real32),
+  Altitude  : real32,
   AltitudeType : AltitudeType}
 
  Good_Location (loc) =
-    -90.0 <= loc.Altitude <= 90.0 and
-   -180.0 <= loc.Altitude <= 180.0 and
+    -90.0 <= loc.Latitude <= 90.0 and
+   -180.0 <= loc.Longitude <= 180.0 and
       0.0 <= loc.Altitude <= 15000.0
 \end{verbatim}
 }
 
 \end{frame}
 
-\begin{frame}[fragile]\frametitle{Example : Wellformed GPS message}
+\begin{frame}\frametitle{Example : Wellformed GPS strings}
 
-{\small
-\begin{verbatim}
- Good_Location_String (s) <=>
-   exists s1 s2 s3 s4.
-      s = concat [s1, s2, s3, s4] and
-    -90.0 <= doubleVal(s1) <= 90.0 and
-   -180.0 <= doubleVal(s2) <= 180.0 and
-      0.0 <= floatVal(s3)  <= 15000.0 and
-        0 <= natVal(s4) <= 1
-\end{verbatim}
-}
+\[
+\begin{array}{l}
+ \konst{Good\_Location\_String} (s) \iff \\
+\quad   \exists s_1 s_2 s_3 s_4. \\
+\qquad      s = s1 \bullet s2 \bullet s3 \bullet s4 \ \land \\
+\qquad    -90.0 \leq \konst{doubleVal}(s1) \leq 90.0 \ \land \\
+\qquad   -180.0 \leq \konst{doubleVal}(s2) \leq 180.0 \ \land \\
+\qquad      0.0 \leq \konst{floatVal}(s3)  \leq 15000.0 \ \land \\
+\qquad        0 \leq \konst{natVal}(s4) \leq 1
+\end{array}
+\]
 
-where
+\noindent where
 
-{\small
-\begin{verbatim}
- doubleVal : string -> double
- floatVal  : string -> float
- natVal    : string -> nat
-\end{verbatim}
-}
+\[
+\begin{array}{ll}
+ \konst{doubleVal} & : \konst{string} \to \konst{double} \\
+ \konst{floatVal}  & : \konst{string} \to \konst{float}  \\
+ \konst{natVal}    & : \konst{string} \to \konst{nat}  \\
+\end{array}
+\]
 
 \end{frame}
+
+\begin{frame}\frametitle{SPLAT}
+
+We need to span the gap between high level data and flat strings.
+
+Our approach : \textbf{SPLAT} (Semantic Properties for Language and Automata Theory)
+
+Try to apply ideas from Formal Language Theory to showing properties
+of operations on high-level data.
+
+\end{frame}
+
 
 \begin{frame}[fragile]\frametitle{Contiguity Types}
 
@@ -364,10 +472,28 @@ We specify the message format using \emph{contiguity types}. With this represent
 
 \end{frame}
 
-\begin{frame}\frametitle{uxAS LineSearchTask messages}
+\begin{frame}[fragile]\frametitle{uxAS LineSearchTask messages}
 
- To Be Added
+  Message formats can be arbitrarily complex, and usually include
+  features such as variable-length arrays, and unions.
 
+  {\small
+\begin{verbatim}
+  {TaskID :           i64,
+   Label :            uxasString,
+   EligibleEntities : uxasBoundedArray i64 32,
+   RevisitRate :      real32,
+   Parameters :       uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8,
+   Priority :         u8,
+   Required :         bool,
+   DesiredWavelengthBands : uxasBoundedArray uxasWavelengthBand 8,
+   DwellTime :              i64,
+   GroundSampleDistance :   real32,
+   PointList :     uxasBoundedArray (mesgOption "LOCATION3D" location3D) 1024,
+   ViewAngleList : uxasBoundedArray (mesgOption "WEDGE" wedge) 16,
+   UseInertialViewAngles : bool
+\end{verbatim}
+}
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{Contiguity Types: Syntax}
@@ -431,7 +557,7 @@ a string and returns an assignment of slices of the string to elements of the ty
 
 \begin{theorem}[Correctness]
   \[
-  \konst{match}\; \mathit{contig}\; \mathit{string} = \konst{Some}(\theta) \imp
+ \vdash \konst{match}\; \mathit{contig}\; \mathit{string} = \konst{Some}(\theta) \imp
    \mathit{string} \in \LangTheta{\mathit{contig}}
 \]
 \end{theorem}
@@ -444,7 +570,7 @@ and parsers for the monitors.
 
 \end{frame}
 
-\section {Security Case}
+\section {Assembling a Security Case}
 
 \begin{frame}\frametitle{Joining theorems together}
 
@@ -452,6 +578,16 @@ and parsers for the monitors.
   correctness of the CakeML toolchain to obtain a \emph{single-shot} correctness theorem in HOL4:
 
   \includegraphics[width=90mm,height=50mm]{one-shot.jpg}
+
+\end{frame}
+
+\begin{frame}\frametitle{Question: value of end-to-end verification}
+
+Q: What is the value of combining verified programs with a verified
+   compiler to get a property of the compiled program?
+
+A: It removes places to look for bugs. Instead, the assumptions of
+the final joined-up theorem reveal the limitations on applicability.
 
 \end{frame}
 
