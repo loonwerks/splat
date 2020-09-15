@@ -57,6 +57,7 @@ Johannes~{\AA}man~Pohjola~\textsuperscript{3} \and %
 \maketitle
 
 \begin{frame}\frametitle{Overview}
+
 \begin{enumerate}
 \item Architectural Transformations
 \item Deep Dive: Message Analysis
@@ -285,7 +286,7 @@ The initial system model we start from :
 \item \textbf{Solution}: Filter OR message to be valid regions
 
 \item \textbf{Problem}: Each point in a Line Search Task should be a valid GPS coordinate
-\item \textbf{Solution} Filter LST message on GSP coords
+\item \textbf{Solution} Filter LST message on GPS coords
 
 \item \textbf{Problem}: Each point in an Automation Response should be
   in a keep-in zone and not in a keep-out zone
@@ -303,11 +304,12 @@ The initial system model we start from :
 \item \textbf{Problem}: Every Automation Request should have a corresponding Response
 \item \textbf{Solution}: Monitor ARQT and ARSP for responses matching requests
 
-\item \textbf{Problem}: uxAS software is open source and Waypoint manager could be compromised
+\item \textbf{Problem}: uxAS software is open source and Waypoint Manager could be compromised
 \item \textbf{Solution}: Isolate Waypoint Manager on a VM
 
 \item \textbf{Problem}: Ground station could be compromised; UAV needs to defend itself against that
-\item \textbf{Solution}: Attestation Manager on GS, talking to UAV
+\item \textbf{Solution}: Attestation Manager on GS, observing activity
+  on the GS and talking to UAV
 \end{itemize}
 
 \end{frame}
@@ -361,20 +363,29 @@ multi-stage translation architecture to address the following goals:
 
 \end{frame}
 
-\begin{frame}\frametitle{Summary}
+\begin{frame}[fragile]\frametitle{Summary}
 
 System designer uses OSATE, using menus to specify and configure transforms.
 
 The interface makes sanity checks and sets up for the eventual system build
 
-Once implementations are created for the new system components, we
-have to guard against increasing the attack surface of the system.
-
-Formal specification and proof to the rescue! (Mostly.)
+For a nice video on the interface see
+\begin{verbatim}
+  http://loonwerks.com/projects/case.html
+\end{verbatim}
 
 \end{frame}
 
 \section {Deep Dive: Message Filters}
+
+\begin{frame}\frametitle{Solutions lead to new problems}
+
+Once implementations are created for the new system components, we
+have to guard against increasing the attack surface of the system.
+
+Formal specification and proof to the rescue!
+
+\end{frame}
 
 \begin{frame}\frametitle{Ports and Messages}
 
@@ -387,7 +398,8 @@ Question: what does a filter operate over?
 \item  An endpoint (port) on a connection has a \emph{type} (booleans,
   integers, floats, arrays, unions, ...)
 
-\item Properties in AGREE (our specification language) are therefore written over these types.
+\item Properties in AGREE (our specification language) are therefore
+  written over these types.
 
 \item However, in the implementation, messages coming into a port are
   byte arrays (essentially untyped)
@@ -467,33 +479,36 @@ For uxAs, this is a fairly complex encoding.
 We specify the message format using \emph{contiguity types}. With this representation we can
 \begin{itemize}
 \item automatically generate message filters and parsers
-\item automatically prove that the filter has the desired property (\verb+Good_Location_String+ in our example)
+
+\item automatically prove that the filter has the desired property
+  (\verb+Good_Location_String+ in our example)
 \end{itemize}
 
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{uxAS LineSearchTask messages}
 
-  Message formats can be arbitrarily complex, and usually include
-  features such as variable-length arrays, and unions.
+uxAS messages are quite elaborate
 
-  {\small
+Include features such as unions and variable-length arrays
+
+
+{\small
 \begin{verbatim}
-  {TaskID :           i64,
-   Label :            uxasString,
-   EligibleEntities : uxasBoundedArray i64 32,
-   RevisitRate :      real32,
-   Parameters :       uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8,
-   Priority :         u8,
-   Required :         bool,
-   DesiredWavelengthBands : uxasBoundedArray uxasWavelengthBand 8,
-   DwellTime :              i64,
-   GroundSampleDistance :   real32,
-   PointList :     uxasBoundedArray (mesgOption "LOCATION3D" location3D) 1024,
-   ViewAngleList : uxasBoundedArray (mesgOption "WEDGE" wedge) 16,
-   UseInertialViewAngles : bool
+  {TaskID :  i64,
+   Label :   vString,
+   EligibleEntities : BoundedArray i64 32,
+   ...
+   Parameters : BoundedArray keyValuePair_Option 8,
+   ...
+   DesiredWavelengthBands : BoundedArray WavelengthBand 8,
+   ...
+   PointList : BoundedArray location3D_Option 1024,
+   ViewAngleList : BoundedArray wedge_Option 16,
+   ...}
 \end{verbatim}
 }
+
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{Contiguity Types: Syntax}
@@ -565,17 +580,17 @@ a string and returns an assignment of slices of the string to elements of the ty
 \textbf{match} has the flavor of a \emph{parser generator}: it takes a
 specification of the language to be parsed and returns an implementation
 
-We use \textbf{match} to implement all filters in the transformed uxAS
-and parsers for the monitors.
+\colorbox{orange}{We use \textbf{match} to implement all filters in
+  the transformed uxAS.}
 
 \end{frame}
-
-\section {Assembling a Security Case}
 
 \begin{frame}\frametitle{Joining theorems together}
 
   We can join the correctness of the message matcher with the
-  correctness of the CakeML toolchain to obtain a \emph{single-shot} correctness theorem in HOL4:
+  correctness of the CakeML toolchain to obtain a \emph{single-shot}
+  correctness theorem in HOL4:
+  \vspace*{5mm}
 
   \includegraphics[width=90mm,height=50mm]{one-shot.jpg}
 
@@ -586,81 +601,130 @@ and parsers for the monitors.
 Q: What is the value of combining verified programs with a verified
    compiler to get a property of the compiled program?
 
-A: It removes places to look for bugs. Instead, the assumptions of
-the final joined-up theorem reveal the limitations on applicability.
+A: It removes places to look for bugs. Instead, the assumptions of the
+final joined-up theorem reveal the limitations on applicability of the
+result.
 
 \end{frame}
 
 
-\begin{frame}\frametitle{Thread level correctness}
+\begin{frame}[fragile]\frametitle{Thread level correctness}
 
-  \includegraphics[width=90mm,height=50mm]{thread.jpg}
+But we need to do better: the filter is run inside a loop:
 
+{\small
+\begin{verbatim}
+  while true
+  do {
+    getInput();
+    if match contig inputBuf {
+      putOutput (inputBuf);
+     }
+    else skip;
+   }
+\end{verbatim}
+}
 \end{frame}
 
-\begin{frame}\frametitle{System-level correctness}
+\begin{frame}[fragile]\frametitle{Thread level correctness}
 
-Recall \textbf{NEAT}:
-  \begin{itemize}
-   \item Non-bypassable
-   \item Evaluable
-   \item Always invoked
-   \item Tamper proof
- \end{itemize}
-
-  Desirable properties for our implementation!
-
-We already `have' some of these :
-
-  \begin{itemize}
-   \item Non-bypassable
-   \item Evaluable (Proofs)
-   \item Always invoked (Liveness)
-   \item Tamper proof (seL4)
- \end{itemize}
-
-\end{frame}
-
-\begin{frame}\frametitle{System-level correctness}
-
-Note: Non-Bypassability is a system-wide property which depends on the
-implementation rigorously obeying the boundaries in the model
-
-Also the vast iceberg of the security properties that seL4 implements
-need to be brought into the picture.
-
-Problem: Disparate evidence supporting our security claim.
-
-Solution: Represent the security argument in Resolute
-
-\end{frame}
-
-
-\begin{frame}\frametitle{Comments and TODO}
+Thanks to some great work from Johannes {\AA}man Pohjola at Data61 we
+can prove the correctness at the thread level:
 
 \begin{itemize}
-\item Start off by giving thanks to the organizers
-\item Goes too fast into details; give a more gradual approach to SysArch concept
-\item Slide 12 (too many acronyms)
-\item Too much text (needs more pictures)
-\item Use material from earlier presentations from Isaac and Darren
-\item ``Now we implement'' Mark a definite shift from transformations to implementations.
-\item Define Tamper-proof
-\item Explain ``What is the significance of end-to-end correctness proofs?''
-\item Role of HAMR + Adventium stuff
-\item Shout-outs to both Kansas places.
+\item proof rules for infinitary computations with I/O
+\item space bounds proofs
+\end{itemize}
 
-\item Be crisper on Non-Bypass vs Always invoked (AInv is not
-  liveness; it's liveness plus the fact that it obeys its spec (by
-  output being equal to filter function applied to its input)). In
-  other words, the filter function can't just output well-formed data:
-  the output stream has to be the filtered input stream.
+\includegraphics[width=90mm,height=50mm]{thread.jpg}
 
-\item Try to express the entire assurance case in a picture: ``it's
-  the original system, except safer in the following ways''
+\end{frame}
 
-\item Map from AADL-->Camkes-->seL4
-\item Where we are; what's next
+\section {Assembling a Security Case}
+
+\begin{frame}\frametitle{What is the Claim?}
+
+ We have to argue that the newly generated implementations have
+ improved the security of the system.
+
+ Current work, so this is somewhat brain-stormy.
+
+\end{frame}
+
+
+\begin{frame}\frametitle{System-level correctness}
+
+Recall the \textbf{NEAT} acronym on necessary properties for a reference monitor:
+
+\begin{description}
+\item [Non-bypassable] All paths to target go through RM
+\item [Evaluable] testable, verifiable
+\item [Always invoked] The RM algorithm is invoked on each and every input
+\item [Tamper proof] The RM is not over-writable
+\end{description}
+
+\noindent Desirable properties for our implementation! We already
+`have' some of these :
+
+\begin{description}
+   \item [Evaluable] (Formal proofs)
+   \item [Tamper proof] (seL4 gives isolation)
+\end{description}
+
+\end{frame}
+
+\begin{frame}\frametitle{System-level correctness (continued)}
+
+\begin{description}
+   \item [Non-bypassable] System-wide property which depends on the
+     executable rigorously obeying the boundaries in the model. This
+     property depends on the fact that HAMR / seL4 enforces
+     architectural boundaries all the way down.
+
+   \item [Always invoked] Does the filter sometimes ignore its input
+     and output a stored well-formed element? It shouldn't but how
+     could one tell? (Answer: the thread property implies this.)
+
+\end{description}
+\end{frame}
+
+\begin{frame}\frametitle{Surveyable system-level correctness with Resolute}
+
+\begin{itemize}
+\item For each filter and monitor, the above properties need to be shown and stored.
+
+\item The vast iceberg of the correctness of the security properties
+  (in Isabelle/HOL) that seL4 implements need to be brought into the
+  picture.
+
+\item For attestation: the toolchain verification story is Coq-based.
+
+\item Disparate evidence supporting our security claim.
+
+\item Our solution: Represent the security argument in Resolute.
+
+\item Goal is \colorbox{orange}{surveyability of the full correctness
+  story} for the enhancements generated by the architectural
+  transformations
+
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]\frametitle{Current and  Future Work}
+
+\begin{itemize}
+\item Starting final stage of CASE; CH47 helicopter is our transition platform
+
+\item Currently writing documentation and training materials for our
+  industrial partners.
+
+\item Check it out:
+
+\begin{verbatim}
+  http://loonwerks.com/projects/case.html
+\end{verbatim}
 
 \end{itemize}
 \end{frame}
