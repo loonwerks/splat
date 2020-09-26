@@ -31,6 +31,7 @@ datatype bop
   | RegexMatch
   | Since
   | Trigger
+  | Fby
 
 datatype numkind
   = Nat of int option
@@ -50,6 +51,7 @@ datatype builtin
   | CharTy
   | StringTy
   | FloatTy
+  | DoubleTy
   | IntTy of numkind
   | RegexTy
 
@@ -1791,6 +1793,13 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
             check "Trigger" (tcExp env e2) (BaseTy BoolTy);
             BaseTy BoolTy
           end
+      | Binop(Fby,e1,e2) =>
+          let val ty1 = tcExp env e1
+              val ty2 = tcExp env e2
+          in
+              check "Fby" ty1 ty2;
+              ty1
+          end
       | ArrayExp elist =>
          let fun crunchArrayTy (ArrayTy(b,dims)) = (b,dims)
                | crunchArrayTy ty = (ty,[])
@@ -2278,6 +2287,7 @@ fun base_ty_name (BaseTy BoolTy)   = "bool"
   | base_ty_name (BaseTy StringTy) = "string"
   | base_ty_name (BaseTy RegexTy)  = "regex"
   | base_ty_name (BaseTy FloatTy)  = "float"
+  | base_ty_name (BaseTy DoubleTy)  = "double"
   | base_ty_name (BaseTy (IntTy (Nat NONE))) = "uint"
   | base_ty_name (BaseTy (IntTy (Int NONE))) = "int"
   | base_ty_name (BaseTy (IntTy (Nat(SOME w)))) = "uint"^Int.toString w
@@ -2382,6 +2392,7 @@ fun pp_ty depth ty =
       | Binop(RegexMatch,e1,e2) => pp_exp depth (Fncall(("","match"),[e1,e2]))
       | Binop(Since,e1,e2) => pp_exp depth (Fncall(("","Since"),[e1,e2]))
       | Binop(Trigger,e1,e2) => pp_exp depth (Fncall(("","Trigger"),[e1,e2]))
+      | Binop(Fby,e1,e2) => pp_binop depth ("->",e1,e2)
       | ArrayExp elist => PrettyBlock(0,true,[],
            [PrettyString"[",
             pp_list_with_style false Comma [emptyBreak] (pp_exp (depth-1)) elist,

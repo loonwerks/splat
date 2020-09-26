@@ -30,6 +30,7 @@ sig
     | RegexMatch
     | Since
     | Trigger
+    | Fby
 
   datatype uop
     = Not | BitNot | UMinus | ChrOp | OrdOp
@@ -57,6 +58,7 @@ sig
     | StringTy
     | IntTy of numkind
     | FloatTy
+    | DoubleTy
     | RegexTy
 
   datatype quant = Exists | Forall

@@ -1,8 +1,8 @@
 {
   "project": "Phase-2-UAV-Experimental-Platform-Transformed",
   "implementation": "UAS::UAS.Impl",
-  "date": 1597304854660,
-  "hash": "�p\u000f\u000eiFߋ\u0004�1�\u0003�:�",
+  "date": 1601062641512,
+  "hash": "�k��\u000eH}r�\f�j.-�t",
   "modelUnits": [
     {
       "name": "UAS",
@@ -4892,34 +4892,94 @@
             "name": "CMASI::Address",
             "localName": "Address",
             "kind": "ComponentType",
-            "category": "data"
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Array"
+                }
+              },
+              {
+                "name": "Data_Model::Base_Type",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "ListValue",
+                  "value": [
+                    {
+                      "kind": "ClassifierValue",
+                      "value": "Base_Types::Integer_8"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Data_Model::Dimension",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "ListValue",
+                  "value": [
+                    {
+                      "kind": "IntegerLiteral",
+                      "value": 4,
+                      "unit": null
+                    }
+                  ]
+                }
+              }
+            ]
           },
           {
             "packageName": "CMASI",
             "name": "CMASI::Address.i",
             "localName": "Address.i",
             "kind": "ComponentImplementation",
-            "category": "data",
-            "subcomponents": [
-              {
-                "name": "value",
-                "kind": "Subcomponent",
-                "category": "data",
-                "dimensions": [
-                  {
-                    "kind": "ArrayDimension",
-                    "value": 4
-                  }
-                ],
-                "classifier": "Base_Types::Integer_8"
-              }
-            ]
+            "category": "data"
           },
           {
             "name": "CMASI::AddressArray",
             "localName": "AddressArray",
             "kind": "ComponentType",
-            "category": "data"
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Array"
+                }
+              },
+              {
+                "name": "Data_Model::Base_Type",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "ListValue",
+                  "value": [
+                    {
+                      "kind": "ClassifierValue",
+                      "value": "CMASI::Address"
+                    }
+                  ]
+                }
+              },
+              {
+                "name": "Data_Model::Dimension",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "ListValue",
+                  "value": [
+                    {
+                      "kind": "IntegerLiteral",
+                      "value": 3,
+                      "unit": null
+                    }
+                  ]
+                }
+              }
+            ]
           },
           {
             "packageName": "CMASI",
@@ -4927,20 +4987,6 @@
             "localName": "AddressArray.i",
             "kind": "ComponentImplementation",
             "category": "data",
-            "subcomponents": [
-              {
-                "name": "value",
-                "kind": "Subcomponent",
-                "category": "data",
-                "dimensions": [
-                  {
-                    "kind": "ArrayDimension",
-                    "value": 3
-                  }
-                ],
-                "classifier": "CMASI::Address.i"
-              }
-            ],
             "properties": [
               {
                 "name": "HAMR::Bit_Codec_Max_Size",
@@ -5130,7 +5176,21 @@
             "name": "CMASI::KeyValuePair.i",
             "localName": "KeyValuePair.i",
             "kind": "ComponentImplementation",
-            "category": "data"
+            "category": "data",
+            "subcomponents": [
+              {
+                "name": "Key",
+                "kind": "Subcomponent",
+                "category": "data",
+                "classifier": "Base_Types::String"
+              },
+              {
+                "name": "Value",
+                "kind": "Subcomponent",
+                "category": "data",
+                "classifier": "Base_Types::String"
+              }
+            ]
           },
           {
             "name": "CMASI::Location3D",
@@ -5603,6 +5663,18 @@
                 "kind": "Subcomponent",
                 "category": "data",
                 "classifier": "CMASI::VehicleActionCommandArray"
+              },
+              {
+                "name": "Info",
+                "kind": "Subcomponent",
+                "category": "data",
+                "dimensions": [
+                  {
+                    "kind": "ArrayDimension",
+                    "value": 3
+                  }
+                ],
+                "classifier": "CMASI::KeyValuePair.i"
               }
             ],
             "properties": [
@@ -6291,17 +6363,13 @@
                 "name": "AffectedAircraft",
                 "kind": "Subcomponent",
                 "category": "data",
-                "classifier": "Base_Types::Integer_64",
-                "properties": [
+                "dimensions": [
                   {
-                    "name": "Data_Model::Data_Representation",
-                    "kind": "PropertyAssociation",
-                    "value": {
-                      "kind": "EnumerationLiteral",
-                      "value": "Array"
-                    }
+                    "kind": "ArrayDimension",
+                    "value": 32
                   }
-                ]
+                ],
+                "classifier": "Base_Types::Integer_64"
               },
               {
                 "name": "StartTime",
@@ -6360,17 +6428,13 @@
                 "name": "WaypointList",
                 "kind": "Subcomponent",
                 "category": "data",
-                "classifier": "CMASI::PathWaypoint.i",
-                "properties": [
+                "dimensions": [
                   {
-                    "name": "Data_Model::Data_Representation",
-                    "kind": "PropertyAssociation",
-                    "value": {
-                      "kind": "EnumerationLiteral",
-                      "value": "Array"
-                    }
+                    "kind": "ArrayDimension",
+                    "value": 1024
                   }
-                ]
+                ],
+                "classifier": "CMASI::PathWaypoint.i"
               },
               {
                 "name": "StartTime",
@@ -6476,12 +6540,24 @@
                 "name": "KeepInAreas",
                 "kind": "Subcomponent",
                 "category": "data",
+                "dimensions": [
+                  {
+                    "kind": "ArrayDimension",
+                    "value": 1
+                  }
+                ],
                 "classifier": "CMASI::Int64Array"
               },
               {
                 "name": "KeepOutAreas",
                 "kind": "Subcomponent",
                 "category": "data",
+                "dimensions": [
+                  {
+                    "kind": "ArrayDimension",
+                    "value": 1
+                  }
+                ],
                 "classifier": "CMASI::Int64Array"
               }
             ],
@@ -6513,17 +6589,13 @@
                 "name": "TaskList",
                 "kind": "Subcomponent",
                 "category": "data",
-                "classifier": "Base_Types::Integer_64",
-                "properties": [
+                "dimensions": [
                   {
-                    "name": "Data_Model::Data_Representation",
-                    "kind": "PropertyAssociation",
-                    "value": {
-                      "kind": "EnumerationLiteral",
-                      "value": "Array"
-                    }
+                    "kind": "ArrayDimension",
+                    "value": 42
                   }
-                ]
+                ],
+                "classifier": "Base_Types::Integer_64"
               }
             ]
           },
@@ -6550,17 +6622,13 @@
                 "name": "Info",
                 "kind": "Subcomponent",
                 "category": "data",
-                "classifier": "CMASI::KeyValuePair.i",
-                "properties": [
+                "dimensions": [
                   {
-                    "name": "Data_Model::Data_Representation",
-                    "kind": "PropertyAssociation",
-                    "value": {
-                      "kind": "EnumerationLiteral",
-                      "value": "Array"
-                    }
+                    "kind": "ArrayDimension",
+                    "value": 3
                   }
-                ]
+                ],
+                "classifier": "CMASI::KeyValuePair.i"
               },
               {
                 "name": "StatusType",
@@ -6646,31 +6714,13 @@
                 "name": "DesiredWavelengthBands",
                 "kind": "Subcomponent",
                 "category": "data",
-                "classifier": "CMASI::WavelengthBand",
-                "properties": [
+                "dimensions": [
                   {
-                    "name": "Data_Model::Data_Representation",
-                    "kind": "PropertyAssociation",
-                    "value": {
-                      "kind": "EnumerationLiteral",
-                      "value": "Array"
-                    }
-                  },
-                  {
-                    "name": "Data_Model::Dimension",
-                    "kind": "PropertyAssociation",
-                    "value": {
-                      "kind": "ListValue",
-                      "value": [
-                        {
-                          "kind": "IntegerLiteral",
-                          "value": 8,
-                          "unit": null
-                        }
-                      ]
-                    }
+                    "kind": "ArrayDimension",
+                    "value": 8
                   }
-                ]
+                ],
+                "classifier": "CMASI::WavelengthBand"
               },
               {
                 "name": "DwellTime",
@@ -6830,12 +6880,24 @@
                 "name": "PointList",
                 "kind": "Subcomponent",
                 "category": "data",
+                "dimensions": [
+                  {
+                    "kind": "ArrayDimension",
+                    "value": 1024
+                  }
+                ],
                 "classifier": "CMASI::PointListArray"
               },
               {
                 "name": "ViewAngleList",
                 "kind": "Subcomponent",
                 "category": "data",
+                "dimensions": [
+                  {
+                    "kind": "ArrayDimension",
+                    "value": 16
+                  }
+                ],
                 "classifier": "CMASI::WedgeArray"
               },
               {
@@ -9177,12 +9239,8 @@
                         "kind": "ExistsExpr",
                         "binding": "id",
                         "array": {
-                          "kind": "SelectionExpr",
-                          "target": {
-                            "kind": "NamedElmExpr",
-                            "name": "trusted_ids"
-                          },
-                          "field": "value"
+                          "kind": "NamedElmExpr",
+                          "name": "trusted_ids"
                         },
                         "expr": {
                           "kind": "BinaryExpr",
@@ -9502,7 +9560,7 @@
                     }
                   ]
                 },
-                "sourceText": "{**\n\t\t\tfun IS_TRUSTED(src_id : CMASI::Address.i) : bool = exists id in trusted_ids.value, id = src_id;\n\t\t\tguarantee CASE_AttestationGate_policy \\\"Only messages from trusted sources shall be forwarded\\\" :\n\t\t\t\tif event(AutomationRequest_in) and IS_TRUSTED(AutomationRequest_in.id) then event(AutomationRequest_out) and not (event(OperatingRegion_out) or event(LineSearchTask_out)) and AutomationRequest_out = AutomationRequest_in.payload.AutomationRequest\n\t\t\t\telse if event(OperatingRegion_in) and IS_TRUSTED(OperatingRegion_in.id) then event(OperatingRegion_out) and not (event(AutomationRequest_out) or event(LineSearchTask_out)) and OperatingRegion_out = OperatingRegion_in.payload.OperatingRegion\n\t\t\t\telse if event(LineSearchTask_in) and IS_TRUSTED(LineSearchTask_in.id) then event(LineSearchTask_out) and not (event(AutomationRequest_out) or event(OperatingRegion_out)) and LineSearchTask_out = LineSearchTask_in.payload.LineSearchTask\n\t\t\t\telse not (event(AutomationRequest_out) or event(OperatingRegion_out) or event(LineSearchTask_out));\n\t\t**}"
+                "sourceText": "{**\n\t\t\tfun IS_TRUSTED(src_id : CMASI::Address.i) : bool = exists id in trusted_ids, id = src_id;\n\t\t\tguarantee CASE_AttestationGate_policy \\\"Only messages from trusted sources shall be forwarded\\\" :\n\t\t\t\tif event(AutomationRequest_in) and IS_TRUSTED(AutomationRequest_in.id) then event(AutomationRequest_out) and not (event(OperatingRegion_out) or event(LineSearchTask_out)) and AutomationRequest_out = AutomationRequest_in.payload.AutomationRequest\n\t\t\t\telse if event(OperatingRegion_in) and IS_TRUSTED(OperatingRegion_in.id) then event(OperatingRegion_out) and not (event(AutomationRequest_out) or event(LineSearchTask_out)) and OperatingRegion_out = OperatingRegion_in.payload.OperatingRegion\n\t\t\t\telse if event(LineSearchTask_in) and IS_TRUSTED(LineSearchTask_in.id) then event(LineSearchTask_out) and not (event(AutomationRequest_out) or event(OperatingRegion_out)) and LineSearchTask_out = LineSearchTask_in.payload.LineSearchTask\n\t\t\t\telse not (event(AutomationRequest_out) or event(OperatingRegion_out) or event(LineSearchTask_out));\n\t\t**}"
               }
             ]
           },
@@ -13338,12 +13396,8 @@
                     "primType": "real"
                   },
                   "expr": {
-                    "kind": "UnaryExpr",
-                    "operand": {
-                      "kind": "RealLitExpr",
-                      "value": "180.0"
-                    },
-                    "op": "-"
+                    "kind": "RealLitExpr",
+                    "value": "180.0"
                   }
                 },
                 {
@@ -15070,7 +15124,7 @@
                 }
               ]
             },
-            "sourceText": "{**\n\t\t\n\t-- Message constants\n\tconst OPERATING_REGION_ID_MIN : int = 0;\n\tconst OPERATING_REGION_ID_MAX : int = 500;\n\tconst KEEP_IN_ZONE_ID_MIN : int = 0;\n\tconst KEEP_IN_ZONE_ID_MAX : int = 500;\n\tconst KEEP_OUT_ZONE_ID_MIN : int = 0;\n\tconst KEEP_OUT_ZONE_ID_MAX : int = 500;\n\tconst TASK_ID_MIN : int = 0;\n\tconst TASK_ID_MAX : int = 2000;\n\tconst ENTITY_ID_MIN : int = 0;\n\tconst ENTITY_ID_MAX : int = 500;\n\tconst ALTITUDE_MIN : real = 0.0;\n\tconst ALTITUDE_MAX : real = 15000.0;\n\tconst LATITUDE_MIN : real = -90.0;\n\tconst LATITUDE_MAX : real = 90.0;\n\tconst LONGITUDE_MIN : real = -180.0;\n\tconst LONGITUDE_MAX : real = -180.0;const AZIMUTH_CENTERLINE_MIN : real = -180.0;\n\tconst AZIMUTH_CENTERLINE_MAX : real = 180.0;\n\tconst VERTICAL_CENTERLINE_MIN : real = -180.0;\n\tconst VERTICAL_CENTERLINE_MAX : real = 180.0;\n\t\n\t-- UAV maximum climb rate\n    const MAX_UAV_CLIMB_RATE : real = 42.0;\n    \n    -- Ground Station\n    const GS_ID : int = 500;\n    \n    -- Flight Controller\n    const FCTL_ID : int = 100;\n   \n    -- UAV ID\n    const UAV_ID : int = 400;    \n    \n    fun WellformedCASE_RF_Msg(msg : CASE_RF_Msg.Impl, src : int64.i, dst : int64.i ) : bool = \n       WellformedCASE_MsgHeader(msg.header, src, dst);\n       \n    fun WellformedCASE_MsgHeader(hdr : CASE_MsgHeader.Impl, src : int64.i, dst : int64.i ) : bool =\n       (hdr.src = src) and (hdr.dst = dst) and (hdr.trusted = true) and (hdr.HMAC = true);\n     \n    fun WellformedCASE_UART_Msg(msg : CASE_UART_Msg.Impl) : bool = \n       msg.crc = true;\n\n\tfun WELL_FORMED_AUTOMATION_REQUEST(msg : CMASI::AutomationRequest.i) : bool = \n\t\t(forall e in msg.EntityList, e >= ENTITY_ID_MIN and e <= ENTITY_ID_MAX) and\n\t\t(forall t in msg.TaskList, t >= TASK_ID_MIN and t <= TASK_ID_MAX) and\n\t\tmsg.OperatingRegion >= OPERATING_REGION_ID_MIN and msg.OperatingRegion <= OPERATING_REGION_ID_MAX;\n\t\t\n\tfun WELL_FORMED_OPERATING_REGION(msg : CMASI::OperatingRegion.i) : bool =\n\t\tmsg.ID >= OPERATING_REGION_ID_MIN and msg.ID <= OPERATING_REGION_ID_MAX and\n\t\t(forall kiz in msg.KeepInAreas, kiz >= KEEP_IN_ZONE_ID_MIN and kiz <= KEEP_IN_ZONE_ID_MAX) and\n\t\t(forall koz in msg.KeepOutAreas, koz >= KEEP_OUT_ZONE_ID_MIN and koz <= KEEP_OUT_ZONE_ID_MAX);\n\t\n\tfun WELL_FORMED_LINE_SEARCH_TASK(msg : CMASI::LineSearchTask.i) : bool = \n\t\tmsg.TaskID >= TASK_ID_MIN and msg.TaskID <= TASK_ID_MAX and\n\t\t(forall point in msg.PointList, WELL_FORMED_POINT(point)) and\n\t\t(forall viewangle in msg.ViewAngleList, WELL_FORMED_VIEWANGLE(viewangle));\n\t\t\n\tfun WELL_FORMED_AUTOMATION_RESPONSE(msg : CMASI::AutomationResponse.i) : bool = \n\t\t(forall missioncommand in msg.MissionCommandList, forall waypoint in missioncommand.WaypointList, WELL_FORMED_WAYPOINT(waypoint));\n\t\t\n\tfun WELL_FORMED_POINT(point : CMASI::Location3D.i) : bool =\n\t\tpoint.Latitude >= LATITUDE_MIN and point.Latitude <= LATITUDE_MAX and\n\t\tpoint.Longitude >= LONGITUDE_MIN and point.Longitude <= LONGITUDE_MAX and\n\t\tpoint.Altitude >= ALTITUDE_MIN and point.Altitude <= ALTITUDE_MAX;\n\t\t\n\tfun WELL_FORMED_VIEWANGLE(viewangle : CMASI::Wedge.i) : bool =\n    \tviewangle.AzimuthCenterline >= AZIMUTH_CENTERLINE_MIN and viewangle.AzimuthCenterline <= AZIMUTH_CENTERLINE_MAX and\n    \tviewangle.VerticalCenterline >= VERTICAL_CENTERLINE_MIN and viewangle.VerticalCenterline <= VERTICAL_CENTERLINE_MAX;\n\n\tfun WELL_FORMED_WAYPOINT(point : CMASI::Waypoint.i) : bool =\n\t\tpoint.Latitude >= LATITUDE_MIN and point.Latitude <= LATITUDE_MAX and\n\t\tpoint.Longitude >= LONGITUDE_MIN and point.Longitude <= LONGITUDE_MAX and\n\t\tpoint.Altitude >= ALTITUDE_MIN and point.Altitude <= ALTITUDE_MAX;\n         \n    fun GET_MISSION_COMMAND(automationResponse: CMASI::AutomationResponse.i) : CMASI::MissionCommand.i =\n\t\tautomationResponse.MissionCommandList[0];\n\t\t\n\tfun WAYPOINTS_IN_ZONE(mission : CMASI::MissionCommand.i, zone : CMASI::Polygon.i) : bool =\n\t\tforall waypoint in mission.WaypointList, WAYPOINT_IN_ZONE_RECTANGLE(waypoint, zone);\n\t\t\n\tfun WAYPOINTS_NOT_IN_ZONE(mission : CMASI::MissionCommand.i, zone : CMASI::Polygon.i) : bool =\n\t\tforall waypoint in mission.WaypointList, not WAYPOINT_IN_ZONE_RECTANGLE(waypoint, zone);\n\t              \n\t-- Assumes rectangle that is defined by two corners so it is aligned\n\t-- with the origin (not rotated in space)\n\t-- Assumes that the altitude is the same in all the coordinates\n\t-- Assmes zone[0] is the bottom left corner and zone[2] in the upper right corner\n\tfun WAYPOINT_IN_ZONE_RECTANGLE(waypoint : CMASI::Waypoint.i, zone : CMASI::Polygon.i) : bool =\n\t\t(waypoint.Latitude >= (zone.BoundaryPointsList[0]).Latitude)\n\t\tand (waypoint.Latitude <= (zone.BoundaryPointsList[1]).Latitude)\n\t\tand (waypoint.Longitude >= (zone.BoundaryPointsList[0]).Longitude)\n\t\tand (waypoint.Longitude <= (zone.BoundaryPointsList[1]).Longitude)\n\t\tand (waypoint.Altitude >= (zone.BoundaryPointsList[0]).Altitude);\n\n\tfun DUPLICATES_IN_MISSION(mission : CMASI::MissionCommand.i) : bool =\n\t    exists waypoint in mission.WaypointList, not IS_LAST_WAYPOINT(waypoint) and IS_DUPLICATE(mission, waypoint) ;\n\n\tfun IS_LAST_WAYPOINT(waypoint : CMASI::Waypoint.i) : bool = waypoint.Number = waypoint.NextWaypoint;\n\n\t-- Checking if there exists a waypoint with the same lat,long,alt as a given waypoint with the restriction that it\n\t-- follows immediately after the given waypoint in the linked-list of waypoints.\n\tfun IS_DUPLICATE(mission : CMASI::MissionCommand.i, waypoint : CMASI::Waypoint.i) : bool =\n\t\texists wp in mission.WaypointList, not IS_LAST_WAYPOINT(wp) and wp.Number = waypoint.NextWaypoint\n\t\t\tand wp.Latitude = waypoint.Latitude and wp.Longitude = waypoint.Longitude and wp.Altitude = waypoint.Altitude;\n**}"
+            "sourceText": "{**\n\t\t\n\t-- Message constants\n\tconst OPERATING_REGION_ID_MIN : int = 0;\n\tconst OPERATING_REGION_ID_MAX : int = 500;\n\tconst KEEP_IN_ZONE_ID_MIN : int = 0;\n\tconst KEEP_IN_ZONE_ID_MAX : int = 500;\n\tconst KEEP_OUT_ZONE_ID_MIN : int = 0;\n\tconst KEEP_OUT_ZONE_ID_MAX : int = 500;\n\tconst TASK_ID_MIN : int = 0;\n\tconst TASK_ID_MAX : int = 2000;\n\tconst ENTITY_ID_MIN : int = 0;\n\tconst ENTITY_ID_MAX : int = 500;\n\tconst ALTITUDE_MIN : real = 0.0;\n\tconst ALTITUDE_MAX : real = 15000.0;\n\tconst LATITUDE_MIN : real = -90.0;\n\tconst LATITUDE_MAX : real = 90.0;\n\tconst LONGITUDE_MIN : real = -180.0;\n\tconst LONGITUDE_MAX : real = 180.0;\n\tconst AZIMUTH_CENTERLINE_MIN : real = -180.0;\n\tconst AZIMUTH_CENTERLINE_MAX : real = 180.0;\n\tconst VERTICAL_CENTERLINE_MIN : real = -180.0;\n\tconst VERTICAL_CENTERLINE_MAX : real = 180.0;\n\n\t-- UAV maximum climb rate\n\t\n    const MAX_UAV_CLIMB_RATE : real = 42.0;\n\n    -- Ground Station\n    const GS_ID : int = 500;\n\n    -- Flight Controller\n    const FCTL_ID : int = 100;\n\n    -- UAV ID\n    const UAV_ID : int = 400;\n\n    fun WellformedCASE_RF_Msg(msg : CASE_RF_Msg.Impl, src : int64.i, dst : int64.i ) : bool = \n       WellformedCASE_MsgHeader(msg.header, src, dst);\n       \n    fun WellformedCASE_MsgHeader(hdr : CASE_MsgHeader.Impl, src : int64.i, dst : int64.i ) : bool =\n       (hdr.src = src) and (hdr.dst = dst) and (hdr.trusted = true) and (hdr.HMAC = true);\n     \n    fun WellformedCASE_UART_Msg(msg : CASE_UART_Msg.Impl) : bool = \n       msg.crc = true;\n\n\tfun WELL_FORMED_AUTOMATION_REQUEST(msg : CMASI::AutomationRequest.i) : bool = \n\t\t(forall e in msg.EntityList, e >= ENTITY_ID_MIN and e <= ENTITY_ID_MAX) and\n\t\t(forall t in msg.TaskList, t >= TASK_ID_MIN and t <= TASK_ID_MAX) and\n\t\tmsg.OperatingRegion >= OPERATING_REGION_ID_MIN and msg.OperatingRegion <= OPERATING_REGION_ID_MAX;\n\t\t\n\tfun WELL_FORMED_OPERATING_REGION(msg : CMASI::OperatingRegion.i) : bool =\n\t\tmsg.ID >= OPERATING_REGION_ID_MIN and msg.ID <= OPERATING_REGION_ID_MAX and\n\t\t(forall kiz in msg.KeepInAreas, kiz >= KEEP_IN_ZONE_ID_MIN and kiz <= KEEP_IN_ZONE_ID_MAX) and\n\t\t(forall koz in msg.KeepOutAreas, koz >= KEEP_OUT_ZONE_ID_MIN and koz <= KEEP_OUT_ZONE_ID_MAX);\n\t\n\tfun WELL_FORMED_LINE_SEARCH_TASK(msg : CMASI::LineSearchTask.i) : bool = \n\t\tmsg.TaskID >= TASK_ID_MIN and msg.TaskID <= TASK_ID_MAX and\n\t\t(forall point in msg.PointList, WELL_FORMED_POINT(point)) and\n\t\t(forall viewangle in msg.ViewAngleList, WELL_FORMED_VIEWANGLE(viewangle));\n\t\t\n\tfun WELL_FORMED_AUTOMATION_RESPONSE(msg : CMASI::AutomationResponse.i) : bool = \n\t\t(forall missioncommand in msg.MissionCommandList, forall waypoint in missioncommand.WaypointList, WELL_FORMED_WAYPOINT(waypoint));\n\t\t\n\tfun WELL_FORMED_POINT(point : CMASI::Location3D.i) : bool =\n\t\tpoint.Latitude >= LATITUDE_MIN and point.Latitude <= LATITUDE_MAX and\n\t\tpoint.Longitude >= LONGITUDE_MIN and point.Longitude <= LONGITUDE_MAX and\n\t\tpoint.Altitude >= ALTITUDE_MIN and point.Altitude <= ALTITUDE_MAX;\n\t\t\n\tfun WELL_FORMED_VIEWANGLE(viewangle : CMASI::Wedge.i) : bool =\n    \tviewangle.AzimuthCenterline >= AZIMUTH_CENTERLINE_MIN and viewangle.AzimuthCenterline <= AZIMUTH_CENTERLINE_MAX and\n    \tviewangle.VerticalCenterline >= VERTICAL_CENTERLINE_MIN and viewangle.VerticalCenterline <= VERTICAL_CENTERLINE_MAX;\n\n\tfun WELL_FORMED_WAYPOINT(point : CMASI::Waypoint.i) : bool =\n\t\tpoint.Latitude >= LATITUDE_MIN and point.Latitude <= LATITUDE_MAX and\n\t\tpoint.Longitude >= LONGITUDE_MIN and point.Longitude <= LONGITUDE_MAX and\n\t\tpoint.Altitude >= ALTITUDE_MIN and point.Altitude <= ALTITUDE_MAX;\n         \n    fun GET_MISSION_COMMAND(automationResponse: CMASI::AutomationResponse.i) : CMASI::MissionCommand.i =\n\t\tautomationResponse.MissionCommandList[0];\n\n\tfun WAYPOINTS_IN_ZONE(mission : CMASI::MissionCommand.i, zone : CMASI::Polygon.i) : bool =\n\t\tforall waypoint in mission.WaypointList, WAYPOINT_IN_ZONE_RECTANGLE(waypoint, zone);\n\n\tfun WAYPOINTS_NOT_IN_ZONE(mission : CMASI::MissionCommand.i, zone : CMASI::Polygon.i) : bool =\n\t\tforall waypoint in mission.WaypointList, not WAYPOINT_IN_ZONE_RECTANGLE(waypoint, zone);\n\n\t-- Assumes rectangle that is defined by two corners so it is aligned\n\t-- with the origin (not rotated in space)\n\t-- Assumes that the altitude is the same in all the coordinates\n\t-- Assmes zone[0] is the bottom left corner and zone[2] in the upper right corner\n\tfun WAYPOINT_IN_ZONE_RECTANGLE(waypoint : CMASI::Waypoint.i, zone : CMASI::Polygon.i) : bool =\n\t\t(waypoint.Latitude >= (zone.BoundaryPointsList[0]).Latitude)\n\t\tand (waypoint.Latitude <= (zone.BoundaryPointsList[1]).Latitude)\n\t\tand (waypoint.Longitude >= (zone.BoundaryPointsList[0]).Longitude)\n\t\tand (waypoint.Longitude <= (zone.BoundaryPointsList[1]).Longitude)\n\t\tand (waypoint.Altitude >= (zone.BoundaryPointsList[0]).Altitude);\n\n\tfun DUPLICATES_IN_MISSION(mission : CMASI::MissionCommand.i) : bool =\n\t    exists waypoint in mission.WaypointList, not IS_LAST_WAYPOINT(waypoint) and IS_DUPLICATE(mission, waypoint) ;\n\n\tfun IS_LAST_WAYPOINT(waypoint : CMASI::Waypoint.i) : bool = waypoint.Number = waypoint.NextWaypoint;\n\n\t-- Checking if there exists a waypoint with the same lat,long,alt as a given waypoint with the restriction that it\n\t-- follows immediately after the given waypoint in the linked-list of waypoints.\n\tfun IS_DUPLICATE(mission : CMASI::MissionCommand.i, waypoint : CMASI::Waypoint.i) : bool =\n\t\texists wp in mission.WaypointList, not IS_LAST_WAYPOINT(wp) and wp.Number = waypoint.NextWaypoint\n\t\t\tand wp.Latitude = waypoint.Latitude and wp.Longitude = waypoint.Longitude and wp.Altitude = waypoint.Altitude;\n**}"
           }
         ]
       }

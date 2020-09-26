@@ -33,8 +33,10 @@ in end;
            (string * ty * string * string) list *
            (string * exp) list
 
- datatype monitor
-    = MonitorDec of qid * (string * ty * string * string) list * bool * (string * exp) list
+ datatype monitor  (*  (name,ports,latched, props)  *)
+    = MonitorDec of qid * (string * ty * string * string) list
+                        * bool
+                        * (string * string * exp) list
 
  type decls =
   (* pkgName *)  string *
@@ -46,6 +48,25 @@ in end;
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
 
+(*---------------------------------------------------------------------------*)
+(* Json syntax ops                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun dropBool (Boolean b) = b
+  | dropBool otherwise = raise ERR "dropBool" "not a json Boolean application";
+
+fun dropInt (Number (Int i)) = i
+  | dropInt otherwise = raise ERR "dropInt" "not a json integer";
+
+fun dropString (String s) = s
+  | dropString otherwise = raise ERR "dropString" "not a json String application";
+
+fun dropList (List list) = list
+  | dropList otherwise = raise ERR "dropList" "not a json List application";
+
+fun dropAList (AList list) = list
+  | dropAList otherwise = raise ERR "dropAList" "not a json AList application";
+
 fun name_of (AList alist) = assoc "name" alist;
 fun kind_of (AList alist) = assoc "kind" alist;
 fun classifier_of (AList alist) = assoc "classifier" alist;
@@ -56,6 +77,8 @@ fun value_of (AList alist) = assoc "value" alist;
 fun classifier_of (AList alist) = assoc "classifier" alist;
 fun dimensions_of (AList alist) = assoc "dimensions" alist;
 fun subcomponents_of (AList alist) = assoc "subcomponents" alist;
+fun label_of (AList alist) = dropString (assoc "label" alist);
+fun expr_of (AList alist) = assoc "expr" alist;
 
 fun ty_occurs ty1 ty2 =
  case ty2
@@ -158,7 +181,8 @@ fun dest_tyqid dotid =
    | (_,"Boolean") => BaseTy BoolTy
    | (_,"String")  => BaseTy StringTy
    | (_,"Char")    => BaseTy CharTy
-   | (_,"Float")   => BaseTy FloatTy
+   | (_,"Float_32") => BaseTy FloatTy
+   | (_,"Float_64") => BaseTy DoubleTy
    | (a,b)         => NamedTy (a,b)
 ;
 
@@ -226,6 +250,7 @@ fun mk_binop (opr,e1,e2) =
          | "<=>" => Equal
          | "and" => And
          | "or"  => Or
+         | "->"  => Fby
          | other => raise ERR "mk_binop"
                ("unknown binary operator "^Lib.quote other)
  in Binop(oexp,e1,e2)
@@ -268,21 +293,6 @@ fun mk_and a b = mk_binop("and",a,b);
 
 val _ = defaultNumKind := AST.Int NONE;
 
-fun dropBool (Boolean b) = b
-  | dropBool otherwise = raise ERR "dropBool" "not a json Boolean application";
-
-fun dropInt (Number (Int i)) = i
-  | dropInt otherwise = raise ERR "dropInt" "not a json integer";
-
-fun dropString (String s) = s
-  | dropString otherwise = raise ERR "dropString" "not a json String application";
-
-fun dropList (List list) = list
-  | dropList otherwise = raise ERR "dropList" "not a json List application";
-
-fun dropAList (AList list) = list
-  | dropAList otherwise = raise ERR "dropAList" "not a json AList application";
-
 fun dropImpl s =
      case String.tokens (equal #".") s
       of [x,"i"] => SOME x
@@ -315,7 +325,7 @@ fun dest_exp e =
    | AList [("kind", String "RecordLitExpr"),
             ("recordType", rty), ("value", AList jfields)]
        => RecdExp(dest_named_ty (dest_ty rty), map mk_field jfields)
-   | AList [("kind", String "Selection"), ("target", lval), ("field", String fname)]
+   | AList [("kind", String "SelectionExpr"), ("target", lval), ("field", String fname)]
        => RecdProj (dest_exp lval, fname)
    | AList [("kind", String "ArraySubExpr"), ("array", aexp), ("index", iexp)]
        => ArrayIndex(dest_exp aexp, [dest_exp iexp])
@@ -327,7 +337,8 @@ fun dest_exp e =
           in mk_fncall(pkg,fname,map dest_exp args)
           end
    | AList [("kind", String "AadlEnumerator"),
-            ("type", AList tyinfo), ("value", String constrname)]
+            ("type", AList tyinfo),
+            ("value", String constrname)]
        => mk_nullary_constr (constrname,get_tyinfo tyinfo)
    | AList [("kind", String "ForallExpr"),
             ("binding", String bvarname),
@@ -348,6 +359,8 @@ fun dest_exp e =
             ("delay", e1),
             ("init",e2)]
        => mk_fncall ("","Prev",[dest_exp e1, dest_exp e2])
+   | AList [("kind", String "PreExpr"), ("expr", e)]
+       => mk_fncall("","Pre",[dest_exp e])
    | other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);
@@ -360,10 +373,10 @@ fun dest_param param =
 fun mk_fun_def compName json =
  case json
   of AList (("kind", String "FnDef")::binds) =>
-     (case (assoc "name" binds,
-            assoc "args" binds,
-            assoc "type" binds,
-            assoc "expr" binds)
+      (case (assoc "name" binds,
+             assoc "args" binds,
+             assoc "type" binds,
+             assoc "expr" binds)
        of (String fname, List params, ty, body) =>
            FnDec((compName,fname), map dest_param params, dest_ty ty, dest_exp body)
        |  otherwise => raise ERR "mk_fun_def" "unexpected input")
@@ -385,8 +398,9 @@ fun mk_property_stmt_def compName features (AList alist) =
      (case (assoc "kind" alist,
             assoc "name" alist,
 	    assoc "expr" alist)
-       of (String "PropertyStatement", String fname, e)
-          => let val boolTy = BaseTy BoolTy
+       of (String kname, String fname, e)
+          => if mem kname ["PropertyStatement","GuaranteeStatement"] then
+             let val boolTy = BaseTy BoolTy
                  val exp = dest_exp e
                  val compParams = map dest_feature features
                  val free_names = expFrees [] exp
@@ -394,6 +408,7 @@ fun mk_property_stmt_def compName features (AList alist) =
              in
                 FnDec((compName,fname), params, boolTy, exp)
              end
+             else raise ERR "mk_property_def" "expected Property or Guarantee statement"
        | otherwise => raise ERR "mk_property_def" "unexpected syntax")
   | mk_property_stmt_def any other thing = raise ERR "mk_property_def" "unexpected syntax"
 ;
@@ -472,6 +487,22 @@ mk_def pkgName features stmt26;
 mk_def pkgName features stmt27;
 mk_def pkgName features stmt28;
 mk_def pkgName features stmt29;
+
+
+mk_def pkgName features stmt30;
+mk_def pkgName features stmt31;
+mk_def pkgName features stmt32;
+mk_def pkgName features stmt33;
+mk_def pkgName features stmt34;
+mk_def pkgName features stmt35;
+mk_def pkgName features stmt36;
+mk_def pkgName features stmt37;
+mk_def pkgName features stmt38;
+mk_def pkgName features stmt39;
+
+mk_def pkgName features stmt40;
+mk_def pkgName features stmt41;
+
 *)
 
 
@@ -818,21 +849,22 @@ fun filter_req_name_eq js1 js2 =
  end;
 
 fun is_filter props =
- let fun isaFilter (AList list) =
-          dropString(assoc "name" list) = "CASE_Properties::Component_Type"
+ let fun isaFilter prop =
+          dropString(name_of prop) = "CASE_Properties::Component_Type"
           andalso
-          dropString(assoc "value" list) = "FILTER"
-       | isaFilter otherwise = false
+          (dropString(value_of (value_of prop)) = "FILTER" handle _ => false)
  in exists isaFilter props
  end
 
 fun get_filter_rqtNames props =
- let fun get (AList list) =
-          if dropString(assoc "name" list) = "CASE_Properties::Component_Spec"
-           then dropList (assoc "value" list)
-           else raise ERR "get_filter_rqtNames" ""
-       | get otherwise = raise ERR "get_filter_rqtNames" ""
- in tryfind get props
+ let fun get prop =
+       case total (dropString o name_of) prop
+        of SOME "CASE_Properties::Component_Spec" =>
+            (map value_of (dropList (value_of (value_of prop)))
+             handle _ => raise ERR "get_filter_rqtNames" "")
+         | otherwise => raise ERR "get_filter_rqtNames" ""
+ in
+   tryfind get props
  end
 
 fun get_filter decl =
@@ -848,9 +880,10 @@ fun get_filter decl =
     => if is_filter props then
         let val rqtNames = get_filter_rqtNames props
             val stmts = List.concat (map get_annex_stmts annexen)
-       in case get_named_props filter_req_name_eq rqtNames stmts
-           of [] => raise ERR "get_filter" "no properties!"
-            | glist => FilterDec (dest_qid fname, map get_port ports, glist)
+            val glist = get_named_props filter_req_name_eq rqtNames stmts
+       in if null glist then
+              raise ERR "get_filter" "no properties!"
+           else FilterDec (dest_qid fname, map get_port ports, glist)
        end
        else raise ERR "get_filter" "unable to scrape filter information"
    | otherwise => raise ERR "get_filter" "not a filter thread";
@@ -901,30 +934,32 @@ fun get_monitor_port port =
           end
    | otherwise => raise ERR "get_monitor_port" "unexpected port format"
 
-fun get_guar_names (List jlist) =
- let fun property (AList list) =
-          if dropString(assoc "name" list) = "CASE_Properties_stub::Component_Spec"
-           then
-             dropList (assoc "value" list)
-          else raise ERR "get_guar_names" ""
-       | property otherwise = raise ERR "get_guar_names" ""
- in tryfind property jlist
+fun get_spec_names properties =
+ let fun get_spec prop =
+     if dropString(name_of prop) = "CASE_Properties::Component_Spec"
+     then (map (dropString o value_of)
+              (dropList(value_of(value_of prop)))
+           handle _ => raise ERR "get_guar_names" "")
+     else raise ERR "get_guar_names" ""
+ in
+   tryfind get_spec properties
  end
 
-fun get_latched (List jlist) =
- let fun isaLatch (AList list) =
-          dropString(assoc "name" list) = "CASE_Properties_stub::Monitor_Latched"
-          andalso dropBool (assoc "value" list) = true
-       | isaLatch otherwise = false
- in exists isaLatch jlist
+fun get_latched properties =
+ let fun getLatch prop =
+       if dropString(name_of prop) = "CASE_Properties::Monitor_Latched"
+        then dropBool (value_of (value_of prop))
+        else raise ERR "get_latched" "expected Monitor_Latched property"
+ in tryfind getLatch properties
  end
 
-fun is_monitor (List jlist) =
- let fun isaMon (AList list) =
-          dropString(assoc "name" list) = "CASE_Properties_stub::Component_Type"
-          andalso dropString (assoc "value" list) = "MONITOR"
-       | isaMon otherwise = false
- in exists isaMon jlist
+fun is_monitor props =
+ let fun isaMon prop =
+          dropString(name_of prop) = "CASE_Properties::Component_Type"
+          andalso
+          (dropString (value_of(value_of prop)) = "MONITOR"
+           handle _ => false)
+ in exists isaMon props
  end
 
 fun get_policy policyName jlist =
@@ -954,43 +989,38 @@ fun dest_eq_stmt (AList alist) =
   | dest_eq_stmt any_other_thing = raise ERR "dest_eq_stmt" "unexpected syntax"
 ;
 
-fun dest_guar_stmt (AList alist) =
-    (case (assoc "kind" alist, assoc "name" alist, assoc "label" alist, assoc "expr" alist)
-       of (String "GuaranteeStatement", String gname, String label, e) =>
-            (gname,dest_exp e)
-        | otherwise => raise ERR "dest_guar_stmt" "unexpected syntax")
-  | dest_guar_stmt any_other_thing = raise ERR "dest_guar_stmt" "unexpected syntax"
+fun dest_guar_stmt stmt =
+ if dropString (kind_of stmt) = "GuaranteeStatement" then
+    ((dropString (name_of stmt), label_of stmt, dest_exp (expr_of stmt))
+     handle _ => raise ERR "dest_guar_stmt" "unexpected syntax")
+ else raise ERR "dest_guar_stmt" "unexpected syntax"
 ;
 
 fun jname_eq s1 s2 = (dropString s1 = dropString s2)
 
-fun get_monitor (AList alist) =
-    (case (assoc "name" alist,
-           assoc "features" alist,
-           assoc "properties" alist,
-           assoc "annexes" alist)
-     of (String fname, List ports, properties, List annexen)
-        => let val _ = if is_monitor properties then ()
-                       else raise ERR "get_monitor" "unable to find MONITOR property"
-               val qid = dest_qid fname
-               val portL = map get_monitor_port ports
-               val is_latched = get_latched properties
-               val stmts = List.concat (map get_annex_stmts annexen)
-               val eq_stmts   = mapfilter dest_eq_stmt stmts
-               val prop_stmts = mapfilter dest_property_stmt stmts
-               val guar_stmts = mapfilter dest_guar_stmt stmts
-               val policyName = snd qid^"_policy"
-               val (policy,prop_stmts') = pluck(equal policyName o fst) prop_stmts
-               val monitor_names = map dropString (get_guar_names properties)
-               val monitor_guars = filter (C mem monitor_names o #1) guar_stmts
-
-(*               val guars = get_named_props jname_eq tmp_monitor_names stmts *)
-           in
-                MonitorDec(qid, portL, is_latched, policy::monitor_guars)
-           end
-       | otherwise => raise ERR "get_monitor" "unexpected syntax")
-  | get_monitor otherwise = raise ERR "get_monitor" "unexpected syntax"
+fun get_monitor comp =
+ let val properties = dropList(properties_of comp)
+     val _ = if is_monitor properties then ()
+             else raise ERR "get_monitor" "unable to find MONITOR property"
+     val qid = dest_qid (dropString (name_of comp))
+     val ports = dropList (features_of comp)
+     val annexen = dropList (annexes_of comp)
+     val specNames = get_spec_names properties
+     val is_latched = get_latched properties
+     val portL = map get_monitor_port ports
+     val stmts = List.concat (map get_annex_stmts annexen)
+     val eq_stmts   = mapfilter dest_eq_stmt stmts (* should turn into FnDecs elsewhere in scrape *)
+     val prop_stmts = mapfilter dest_property_stmt stmts
+     fun is_policy(s,_) = last (String.tokens (equal #"_") s) = "policy"
+     val ((pname,policy),prop_stmts') = pluck is_policy prop_stmts
+     val guar_stmts = mapfilter dest_guar_stmt stmts
+     val monitor_guars = filter (C mem specNames o #1) guar_stmts
+ in
+     MonitorDec(qid, portL, is_latched, (pname,"",policy)::monitor_guars)
+ end
+ handle _ => raise ERR "get_monitor" "unexpected syntax"
 ;
+
 
 fun dest_publist plist =
  let fun dest_with ("with", List wlist) = wlist
@@ -1044,8 +1074,11 @@ fun dest_propertyConst json =
   of AList (("name", String qid) ::
             ("kind", _) ::
             ("propertyType", expect_aadl_integer) ::
-            ("value", Number (Int i)) :: _) =>
-       ConstDec (dest_qid qid,BaseTy(IntTy (AST.Int NONE)), mk_intLit i)
+            ("value", valuegunk) :: _) =>
+     (case total value_of valuegunk
+      of SOME (Number (Int i)) =>
+             ConstDec (dest_qid qid,BaseTy(IntTy (AST.Int NONE)), mk_intLit i)
+       | unexpected =>  raise ERR "dest_propertyConst" "expected an integer literal")
    | otherwise => raise ERR "dest_propertyConst" ""
 
 
@@ -1077,8 +1110,10 @@ fun dest_with ("with", List wlist) = map dropString wlist
   | dest_with other = raise ERR "dest_with" "";
 
 fun uptoWith string lo hi =
-   String.concatWith ","
-     (map (fn i => string^Int.toString i) (upto lo hi))
+   String.concat
+    ["[", String.concatWith ","
+            (map (fn i => string^Int.toString i) (upto lo hi)),
+     "]\n"]
 
 
 (*
@@ -1095,7 +1130,6 @@ val [comp1,comp2,comp3,comp4,comp5,comp6,comp7,comp8,comp9,comp10,
      comp81,comp82,comp83,comp84,comp85,comp86,comp87,comp88,comp89,comp90,
      comp91,comp92,comp93,comp94,comp95,comp96,comp97,comp98,comp99,comp100,
      comp101,comp102,comp103,comp104,comp105,comp106,comp107,comp108] = complist;
-
 
 *)
 
@@ -1179,6 +1213,21 @@ fun extend_recd_decs (pkgName,(tydecs,fndecs,fdecs,mdecs)) =
    (pkgName,(rev tydecs',fndecs,fdecs,mdecs))
  end;
 
+fun empty_pkg (_,([],[],[],[])) = true
+  | empty_pkg ("Common_Data",_) = true
+  | empty_pkg otherwise = false;
+
+(*
+fun scrub_pkg (name,(tydecs,tmdecs,fdecs,mdecs)) =
+ let fun empty_recd (RecdDec(qid,[])) = true
+       | empty_recd otherwise = false
+ in
+    (name,(filter (not o empty_recd) tydecs, tmdecs, fdecs, mdecs))
+ end
+*)
+
+fun scrub_pkg x = x;
+
 fun scrape_pkgs json =
  let fun uses (A as AList (("name", String AName) ::
                            ("kind", String "AadlPackage") ::
@@ -1193,8 +1242,9 @@ fun scrape_pkgs json =
           val modlist = mapfilter scrape opkgs
           val modlist' = finalize_partial_recd_decs modlist
           val modlist'' = map extend_recd_decs modlist'
-      in
-	modlist''
+          val modlist''' = filter (not o empty_pkg)
+                                  (map scrub_pkg modlist'')
+      in modlist'''
       end
  in
     case json
@@ -1221,7 +1271,7 @@ val (opkgs as
   pkg11,pkg12, pkg13,pkg14,pkg15,pkg16,pkg17, pkg18, pkg19, pkg20,
   pkg21, pkg22,pkg23, pkg24, pkg25, pkg26,pkg27,pkg28,pkg29]) = rev (topsort uses pkgs);
 
-map name_of opkgs;
+val pkgNames = map name_of opkgs;
 
 val declist = mapfilter scrape opkgs;
 
@@ -1229,6 +1279,7 @@ scrape pkg1;
 scrape pkg2;
 scrape pkg3;
 scrape pkg4;
+scrape pkg5;
 scrape pkg5;
 scrape pkg6;
 scrape pkg7;
@@ -1256,7 +1307,7 @@ scrape pkg28;
 scrape pkg29;
 scrape pkg30;
 
-pkg8 is CMASI
+for UAS pkg CMASI is pkg7
 
 for pkg SW:
 
@@ -1314,6 +1365,7 @@ fun amn_tydec tydec =
   of EnumDec _ => tydec
    | RecdDec (qid,fields) => RecdDec(qid,map (I##amn_ty) fields)
    | ArrayDec (qid,ty) => ArrayDec(qid, amn_ty ty)
+   | UnionDec (qid,choices) => UnionDec(qid, map (I##amn_ty) choices)
 
 fun amn_tmdec tdec =
  case tdec
@@ -1334,7 +1386,7 @@ fun amn_filter_dec fdec =
 
 fun amn_monitor_dec fdec =
  let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
-     fun amn_cprop (s,e) = (s,amn_exp e)
+     fun amn_cprop (s1,s2,e) = (s1,s2,amn_exp e)
  in case fdec
      of MonitorDec(qid, ports, b, cprops) =>
         MonitorDec(qid, map amn_port ports, b, map amn_cprop cprops)
@@ -1505,7 +1557,11 @@ fun transTy tyEnv ty =
    | BaseTy StringTy => stringSyntax.string_ty
    | BaseTy RegexTy  => regexpSyntax.regexp_ty
    | BaseTy FloatTy  => realSyntax.real_ty
-   | BaseTy (IntTy(Nat NONE)) => numSyntax.num
+   | BaseTy DoubleTy => realSyntax.real_ty
+   | BaseTy (IntTy(Nat _)) => numSyntax.num
+   | BaseTy (IntTy(Int _)) => intSyntax.int_ty
+(* | BaseTy (IntTy(Nat NONE)) => numSyntax.num
+   | BaseTy (IntTy(Nat (SOME _))) => raise ERR "transTy" "fixed-width nums not supported"
    | BaseTy (IntTy(Int NONE)) => intSyntax.int_ty
    | BaseTy (IntTy(Nat(SOME w))) =>
        if w = 8 then  u8 else
@@ -1519,6 +1575,7 @@ fun transTy tyEnv ty =
        if w = 32 then i32 else
        if w = 64 then i64 else
        raise ERR "transTy" "unexpected size for signed type"
+*)
    | ArrayTy(ty,dims) =>
       let fun transDim (ConstExp(IntLit{value,kind})) =
                 fcpSyntax.mk_int_numeric_type value
@@ -1533,6 +1590,7 @@ fun transTy tyEnv ty =
 
 fun undef s = raise ERR "transExp" ("undefined case: "^Lib.quote s);
 
+(*
 fun lift_int {value,kind} =
  let open AST
  in case kind
@@ -1557,6 +1615,19 @@ fun lift_int {value,kind} =
           raise ERR "lift_int" "unexpected size for signed type"
         end
  end;
+*)
+fun lift_int {value,kind} =
+ let open AST
+ in case kind
+     of Nat _ => numSyntax.term_of_int value
+      | Int _ => intSyntax.term_of_int (Arbint.fromInt value)
+ end;
+
+
+(* Rounds for now in order to do injection *)
+fun lift_float r =
+  intrealSyntax.mk_real_of_int
+      (intSyntax.term_of_int (Arbint.fromInt(Real.round r)));
 
 val gdl_mk_chr =
  let open stringSyntax
@@ -1572,6 +1643,8 @@ val gdl_mk_ord =
     handle HOL_ERR _ => raise ERR "gdl_mk_ord" "expected arg. with type char"
  end
 
+val real_ty = realSyntax.real_ty;
+
 fun unop (uop,e) t =
  let open AST
      val ty = type_of t
@@ -1584,62 +1657,19 @@ fun unop (uop,e) t =
                   else boolSyntax.mk_neg t
       | BitNot => undef "BitNot"
       | UMinus =>
-         if ty = intSyntax.int_ty then
+         if mem ty [intSyntax.int_ty,i8,i16,i32,i64] then
             lift intSyntax.mk_negated else
-         if ty = i8 then
-           lift mk_i8_uminus else
-         if ty = i16 then
-           lift mk_i16_uminus else
-         if ty = i32 then
-           lift mk_i32_uminus else
-         if ty = i64 then
-           lift mk_i64_uminus
+         if ty = real_ty then
+           lift realSyntax.mk_negated
          else raise ERR "unop (UMinus)"
                    "expected type of operand to be int\
                    \ (either fixed width or unbounded)"
-      | Signed =>
-          if ty = intSyntax.int_ty orelse mem ty [i8,i16,i32,i64] then
-              lift combinSyntax.mk_I else
-          if ty = numSyntax.num then
-             lift intSyntax.mk_injected else
-          if ty = u8 then
-             lift mk_u8_signed else
-          if ty = u16 then
-           lift mk_u16_signed else
-          if ty = u32 then
-           lift mk_u32_signed else
-          if ty = u64 then
-           lift mk_u64_signed
-          else raise ERR "unop (Signed)" "unexpected type of operand"
-      | Unsigned =>
-          if ty = numSyntax.num orelse mem ty [u8,u16,u32,u64] then
-              lift combinSyntax.mk_I else
-          if ty = intSyntax.int_ty then
-             lift intSyntax.mk_Num else
-          if ty = i8 then
-             lift mk_i8_unsigned else
-          if ty = i16 then
-           lift mk_i16_unsigned else
-          if ty = i32 then
-           lift mk_i32_unsigned else
-          if ty = i64 then
-           lift mk_i64_unsigned
-          else raise ERR "unop (Unsigned)" "unexpected type of operand"
-      | Unbounded =>
-          if ty = intSyntax.int_ty orelse ty = numSyntax.num
-              then lift combinSyntax.mk_I else
-          if ty = u8  then lift mk_u8num else
-          if ty = u16 then lift mk_u16num else
-          if ty = u32 then lift mk_u32num else
-          if ty = u64 then lift mk_u64num else
-          if ty = i8  then lift mk_i8int else
-          if ty = i16 then lift mk_i16int else
-          if ty = i32 then lift mk_i32int else
-          if ty = i64 then lift mk_i64int
-          else raise ERR "unop (Unbounded)" "expected numeric type"
       | Yesterday => lift ptltlSyntax.mk_Yester
       | ZYesterday => lift ptltlSyntax.mk_Zyester
       | Historically => lift ptltlSyntax.mk_Histor
+      | Signed => undef "Signed"
+      | Unsigned => undef "Unsigned"
+      | Unbounded => undef "Unbounded"
  end;
 
 fun binop (bop,e1,_) t1 t2 =
@@ -1688,126 +1718,66 @@ fun binop (bop,e1,_) t1 t2 =
         mk_Imp(t1,t2)
     | Plus =>
        if ty1 = numSyntax.num then lift numSyntax.mk_plus else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_plus else
-       if ty1 = u8  then lift mk_u8_plus else
-       if ty1 = u16 then lift mk_u16_plus else
-       if ty1 = u32 then lift mk_u32_plus else
-       if ty1 = u64 then lift mk_u64_plus else
-       if ty1 = i8  then lift mk_i8_plus else
-       if ty1 = i16 then lift mk_i16_plus else
-       if ty1 = i32 then lift mk_i32_plus else
-       if ty1 = i64 then lift mk_i64_plus else
-       raise ERR "Plus" "expected numeric arguments"
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+         then lift intSyntax.mk_plus else
+       if ty1 = real_ty then lift realSyntax.mk_plus
+       else raise ERR "Plus" "expected numeric arguments"
     | Minus =>
        if ty1 = numSyntax.num then lift numSyntax.mk_minus else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_minus else
-       if ty1 = u8  then lift mk_u8_minus else
-       if ty1 = u16 then lift mk_u16_minus else
-       if ty1 = u32 then lift mk_u32_minus else
-       if ty1 = u64 then lift mk_u64_minus else
-       if ty1 = i8  then lift mk_i8_minus else
-       if ty1 = i16 then lift mk_i16_minus else
-       if ty1 = i32 then lift mk_i32_minus else
-       if ty1 = i64 then lift mk_i64_minus else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_minus else
+       if ty1 = real_ty then lift realSyntax.mk_minus else
        raise ERR "Minus" "expected numeric arguments"
     | Multiply =>
        if ty1 = numSyntax.num then lift numSyntax.mk_mult else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_mult else
-       if ty1 = u8  then lift mk_u8_mult else
-       if ty1 = u16 then lift mk_u16_mult else
-       if ty1 = u32 then lift mk_u32_mult else
-       if ty1 = u64 then lift mk_u64_mult else
-       if ty1 = i8  then lift mk_i8_mult else
-       if ty1 = i16 then lift mk_i16_mult else
-       if ty1 = i32 then lift mk_i32_mult else
-       if ty1 = i64 then lift mk_i64_mult else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_mult else
+       if ty1 = real_ty then lift realSyntax.mk_mult else
        raise ERR "Multiply" "expected numeric arguments"
     | Exponent =>
        if ty1 = numSyntax.num then lift numSyntax.mk_exp else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_exp else
-       if ty1 = u8  then lift mk_u8_exp else
-       if ty1 = u16 then lift mk_u16_exp else
-       if ty1 = u32 then lift mk_u32_exp else
-       if ty1 = u64 then lift mk_u64_exp else
-       if ty1 = i8  then lift mk_i8_exp else
-       if ty1 = i16 then lift mk_i16_exp else
-       if ty1 = i32 then lift mk_i32_exp else
-       if ty1 = i64 then lift mk_i64_exp else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_exp else
+       if ty1 = real_ty then lift realSyntax.mk_pow else
        raise ERR "Exponent" "expected numeric arguments"
     | Divide =>
        if ty1 = numSyntax.num then lift numSyntax.mk_div else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_div else
-       if ty1 = u8  then lift mk_u8_div else
-       if ty1 = u16 then lift mk_u16_div else
-       if ty1 = u32 then lift mk_u32_div else
-       if ty1 = u64 then lift mk_u64_div else
-       if ty1 = i8  then lift mk_i8_div else
-       if ty1 = i16 then lift mk_i16_div else
-       if ty1 = i32 then lift mk_i32_div else
-       if ty1 = i64 then lift mk_i64_div else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_div else
+       if ty1 = real_ty then lift realSyntax.mk_div else
        raise ERR "Divide" "expected numeric arguments"
     | Modulo =>
        if ty1 = numSyntax.num then lift numSyntax.mk_mod else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_mod else
-       if ty1 = u8  then lift mk_u8_mod else
-       if ty1 = u16 then lift mk_u16_mod else
-       if ty1 = u32 then lift mk_u32_mod else
-       if ty1 = u64 then lift mk_u64_mod else
-       if ty1 = i8  then lift mk_i8_mod else
-       if ty1 = i16 then lift mk_i16_mod else
-       if ty1 = i32 then lift mk_i32_mod else
-       if ty1 = i64 then lift mk_i64_mod else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_mod else
        raise ERR "Modulo" "expected numeric arguments"
     | Less =>
        if ty1 = numSyntax.num then lift numSyntax.mk_less else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_less else
-       if ty1 = u8  then lift mk_u8_less else
-       if ty1 = u16 then lift mk_u16_less else
-       if ty1 = u32 then lift mk_u32_less else
-       if ty1 = u64 then lift mk_u64_less else
-       if ty1 = i8  then lift mk_i8_less else
-       if ty1 = i16 then lift mk_i16_less else
-       if ty1 = i32 then lift mk_i32_less else
-       if ty1 = i64 then lift mk_i64_less else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_less else
+       if ty1 = real_ty then lift realSyntax.mk_less else
        raise ERR "Less" "expected numeric arguments"
     | Greater =>
        if ty1 = numSyntax.num then lift numSyntax.mk_greater else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_great else
-       if ty1 = u8  then lift mk_u8_gtr else
-       if ty1 = u16 then lift mk_u16_gtr else
-       if ty1 = u32 then lift mk_u32_gtr else
-       if ty1 = u64 then lift mk_u64_gtr else
-       if ty1 = i8  then lift mk_i8_gtr else
-       if ty1 = i16 then lift mk_i16_gtr else
-       if ty1 = i32 then lift mk_i32_gtr else
-       if ty1 = i64 then lift mk_i64_gtr else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_great else
+       if ty1 = real_ty then lift realSyntax.mk_great else
        raise ERR "Modulo" "expected numeric arguments"
     | LessEqual =>
        if ty1 = numSyntax.num then lift numSyntax.mk_leq else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_leq else
-       if ty1 = u8  then lift mk_u8_leq else
-       if ty1 = u16 then lift mk_u16_leq else
-       if ty1 = u32 then lift mk_u32_leq else
-       if ty1 = u64 then lift mk_u64_leq else
-       if ty1 = i8  then lift mk_i8_leq else
-       if ty1 = i16 then lift mk_i16_leq else
-       if ty1 = i32 then lift mk_i32_leq else
-       if ty1 = i64 then lift mk_i64_leq else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_leq else
+       if ty1 = real_ty then lift realSyntax.mk_leq else
        raise ERR "LessEqual" "expected numeric arguments"
     | GreaterEqual =>
        if ty1 = numSyntax.num then lift numSyntax.mk_geq else
-       if ty1 = intSyntax.int_ty then lift intSyntax.mk_geq else
-       if ty1 = u8  then lift mk_u8_geq else
-       if ty1 = u16 then lift mk_u16_geq else
-       if ty1 = u32 then lift mk_u32_geq else
-       if ty1 = u64 then lift mk_u64_geq else
-       if ty1 = i8  then lift mk_i8_geq else
-       if ty1 = i16 then lift mk_i16_geq else
-       if ty1 = i32 then lift mk_i32_geq else
-       if ty1 = i64 then lift mk_i64_geq else
+       if mem ty1 [intSyntax.int_ty,u8,u16,u32,u64,i8,i16,i32,i64]
+          then lift intSyntax.mk_geq else
+       if ty1 = real_ty then lift realSyntax.mk_geq else
        raise ERR "GreaterEqual" "expected numeric arguments"
     | Since => undef "Since"
     | Trigger => undef "Trigger"
+    | Fby => undef "Fby"
     | RegexMatch => lift regexpSyntax.mk_regexp_matcher
     | CastWidth     => undef "CastWidth"
     | BitOr         => undef "BitOr"
@@ -1933,7 +1903,7 @@ fun transExp pkgName varE ety exp =
     | ConstExp (StringLit s) => stringSyntax.lift_string ind s
     | ConstExp (IntLit vk)   => lift_int vk
     | ConstExp (RegexLit r)  => undef "RegexLit"  (* lift_regex r *)
-    | ConstExp (FloatLit f)  => undef "FloatLit"
+    | ConstExp (FloatLit f)  => lift_float f
     | Unop (node as (uop,e)) => unop node (transExp pkgName varE Unknown e)
     | Binop (NotEqual,e1,e2) =>
         transExp pkgName varE (Expected bool) (Unop(Not,Binop(Equal,e1,e2)))
@@ -1953,7 +1923,7 @@ fun transExp pkgName varE ety exp =
     | ArrayIndex(A,indices) =>
          let open fcpSyntax
                val Atm = transExp pkgName varE Unknown A
-               val inds = map (transExp pkgName varE (Expected numSyntax.num)) indices
+               val inds = map (transExp pkgName varE (Expected intSyntax.int_ty)) indices
          in
             mk_array_access(Atm,inds)
          end
@@ -2050,25 +2020,37 @@ fun declare_hol_enum ((pkgName,ename),cnames) =
 (* in the current theory, so the pkgName is ignored.                         *)
 (*---------------------------------------------------------------------------*)
 
-fun declare_hol_record tyEnv ((_,rname),fields) =
-    let open Datatype ParseDatatype
-        fun ty2pretype ty =
-	    case ty
-	     of NamedTy ("","null") => dVartype "'a"
-              | NamedTy ("Base_Types",_) => dAQ (transTy tyEnv ty)
-(*              | NamedTy qid =>
-                 (case op_assoc1 (curry tyEq) ty tyEnv
-                   of SOME ty' => dAQ (ty'
-                   |   => dTyop{Tyop=s,Thy=NONE,Args=[]}
-*)
-              | ty => dAQ (transTy tyEnv ty)
-        fun mk_field(s,ty) = (s,ty2pretype ty)
-    in
-      astHol_datatype [(rname,Record (map mk_field fields))]
-    ; stdErr_print ("Declared record "^Lib.quote rname^"\n")
-    end
 
-(*
+fun ty2pretype tyEnv ty =
+ let open Datatype ParseDatatype
+ in case ty
+     of NamedTy ("","null") => dVartype "'a"
+      | NamedTy ("Base_Types",_) => dAQ (transTy tyEnv ty)
+      | ty => dAQ (transTy tyEnv ty)
+ end
+
+fun declare_hol_record tyEnv ((_,rname),fields) =
+ let open ParseDatatype ParseDatatype_dtype
+     fun mk_field(s,ty) = (s,ty2pretype tyEnv ty)
+ in
+    if null fields then  (* Empty records get mapped to a trivial datatype *)
+     Datatype.astHol_datatype
+          [(rname,Constructors[(rname,[dAQ oneSyntax.one_ty])])]
+     else Datatype.astHol_datatype [(rname,Record (map mk_field fields))]
+   ; stdErr_print ("Declared record "^Lib.quote rname^"\n")
+ end
+
+fun declare_hol_union tyEnv (qid,choices) =
+ let open ParseDatatype
+     val tyName = snd qid
+     fun mk_constr (s,ty) = (s,[ty2pretype tyEnv ty])
+ in
+   Datatype.astHol_datatype [(tyName,Constructors (map mk_constr choices))]
+   ; stdErr_print ("Declared union type "^Lib.quote tyName^"\n")
+ end
+
+(* ArrayDecs are currently treated as type abbrevs
+
 fun declare_hol_array (name, ArrayTy(bty,[dim])) =
     let val dim_tm = transExp (current_theory()) [] Unknown dim
         val base_ty = transTy bty
@@ -2093,10 +2075,15 @@ fun declare_hol_array (name, ArrayTy(bty,[dim])) =
 fun declare_hol_type (EnumDec enum) tyEnv = (declare_hol_enum enum; tyEnv)
   | declare_hol_type (RecdDec recd) tyEnv = (declare_hol_record tyEnv recd; tyEnv)
   | declare_hol_type (ArrayDec (qid,ty)) tyEnv =
-      let val ty' = substTyTy (map op|-> tyEnv) ty
-          val anon_pkg_qid = ("",snd qid)
-      in (NamedTy qid, ty') :: (NamedTy anon_pkg_qid,ty') :: tyEnv
-      end
+    let val arrName = snd qid
+        val anon_pkg_qid = ("",arrName)
+        val ty' = substTyTy (map op|-> tyEnv) ty
+        val _ = stdErr_print
+                   ("Declared type abbrev for array "^Lib.quote arrName^"\n")
+    in (NamedTy qid, ty') :: (NamedTy anon_pkg_qid,ty') :: tyEnv
+    end
+  | declare_hol_type (UnionDec (qid,choices)) tyEnv =
+    (declare_hol_union tyEnv (qid,choices); tyEnv)
 
 (*---------------------------------------------------------------------------*)
 (* Includes declaration of HOL constants                                     *)
@@ -2118,6 +2105,8 @@ fun declare_hol_fn tyEnv ((_,name),params,ty,body) =
        stdErr_print ("Defined function "^Lib.quote name^"\n")
      ; def
     end
+    handle HOL_ERR _ => raise ERR "declare_hol_fn"
+           ("failed to define "^Lib.quote name)
 
 fun declare_hol_term tyEnv (ConstDec (qid,ty,exp)) =
         declare_hol_fn tyEnv (qid,[],ty,exp)
@@ -2229,27 +2218,61 @@ fun same_tmdec tmdec1 tmdec2 =
     | otherwise => false
 ;
 
-fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
-    let val tyEnv' = rev_itlist declare_hol_type tydecs tyEnv
-        val tydecls = List.filter (is_datatype o snd) (theorems thyName)
-        val tmdecs' = op_mk_set same_tmdec tmdecs
-        val tmdecs'' = topsort called_by tmdecs'
-        val fn_defs = map (declare_hol_term tyEnv') tmdecs''
-        val info = (thyName,tyEnv',fn_defs)
-        val filter_specs = map (mk_filter_spec info) filters
-        val monitor_specs = map (mk_monitor_spec info) monitors
-    in
-      (tyEnv', map snd tydecls, fn_defs, filter_specs, monitor_specs)
-    end;
+fun revitFail f [] acc = (acc,[])
+  | revitFail f (h::t) acc =
+     case (SOME (f h acc) handle _ => NONE)
+      of NONE => (acc,h::t)
+       | SOME x => revitFail f t x
+;
 
-fun pkgs2hol thyName list =
- let fun iter [] acc = acc
-       | iter (pkg::t) (tyE,tyD,tmD,fS,mS) =
-          let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
-          in iter t (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS, monspecs@mS)
-          end
- in iter list ([],[],[],[],[])
+fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
+ let val (tyEnv',rst) = revitFail declare_hol_type tydecs tyEnv
+ in if not(null rst) then
+       raise ERR "mk_pkg_defs" "failure to define a declared type"
+    else
+ let val tydecls = List.filter (is_datatype o snd) (theorems thyName)
+     val tmdecs' = op_mk_set same_tmdec tmdecs
+     val tmdecs'' = topsort called_by tmdecs'
+     val fn_defs = map (declare_hol_term tyEnv') tmdecs''
+     val info = (thyName,tyEnv',fn_defs)
+     val filter_specs = map (mk_filter_spec info) filters
+     val monitor_specs = map (mk_monitor_spec info) monitors
+ in
+      (tyEnv', map snd tydecls, fn_defs, filter_specs, monitor_specs)
+ end end;
+G
+fun pkgs2hol thyName pkgs =
+ let fun step pkg (tyE,tyD,tmD,fS,mS) =
+        let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
+        in (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS, monspecs@mS)
+        end
+      val init = ([],[],[],[],[])
+ in
+   rev_itlist step pkgs init
  end;
+
+(*
+val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = pkgs;
+
+val thyName = "UAS";
+
+(* Each constructor wraps an existing unary type *)
+
+fun step pkg (tyE,tyD,tmD,fS,mS) =
+  let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
+  in (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS, monspecs@mS)
+  end
+
+val init = ([],[],[],[],[])
+
+val res1 = step pkg1 init;
+val res2 = step pkg2 res1;
+val res3 = step pkg3 res2;
+val res4 = step pkg4 res3;
+val res5 = step pkg5 res4;
+val res6 = step pkg6 res5;
+val res7 = step pkg7 res6;
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Generate contig-based filter code in CakeML concrete syntax.              *)
@@ -2259,6 +2282,10 @@ fun dest_intLit exp =
  case exp
   of ConstExp(IntLit{value,kind = AST.Int NONE}) => value
    | otherwise => raise ERR "dest_intLit" "";
+
+(*---------------------------------------------------------------------------*)
+(* Get the template file "./TEMPLATE" to be instantiated                     *)
+(*---------------------------------------------------------------------------*)
 
 val template_ss =
     let val istrm = TextIO.openIn "TEMPLATE"

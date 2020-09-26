@@ -5,7 +5,8 @@
 
 open Lib Feedback HolKernel boolLib MiscLib bossLib;
 
-local open AADL ptltlSyntax regexpLib regexpSyntax realLib realSyntax in end
+local open AADL ptltlSyntax regexpLib regexpSyntax realLib realSyntax intrealSyntax
+in end
 
 val ERR = Feedback.mk_HOL_ERR "splat-mon";
 
@@ -67,6 +68,15 @@ fun synthesize_monitor monitor =
    monitor_data monitor
  end
 
+fun extract_filter (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
+
+fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
+     let open AADL
+         fun dest_const_dec (ConstDec ((_,cname),ty,i)) = (cname,i)
+     in mapfilter dest_const_dec fndecs
+     end
+  | extract_consts otherwise = raise ERR "extract_consts" "looking for package CM_Property_Set"
+
 val args = ["examples/UAS.json"];
 
 (*
@@ -83,16 +93,6 @@ val args = ["examples_monitor/RunTimeMonitor_Simple_Example_V1.json"];
 val args = ["examples_monitor/Datacentric_monitor.json"];
 *)
 
-fun extract_filter (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
-
-fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
-     let open AADL
-         fun dest_const_dec (ConstDec ((_,cname),ty,i)) = (cname,i)
-     in mapfilter dest_const_dec fndecs
-     end
-  | extract_consts otherwise = raise ERR "extract_consts" "looking for package CM_Property_Set"
-
-
 fun main () =
  let val _ = stdErr_print "splat-mon: \n"
      val args = CommandLine.arguments()
@@ -101,10 +101,10 @@ fun main () =
 	   ("Parsing "^jsonfile^" ... ") "succeeded.\n"
      val pkgs = apply_with_chatter AADL.scrape_pkgs jpkg
                   "Converting Json to AST ... " "succeeded.\n"
+     val thyName = "UAS"  (* Need something better: get it from modelUnits from jpkg *)
      val filter_decs = List.concat (map extract_filter pkgs)
      val const_alist = tryfind extract_consts pkgs
      val filter_CakeML_files = map (AADL.inst_filter_template "." const_alist) filter_decs
-     val thyName = fst (last pkgs)
      val _ = new_theory thyName
      val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs
 	   "Converting AST to logic ...\n" "---> succeeded.\n"
