@@ -443,7 +443,8 @@ fun get_annex_stmts (AList alist) =
            assoc "parsedAnnexLibrary" alist
             handle _ =>
            assoc "parsedAnnexSubclause" alist)
-      of (String "agree", AList [("statements", List decls)]) => decls
+      of (String "Agree", AList [("statements", List decls)]) => decls
+       | (String "agree", AList [("statements", List decls)]) => decls
        | otherwise => raise ERR "get_annex_stmts" "unexpected syntax")
   | get_annex_stmts otherwise = raise ERR "get_annex_stmts" "unexpected syntax"
 
@@ -545,9 +546,11 @@ fun fldty tystr =  (* replace with dest_ty? *)
 (* Support for detecting and implementing record type extension              *)
 (*---------------------------------------------------------------------------*)
 
-val null_ty = NamedTy("","Missing Field");
+val null_ty = NamedTy("","--NullTy--");
+fun is_null_ty ty = eqTy(null_ty,ty);
 
 fun mk_extender orig_name = ("--Extends--", NamedTy(dest_qid orig_name))
+
 fun dest_extender (RecdDec (qid, ("--Extends--", NamedTy base_qid)::t)) =
       (qid,base_qid,t)
   | dest_extender otherwise = raise ERR "dest_extender" "";
@@ -823,15 +826,6 @@ fun get_named_props name_equivFn rnames stmts =
 (*---------------------------------------------------------------------------*)
 (* Note that a single filter can have multiple properties attached.          *)
 (*---------------------------------------------------------------------------*)
-
-fun get_annex_stmts (AList alist) =
-    (case (assoc "name" alist,
-           assoc "parsedAnnexLibrary" alist
-            handle _ =>
-           assoc "parsedAnnexSubclause" alist)
-      of (String "agree", AList [("statements", List decls)]) => decls
-       | otherwise => raise ERR "get_annex_stmts" "unexpected syntax")
-  | get_annex_stmts otherwise = raise ERR "get_annex_stmts" "unexpected syntax"
 
 (*---------------------------------------------------------------------------*)
 (* This enables "Req001_Filter" to be equal to "Req001_RadioDriver_Filter"   *)
@@ -1110,10 +1104,11 @@ fun dest_with ("with", List wlist) = map dropString wlist
   | dest_with other = raise ERR "dest_with" "";
 
 fun uptoWith string lo hi =
-   String.concat
-    ["[", String.concatWith ","
+  print
+   (String.concat
+     ["[", String.concatWith ","
             (map (fn i => string^Int.toString i) (upto lo hi)),
-     "]\n"]
+     "]\n"]);
 
 
 (*
@@ -1134,27 +1129,25 @@ val [comp1,comp2,comp3,comp4,comp5,comp6,comp7,comp8,comp9,comp10,
 *)
 
 (*---------------------------------------------------------------------------*)
-(* For any declaration of a partial record type there should be a later      *)
-(* declaration of an completion of that type, giving the missing field(s)    *)
-(* to be added. We remove the first declaration and add its fields to the    *)
-(* given extension fields.                                                   *)
+(* For any declaration of a partial record type, one with a field with form  *)
+(*                                                                           *)
+(*   name : null;                                                            *)
+(*                                                                           *)
+(* there should be a later declaration of a new type that completes that     *)
+(* field, giving a replacement type for null. When the map to HOL happens,   *)
+(* the null field in the original record type is replaced by a type variable.*)
 (*---------------------------------------------------------------------------*)
 
 fun dest_recd_dec (RecdDec args) = args
   | dest_recd_dec other = raise ERR "dest_recd_dec" ""
 
-fun finalize_partial_recd_decs declist =
- let fun is_extensible tydec =
+fun replace_null_fields declist =
+ let fun has_null tydec =
       case tydec
        of RecdDec (qid,flds) => exists (fn (s,ty) => eqTy(ty,null_ty)) flds
         | otherwise => false
-     fun lift_extensibles (s, (tydecs,tmdecs,filters,monitors)) =
-       let val (extensibles,tydecs') = partition is_extensible tydecs
-       in (extensibles, (s,(tydecs',tmdecs,filters,monitors)))
-       end
-     val itner = map lift_extensibles declist
-     val partial_decs = map dest_recd_dec (List.concat (map fst itner))
-     val modlist = map snd itner
+     fun lift_nulls (s, (tydecs,_,_,_)) = filter has_null tydecs
+     val partial_decs = map dest_recd_dec (List.concat (map lift_nulls declist))
      fun refine pdec module =
        let val (oqid,oflds) = pdec
            val (pkgName, (tydecs,tmdecs,filters,monitors)) = module
@@ -1173,9 +1166,9 @@ fun finalize_partial_recd_decs declist =
        in
          (pkgName, (tydecs',tmdecs,filters,monitors))
        end
-     fun refine_modules pdec modlist = map (refine pdec) modlist
+     fun refine_modules pdec decs = map (refine pdec) decs
  in
-   itlist refine_modules partial_decs modlist
+   itlist refine_modules partial_decs declist
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -1213,20 +1206,16 @@ fun extend_recd_decs (pkgName,(tydecs,fndecs,fdecs,mdecs)) =
    (pkgName,(rev tydecs',fndecs,fdecs,mdecs))
  end;
 
-fun empty_pkg (_,([],[],[],[])) = true
-  | empty_pkg ("Common_Data",_) = true
+fun empty_recd (RecdDec(qid,[])) = true
+  | empty_recd otherwise = false
+
+fun empty_pkg (_,(tydecs,[],[],[])) = List.all empty_recd tydecs
   | empty_pkg otherwise = false;
 
 (*
 fun scrub_pkg (name,(tydecs,tmdecs,fdecs,mdecs)) =
- let fun empty_recd (RecdDec(qid,[])) = true
-       | empty_recd otherwise = false
- in
-    (name,(filter (not o empty_recd) tydecs, tmdecs, fdecs, mdecs))
- end
+  (name,(filter (not o empty_recd) tydecs, tmdecs, fdecs, mdecs))
 *)
-
-fun scrub_pkg x = x;
 
 fun scrape_pkgs json =
  let fun uses (A as AList (("name", String AName) ::
@@ -1240,10 +1229,9 @@ fun scrape_pkgs json =
      fun run pkgs =
       let val opkgs = rev (topsort uses pkgs)
           val modlist = mapfilter scrape opkgs
-          val modlist' = finalize_partial_recd_decs modlist
+          val modlist' = replace_null_fields modlist
           val modlist'' = map extend_recd_decs modlist'
-          val modlist''' = filter (not o empty_pkg)
-                                  (map scrub_pkg modlist'')
+          val modlist''' = filter (not o empty_pkg) modlist''
       in modlist'''
       end
  in
@@ -1273,7 +1261,11 @@ val (opkgs as
 
 val pkgNames = map name_of opkgs;
 
-val declist = mapfilter scrape opkgs;
+val modlist = mapfilter scrape opkgs
+val modlist' = replace_null_fields modlist
+val modlist'' = map extend_recd_decs modlist'
+val modlist''' = filter (not o empty_pkg) modlist'';
+val pkgs = modlist''';
 
 scrape pkg1;
 scrape pkg2;
@@ -2014,30 +2006,29 @@ fun declare_hol_enum ((pkgName,ename),cnames) =
     end;
 
 (*---------------------------------------------------------------------------*)
-(* Puts type alpha in place of null. Morally, I should put a different type  *)
-(* variable at each occurrence, but that can come later. There is also an    *)
-(* assumption that all declarations of records, enums, etc, are taking place *)
-(* in the current theory, so the pkgName is ignored.                         *)
+(* Puts type alpha in place of null. Expects there to be at most one such    *)
+(* field. There is an assumption that all declarations of records, enums,    *)
+(* etc, are taking place in the current theory, so the pkgName is ignored.   *)
 (*---------------------------------------------------------------------------*)
-
 
 fun ty2pretype tyEnv ty =
  let open Datatype ParseDatatype
- in case ty
-     of NamedTy ("","null") => dVartype "'a"
-      | NamedTy ("Base_Types",_) => dAQ (transTy tyEnv ty)
-      | ty => dAQ (transTy tyEnv ty)
- end
+ in if is_null_ty ty then dVartype "'a" else dAQ (transTy tyEnv ty)
+ end;
 
-fun declare_hol_record tyEnv ((_,rname),fields) =
+fun declare_hol_record tyEnv ((_,recdName),fields) =
  let open ParseDatatype ParseDatatype_dtype
      fun mk_field(s,ty) = (s,ty2pretype tyEnv ty)
  in
+    if length (filter is_null_ty (map snd fields)) > 1 then
+      raise ERR "declare_hol_record" "multiple null fields not handled"
+    else
     if null fields then  (* Empty records get mapped to a trivial datatype *)
      Datatype.astHol_datatype
-          [(rname,Constructors[(rname,[dAQ oneSyntax.one_ty])])]
-     else Datatype.astHol_datatype [(rname,Record (map mk_field fields))]
-   ; stdErr_print ("Declared record "^Lib.quote rname^"\n")
+          [(recdName,Constructors[(recdName,[dAQ oneSyntax.one_ty])])]
+    else
+      Datatype.astHol_datatype [(recdName,Record (map mk_field fields))]
+   ; stdErr_print ("Declared record "^Lib.quote recdName^"\n")
  end
 
 fun declare_hol_union tyEnv (qid,choices) =
@@ -2233,14 +2224,18 @@ fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
  let val tydecls = List.filter (is_datatype o snd) (theorems thyName)
      val tmdecs' = op_mk_set same_tmdec tmdecs
      val tmdecs'' = topsort called_by tmdecs'
-     val fn_defs = map (declare_hol_term tyEnv') tmdecs''
+     val fn_defs = mapfilter (declare_hol_term tyEnv') tmdecs''
+     val _ = if length fn_defs < length tmdecs'' then
+             HOL_MESG (String.concat
+			   [pkgName," : some constants or functions not defined. Continuing ..."])
+             else ()
      val info = (thyName,tyEnv',fn_defs)
      val filter_specs = map (mk_filter_spec info) filters
      val monitor_specs = map (mk_monitor_spec info) monitors
  in
       (tyEnv', map snd tydecls, fn_defs, filter_specs, monitor_specs)
  end end;
-G
+
 fun pkgs2hol thyName pkgs =
  let fun step pkg (tyE,tyD,tmD,fS,mS) =
         let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
@@ -2252,11 +2247,9 @@ fun pkgs2hol thyName pkgs =
  end;
 
 (*
-val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = pkgs;
-
 val thyName = "UAS";
 
-(* Each constructor wraps an existing unary type *)
+val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = scrape_pkgs jpkg;
 
 fun step pkg (tyE,tyD,tmD,fS,mS) =
   let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
