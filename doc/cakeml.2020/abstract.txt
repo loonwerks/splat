@@ -1,0 +1,28 @@
+Title = "Take a SEAT: Security-Enhancing Architectural Transformations"
+
+Authors = Konrad Slind, David Hardin, Thomas Logan, Junaid Babar,
+          Eric Mercer (BYU), Johannes Pohjola (Data61), Darren Cofer,
+          Isaac Amundson.
+
+Abstract.
+---------
+
+System architecture models in a language such as AADL provide a
+high-level setting in which existing implementations, new design
+features, high-level requirements, implementations, and verifications
+can be combined. In the DARPA CASE project we have recently been
+developing selected architecture-to-architecture transformations as a
+way to enhance the security of a system. The transformations are
+formally specified at a high level and mapped to implementations by a
+sequence of deductively justified compilation steps. We will present
+details of two transformations: one that creates efficient network
+message filters from formal language specifications, and one that
+creates runtime monitors from temporal logic specifications. For both
+transformations, we illustrate an end-to-end verification path that
+formally connects top-level component specifications with the binary
+behavior of the newly introduced security-enforcing components. Since
+these gadgets are expected to run in an embedded system, further
+properties, such as liveness, are required, and we will discuss how
+our framework can supply these as well. We will also discuss aspects
+of how this formal toolchain is incorporated into a build system which
+maps AADL architecture models to system images in seL4 and Linux.
