@@ -25,11 +25,11 @@ deploy:
       - $HOME/lib/libpolyml.so.10
     on:
       tags: true
-  # Deploy daily build
+  # Deploy continuous integration build
   - provider: releases
     api-key: $GH_TOKEN
-    name: Daily development build
-    body: Automated CI/CD build via Travis
+    name: Continuous Integration Build
+    body: Automated CI/CD build via Travis-CI
     prerelease: true
     overwrite: true
     skip_cleanup: true
@@ -39,4 +39,3 @@ deploy:
       - $HOME/lib/libpolyml.so.10
     on:
       branch: master
-      condition: $TRAVIS_EVENT_TYPE =~ ^(api|cron)$
