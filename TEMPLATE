@@ -1,5 +1,5 @@
 (* ========================================================================== *)
-(* This is a template file that gets instantiated when generating a           *)
+(* This is a CakeML template file that gets instantiated when generating a    *)
 (* contig-based filter. The following patterns found in the file are replaced *)
 (* with port-specific information:                                            *)
 (*                                                                            *)

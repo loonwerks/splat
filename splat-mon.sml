@@ -68,8 +68,6 @@ fun synthesize_monitor monitor =
    monitor_data monitor
  end
 
-fun extract_filter (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
-
 fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
      let open AADL
          fun dest_const_dec (ConstDec ((_,cname),ty,i)) = (cname,i)
@@ -77,7 +75,12 @@ fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
      end
   | extract_consts otherwise = raise ERR "extract_consts" "looking for package CM_Property_Set"
 
+fun extract_filters (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
+fun extract_monitors (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = mondecs;
+
 val args = ["examples/UAS.json"];
+val thyName = "UAS";
+val dir = ".";
 
 (*
 HAMR::Bit_Codec_Max_Size: It is attached to the types declared for the channel.
@@ -102,14 +105,21 @@ fun main () =
      val pkgs = apply_with_chatter AADL.scrape_pkgs jpkg
                   "Converting Json to AST ... " "succeeded.\n"
      val thyName = "UAS"  (* Need something better: get it from modelUnits from jpkg *)
-     val filter_decs = List.concat (map extract_filter pkgs)
+
+     (* Codegen for filters *)
+     val filter_decs = List.concat (map extract_filters pkgs)
      val const_alist = tryfind extract_consts pkgs
-     val filter_CakeML_files = map (AADL.inst_filter_template "." const_alist) filter_decs
+     val _ = AADL.export_cakeml_filters dir const_alist filter_decs
+
+     (* Codegen for monitors *)
+     val monitor_decs = List.concat (map extract_monitors pkgs)
+     val _ = AADL.export_cakeml_monitors dir const_alist monitor_decs
+
+     (* Define logical model and do proofs *)
      val _ = new_theory thyName
      val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs
 	   "Converting AST to logic ...\n" "---> succeeded.\n"
      val filters = #4 logic_defs
-     val filter_thms = []
      val monitors = #5 logic_defs
      val monitor_thms = apply_with_chatter (List.map synthesize_monitor) monitors
 	   "Synthesizing monitors ...\n" "---> succeeded.\n"

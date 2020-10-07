@@ -9,7 +9,7 @@ open Lib Feedback HolKernel boolLib bossLib MiscLib AST Json;
 
 local open
    stringLib stringSimps fcpLib realLib
-   regexpLib regexpSyntax aadl_basetypesTheory ptltlSyntax
+   regexpLib regexpSyntax aadl_basetypesTheory ptltlSyntax intrealSyntax
 in end;
 
  type qid = string * string;
@@ -106,10 +106,16 @@ fun dest_qid s =
 
 val qid_compare = Lib.pair_compare (String.compare,String.compare);
 
-fun dec_qid (EnumDec (qid,_)) = qid
-  | dec_qid (RecdDec (qid,_)) = qid
-  | dec_qid (ArrayDec(qid,_)) = qid
-  | dec_qid (UnionDec(qid,_)) = qid;
+fun tydec_qid (EnumDec (qid,_)) = qid
+  | tydec_qid (RecdDec (qid,_)) = qid
+  | tydec_qid (ArrayDec(qid,_)) = qid
+  | tydec_qid (UnionDec(qid,_)) = qid;
+
+fun tmdec_qid (ConstDec (qid,_,_)) = qid
+  | tmdec_qid (FnDec (qid,_,_,_)) = qid
+
+fun filtdec_qid (FilterDec (qid,_,_)) = qid
+fun mondec_qid (MonitorDec (qid,_,_,_)) = qid
 
 (* Principled approach, doing a one-for-one mapping between AADL integer types and,
    eventually, HOL types. Not sure how well it will work with all AGREE specs limited
@@ -520,8 +526,11 @@ fun mk_comp_defs comp =  (* annex inside package component *)
      let val compName = dropString (assoc "name" alist) handle _ => ""
          val compName' = futz compName
          val features = dropList (assoc "features" alist) handle _ => []
+         val properties = dropList (assoc "properties" alist) handle _ => []
          val annexes = dropList (assoc "annexes" alist)
-     in List.concat(map (mk_annex_defs compName' features) annexes)
+     in if is_filter properties orelse is_monitor properties then
+           raise ERR "mk_comp_defs" "treating filters and monitor declarations specially"
+        else List.concat(map (mk_annex_defs compName' features) annexes)
      end
    | otherwise => raise ERR "mk_comp_defs" "unexpected annex format"
 ;
@@ -767,9 +776,9 @@ fun tydec_usedBy tydec1 tydec2 =
  case (tydec1,tydec2)
   of (EnumDec _, _) => false
    | (_, EnumDec _) => false
-   | (_, RecdDec(_,flds)) => exists (ty_occurs (NamedTy (dec_qid tydec1))) (map snd flds)
-   | (_, ArrayDec(_,ty)) => ty_occurs (NamedTy (dec_qid tydec1)) ty
-   | (_, UnionDec(_,ctrs)) => exists (ty_occurs (NamedTy (dec_qid tydec1))) (map snd ctrs)
+   | (_, RecdDec(_,flds)) => exists (ty_occurs (NamedTy (tydec_qid tydec1))) (map snd flds)
+   | (_, ArrayDec(_,ty)) => ty_occurs (NamedTy (tydec_qid tydec1)) ty
+   | (_, UnionDec(_,ctrs)) => exists (ty_occurs (NamedTy (tydec_qid tydec1))) (map snd ctrs)
 ;
 
 (*---------------------------------------------------------------------------*)
@@ -791,9 +800,9 @@ fun get_tydecls pkgName complist =
      val udecs = mapfilter (union_decl uqids) complist
      val comps0 = drop_seen_comps uqids complist
      val (enum_decs,comps1) = enum_decls comps0 ([],[])
-     val eqids = map dec_qid enum_decs
+     val eqids = map tydec_qid enum_decs
      val comps2 = drop_seen_comps eqids comps1
-     val aqids = mapfilter (dec_qid o array_decl) comps2
+     val aqids = mapfilter (tydec_qid o array_decl) comps2
      val comps3 = drop_seen_impls aqids comps2
      val names = mapfilter data_decl_name comps3
      val decs = mapfilter (get_tydecl pkgName names) comps3
@@ -1872,6 +1881,26 @@ fun mk_array_access(A,[]) = A
        mk_array_access(fcpSyntax.mk_fcp_index(A,i),t)
       end
 
+val mk_is_some =
+ let val is_some_tm = optionSyntax.is_some_tm
+ in fn tm =>
+     mk_comb(inst[alpha |-> type_of tm] is_some_tm, tm)
+ end
+
+fun resolve_constName (pkgname,cname) =
+  case Term.decls cname
+   of [] => NONE
+    | [const] => SOME const
+    | consts => (* prefer one specified in theory=pkgname otherwise current theory *)
+       let val currthy = current_theory()
+       in
+         SOME (Lib.first (fn c => #Thy (dest_thy_const c) = pkgname) consts)
+         handle HOL_ERR _ =>
+         SOME (Lib.first (fn c => #Thy (dest_thy_const c) = currthy) consts)
+         handle HOL_ERR _
+         => NONE
+       end
+
 datatype expect = Unknown | Expected of hol_type;
 
 fun mk_id varE ety id =
@@ -1970,14 +1999,17 @@ fun transExp pkgName varE ety exp =
       end
     | Fncall ((_,"Array_Exists"),_) => raise ERR "transExp" "Array_Exists: unexpected syntax"
     | Fncall ((_,"Event"),[arg]) =>
-         optionSyntax.mk_is_some (transExp pkgName varE Unknown arg)
+         mk_is_some (transExp pkgName varE Unknown arg)
     | Fncall ((_,"Event"),_) => raise ERR "transExp" "Event: unexpected number of args"
     | Fncall (("AGREE_PLTL",_),_) => raise ERR "transExp" "AGREE_PTLTL unexpected"
-    | Fncall ((thyname,cname),expl) =>
-       (let val thyname' = if thyname = "" then pkgName else thyname
-            val c = prim_mk_const{Thy=thyname',Name=cname}
-        in list_mk_comb(c,map (transExp pkgName varE Unknown) expl)
-        end handle e as HOL_ERR _ => raise wrap_exn "" "transExp" e)
+    | Fncall (qid as (pkgname,cname),expl) =>
+       (case resolve_constName (pkgname,cname)
+         of NONE => raise ERR "transExp"
+               ("unable to create HOL constant corresponding to "^qid_string qid)
+          | SOME c =>
+        let val args = map (transExp pkgName varE Unknown) expl
+        in list_mk_comb(c,args)
+        end handle e as HOL_ERR _ => raise wrap_exn "" "transExp (Fncall)" e)
     | ConstExp (IdConst qid) => undef "ConstExp: IdConst"
     | ArrayExp elist => undef "ArrayExp"
     | Quantified(quant,qvars,exp) => undef "Quantified"
@@ -2027,14 +2059,14 @@ fun declare_hol_record tyEnv ((_,recdName),fields) =
      Datatype.astHol_datatype
           [(recdName,Constructors[(recdName,[dAQ oneSyntax.one_ty])])]
     else
-      Datatype.astHol_datatype [(recdName,Record (map mk_field fields))]
+     Datatype.astHol_datatype [(recdName,Record (map mk_field fields))]
    ; stdErr_print ("Declared record "^Lib.quote recdName^"\n")
  end
 
 fun declare_hol_union tyEnv (qid,choices) =
  let open ParseDatatype
      val tyName = snd qid
-     fun mk_constr (s,ty) = (s,[ty2pretype tyEnv ty])
+     fun mk_constr (s,ty) = (tyName^s,[ty2pretype tyEnv ty])
  in
    Datatype.astHol_datatype [(tyName,Constructors (map mk_constr choices))]
    ; stdErr_print ("Declared union type "^Lib.quote tyName^"\n")
@@ -2080,28 +2112,30 @@ fun declare_hol_type (EnumDec enum) tyEnv = (declare_hol_enum enum; tyEnv)
 (* Includes declaration of HOL constants                                     *)
 (*---------------------------------------------------------------------------*)
 
-fun declare_hol_fn tyEnv ((_,name),params,ty,body) =
-    let fun mk_hol_param (s,ty) = (s, mk_var(s,transTy tyEnv ty))
-        val varE = map mk_hol_param params
-        val param_vars = map snd varE
-        val ety = Expected (transTy tyEnv ty)
-        val pkgName = current_theory()
-        val body_tm = transExp pkgName varE ety body
-        val def_var = mk_var(name,
+fun declare_hol_term tyEnv dec =
+  let val (qid,params,ty,body) =
+         (case dec
+           of ConstDec (qid,ty,exp) => (qid,[],ty,exp)
+            | FnDec arg => arg
+            | otherwise => raise ERR "declare_hol_term" "expected a const or fn decl")
+      val name = snd qid
+      fun mk_hol_param (s,ty) = (s, mk_var(s,transTy tyEnv ty))
+      val varE = map mk_hol_param params
+      val param_vars = map snd varE
+      val ety = Expected (transTy tyEnv ty)
+      val pkgName = current_theory()
+      val body_tm = transExp pkgName varE ety body
+      val def_var = mk_var(name,
                        list_mk_fun (map type_of param_vars, type_of body_tm))
-        val def_tm = mk_eq(list_mk_comb(def_var,param_vars),body_tm)
-	val def = PURE_REWRITE_RULE [GSYM CONJ_ASSOC]
+      val def_tm = mk_eq(list_mk_comb(def_var,param_vars),body_tm)
+      val def = PURE_REWRITE_RULE [GSYM CONJ_ASSOC]
                            (new_definition(name^"_def", def_tm))
     in
        stdErr_print ("Defined function "^Lib.quote name^"\n")
      ; def
     end
-    handle HOL_ERR _ => raise ERR "declare_hol_fn"
-           ("failed to define "^Lib.quote name)
-
-fun declare_hol_term tyEnv (ConstDec (qid,ty,exp)) =
-        declare_hol_fn tyEnv (qid,[],ty,exp)
-  | declare_hol_term tyEnv (FnDec fninfo) = declare_hol_fn tyEnv fninfo;
+    handle HOL_ERR _ => raise ERR "declare_hol_term"
+           ("failed to define "^Lib.quote (snd(tmdec_qid dec)))
 
 fun mk_filter_spec (thyName,tyEnv,fn_defs)
 		   (FilterDec ((pkgName,fname), ports, cprops)) =
@@ -2126,7 +2160,8 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
        ((pkgName,fname),
         save_thm (full_name,array_forall_expanded))
     end
-    handle e => raise wrap_exn "AADL" "mk_filter_spec" e;
+    handle e => raise wrap_exn "AADL"
+    ("mk_filter_spec (on "^qid_string (pkgName,fname)^")") e;
 ;
 
 fun is_event kind = mem kind ["EventPort","EventDataPort"];
@@ -2216,6 +2251,16 @@ fun revitFail f [] acc = (acc,[])
        | SOME x => revitFail f t x
 ;
 
+fun mapFail f list =
+ let fun mapf [] acc = (rev acc,[])
+       | mapf (h::t) acc =
+          case (SOME (f h) handle _ => NONE)
+           of NONE => (rev acc,h::t)
+            | SOME x => mapf t (x::acc)
+ in mapf list []
+ end
+;
+
 fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
  let val (tyEnv',rst) = revitFail declare_hol_type tydecs tyEnv
  in if not(null rst) then
@@ -2224,10 +2269,13 @@ fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
  let val tydecls = List.filter (is_datatype o snd) (theorems thyName)
      val tmdecs' = op_mk_set same_tmdec tmdecs
      val tmdecs'' = topsort called_by tmdecs'
+(*
+val (fn_defs,rst) = mapFail (declare_hol_term tyEnv') tmdecs''
+ *)
      val fn_defs = mapfilter (declare_hol_term tyEnv') tmdecs''
      val _ = if length fn_defs < length tmdecs'' then
-             HOL_MESG (String.concat
-			   [pkgName," : some constants or functions not defined. Continuing ..."])
+               HOL_MESG (String.concat
+                  [pkgName," : some constants or functions not defined. Continuing ..."])
              else ()
      val info = (thyName,tyEnv',fn_defs)
      val filter_specs = map (mk_filter_spec info) filters
@@ -2241,10 +2289,11 @@ fun pkgs2hol thyName pkgs =
         let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
         in (tyEnv', tydefs@tyD, fndefs@tmD, filtspecs@fS, monspecs@mS)
         end
-      val init = ([],[],[],[],[])
+     val init = ([],[],[],[],[])
  in
    rev_itlist step pkgs init
  end;
+
 
 (*
 val thyName = "UAS";
@@ -2277,7 +2326,7 @@ fun dest_intLit exp =
    | otherwise => raise ERR "dest_intLit" "";
 
 (*---------------------------------------------------------------------------*)
-(* Get the template file "./TEMPLATE" to be instantiated                     *)
+(* Read in the template file "./TEMPLATE"                                    *)
 (*---------------------------------------------------------------------------*)
 
 val template_ss =
@@ -2365,11 +2414,11 @@ fun mk_filter_outputs ports =
    | oports => String.concatWith ";\n           " (map mk_output_call oports)
 
 val contigNameMap =
-  [("OperatingRegion",   "fullOperatingRegionMesg"),
-   ("AutomationRequest","fullAutomationRequestMesg"),
-   ("LineSearchTask",   "fullLineSearchTaskMesg"),
+  [("OperatingRegion",    "fullOperatingRegionMesg"),
+   ("AutomationRequest",  "fullAutomationRequestMesg"),
+   ("LineSearchTask",     "fullLineSearchTaskMesg"),
    ("AutomationResponse", "fullAutomationResponseMesg"),
-   ("AirVehicleState","fullAirVehicleStateMesg")];
+   ("AirVehicleState",    "fullAirVehicleStateMesg")];
 
 (* -------------------------------------------------------------------------- *)
 (* Map a filter declaration to a CakeML file. Assumes filter has only one     *)
@@ -2410,4 +2459,16 @@ fun inst_filter_template targetDir const_alist dec =
  end
  handle e => raise wrap_exn "inst_filter_template" "" e
 
-end
+fun export_cakeml_filters dir const_alist filterdecs =
+  if null filterdecs then
+     ()
+  else
+  let val qids = map filtdec_qid filterdecs
+      val names = map qid_string qids
+      val _ = stdErr_print (String.concat
+         ["Creating CakeML filter implementations for:\n   ",
+          String.concatWith "\n   " names, "\n"])
+  in
+     List.app (inst_filter_template dir const_alist) filterdecs
+   ; stdErr_print " ... Done.\n\n"
+  end

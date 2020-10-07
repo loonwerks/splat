@@ -55,4 +55,6 @@ sig
                     * thm list (* constant defns *)
                     * ((string * string) * thm) list (* filters *)
                     * ((string * string) * thm) list (* monitors *)
+
+  val inst_filter_template : string -> (string * exp) list -> -> filter -> unit
 end
