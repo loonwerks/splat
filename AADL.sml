@@ -513,9 +513,27 @@ mk_def pkgName features stmt41;
 *)
 
 
+fun is_filter props =
+ let fun isaFilter prop =
+          dropString(name_of prop) = "CASE_Properties::Component_Type"
+          andalso
+          (dropString(value_of (value_of prop)) = "FILTER" handle _ => false)
+ in exists isaFilter props
+ end
+
+fun is_monitor props =
+ let fun isaMon prop =
+          dropString(name_of prop) = "CASE_Properties::Component_Type"
+          andalso
+          (dropString (value_of(value_of prop)) = "MONITOR"
+           handle _ => false)
+ in exists isaMon props
+ end
+
 (*---------------------------------------------------------------------------*)
 (* compName is of the form "<pkgName>::<actual_compName>", so futz around to *)
-(* get the name into the form "<pkgName>__<actual_compName".                 *)
+(* get the name into the form "<pkgName>__<actual_compName". Monitors and    *)
+(* filters, and their associated definitions, are handled elsewhere.         *)
 (*---------------------------------------------------------------------------*)
 
 val futz = String.map (fn ch => if ch = #":" then #"_" else ch)
@@ -851,14 +869,6 @@ fun filter_req_name_eq js1 js2 =
     last s1_tokens = last s2_tokens
  end;
 
-fun is_filter props =
- let fun isaFilter prop =
-          dropString(name_of prop) = "CASE_Properties::Component_Type"
-          andalso
-          (dropString(value_of (value_of prop)) = "FILTER" handle _ => false)
- in exists isaFilter props
- end
-
 fun get_filter_rqtNames props =
  let fun get prop =
        case total (dropString o name_of) prop
@@ -954,15 +964,6 @@ fun get_latched properties =
         then dropBool (value_of (value_of prop))
         else raise ERR "get_latched" "expected Monitor_Latched property"
  in tryfind getLatch properties
- end
-
-fun is_monitor props =
- let fun isaMon prop =
-          dropString(name_of prop) = "CASE_Properties::Component_Type"
-          andalso
-          (dropString (value_of(value_of prop)) = "MONITOR"
-           handle _ => false)
- in exists isaMon props
  end
 
 fun get_policy policyName jlist =
@@ -2466,9 +2467,11 @@ fun export_cakeml_filters dir const_alist filterdecs =
   let val qids = map filtdec_qid filterdecs
       val names = map qid_string qids
       val _ = stdErr_print (String.concat
-         ["Creating CakeML filter implementations for:\n   ",
+         ["Creating CakeML filter implementation(s) for:\n   ",
           String.concatWith "\n   " names, "\n"])
   in
      List.app (inst_filter_template dir const_alist) filterdecs
    ; stdErr_print " ... Done.\n\n"
   end
+
+end

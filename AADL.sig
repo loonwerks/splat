@@ -56,5 +56,5 @@ sig
                     * ((string * string) * thm) list (* filters *)
                     * ((string * string) * thm) list (* monitors *)
 
-  val inst_filter_template : string -> (string * exp) list -> -> filter -> unit
+  val export_cakeml_filters : string -> (string * exp) list -> filter list -> unit
 end
