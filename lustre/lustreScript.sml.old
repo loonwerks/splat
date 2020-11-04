@@ -1,0 +1,653 @@
+(*===========================================================================*)
+(* Definition of Lustre as a shallow embedding.                              *)
+(* Author: Mike Gordon (mjcg@cl.cam.ac.uk)                                   *)
+(* Tweaks: Konrad Slind (klslind@rockwellcollins.com)                        *)
+(*                                                                           *)
+(* Examples from Pascal Raymond, Verimag-CNRS, in the slides of the talk     *)
+(* "The Lustre language"                                                     *)
+(*                                                                           *)
+(*  http://www.cmi.univ-mrs.fr/epit32/Documents/Raymond_lustre.pdf           *)
+(*                                                                           *)
+(*===========================================================================*)
+
+open HolKernel boolLib Parse bossLib pairLib 
+     pairTheory prim_recTheory arithmeticTheory;
+
+val _ = new_theory "Lustre";
+
+(*---------------------------------------------------------------------------*)
+(* Used when accessing before the beginning of a stream. Never needs to be   *)
+(* expanded.                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+val Lustre_nil_def = Define `nil = ARB`;
+
+(*---------------------------------------------------------------------------*)
+(* Basic Lustre operators and lifted expressions                             *)
+(*---------------------------------------------------------------------------*)
+
+val Lustre_defs =
+ TotalDefn.multiDefine
+  `(Lustre_init_stream P Q t = if t=0 then P t else Q t)  /\ (* stream init *)
+   (Lustre_pre P t = if t=0 then nil else P (t-1)) /\  (* predecessor element *)
+   (Lustre_true t = T) /\
+   (Lustre_false t = F) /\
+   (Lustre_const c t = c) /\
+   (Lustre_not B t = ~(B t)) /\
+   (Lustre_and B1 B2 t = (B1 t) /\ (B2 t)) /\
+   (Lustre_or B1 B2 t  = (B1 t) \/ (B2 t)) /\
+   (Lustre_eq P Q t    = (P t = Q t))      /\
+   (Lustre_add X Y t   = (X t) + (Y t))    /\
+   (Lustre_sub X Y t   = (X t) - (Y t))    /\
+   (Lustre_mult X Y t  = (X t) * (Y t))    /\
+   (Lustre_div X Y t   = (X t) DIV (Y t))  /\
+   (Lustre_mod X Y t   = (X t) MOD (Y t))  /\
+   (Lustre_exp X Y t   = (X t) ** (Y t))   /\
+   (Lustre_lt X Y t    = (X t) < (Y t))    /\
+   (Lustre_lte X Y t   = (X t) <= (Y t))   /\
+   (Lustre_gt X Y t    = (X t) > (Y t))    /\
+   (Lustre_gte X Y t   = (X t) >= (Y t))   /\
+   (Lustre_if_then_else B P Q t = if B t then P t else Q t)`;
+
+val [Lustre_init_stream_def,
+     Lustre_pre_def,Lustre_true_def, Lustre_false_def, Lustre_const_def, 
+     Lustre_not_def,
+     Lustre_and_def,Lustre_or_def,Lustre_eq_def,
+     Lustre_add_def,Lustre_sub_def,Lustre_mult_def,
+     Lustre_div_def,Lustre_mod_def,Lustre_exp_def,
+     Lustre_lt_def,Lustre_lte_def,Lustre_gt_def,Lustre_gte_def,
+     Lustre_if_then_else_def] = List.rev Lustre_defs;
+
+(*---------------------------------------------------------------------------*)
+(* Simplification set that replaces Lustre constructs by their semantics     *)
+(*---------------------------------------------------------------------------*)
+
+val lustre_ss = bossLib.arith_ss ++ rewrites (FUN_EQ_THM :: Lustre_defs);
+
+(*---------------------------------------------------------------------------*)
+(* Set up parsing and prettyprinting for Lustre operators.                   *)
+(*---------------------------------------------------------------------------*)
+
+val _ = overload_on("->",``Lustre_init_stream``);
+val _ = overload_on("pre",``Lustre_pre``);
+val _ = overload_on("true",``Lustre_true``);
+val _ = overload_on("false",``Lustre_false``);
+val _ = overload_on("const",``Lustre_const``);
+val _ = overload_on("and",``Lustre_and``);
+val _ = overload_on("or",``Lustre_or``);
+val _ = overload_on("not",``Lustre_not``);
+val _ = overload_on("==",``Lustre_eq``);
+val _ = overload_on("+",``Lustre_add``);
+val _ = overload_on("-",``Lustre_sub``);
+val _ = overload_on("*",``Lustre_mult``);
+val _ = overload_on("**",``Lustre_exp``);
+val _ = overload_on("DIV",``Lustre_div``);
+val _ = overload_on("MOD",``Lustre_mod``);
+val _ = overload_on("<",``Lustre_lt``);
+val _ = overload_on("<=",``Lustre_lte``);
+val _ = overload_on(">",``Lustre_gt``);
+val _ = overload_on(">=",``Lustre_gte``);
+val _ = overload_on("COND",``Lustre_if_then_else``);
+val _ = overload_on("COND",``bool$COND``);
+
+val _ = set_fixity "->" (Infixr 470);
+val _ = set_fixity "not" (Prefix 900);
+val _ = set_fixity "and" (Infixr 399);
+val _ = set_fixity "or" (Infixr 299);
+val _ = set_fixity "==" (Infixl 99);
+
+(*---------------------------------------------------------------------------*)
+(* Node semantics uses Hilbert choice for return values and existential for  *)
+(* local variables.                                                          *)
+(*                                                                           *)
+(* Lustre: "node N X = returns A; let A = E tel"                             *)
+(* in HOL: "N X = returns A. var v1 ... vn. E"                               *)
+(*    i.e. "N X = @A. ?v1 ... vn. E"                                         *)
+(*                                                                           *)
+(* In other words, pick return value(s) such that there exist variables      *)
+(* v1 ... vn making the equations true.                                      *)
+(*---------------------------------------------------------------------------*)
+
+val _ = new_binder("returns",type_of``$@``);
+val _ = new_binder("var",type_of``$?``);
+
+val _ = overload_on ("returns", ``$@``);
+val _ = overload_on ("var",     ``$?``);
+
+
+(*===========================================================================*)
+(* Example definitions and subsequent derivation of desired eqns.            *)
+(*===========================================================================*)
+
+(*---------------------------------------------------------------------------*)
+(* Max                                                                       *)
+(*---------------------------------------------------------------------------*)
+
+val Max_def =
+ Define
+  `Max (A,B) (t:num) = if (A t) >= (B t) then A t else B t`;
+
+val MaxEq =
+ prove
+  (``Max(A,B) = if (A >= B) then A else B``,
+   RW_TAC lustre_ss [Max_def]);
+
+val MaxUnique =
+ prove
+  (``!M A B. (M = if (A >= B) then A else B) = (M = Max(A,B))``,
+   RW_TAC lustre_ss [Max_def]);
+
+val Max =
+ prove
+  (``Max(A,B) = 
+      returns M. M = if (A >= B) then A else B``,
+   METIS_TAC[MaxUnique]);
+
+(* OR
+
+val Max = 
+  new_specification
+   ("Max_def", ["Max"], 
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] 
+     (METIS_PROVE [] 
+       ``!A B. ?f. f = returns M:num->num. 
+                       M = if A >= B then A else B``));
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Average                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+val Average_def =
+ Define
+  `Average (X,Y) (t:num) = ((X t) + (Y t)) DIV 2`;
+
+val AverageEq =
+ prove
+  (``Average(X,Y) = (X + Y) DIV (const 2)``,
+   RW_TAC lustre_ss [Average_def]);
+
+val AverageUnique =
+ prove
+  (``!A X Y. (A = (X + Y) DIV const 2) = (A = Average (X,Y))``,
+   RW_TAC lustre_ss [Average_def]);
+
+val Average =
+ prove
+  (``Average (X,Y) = 
+      returns A. 
+       var S. (A = S DIV const 2) /\
+              (S = X + Y)``,
+   METIS_TAC[AverageUnique]);
+
+(* OR
+
+val Curried_Average = 
+  new_specification
+   ("Curried_Average_def", ["Curried_Average"], 
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] 
+     (METIS_PROVE [] 
+      ``!X Y. ?f. f = returns A:num->num. 
+                      var S. (A = S DIV const 2) /\
+                             (S = X + Y)``));
+val Average_thm = 
+  Define `Average (X,Y) = Curried_Average X Y`
+   |> PURE_REWRITE_RULE [Curried_Average];
+
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Edge (rising)                                                             *)
+(*---------------------------------------------------------------------------*)
+
+val Edge_def =
+ Define
+  `Edge X t = (false -> (X and not(pre X))) t`;
+
+val EdgeEq =
+ prove
+  (``Edge X = (false -> (X and not(pre X)))``,
+   RW_TAC lustre_ss [Edge_def]);
+
+val EdgeUnique =
+ prove
+  (``!X E. (E = (false -> (X and not(pre X)))) = (E = Edge X)``,
+   RW_TAC lustre_ss [Edge_def]);
+
+val Edge =
+ prove
+  (``Edge X = returns E. E = (false -> (X and not(pre X)))``,
+   METIS_TAC[EdgeUnique]);
+
+(* OR
+
+val Edge = 
+ let val exists = METIS_PROVE []
+        ``!X. ?f. f = returns E:num->bool. 
+                       E = (false -> (X and not(pre X)))``
+ in
+  new_specification
+   ("Edge_def", ["Edge"], 
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] exists)
+ end;
+
+val Edge_compute = Q.prove
+(`(Edge X 0 = F) /\ 
+  (Edge X (SUC t) = ~X(t) /\ X(t+1))`,
+ rw_tac lustre_ss [Edge,ADD1] >> metis_tac[]);
+
+val Edge_eval = Q.prove
+(`Edge X t = if t=0 then F else ~X(t-1) /\ X(t)`,
+ Cases_on `t` THEN 
+ RW_TAC std_ss [Edge_compute,ADD1]);
+
+*)
+
+(*---------------------------------------------------------------------------*)
+(* MinMax                                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val MinMaxAux_def =
+ Define
+  `(MinMax_min X 0 = X 0) /\
+   (MinMax_min X (SUC t) = 
+      if X(SUC t) < MinMax_min X t then X(SUC t) else MinMax_min X t) /\
+   (MinMax_max X 0 = X 0) /\
+   (MinMax_max X (SUC t) = 
+      if X(SUC t) > MinMax_max X t then X(SUC t) else MinMax_max X t)`;
+
+val MinMax_def =
+ Define
+  `MinMax X = (MinMax_min X, MinMax_max X)`;
+
+val MinMaxEq =
+ prove
+  (``(MinMax_min X = 
+         (X -> if X < (pre (MinMax_min X)) then X else pre (MinMax_min X))) /\
+     (MinMax_max X = 
+         (X -> if X > (pre (MinMax_max X)) then X else pre (MinMax_max X)))``,
+ RW_TAC lustre_ss [] 
+   THEN Induct_on `x` 
+   THEN RW_TAC std_ss [ MinMaxAux_def]);
+
+val MinMaxUniqueImp =
+ prove
+  (``!X min max. 
+      ((min = (X -> if X < (pre min) then  X else pre min))
+       ==>
+       (min = MinMax_min X))
+      /\
+      ((max = (X -> if X > (pre max) then X else pre max))
+       ==>
+       (max = MinMax_max X))``,
+  simp_tac std_ss [FUN_EQ_THM] 
+   >> REWRITE_TAC Lustre_defs
+   >> rpt gen_tac
+   >> strip_tac
+   >> strip_tac
+   >> Induct_on `x`
+   >> simp_tac lustre_ss [MinMaxAux_def] 
+   >> rw_tac lustre_ss []);
+
+val MinMaxUnique =
+ prove
+  (``!X min_max. 
+      (min_max = 
+        (\(min,max). 
+          ((X -> if X < (pre min) then X else pre min),
+           (X -> if X > (pre max) then X else pre max))) min_max)
+       =
+       (min_max = (MinMax_min X, MinMax_max X))``,
+    SIMP_TAC std_ss [pairTheory.FORALL_PROD]
+     THEN METIS_TAC[MinMaxUniqueImp,MinMaxEq]);
+
+val MinMaxPair =
+ prove
+  (``MinMax X = 
+      returns min_max. 
+       (min_max = 
+        (\(min,max). 
+          ((X -> if X < (pre min) then X else pre min),
+           (X -> if X > (pre max) then X else pre max))) min_max)``,
+   GEN_BETA_TAC
+    THEN RW_TAC std_ss [MinMax_def]
+    THEN METIS_TAC[GEN_BETA_RULE MinMaxUnique]);
+
+val MinMax =
+ prove
+  (``MinMax X =
+      returns(min,max).
+         (min = (X -> if X < pre min then X else pre min)) /\
+         (max = (X -> if X > pre max then X else pre max))``,
+   RW_TAC std_ss [SIMP_RULE std_ss [pairTheory.LAMBDA_PROD] MinMaxPair]);
+
+(* OR
+
+val MinMax_def = 
+  new_specification
+   ("MinMax_def", ["MinMax"], 
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] 
+     (METIS_PROVE []
+       ``!X. ?f. f = returns (p:(num->num)#(num->num)).
+                (FST p = (X -> if X < pre (FST p) then X else pre (FST p))) /\
+                (SND p = (X -> if X > pre (SND p) then X else pre (SND p)))``));
+
+val MinMax = Q.prove
+(`!X. MinMax X = returns (min,max).
+       (min = (X -> if X < pre min then X else pre min)) /\
+       (max = (X -> if X > pre max then X else pre max))`,
+RW_TAC std_ss [pairTheory.LAMBDA_PROD,MinMax_def]);
+
+(*---------------------------------------------------------------------------*)
+(* Property                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+val seqMin_def =
+ Define
+  `(seqMin X 0 = X 0) /\
+   (seqMin X (SUC t) = MIN (X(SUC t)) (seqMin X t))`;
+
+val seqMax_def =
+ Define
+  `(seqMax X 0 = X 0) /\
+   (seqMax X (SUC t) = MAX (X(SUC t)) (seqMax X t))`;
+
+val MinMaX_Compute = Q.prove
+(`MinMax(X) = (seqMin X, seqMax X)`,
+ RW_TAC lustre_ss [MinMax_def] 
+   THEN SELECT_ELIM_TAC 
+   THEN CONJ_TAC THENL
+   [Q.EXISTS_TAC `(seqMin X, seqMax X)` 
+     THEN SIMP_TAC std_ss [] 
+     THEN CONJ_TAC 
+     THEN Cases 
+     THEN RW_TAC arith_ss [seqMin_def,MIN_DEF,seqMax_def,MAX_DEF],
+    Cases THEN Q.SPEC_TAC (`q`, `min`) THEN Q.SPEC_TAC(`r`,`max`)
+      THEN REPEAT GEN_TAC THEN SIMP_TAC std_ss [] THEN STRIP_TAC 
+      THEN REWRITE_TAC [FUN_EQ_THM] THEN CONJ_TAC THEN Induct THEN
+      REWRITE_TAC [seqMin_def, seqMax_def,MIN_DEF,MAX_DEF] THENL
+      [METIS_TAC [],
+       METIS_TAC [DECIDE ``SUC x <> 0``, DECIDE ``SUC x - 1 = x``],
+       METIS_TAC [],
+       ONCE_ASM_REWRITE_TAC[] 
+         THEN REPEAT (WEAKEN_TAC is_forall) 
+         THEN RW_TAC arith_ss []]]);
+
+(* Property: 0 <= t < u ==> min(t) <= X(t) <= max(t) *)
+
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Examples of recursive definitions. Induction needed to prove that specs   *)
+(* are met.                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+val N_def =
+ Define
+  `(N 0 = 0) /\
+   (N(SUC n) = N n + 1)`;
+
+val N =
+ prove
+  (``N = (const 0 -> pre N + const 1)``,
+   SIMP_TAC lustre_ss [FUN_EQ_THM]
+    THEN Induct
+    THEN EVAL_TAC
+    THEN RW_TAC lustre_ss []);   
+
+val A_def =
+ Define
+  `(A 0 = F) /\
+   (A(SUC n) = ~(A n))`;
+
+val A =
+ prove
+  (``A = (false -> not(pre A))``,
+   CONV_TAC FUN_EQ_CONV
+    THEN Induct
+    THEN EVAL_TAC
+    THEN RW_TAC arith_ss []);   
+
+(* OR
+
+val N_def = 
+  new_specification
+   ("N_def", ["N"], 
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] 
+     (METIS_PROVE []
+       ``?f. f = returns N.
+                 N = (const 0 -> pre N + const 1)``));
+
+val N_compute = Q.prove
+(`N = PRIM_REC 0 (\r i. SUC r)`,
+ rw_tac lustre_ss [N_def] 
+  >> SELECT_ELIM_TAC 
+  >> conj_tac
+  >- (qexists_tac `PRIM_REC 0 (\r i. SUC r)` 
+       >> Cases
+       >> rw_tac arith_ss [PRIM_REC_THM])
+  >- (rpt strip_tac
+      >> Induct_on `x` 
+      >- metis_tac [PRIM_REC_THM]
+      >- (simp_tac arith_ss [Once PRIM_REC_THM] 
+          >> metis_tac [DECIDE ``SUC x <> 0``, DECIDE ``SUC x - 1 = x``,ADD1]))
+);
+
+
+val A_def = 
+  new_specification
+   ("A_def", ["A"], 
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] 
+     (METIS_PROVE []
+       ``?f. f = returns A.
+                 A = (false -> not(pre A))``));
+
+val A_compute = Q.prove
+(`!n. A n = if n=0 then F else ~A(n-1)`,
+ RW_TAC lustre_ss [A_def] THEN SELECT_ELIM_TAC THEN CONJ_TAC THENL
+ [Q.EXISTS_TAC `PRIM_REC F (\r n. ~(r))` THEN 
+  Induct THEN RW_TAC arith_ss [PRIM_REC_THM],
+  METIS_TAC []]);
+
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Fibonacci                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+val Fib_def =
+ Define
+  `(Fib 0 = 1) /\
+   (Fib 1 = 1) /\
+   (Fib n = Fib (n-1) + Fib (n-2))`;
+
+val Fib_ind = fetch "-" "Fib_ind";  (* Hard to use! *)
+
+val Fib =
+ prove
+  (``Fib = (const 1 -> pre(Fib + (const 0 -> pre Fib)))``,
+  RW_TAC lustre_ss [] THEN Cases_on `x` THEN 
+  SIMP_TAC arith_ss [Once Fib_def, DECIDE ``(SUC x <= 1) = (x = 0)``] THEN 
+  CASE_TAC THEN RW_TAC arith_ss [Fib_def]);
+
+(*---------------------------------------------------------------------------*)
+(* But don't we want the following?
+
+    Fib = (const 1 -> (const 1 -> (pre Fib + pre(pre Fib))))
+
+   Nope, as it happens. This doesn't make sense, because the second 
+   invocation of Fib will try to index before 0. The following is similar 
+   but actually works.                                                       *)
+(*---------------------------------------------------------------------------*)
+
+val Fib = prove
+(``Fib = (const 1 -> pre (const 1 -> (Fib + pre Fib)))``,
+ RW_TAC lustre_ss [Once Fib_def] THEN 
+ CASE_TAC THEN RW_TAC arith_ss []);
+
+(*---------------------------------------------------------------------------*)
+(* The following is equivalent Lustre, but seems harder to prove. Problem is *)
+(* that SELECT_ELIM_TAC isn't quite doing what we want.                      *)
+(*---------------------------------------------------------------------------*)
+
+val Fib_def = CONJUNCT2(CONJUNCT2 Fib_def);
+
+val Fib_again = Q.prove
+(`Fib = returns X.
+        var Y. 
+          (X = (const 1 -> pre Y)) /\
+          (Y = (const 1 -> X + pre X))`,
+ RW_TAC lustre_ss [] THEN SELECT_ELIM_TAC THEN CONJ_TAC THENL
+ [Q.EXISTS_TAC `Fib` THEN RW_TAC arith_ss [Once Fib_def],
+  Q.X_GEN_TAC `f` THEN STRIP_TAC THEN Q.ID_SPEC_TAC `x` THEN 
+  RULE_ASSUM_TAC GSYM THEN 
+    recInduct Fib_ind THEN RW_TAC arith_ss [] THENL
+    [METIS_TAC[Fib_def],
+     METIS_TAC [DECIDE ``0<>1``,DECIDE ``x:num <= x``,Fib_def],
+     RW_TAC std_ss [Fib_def] THENL
+     [METIS_TAC[],
+      METIS_TAC [DECIDE ``x:num <= x``],
+      METIS_TAC [DECIDE ``x<>0 /\ x<>1  ==> ~(x<=1)``]]]]);
+
+(*---------------------------------------------------------------------------*)
+(* Switch                                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val Switch_def =
+ Define
+  `(Switch (on,off) 0 = on 0) /\
+   (Switch (on,off) (SUC t) = 
+      if Switch (on,off) t 
+       then (not off) (SUC t) 
+         else on (SUC t))`;
+
+val SwitchEq =
+ prove
+  (``Switch (on,off) = if (false -> pre(Switch(on,off))) then not off else  on``,
+   CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
+    THEN RW_TAC arith_ss [Lustre_not_def,Lustre_false_def,Lustre_pre_def,
+                          Lustre_if_then_else_def,Lustre_init_stream_def]
+    THEN Induct_on `n`
+    THEN RW_TAC arith_ss [Switch_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,
+                          Lustre_if_then_else_def,Lustre_init_stream_def]);
+
+val SwitchUniqueImp =
+ prove
+  (``!s on off. (s = if (false -> pre s) then not off else on) ==> (s = Switch (on,off))``,
+    REPEAT GEN_TAC
+     THEN CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
+     THEN REWRITE_TAC[Switch_def,Lustre_not_def,Lustre_false_def,
+                      Lustre_pre_def,Lustre_if_then_else_def,Lustre_init_stream_def]
+     THEN DISCH_TAC
+     THEN Induct
+     THEN ONCE_ASM_REWRITE_TAC[]
+     THEN REWRITE_TAC[Switch_def,Lustre_not_def,Lustre_false_def, Lustre_pre_def,
+                      Lustre_if_then_else_def,Lustre_init_stream_def,
+                      DECIDE``~(SUC n = 0) /\ (SUC n - 1 = n)``]
+     THEN POP_ASSUM(fn th => REWRITE_TAC[th]));
+
+val SwitchUnique =
+ prove
+  (``!s on off. (s = if (false -> pre s) then not off else on) = (s = Switch (on,off))``,
+   METIS_TAC[SwitchUniqueImp, SwitchEq]);
+
+val Switch =
+ prove
+  (``Switch (on,off) = 
+     returns s. 
+      (s = if (false -> pre s) then not off else on)``,
+   METIS_TAC[SwitchUnique]);
+
+(*---------------------------------------------------------------------------*)
+(* Counter                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+val Count_def =
+ Define
+  `(Count (reset,x) 0 = 
+     if reset 0 then 0 else if x 0 then 1 else 0)
+   /\
+   (Count (reset,x) (SUC t) = 
+     if reset(SUC t) 
+      then 0 else 
+     if x(SUC t) then Count (reset,x) t + 1 else Count (reset,x) t)`;
+
+val CountEq =
+ prove
+  (``Count (reset,x) = 
+      if reset  then
+       (const 0) 
+      else
+       if x then
+         ((const 0 -> pre(Count(reset,x))) + const 1) 
+       else
+         (const 0 -> pre(Count(reset,x)))``,
+   CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
+    THEN SIMP_TAC arith_ss [Lustre_not_def,Lustre_false_def,Lustre_pre_def,
+          Lustre_if_then_else_def,Lustre_const_def,Lustre_init_stream_def,Lustre_add_def]
+    THEN Induct_on `n`
+    THEN RW_TAC arith_ss [Count_def,Lustre_not_def,Lustre_false_def,
+			  Lustre_pre_def,Lustre_if_then_else_def,Lustre_init_stream_def]);
+
+val CountUniqueImp =
+ prove
+  (``!c reset x. 
+      (c = if reset then const 0 
+            else if x then (const 0 -> pre c) + const 1 
+            else (const 0 -> pre c))
+      ==> 
+      (c = Count (reset,x))``,
+    REPEAT GEN_TAC
+     THEN CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
+     THEN REWRITE_TAC[Count_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,
+          Lustre_if_then_else_def,Lustre_init_stream_def,Lustre_const_def,Lustre_add_def]
+     THEN DISCH_TAC
+     THEN Induct
+     THEN ONCE_ASM_REWRITE_TAC[]
+     THEN REWRITE_TAC[Count_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,
+                      Lustre_if_then_else_def,Lustre_init_stream_def,
+                      DECIDE``~(SUC n = 0) /\ (SUC n - 1 = n)``]
+     THEN EVAL_TAC
+     THEN POP_ASSUM(fn th => REWRITE_TAC[th]));
+
+val CountUnique =
+ prove
+  (``!c reset x. 
+      (c = if reset then const 0 
+            else if x then (const 0 -> pre c) + const 1 
+            else (const 0 -> pre c))
+      =
+      (c = Count (reset,x))``,
+   METIS_TAC[CountUniqueImp, CountEq]);
+
+val Count =
+ prove
+  (``Count (reset,x) = 
+     returns c. 
+      (c = if reset then const 0 
+            else if x then (const 0 -> pre c) + const 1 
+            else (const 0 -> pre c))``,
+   METIS_TAC[CountUnique]);
+
+(* MinMaxAverage *)
+
+val MinMaxAverage_def =
+ Define
+  `MinMaxAverage x = Average(MinMax x)`;
+
+val MinMaxAverageUnique =
+ prove
+  (``(?min max. (a = Average (min,max)) /\ ((min,max) = MinMax x)) = 
+     (a = MinMaxAverage x)``,
+   METIS_TAC[MinMaxAverage_def,pairTheory.PAIR]);
+
+val MinMaxAverage =
+ prove
+  (``MinMaxAverage x =
+      returns a.
+       var min max.
+        (a = Average(min,max)) /\
+        ((min,max) = MinMax x)``,
+   METIS_TAC[MinMaxAverageUnique]); 
+
+val _ = export_theory();

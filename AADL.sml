@@ -39,11 +39,11 @@ in end;
                         * (string * string * exp) list
 
  type decls =
-  (* pkgName *)  string *
-  (* types *)    (tydec list *
-  (* consts *)    tmdec list *
-  (* filters *)   filter list *
-  (* monitors *)  monitor list)
+  (* pkgName *)   string
+  (* types *)     * (tydec list *
+  (* consts *)       tmdec list *
+  (* filters *)      filter list *
+  (* monitors *)     monitor list)
   ;
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
@@ -2117,8 +2117,7 @@ fun declare_hol_term tyEnv dec =
   let val (qid,params,ty,body) =
          (case dec
            of ConstDec (qid,ty,exp) => (qid,[],ty,exp)
-            | FnDec arg => arg
-            | otherwise => raise ERR "declare_hol_term" "expected a const or fn decl")
+            | FnDec arg => arg)
       val name = snd qid
       fun mk_hol_param (s,ty) = (s, mk_var(s,transTy tyEnv ty))
       val varE = map mk_hol_param params
@@ -2300,6 +2299,13 @@ fun pkgs2hol thyName pkgs =
 val thyName = "UAS";
 
 val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = scrape_pkgs jpkg;
+
+val (pkgName,(tydecs,tmdecs,fdecs,mondecs)) = pkg6;
+val [mondec1,mondec2] = mondecs;
+
+val MonitorDec(qid,features,latched,props) = mondec1;
+val MonitorDec(qid,features,latched,props) = mondec2;
+
 
 fun step pkg (tyE,tyD,tmD,fS,mS) =
   let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg

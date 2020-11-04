@@ -1,0 +1,404 @@
+(*
+package AGREE_PLTL
+public
+annex agree {**
+	----------------------------------------------------------------------------
+	-- The Proposition Linear Temporal Logic (PLTL) AGREE library collects the
+	-- canonical PLTL operators as AGREE nodes.  Since AGREE has Lustre-like
+	-- semantics including direct access to temporal state operations 'followed
+	-- by' ('->') and 'previous value' ('pre'), the PLTL operators 'Y' and 'Z'
+	-- have been omitted.  These appear in comment form below.
+	----------------------------------------------------------------------------
+
+	----------------------------------------------------------------------------
+	-- Check whether a condition was true in the previous instant.
+	--
+	-- Note: 'Yesterday' is the DeMorgan dual of 'Zyesterday' and is related
+	-- by the identity Yesterday(i) = not Zyesterday(not i).
+	--
+	-- Inputs:
+	--   i - the stream to be examined for truth in the previous time instant.
+	--
+	-- Returns:
+	--   o - True if not the initial state and the input was true at the
+	--       previous state.  Otherwise, false.
+	----------------------------------------------------------------------------
+	node Yesterday(i: bool) returns (o: bool);
+	let
+		o = false -> pre(i);
+	tel;
+
+	----------------------------------------------------------------------------
+	-- Check whether a condition was true in the previous instant.
+	--
+	-- Note: 'Zyesterday' is the DeMorgan dual of 'Yesterday' and is related
+	-- by the identity Zyesterday(i) = not Yesterday(not i).
+	--
+	-- Inputs:
+	--   i - the stream to be examined for truth in the previous time instant.
+	--
+	-- Returns:
+	--   o - True if the initial state or the input was true at the previous
+	--       state.  Otherwise, false.
+	----------------------------------------------------------------------------
+	node Zyesterday(i: bool) returns (o: bool);
+	let
+		o = true -> pre(i);
+	tel;
+
+	----------------------------------------------------------------------------
+	-- Check whether a condition has been true over the history of the analysis.
+	--
+	-- Note: 'Historically' is the DeMorgan dual of 'Once' and is related
+	-- by the identity Historically(i) = not Once(not i).
+	--
+	-- Inputs:
+	--   i - the stream to be examined for consistent true value over the
+	--       history.
+	--
+	-- Returns:
+	--   o - True if the input has been true at the initial state and for all
+	--       subsequent states up to the current state.  Otherwise, false.
+	----------------------------------------------------------------------------
+	node Historically(i: bool) returns (o: bool);
+	let
+		o = i and (true -> pre(o));
+	tel;
+
+	----------------------------------------------------------------------------
+	-- Check whether a condition has ever been true over the history of the
+	-- analysis.
+	--
+	-- Note: 'Once' is the DeMorgan dual of 'Historically' and is related
+	-- by the identity Once(i) = not Historically(not i).
+	--
+	-- Inputs:
+	--   i - the stream to be examined for consistent true value over the
+	--       history.
+	--
+	-- Returns:
+	--   o - True if the input has been true in at least one state (including
+	--       the initial state) up to the current state.  Otherwise, false.
+	----------------------------------------------------------------------------
+	node Once(i: bool) returns (o: bool);
+	let
+		o = i or (false -> pre(o));
+	tel;
+
+	----------------------------------------------------------------------------
+	-- Check whether a condition has ever been consistently true since a another
+	-- condition became true.
+	--
+	-- The output is true if and only if the input 'a' has been true in all
+	-- states since input 'b' most recently became true.
+	--
+	-- Note: 'Since' is the DeMorgan dual of 'Trigger' and is related
+	-- by the identity Since(a, b) = not Trigger(not a, not b).
+	--
+	-- Inputs:
+	--   a - the stream to be examined for consistent truth after the condition
+	--       'b' became true.
+	--   b - the stream after which it first becomes true that stream 'a' is
+	--       examined for truth.
+	--
+	-- Returns:
+	--   o - True if the input 'b' has been true in at least one state in the
+	--       past and input 'a' has been consistently true in all states
+	--       subsequent to most recent state in which 'b' became true.
+	----------------------------------------------------------------------------
+	node Since(a : bool, b: bool) returns (o: bool);
+	let
+		o = b or (a and (false -> pre(o)));
+	tel;
+
+	node Weak_Since(a : bool, b : bool) returns (o : bool);
+	let
+		o = b or (a and (true -> pre(o)));
+	tel;
+
+	----------------------------------------------------------------------------
+	-- Check whether a condition has ever been consistently true since the
+	-- initial state or another condition was true.
+	--
+	-- The output is true if and only if the input 'b' has been true in all
+	-- states since input 'a' most recently became true.
+	--
+	-- Note: 'Trigger' is the DeMorgan dual of 'Since' and is related
+	-- by the identity Trigger(a, b) = not Since(not a, not b).
+	--
+	-- Inputs:
+	--   a - the stream after which it first becomes true that stream 'b' is
+	--       examined for truth.
+	--   b - the stream to be examined for consistent truth after the initial
+	--       state or condition 'b' became true.
+	--
+	-- Returns:
+	--   o - True if the input 'b' is consistently true starting from the initial
+	--       state or at any state where input 'a' was true.  Otherwise false.
+	----------------------------------------------------------------------------
+	node Trigger(a : bool, b: bool) returns (o: bool);
+	let
+		o = b and (a or (true -> pre(o)));
+	tel;
+
+**};
+end AGREE_PLTL;
+*)
+
+open arithmeticTheory;
+
+Definition pre_def :
+ pre X t = X (t-1)
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Yesterday(i: bool) returns (o: bool);                                *)
+(* 	let                                                                  *)
+(*		o = false -> pre(i);                                         *)
+(*	tel;                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+Definition Yesterday_def :
+  Yesterday (X: num -> bool) t = if t = 0n then F else X (t-1)
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Zyesterday(i: bool) returns (o: bool);                               *)
+(* 	let                                                                  *)
+(*		o = true -> pre(i);                                          *)
+(*	tel;                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+Definition Zyesterday_def :
+ Zyesterday (X: num -> bool) t = if t = 0n then T else X(t-1)
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Historically(i: bool) returns (o: bool);                             *)
+(* let                                                                       *)
+(*	o = i and (true -> pre(o));                                          *)
+(*	o = true -> i and pre(o));                                           *)
+(*	o = i -> i and pre(o));                                              *)
+(*	o = i and Zyesterday (o);                                            *)
+(* tel;                                                                      *)
+(*---------------------------------------------------------------------------*)
+
+Definition Historically_def :
+ Historically (X: num -> bool) t =
+   if t=0 then
+      X(0)
+    else
+      X(t) /\ Historically X (t-1)
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Once (i: bool) returns (o: bool);                                    *)
+(* let                                                                       *)
+(*	o = i or (false -> pre(o));                                          *)
+(* tel;                                                                      *)
+(*---------------------------------------------------------------------------*)
+
+Definition Once_def :
+ Once (X: num -> bool) t =
+   if t=0 then
+      X(0)
+    else
+      X(t) \/ Once X (t-1)
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Since (a: bool, b:bool) returns (o: bool);                           *)
+(* let                                                                       *)
+(*	o = b or (a and (false -> pre(o)));                                  *)
+(* tel;                                                                      *)
+(*                                                                           *)
+(* The intuition is that there is a time where b is high and in the next     *)
+(* step a is high and stays that way. It is ambiguous what happens with a    *)
+(* trace of size one where B 0 is true. The following defn specifies the     *)
+(* situation where b starts high as being true. This makes for a clean       *)
+(* semantic specification (agrees with Havelund&Rosu) but then the           *)
+(* deMorgan equivalence with Trigger is not valid.                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition Since_def :
+  (Since (A,B) 0 <=> B 0) ∧
+  (Since (A,B) (SUC t) <=> B(SUC t) \/ (A(SUC t) /\ Since (A,B) t))
+End
+
+Definition sSince_def :
+  sSince (A,B) t <=>
+   if t = 0 then F else
+   if t = 1 then (B 0 ∧ A 1)
+   else B t \/ (A t /\ sSince (A,B) (t-1))
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Weak_Since (a: bool, b:bool) returns (o: bool);                      *)
+(* let                                                                       *)
+(*	o = b or (a and (true -> pre(o)));                                   *)
+(* tel;                                                                      *)
+(*---------------------------------------------------------------------------*)
+
+Definition Weak_Since_def :
+ Weak_Since (A: num -> bool, B:num->bool) t =
+   if t=0 then
+      T
+    else
+      B(t) \/ (A(t) /\ Weak_Since (A,B) (t-1))
+End
+
+(*---------------------------------------------------------------------------*)
+(* node Trigger (a: bool, b:bool) returns (o: bool);                         *)
+(* let                                                                       *)
+(*	o = b and (a or (true -> pre(o)));                                   *)
+(* tel;                                                                      *)
+(*---------------------------------------------------------------------------*)
+
+Definition Trigger_def :
+ (Trigger (A,B) 0 ⇔ A 0 ∧ B 0) ∧
+ (Trigger (A,B) (SUC t) ⇔ B (SUC t) ∧ (A (SUC t) ∨ Trigger (A,B) t))
+End
+
+(* -------------------------------------------------------------------------- *)
+(*                                                                            *)
+(*  Proofs of alternate characterizations                                     *)
+(*                                                                            *)
+(* -------------------------------------------------------------------------- *)
+
+(*---------------------------------------------------------------------------*)
+(* Note: 'Yesterday' is the DeMorgan dual of 'Zyesterday' and is related     *)
+(*       by the identity Yesterday(i) = not Zyesterday(not i).               *)
+(*---------------------------------------------------------------------------*)
+
+Definition not_def :
+ not X (t:num) = ~(X t)
+End
+
+Theorem DeMorgan_Yesterdays :
+ !X. Yesterday X = not (Zyesterday(not X))
+Proof
+ rw [FUN_EQ_THM,Yesterday_def, Zyesterday_def, not_def]
+QED
+
+Theorem Historically_Alt :
+ !i t. Historically i t <=> !n. n <= t ==> i n
+Proof
+ rw [EQ_IMP_THM]
+ >- (Induct_on `t`
+     >> rw [Once Historically_def]
+     >> `n = SUC t \/ n <= t` by decide_tac
+     >> rw [])
+ >- (Induct_on `t`
+     >> rw [Once Historically_def])
+QED
+
+Theorem Historically_Alt_Again :
+ !i t. Historically i t <=> !n. n <= t ==> i n
+Proof
+  Induct_on `t`
+  >> rw [Once Historically_def]
+  >> rw [EQ_IMP_THM]
+  >> `n = SUC t \/ n <= t` by decide_tac
+  >> metis_tac[]
+QED
+
+Theorem Once_Alt :
+ !i t. Once i t <=> ?n. n <= t /\ i n
+Proof
+ Induct_on `t`
+  >> rw [Once Once_def]
+  >> rw [EQ_IMP_THM]
+  >- metis_tac [LESS_EQ_REFL]
+  >- metis_tac [DECIDE ``a <= b ==> a <= SUC b``]
+  >- (`n = SUC t \/ n <= t` by decide_tac >> metis_tac[])
+QED
+
+Theorem Since_LR :
+ !A B t.
+   Since (A,B) t ==> ?i. i ≤ t ∧ B i /\ !j. i < j /\ j <= t ==> A j
+Proof
+Induct_on `t` >> rw [Since_def]
+  >- (qexists_tac ‘SUC t’ >> rw[])
+  >- metis_tac [DECIDE “x ≤ SUC y ⇔ x ≤ y ∨ x = SUC y”]
+QED
+
+Theorem Since_RL :
+ !A B t i.
+   B i /\ i ≤ t ∧ (!j. i < j /\ j <= t ==> A j) ⇒ Since (A,B) t
+Proof
+Induct_on `t` >> rw [Since_def]
+  >- metis_tac[]
+  >- (‘i ≤ t ∨ i = SUC t’ by metis_tac [DECIDE “x ≤ SUC y ⇔ x ≤ y ∨ x = SUC y”]
+      >- (‘i < SUC t’ by decide_tac >>
+          ‘A (SUC t)’ by metis_tac[LESS_EQ_REFL]
+          >> disj2_tac >> rw[]
+          >> first_assum match_mp_tac
+          >> qexists_tac ‘i’ >> rw[])
+      >- (disj1_tac >> rw[])
+    )
+QED
+
+Theorem Since_iff :
+ !A B t.
+   Since (A,B) t <=> ?i. B i /\ i ≤ t ∧ !j. i < j /\ j <= t ==> A j
+Proof
+ metis_tac [Since_LR,Since_RL]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Trigger: At some point A and B hold; thereafter B holds, but not A        *)
+(*---------------------------------------------------------------------------*)
+
+Theorem Trigger_LR :
+ !A B t.
+   Trigger (A,B) t ==> ?i. i ≤ t ∧ A(i) ∧ B(i) ∧
+                           !j. i < j /\ j <= t ==> B j ∧ ~A j
+Proof
+  Induct_on `t` >> rw [Trigger_def]
+  >- (qexists_tac ‘SUC t’ >> rw[])
+  >- (Cases_on‘A (SUC t)’
+       >- (qexists_tac ‘SUC t’ >> rw[])
+       >- (‘∃i. i ≤ t ∧ A i ∧ B i ∧ ∀j. i < j ∧ j ≤ t ⇒ B j ∧ ¬A j’ by metis_tac[] >>
+           ‘i <= SUC t’ by decide_tac >>
+           qexists_tac ‘i’ >> rw[]
+           >- metis_tac [DECIDE “x ≤ SUC y ⇔ x ≤ y ∨ x = SUC y”]
+           >- (‘j ≤ t ∨ j = SUC t’ by decide_tac >> metis_tac[])))
+QED
+
+Theorem Trigger_RL :
+ !A B t i.
+   i ≤ t ∧ A(i) ∧ B(i) ∧ (!j. i < j /\ j <= t ==> B j ∧ ~A j)
+   ⇒ Trigger(A,B) t
+Proof
+  Induct_on `t`
+   >- (rw [Trigger_def] >> metis_tac[])
+   >- (rw [Trigger_def] >>
+       ‘i ≤ t ∨ i = SUC t’ by decide_tac
+       >- metis_tac[LESS_EQ_IMP_LESS_SUC,LESS_EQ_REFL]
+       >- metis_tac[LESS_EQ_IMP_LESS_SUC,LESS_EQ_REFL]
+       >- (disj2_tac >> first_assum match_mp_tac
+            >> qexists_tac ‘i’ >> rw[])
+       >- (disj1_tac >> metis_tac[]))
+QED
+
+Theorem Trigger_iff :
+ !A B t.
+   Trigger (A,B) t <=> ?i. i ≤ t ∧ A(i) ∧ B(i) ∧
+                           (!j. i < j /\ j <= t ==> B j ∧ ~A j)
+Proof
+ metis_tac [Trigger_RL,Trigger_LR]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Note: 'Since' is the DeMorgan dual of 'Trigger' and is related            *)
+(*	-- by the identity Since(a, b) = not Trigger(not a, not b).          *)
+(*---------------------------------------------------------------------------*)
+
+Theorem Since_Trigger_DeMorgan :
+  ∀A B. Since(A, B) = not (Trigger(not A, not B))
+Proof
+  simp [FUN_EQ_THM]
+  >> Induct_on ‘x’
+  >> rw [Since_def, Trigger_def, not_def]
+  ??
+QED

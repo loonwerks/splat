@@ -1,0 +1,176 @@
+(* Stopwatch *)
+(*
+val Stopwatch_def =
+ Define
+  `(Stopwatch (on_off,reset,freeze) 0 =
+    (if Switch((freeze and Switch(on_off,on_off)),(freeze or on_off)) 0 then
+       0
+     else
+       Count ((reset and not (Switch(on_off,on_off))),(Switch(on_off,on_off)))
+         0))
+   /\
+   (Stopwatch (on_off,reset,freeze) (SUC n') =
+    (if
+       Switch((freeze and Switch(on_off,on_off)),(freeze or on_off)) (SUC n')
+     then
+       Stopwatch (on_off,reset,freeze) n'
+     else
+       Count ((reset and not (Switch(on_off,on_off))),(Switch(on_off,on_off)))
+         (SUC n')))`;
+
+val StopwatchEq =
+ prove
+  (``Stopwatch(on_off,reset,freeze) =
+      let running = Switch(on_off,on_off) in
+      let freezed = Switch((freeze and running), (freeze or on_off)) in
+      let cpt = Count((reset and not(running)), running)             in
+       if freezed 
+        then (con 0 -> pre(Stopwatch(on_off,reset,freeze))) 
+        else cpt``,
+   CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
+    THEN Cases
+    THEN SIMP_TAC arith_ss 
+          [LET_DEF,Stopwatch_def,
+           Lustre_not_def,Lustre_and_def,Lustre_or_def,Lustre_false_def,Lustre_pre_def,
+           if_then_else_def,Lustre_init_def,con_def,Lustre_add_def]);
+
+val StopwatchUniqueImp =
+ prove
+  (``!time on_off reset freeze. 
+       (time = let running = Switch(on_off,on_off) in
+               let freezed = Switch((freeze and running), (freeze or on_off)) in
+               let cpt = Count((reset and not(running)), running)             in
+                if freezed then (con 0 -> pre time) else cpt)
+       ==>
+       (time = Stopwatch(on_off,reset,freeze))``,
+    REPEAT GEN_TAC
+     THEN CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
+     THEN REWRITE_TAC
+           [Stopwatch_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,LET_DEF,
+            if_then_else_def,Lustre_init_def,con_def,Lustre_and_def,Lustre_or_def]
+     THEN BETA_TAC
+     THEN DISCH_TAC
+     THEN Induct
+     THEN ONCE_ASM_REWRITE_TAC[]
+     THEN REWRITE_TAC[Count_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,if_then_else_def,Lustre_init_def,
+                      DECIDE``~(SUC n = 0) /\ (SUC n - 1 = n)``]
+     THEN EVAL_TAC
+     THEN POP_ASSUM(fn th => REWRITE_TAC[th]));
+
+val StopwatchUnique =
+ prove
+  (``!time on_off reset freeze.
+         (time = let running = Switch(on_off,on_off) in
+                 let freezed = Switch((freeze and running),(freeze or on_off)) in
+                 let cpt = Count ((reset and not running),running) in
+                  if freezed then (con 0 -> pre time) else cpt) =
+         (time = Stopwatch (on_off,reset,freeze))``,
+   METIS_TAC[StopwatchUniqueImp, StopwatchEq]);
+
+val Stopwatch =
+ prove
+  (``Stopwatch(on_off,reset,freeze) =
+      returns time.
+       var running freezed cpt.
+        (running = Switch(on_off,on_off)) /\
+        (freezed = Switch((freeze and running), (freeze or on_off))) /\
+        (cpt = Count((reset and not(running)), running)) /\
+        (time = (if freezed then (con 0 -> pre time) else cpt))``,
+   METIS_TAC[SIMP_RULE std_ss [LET_DEF] StopwatchUnique,LET_DEF]);
+
+(* Experiments
+
+val eqn = 
+ ``(running = Switch(on_off)) /\
+   (freezed = Switch((freeze and running), (freeze or on_off))) /\
+   (cpt = Count((reset and not(running)), running)) /\
+   (time = (if freezed then (con 0 -> pre time) else cpt))``;
+
+val Switch_def =
+ Define
+  `(Switch (on,off) 0 = on 0)
+   /\
+   (Switch (on,off) (SUC t) = if Switch (on,off) t then (not off) (SUC t) else on(SUC t))`;
+
+Define
+ `(RUNNING(on_off) n = Switch (on_off,on_off) n) /\
+  (FREEZED(on_off,freeze) n = Switch ((freeze and (RUNNING(on_off))),(freeze or on_off)) n) /\
+  (CPT(on_off,reset) n = Count ((reset and (not (RUNNING(on_off)))),(RUNNING(on_off))) n) /\
+  (TIME(on_off,reset,freeze) n =  if FREEZED(on_off,freeze) n then (if n = 0 then 0 else TIME(on_off,reset,freeze) (n - 1)) else CPT(on_off,reset) n)`;
+
+Define
+ `(RUNNING(on_off) n = Switch (on_off,on_off) n) /\
+  (FREEZED(on_off,freeze) n = Switch ((freeze and (RUNNING(on_off))),(freeze or on_off)) n) /\
+  (CPT(on_off,reset) n = Count ((reset and (not (RUNNING(on_off)))),(RUNNING(on_off))) n) /\
+  (TIME(on_off,reset,freeze) 0 =  if FREEZED(on_off,freeze) 0 then 0 else CPT(on_off,reset) 0) /\
+  (TIME(on_off,reset,freeze) (SUC n) =  if FREEZED(on_off,freeze)(SUC n) then TIME(on_off,reset,freeze) n else CPT(on_off,reset) (SUC n))`;
+
+val th = 
+ (DEPTH_CONV FUN_EQ_CONV 
+   THENC SIMP_CONV std_ss
+          [Lustre_not_def,Lustre_false_def,Lustre_pre_def,
+           if_then_else_def,Lustre_init_def,con_def,Lustre_add_def]
+ ) eqn;
+
+
+EVAL ``Stopwatch((false -> true),false,false) 5``;
+EVAL ``Stopwatch((false -> true),false,false) 50``;
+EVAL ``Stopwatch((false -> true),false,false) 100``;
+EVAL ``Stopwatch((false -> true),false,false) 150``;
+EVAL ``Stopwatch(true,false,false) 150``;
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Lustre "current(X when C)" --> HOL ``current(X,C)``                       *)
+(*---------------------------------------------------------------------------*)
+
+val current_def =
+ Define
+  `(current(X,C)  0 = X 0) /\
+   (current(X,C) (SUC t) = if C t then X t else current(X,C) t)`;
+
+(*---------------------------------------------------------------------------*)
+(* "when" operator inherited from Melham's thesis work.                      *)
+(*---------------------------------------------------------------------------*)
+
+val when2_def =
+ Define
+  `when2 (X,Y) C = (X when C, Y when C)`;
+
+val _ = overload_on("when", ``when2``);
+
+val ClockedStopwatch_def =
+ Define
+  `ClockedStopwatch(on_off,reset,freeze) =
+    let running = Switch(on_off,on_off) in
+    let freezed = Switch((freeze and running), (freeze or on_off)) in
+    let cpt_ena = (true -> reset or running) in
+    let cpt = Count((not running, true) when cpt_ena) in
+    let tim_ena = (true -> not freezed) in
+     current(current(cpt,cpt_ena),tim_ena)`;
+
+val ClockedStopwatchUnique =
+ prove
+  (``!time on_off reset freeze.
+         (time = let running = Switch(on_off,on_off) in
+                 let freezed = Switch((freeze and running), (freeze or on_off)) in
+                 let cpt_ena = (true -> reset or running) in
+                 let cpt = Count((not running, true) when cpt_ena) in
+                 let tim_ena = (true -> not freezed) in
+                   current(current(cpt, cpt_ena),tim_ena)) =
+         (time = ClockedStopwatch (on_off,reset,freeze))``,
+   METIS_TAC[ClockedStopwatch_def]);
+
+val ClockedStopwatch =
+ prove
+  (``ClockedStopwatch(on_off,reset,freeze) =
+      returns time.
+       var running freezed cpt_ena tim_ena cpt.
+        (running = Switch(on_off,on_off)) /\
+        (freezed = Switch((freeze and running), (freeze or on_off))) /\
+        (cpt_ena = (true -> reset or running)) /\
+        (cpt = Count((not running, true) when cpt_ena)) /\
+        (tim_ena = (true -> not freezed)) /\
+        (time = current(current(cpt, cpt_ena),tim_ena))``,
+   METIS_TAC[SIMP_RULE std_ss [LET_DEF] ClockedStopwatchUnique,LET_DEF]);
+*)

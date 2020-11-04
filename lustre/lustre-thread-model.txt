@@ -1,0 +1,128 @@
+Notes on modelling CASE threads.
+--------------------------------
+
+The CASE project uses AADL + annexes to describe system structure and
+behavior. We will deal with the logical structure of systems, and
+mostly ignore AADL's support for describing physical structure.
+
+A CASE thread is a scheduled entity. The view we assumpe is that, when
+a thread gets its timeslice, it reads from its input ports, does a
+computation, and writes to its output ports before becoming
+inactive. In pseduo-mode it looks as follows:
+
+   A. Set initial values for variables in global state
+
+   B. While true do
+       let val () = waitForControl();
+           val inputs = readInputs();
+           val (outputs, state') = F(inputs, state)
+       in
+          write state';
+          writeOutputs(outputs);
+          relinquishControl()
+       end
+
+In this template, F is a purely functional transformation that takes
+just-received inputs plus the current state and computes outputs and
+the new values for the global state.
+
+Lustre.
+--------
+
+Lustre is a dataflow language used in CASE to describe thread
+behavior. Its computational model fits fairly well with the above
+template, but attention needs to be paid to the details.
+
+ [So far we  are only dealing with a clock-free fragment of Lustre,
+  which we might as well call Baby Lustre.]
+
+A Lustre program specifies an output stream (or streams) in terms of
+calculations on a collection of input streams. The calculation can be
+purely functional, or use memory. Thus in the following Lustre
+
+   node AND (X:bool, Y:bool) returns (Z:bool)
+    let
+      Z = X and Y;
+    tel;
+
+the current element of Z is computed from the current elements of X
+and Y. The AND node can be implemented in the above template as:
+
+   While true do
+     let val () = waitForControl();
+         val (x,y) = (readX(), readY());
+         val z = x and y;
+     in
+       writeZ (z);
+       relinquishControl()
+     end
+
+We also want to generate logic definitions of Lustre nodes. For AND,
+it could be simply defined as
+
+   AND(X,Y) t = (X t /\ Y t)
+
+Properties.
+-----------
+
+The template code can be shown equivalent with the logic specification
+by showing their equivalence after any number of thread
+invocations. We abstract step-wise input operations by streams. The
+following describes an iteration making t steps before terminating:
+
+   loopFn (X,Y) t = FUNPOW
+                      (\(i,z). (i+1,X(i) and Y(i)))
+                      t
+                      (0,F)
+
+Note: the initial value of z is ignored.) The full computation starts
+in the initial state and iterates the function
+
+for t steps,
+then projects the "z" element out of the final state. Running this for
+t steps and then projecting should be equal to the logic
+characterization of AND at t.
+
+  forall t. snd (loopFn (X,Y) t) = AND (X,y) t
+
+Although the example is very simple, it shows that the thread
+computation can be captured by an iteration that applies a function to
+the current inputs and any state variables (none in this example).
+
+Simple Recursive Example.
+-------------------------
+
+Factorial can be defined in Lustre as follows:
+
+   Fact = 1 -> N * pre(Fact)
+   N    = 0 -> pre(N) + 1
+
+In this example, the output is not derived from any inputs, so can be
+generated from some initial state vars. These can be read off the
+stream definitions:
+
+  state = (N,Fact)
+  stateFn (N,Fact) = (N+1, Fact * N+1)
+
+Thus the loopFn is
+
+   loopFn t =
+      FUNPOW (\(N,Fact). (N+1, Fact * (N+1)))
+             t
+             (0,1)
+
+The relationship between the loopFn and the library definition of FACT in HOL is
+
+  forall t. snd(snd (loopFn t) = FACT t
+
+
+Past-time Temporal Logic.
+--------------------------
+
+Modelling past-time temporal operators in Lustre is relatively
+straightforward. However adapting it to our template requires a bit of
+care. The issue is that the initial value for an infinite state-based
+stream like N is naturally N(0).  But when working with a parameter
+stream, e.g, one of the inputs to a thread, there is no
+
+   o = true ->
