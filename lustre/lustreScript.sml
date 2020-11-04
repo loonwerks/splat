@@ -108,7 +108,11 @@ val _ = set_fixity "==" (Infixl 99);
 (*    i.e. "N X = @A. ?v1 ... vn. E"                                         *)
 (*                                                                           *)
 (* In other words, pick return value(s) such that there exist variables      *)
-(* v1 ... vn making the equations true.                                      *)
+(* v1 ... vn making the equations true. Note that this is a contextual and   *)
+(* non-constructive definition of the node behavior and proving any          *)
+(* properties of the node will first require proving the existence of the    *)
+(* specified return stream. This often reduces to providing witnesses for    *)
+(* equations specified in the body of the node.                              *)
 (*---------------------------------------------------------------------------*)
 
 fun lustre_syntax() =
@@ -131,10 +135,24 @@ val _ = lustre_syntax();
 (* Support for making Lustre-like definitions.                               *)
 (*---------------------------------------------------------------------------*)
 
-fun Lustre_Def str tm =
+val ERR = mk_HOL_ERR "Lustre Theory";
+
+fun Lustre_Def tm =
+ let val (left,right) = dest_eq (snd (strip_forall tm))
+     val (a,args) = strip_comb left
+     val a' = if is_var a then a else
+              if is_const a then mk_var(dest_const a)
+              else raise ERR "Lustre_Def" "unexpected syntax on lhs"
+     val (defName,ty) = dest_var a'
+     val exVar = mk_var(defName,type_of left)
+     val _ = if Lib.all is_var args then () else
+             raise ERR "Lustre_Def" "unexpected syntax on lhs"
+     val def_tm = list_mk_forall(args,mk_exists(exVar, mk_eq(exVar,right)))
+  in
   new_specification
-   (str^"_def", [str],
-    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] (METIS_PROVE [] tm));
+   (defName^"_def", [defName],
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] (METIS_PROVE [] def_tm))
+  end;
 
 (*===========================================================================*)
 (* Example definitions and subsequent derivation of desired eqns.            *)
@@ -144,11 +162,10 @@ fun Lustre_Def str tm =
 (* Max                                                                       *)
 (*---------------------------------------------------------------------------*)
 
-val Max_def = Lustre_Def
-  "Max"
-  “!A B. ?f. f = returns M:num->num.
-                  M = if A >= B then A else B”
-;
+val Max_def =
+ Lustre_Def
+  “Max A B = returns M.
+      M = if A >= B then A else B”;
 
 Theorem Max_thm :
   Max A B t = MAX (A t) (B t)
@@ -160,12 +177,11 @@ QED
 (* Average                                                                   *)
 (*---------------------------------------------------------------------------*)
 
-val Average_def = Lustre_Def
-  "Average"
-  “!X Y. ?f. f = returns A:num->num.
-                  var S. (A = S DIV const 2) /\
-                         (S = X + Y)”
-;
+val Average_def =
+ Lustre_Def
+  “Average X Y = returns A.
+     var S. (A = S DIV const 2) /\
+            (S = X + Y)”;
 
 Theorem Average_thm :
   Average X Y t = ((X t + Y t) DIV 2)
@@ -181,11 +197,10 @@ QED
 (* Edge (rising)                                                             *)
 (*---------------------------------------------------------------------------*)
 
-val Edge_def = Lustre_Def
-  "Edge"
-  “!X. ?f. f = returns E:num->bool.
-                E = (false -> (X and not(pre X)))”
-;
+val Edge_def =
+ Lustre_Def
+  “Edge X = returns E:num->bool.
+      E = (false -> (X and not(pre X)))”;
 
 Theorem Edge_Primrec :
   Edge X 0 = F /\
@@ -199,12 +214,11 @@ QED
 (* Running MinMax on stream                                                  *)
 (*---------------------------------------------------------------------------*)
 
-val MinMax_def = Lustre_Def
-  "MinMax"
-  “!X. ?f. f = returns (p:(num->num)#(num->num)).
-               (FST p = (X -> if X < pre (FST p) then X else pre (FST p))) ∧
-               (SND p = (X -> if X > pre (SND p) then X else pre (SND p)))”
-;
+val MinMax_def =
+ Lustre_Def
+   “MinMax X = returns p.
+       (FST p = (X -> if X < pre (FST p) then X else pre (FST p))) ∧
+       (SND p = (X -> if X > pre (SND p) then X else pre (SND p)))”;
 
 Theorem MinMax_Named :
  !X. MinMax X = returns (Min,Max).
@@ -309,27 +323,21 @@ QED
 (*---------------------------------------------------------------------------*)
 (* MinMaxAverage                                                             *)
 (*---------------------------------------------------------------------------*)
-(*
 
 val MinMaxAverage_def =
- Define
-  `MinMaxAverage x = Average(MinMax x)`;
+ Lustre_Def
+  “MinMaxAverage X = returns A.
+    var min max.
+      (A = Average min max) /\
+      ((min,max) = MinMax X)”;
 
-val MinMaxAverageUnique =
- prove
-  (``(?min max. (a = Average (min,max)) /\ ((min,max) = MinMax x)) =
-     (a = MinMaxAverage x)``,
-   METIS_TAC[MinMaxAverage_def,pairTheory.PAIR]);
-
-val MinMaxAverage =
- prove
-  (``MinMaxAverage x =
-      returns a.
-       var min max.
-        (a = Average(min,max)) /\
-        ((min,max) = MinMax x)``,
-   METIS_TAC[MinMaxAverageUnique]);
-*)
+Theorem MinMaxAverage_thm :
+  MinMaxAverage X =
+   let (min,max) = MinMax X
+   in Average min max
+Proof
+  rw_tac std_ss [MinMaxAverage_def]
+End
 
 (*---------------------------------------------------------------------------*)
 (* Examples of recursive definitions.                                        *)
@@ -338,22 +346,19 @@ val MinMaxAverage =
 (*    A = F -> not (pre(N))                                                  *)
 (*---------------------------------------------------------------------------*)
 
-val N_def = Lustre_Def
-  "N"
-  “?f. f = returns N.
-           N = (const 0 -> pre N + const 1)”
+val Nat_def =
+ Lustre_Def
+   “Nat = returns N. N = (const 0 -> pre N + const 1)”;
+
+val Odd_def =
+ Lustre_Def
+  “Odd = returns A. A = (false -> not(pre A))”;
 ;
 
-val A_def = Lustre_Def
-  "A"
-  “?f. f = returns A.
-           A = (false -> not(pre A))”
-;
-
-Theorem N_thm :
- ∀t . N t = t
+Theorem Nat_thm :
+ ∀t . Nat t = t
 Proof
- rw_tac lustre_ss [N_def]
+ rw_tac lustre_ss [Nat_def]
   >> SELECT_ELIM_TAC
   >> conj_tac
   >- (qexists_tac `I` >> Induct >> rw[combinTheory.I_THM])
@@ -364,10 +369,10 @@ Proof
        >> rw [])
 QED
 
-Theorem A_thm :
-  !n. A n = if n=0 then F else ~A(n-1)
+Theorem Odd_thm :
+  !n. Odd n = ODD n
 Proof
-rw_tac lustre_ss [A_def]
+rw_tac lustre_ss [Odd_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
  >- (qexists_tac ‘ODD’ >> Induct >> rw[ODD])
@@ -375,7 +380,7 @@ rw_tac lustre_ss [A_def]
        >> Induct_on `n`
        >> ONCE_ASM_REWRITE_TAC[]
        >> WEAKEN_TAC is_forall
-       >> rw [EQ_IMP_THM] >> rw[])
+       >> rw [ODD])
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -383,13 +388,20 @@ QED
 (*                                                                           *)
 (*   Fact = 1 -> N * pre(Fact)                                               *)
 (*   N    = 0 -> pre(N) + 1                                                  *)
+(*                                                                           *)
+(* This describes an iterative implementation of factorial with two state    *)
+(* variables, (N,Fact), initially (1,0), with the step transition            *)
+(*                                                                           *)
+(*   (N,Fact) --> (N+1,Fact * N+1)                                           *)
+(*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-val Fact_def = Lustre_Def
-  "Fact"
-  “?f. f = returns Fact.
-           var N. (Fact = (const 1 -> N * pre(Fact))) ∧
-                  (N    = (const 0 -> pre(N) + const 1))”
+val Fact_def =
+ Lustre_Def
+  “Fact = returns product.
+     var N.
+      (product = (const 1 -> N * pre(product))) ∧
+      (N       = (const 0 -> pre(N) + const 1))”
 ;
 
 Theorem Fact_thm :
@@ -398,32 +410,44 @@ Proof
  rw_tac lustre_ss [Fact_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘FACT’ >> qexists_tac ‘I’ >> conj_tac
+ >- (qexists_tac ‘FACT’ >> qexists_tac ‘Nat’
+     >> conj_tac
      >> Cases
      >- metis_tac [FACT]
-     >- metis_tac [FACT,NOT_SUC, I_THM,MULT_SYM,SUC_SUB1]
-     >- metis_tac [I_THM]
-     >- metis_tac [I_THM,NOT_SUC,ADD1,SUC_SUB1])
+     >- metis_tac [FACT,NOT_SUC,Nat_thm,MULT_SYM,SUC_SUB1]
+     >- metis_tac [Nat_thm]
+     >- metis_tac [Nat_thm,NOT_SUC,ADD1,SUC_SUB1])
  >- (Ho_Rewrite.REWRITE_TAC [PULL_EXISTS]
       >> rpt strip_tac
       >> Induct_on `n`
       >> ONCE_ASM_REWRITE_TAC[FACT]
       >- metis_tac[]
-      >- (REWRITE_TAC [NOT_SUC,ADD1,SUC_SUB1] >>
-          ‘∀t. N' t = t’ by
-             (Induct >> ONCE_ASM_REWRITE_TAC[]
-               >> metis_tac [NOT_SUC,ADD1,SUC_SUB1])
-           >> fs[]))
+      >- (REWRITE_TAC [NOT_SUC,ADD1,SUC_SUB1]
+          >> ‘∀t. N t = t’
+               by (Induct >> ONCE_ASM_REWRITE_TAC[]
+                   >> metis_tac [NOT_SUC,ADD1,SUC_SUB1])
+          >> fs[]))
 QED
 
 (*---------------------------------------------------------------------------*)
 (* Fibonacci                                                                 *)
+(*                                                                           *)
+(*   Fib = 1 -> pre(Fib + (0 -> pre Fib))                                    *)
+(*                                                                           *)
+(* For clarity, we drag the inner stream def out to the top level, rendering *)
+(* the computation as an iteration over (presum,sum), initially (0,1), with  *)
+(* transition function                                                       *)
+(*                                                                           *)
+(*   (presum,sum) --> (sum,presum + sum)                                     *)
+(*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-val Fib_def = Lustre_Def
-  "Fib"
-  “?f. f = returns Fib.
-           Fib = (const 1 -> pre(Fib + (const 0 -> pre Fib)))”
+val Fib_def =
+ Lustre_Def
+  “Fib =  returns sum.
+     var presum.
+       (sum    = (const 1 -> pre(sum + presum))) ∧
+       (presum = (const 0 -> pre sum))”;
 ;
 
 
@@ -442,7 +466,7 @@ End
 *)
 
 
-(*
+(*  Still to convert over ...
 
 (*---------------------------------------------------------------------------*)
 (* Switch                                                                    *)

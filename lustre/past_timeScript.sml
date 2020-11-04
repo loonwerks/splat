@@ -96,13 +96,8 @@ val _ = set_fixity "or" (Infixr 299);
 val _ = set_fixity "==" (Infixl 99);
 
 (*---------------------------------------------------------------------------*)
-(* Support for making Lustre-like definitions.                               *)
+(* Support for Lustre-like syntax.                                           *)
 (*---------------------------------------------------------------------------*)
-
-fun Lustre_Node_Def str tm =
-  new_specification
-   (str^"_def", [str],
-    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] (METIS_PROVE [] tm));
 
 fun lustre_syntax() =
  let in
@@ -117,6 +112,31 @@ fun undo_lustre_syntax() =
    clear_overloads_on "returns";
    clear_overloads_on "var"
  end;
+
+val _ = lustre_syntax();
+
+(*---------------------------------------------------------------------------*)
+(* Support for making Lustre-like definitions.                               *)
+(*---------------------------------------------------------------------------*)
+
+val ERR = mk_HOL_ERR "Lustre Theory";
+
+fun Lustre_Def tm =
+ let val (left,right) = dest_eq (snd (strip_forall tm))
+     val (a,args) = strip_comb left
+     val a' = if is_var a then a else
+              if is_const a then mk_var(dest_const a)
+              else raise ERR "Lustre_Def" "unexpected syntax on lhs"
+     val (defName,ty) = dest_var a'
+     val exVar = mk_var(defName,type_of left)
+     val _ = if Lib.all is_var args then () else
+             raise ERR "Lustre_Def" "unexpected syntax on lhs"
+     val def_tm = list_mk_forall(args,mk_exists(exVar, mk_eq(exVar,right)))
+  in
+  new_specification
+   (defName^"_def", [defName],
+    Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] (METIS_PROVE [] def_tm))
+  end;
 
 val _ = lustre_syntax();
 
@@ -136,15 +156,13 @@ val _ = lustre_syntax();
 (*	tel;                                                                 *)
 (*---------------------------------------------------------------------------*)
 
-val Yesterday_def = Lustre_Node_Def
-   "Yesterday"
-  “∀A. ?f. f = returns Out.
-                Out = (const F -> pre A)”;
+val Yesterday_def =
+ Lustre_Def
+  “Yesterday A = returns Out. Out = (const F -> pre A)”;
 
-val Zyesterday_def = Lustre_Node_Def
-   "Zyesterday"
-  “∀A. ?f. f = returns Out.
-                Out = (const T -> pre A)”;
+val Zyesterday_def =
+ Lustre_Def
+   “Zyesterday A = returns Out. Out = (const T -> pre A)”;
 
 Theorem Yesterday_thm :
   ∀P t. Yesterday P t = if t = 0n then F else P (t-1)
@@ -158,6 +176,11 @@ Proof
  rw_tac lustre_ss [Zyesterday_def]
 QED
 
+Theorem DeMorgan_Yesterdays :
+ !X. Yesterday X = not (Zyesterday(not X))
+Proof
+ rw_tac lustre_ss [Yesterday_def, Zyesterday_def]
+QED
 
 (*---------------------------------------------------------------------------*)
 (* node Historically(i: bool) returns (o: bool);                             *)
@@ -170,11 +193,9 @@ QED
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-val Historically_def = Lustre_Node_Def
-   "Historically"
-  “∀A. ?f. f = returns H.
-                H = (const T -> pre (A and H))”
-;
+val Historically_def =
+ Lustre_Def
+   “Historically A = returns H. H = (const T -> pre (A and H))”;
 
 (*---------------------------------------------------------------------------*)
 (* Important to draw the distinction between *time* and *steps in the        *)
@@ -220,11 +241,9 @@ QED
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-val Once_def = Lustre_Node_Def
-  "Once"
-  “∀A. ?f. f = returns H.
-               H = (const F -> pre (A or H))”
-;
+val Once_def =
+ Lustre_Def
+  “Once A = returns H. H = (const F -> pre (A or H))”;
 
 Theorem Once_thm :
  ∀t. Once P t ⇔ ∃n. n < t ∧ P n
@@ -253,10 +272,9 @@ QED
 (* step a sequence of a's goes all the way to the end of the trace.          *)
 (*---------------------------------------------------------------------------*)
 
-val Since_def = Lustre_Node_Def
-  "Since"
-  “∀P Q. ∃f. f = returns S.
-               S = (const F -> pre (Q or (P and S)))”;
+val Since_def =
+ Lustre_Def
+   “Since P Q = returns S. S = (const F -> pre (Q or (P and S)))”;
 
 (*---------------------------------------------------------------------------*)
 (* Recursive function modelling Since                                        *)
@@ -322,14 +340,19 @@ QED
 (* let                                                                       *)
 (*	o = b or (a and (true -> pre(o)));                                   *)
 (* tel;                                                                      *)
+(*                                                                           *)
+(* Weak_Since differs from Since by being true if a holds through the entire *)
+(* trace. So it looks (in regexp notation) like                              *)
+(*                                                                           *)
+(*    a* + .*ba*                                                             *)
 (*---------------------------------------------------------------------------*)
 
-val Weak_Since_def = Lustre_Node_Def
-   "Weak_Since"
-   “∀P Q. ∃f. f = returns S. S = (const T -> pre (Q or (P and S)))”;
+val Weak_Since_def =
+ Lustre_Def
+   “Weak_Since P Q = returns S. S = (const T -> pre (Q or (P and S)))”;
 
 (*---------------------------------------------------------------------------*)
-(* Recursive definition modelling the Lustre                                 *)
+(* Recursive definition modelling the Lustre definition                      *)
 (*---------------------------------------------------------------------------*)
 
 Definition Weak_Since_Rec_def :
@@ -338,8 +361,15 @@ Definition Weak_Since_Rec_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Needs spec and proof                                                      *)
+(* Equation between pLTL expressions                                         *)
 (*---------------------------------------------------------------------------*)
+(*
+Theorem Weak_Since_eqn :
+ ∀P Q. Weak_Since P Q = (Historically P or Since P Q)
+Proof
+
+QED
+*)
 
 (*---------------------------------------------------------------------------*)
 (* node Trigger (a: bool, b:bool) returns (o: bool);                         *)
@@ -348,9 +378,9 @@ End
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-val Trigger_def = Lustre_Node_Def
-   "Trigger"
-   “∀P Q. ∃f. f = returns S. S = (const T -> pre (Q and (P or S)))”;
+val Trigger_def =
+ Lustre_Def
+   “Trigger P Q = returns S. S = (const T -> pre (Q and (P or S)))”;
 
 Definition Trigger_Rec_def :
  (Trigger_Rec P Q 0 ⇔ T) ∧
