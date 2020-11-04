@@ -3,18 +3,14 @@
 (* Author: Mike Gordon (mjcg@cl.cam.ac.uk)                                   *)
 (* Tweaks: Konrad Slind (klslind@rockwellcollins.com)                        *)
 (*                                                                           *)
-(* Examples from Pascal Raymond, Verimag-CNRS, in the slides of the talk     *)
-(* "The Lustre language"                                                     *)
-(*                                                                           *)
-(*  http://www.cmi.univ-mrs.fr/epit32/Documents/Raymond_lustre.pdf           *)
-(*                                                                           *)
+(* Used to define past-time LTL operators and proof their properties.        *)
 (*===========================================================================*)
 
 open HolKernel boolLib Parse bossLib pairLib
      pairTheory numTheory prim_recTheory arithmeticTheory
      combinTheory pred_setTheory pred_setLib;
 
-val _ = new_theory "Past_Time_Lustre";
+val _ = new_theory "Past_Time";
 
 (*---------------------------------------------------------------------------*)
 (* Used when accessing before the beginning of a stream. Never needs to be   *)
@@ -99,12 +95,11 @@ val _ = set_fixity "and" (Infixr 399);
 val _ = set_fixity "or" (Infixr 299);
 val _ = set_fixity "==" (Infixl 99);
 
-
 (*---------------------------------------------------------------------------*)
 (* Support for making Lustre-like definitions.                               *)
 (*---------------------------------------------------------------------------*)
 
-fun Lustre_Def str tm =
+fun Lustre_Node_Def str tm =
   new_specification
    (str^"_def", [str],
     Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] (METIS_PROVE [] tm));
@@ -117,294 +112,13 @@ fun lustre_syntax() =
    overload_on ("var",     boolSyntax.existential)
  end;
 
-fun drop_lustre_syntax() =
+fun undo_lustre_syntax() =
  let in
    clear_overloads_on "returns";
    clear_overloads_on "var"
  end;
 
-(*===========================================================================*)
-(* Example definitions and subsequent derivation of desired eqns.            *)
-(*===========================================================================*)
-
-(*---------------------------------------------------------------------------*)
-(* Max                                                                       *)
-(*---------------------------------------------------------------------------*)
-
-
-Max A B = returns M. ....
-
-val Max_def = Lustre_Def
-  "Max"
-  “!A B. ?f. f = returns M:num->num.
-                  M = if A >= B then A else B”
-;
-
-Theorem Max_thm :
-  Max A B t = MAX (A t) (B t)
-Proof
- rw_tac lustre_ss [MAX_DEF,Max_def]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Average                                                                   *)
-(*---------------------------------------------------------------------------*)
-
-val Average_def = Lustre_Def
-  "Average"
-  “!X Y. ?f. f = returns A:num->num.
-                  var S. (A = S DIV const 2) /\
-                         (S = X + Y)”
-;
-
-Theorem Average_thm :
-  Average X Y t = ((X t + Y t) DIV 2)
-Proof
-  rw_tac lustre_ss [Average_def]
-   >> SELECT_ELIM_TAC
-   >> rw []
-   >> qexists_tac ‘\a. (X a + Y a) DIV 2’  (* trivial instantiation *)
-   >> rw[]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Edge (rising)                                                             *)
-(*---------------------------------------------------------------------------*)
-
-val Edge_def = Lustre_Def
-  "Edge"
-  “!X. ?f. f = returns E:num->bool.
-                E = (false -> (X and not(pre X)))”
-;
-
-Theorem Edge_Primrec :
-  Edge X 0 = F /\
-  Edge X (SUC t) = (~X t /\ X(t+1))
-Proof
- rw_tac lustre_ss [Edge_def] >> metis_tac[ADD1]
-QED
-
-
-(*---------------------------------------------------------------------------*)
-(* Running MinMax on stream                                                  *)
-(*---------------------------------------------------------------------------*)
-
-val MinMax_def = Lustre_Def
-  "MinMax"
-  “!X. ?f. f = returns (p:(num->num)#(num->num)).
-               (FST p = (X -> if X < pre (FST p) then X else pre (FST p))) ∧
-               (SND p = (X -> if X > pre (SND p) then X else pre (SND p)))”
-;
-
-Theorem MinMax_Named :
- !X. MinMax X = returns (Min,Max).
-       (Min = (X -> if X < pre Min then X else pre Min)) /\
-       (Max = (X -> if X > pre Max then X else pre Max))
-Proof
-  RW_TAC std_ss [pairTheory.LAMBDA_PROD,MinMax_def]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Specify MinMax in terms of a pair of functions                            *)
-(*---------------------------------------------------------------------------*)
-
-Definition MinFn_def :
-  MinFn X 0 = X 0 /\
-  MinFn X (SUC t) = MIN (X (SUC t)) (MinFn X t)
-End
-
-Definition MaxFn_def :
-  MaxFn X 0 = X 0 ∧
-  MaxFn X (SUC t) = MAX (X (SUC t)) (MaxFn X t)
-End
-
-Theorem MinMax_thm :
- ∀X. MinMax X = (MinFn X, MaxFn X)
-Proof
-  simp_tac lustre_ss [MinMax_Named]
-  >> rpt gen_tac
-  >> SELECT_ELIM_TAC
-  >> conj_tac
-  >- (qexists_tac ‘(MinFn X,MaxFn X)’
-        >> rw []
-        >> Induct_on ‘x’
-        >> rw [MinFn_def,MaxFn_def]
-        >> rw_tac bool_ss [ONE,MIN_DEF,MAX_DEF]
-        >> fs [ADD1])
-  >- (Ho_Rewrite.REWRITE_TAC [FORALL_PROD]
-        >> rw []
-        >> REWRITE_TAC [FUN_EQ_THM]
-        >> Induct
-        >> ONCE_ASM_REWRITE_TAC []
-        >> rpt(WEAKEN_TAC is_forall)
-        >> REWRITE_TAC [NOT_SUC]
-        >> rw[MinFn_def,MIN_DEF,MaxFn_def,MAX_DEF])
-QED
-
-
-(*---------------------------------------------------------------------------*)
-(* Somewhat more abstract property                                           *)
-(*---------------------------------------------------------------------------*)
-
-Theorem MinFn_is_min :
-  ∀X t. (∃i. i ≤ t ∧ X i = MinFn X t) ∧
-         ∀n. n ≤ t ⇒ MinFn X t ≤ X n
-Proof
- Induct_on ‘t’
-  >> rw [MinFn_def,MIN_DEF]
-  >> metis_tac [DECIDE “x ≤ SUC y ⇔ x ≤ y ∨ x = SUC y”,
-      LESS_EQ_TRANS,NOT_LESS,LESS_EQ_REFL,LESS_IMP_LESS_OR_EQ]
-QED
-
-Theorem MaxFn_is_max :
-  ∀X t. (∃i. i ≤ t ∧ X i = MaxFn X t) ∧
-         (∀n. n ≤ t ⇒ X n ≤ MaxFn X t)
-Proof
- Induct_on ‘t’
-  >> rw [MaxFn_def,MAX_DEF]
-  >> metis_tac [DECIDE “x ≤ SUC y ⇔ x ≤ y ∨ x = SUC y”,
-      LESS_EQ_TRANS,NOT_LESS,LESS_EQ_REFL,LESS_IMP_LESS_OR_EQ]
-QED
-
-Theorem FINITE_LEQ :
-∀t. FINITE {i | i <= t}
-Proof
- Induct
-  >> rw []
-  >> ‘{i | i ≤ SUC t} = SUC t INSERT {i | i ≤ t}’ by rw [EXTENSION]
-  >> metis_tac[FINITE_INSERT]
-QED
-
-Theorem MinMax_Prop :
- ∀X Min Max.
-     MinMax X = (Min,Max)
-      ⇒
-      ∀t. Min t = MIN_SET{X i | i ≤ t} ∧
-           Max t = MAX_SET{X i | i ≤ t}
-Proof
- rw[MinMax_thm]
- >- (HO_MATCH_MP_TAC MIN_SET_ELIM
-     >> rw[EXTENSION,PULL_EXISTS]
-     >- metis_tac [LESS_EQ_REFL]
-     >- metis_tac [EQ_LESS_EQ,MinFn_is_min])
- >- (HO_MATCH_MP_TAC MAX_SET_ELIM
-     >> rw[EXTENSION,PULL_EXISTS]
-     >- (‘FINITE{i | i ≤ t}’ by metis_tac [FINITE_LEQ] >>
-         ‘FINITE (IMAGE X {i | i ≤ t})’ by metis_tac [IMAGE_FINITE] >>
-          fs [GSPEC_IMAGE, combinTheory.o_DEF])
-     >- metis_tac [LESS_EQ_REFL]
-     >- metis_tac [EQ_LESS_EQ,MaxFn_is_max])
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Examples of recursive definitions.                                        *)
-(*                                                                           *)
-(*    N = 0 -> pre(N) + 1                                                    *)
-(*    A = F -> not (pre(N))                                                  *)
-(*---------------------------------------------------------------------------*)
-
-val N_def = Lustre_Def
-  "N"
-  “?f. f = returns N.
-           N = (const 0 -> pre N + const 1)”
-;
-
-val A_def = Lustre_Def
-  "A"
-  “?f. f = returns A.
-           A = (false -> not(pre A))”
-;
-
-Theorem N_thm :
- ∀t . N t = t
-Proof
- rw_tac lustre_ss [N_def]
-  >> SELECT_ELIM_TAC
-  >> conj_tac
-  >- (qexists_tac `I` >> Induct >> rw[combinTheory.I_THM])
-  >- (rpt strip_tac
-       >> Induct_on `t`
-       >> ONCE_ASM_REWRITE_TAC[]
-       >> WEAKEN_TAC is_forall
-       >> rw [])
-QED
-
-Theorem A_thm :
-  !n. A n = if n=0 then F else ~A(n-1)
-Proof
-rw_tac lustre_ss [A_def]
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘ODD’ >> Induct >> rw[ODD])
- >- (rpt strip_tac
-       >> Induct_on `n`
-       >> ONCE_ASM_REWRITE_TAC[]
-       >> WEAKEN_TAC is_forall
-       >> rw [EQ_IMP_THM] >> rw[])
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Factorial                                                                 *)
-(*                                                                           *)
-(*   Fact = 1 -> N * pre(Fact)                                               *)
-(*   N    = 0 -> pre(N) + 1                                                  *)
-(*---------------------------------------------------------------------------*)
-
-val Fact_def = Lustre_Def
-  "Fact"
-  “?f. f = returns Fact.
-           var N. (Fact = (const 1 -> N * pre(Fact))) ∧
-                  (N    = (const 0 -> pre(N) + const 1))”
-;
-
-Theorem Fact_thm :
-  ∀n. Fact n = FACT n
-Proof
- rw_tac lustre_ss [Fact_def]
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘FACT’ >> qexists_tac ‘I’ >> conj_tac
-     >> Cases
-     >- metis_tac [FACT]
-     >- metis_tac [FACT,NOT_SUC, I_THM,MULT_SYM,SUC_SUB1]
-     >- metis_tac [I_THM]
-     >- metis_tac [I_THM,NOT_SUC,ADD1,SUC_SUB1])
- >- (Ho_Rewrite.REWRITE_TAC [PULL_EXISTS]
-      >> rpt strip_tac
-      >> Induct_on `n`
-      >> ONCE_ASM_REWRITE_TAC[FACT]
-      >- metis_tac[]
-      >- (REWRITE_TAC [NOT_SUC,ADD1,SUC_SUB1] >>
-          ‘∀t. N' t = t’ by
-             (Induct >> ONCE_ASM_REWRITE_TAC[]
-               >> metis_tac [NOT_SUC,ADD1,SUC_SUB1])
-           >> fs[]))
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Fibonacci                                                                 *)
-(*---------------------------------------------------------------------------*)
-
-val Fib_def = Lustre_Def
-  "Fib"
-  “?f. f = returns Fib.
-           Fib = (const 1 -> pre(Fib + (const 0 -> pre Fib)))”
-;
-
-
-(*
-Theorem Fib_thm :
-  ∀n. Fib n =
-         if n = 0 ∨ n = 1 then
-           1
-         else Fib (n-1) + Fib (n-2)
-Proof
- rw_tac lustre_ss [Fib_def]
- >> SELECT_ELIM_TAC
- >> conj_tac
- >-
-End
-*)
+val _ = lustre_syntax();
 
 (*===========================================================================*)
 (* Past-time temporal logic                                                  *)
@@ -422,24 +136,24 @@ End
 (*	tel;                                                                 *)
 (*---------------------------------------------------------------------------*)
 
-val Yesterday_def = Lustre_Def
-  "Yesterday"
+val Yesterday_def = Lustre_Node_Def
+   "Yesterday"
   “∀A. ?f. f = returns Out.
                 Out = (const F -> pre A)”;
 
-val Zyesterday_def = Lustre_Def
-  "Zyesterday"
+val Zyesterday_def = Lustre_Node_Def
+   "Zyesterday"
   “∀A. ?f. f = returns Out.
                 Out = (const T -> pre A)”;
 
 Theorem Yesterday_thm :
-  ∀X t. Yesterday X t = if t = 0n then F else X (t-1)
+  ∀P t. Yesterday P t = if t = 0n then F else P (t-1)
 Proof
  rw_tac lustre_ss [Yesterday_def]
 QED
 
 Theorem Zyesterday_thm :
-  ∀X t. Zyesterday X t = if t = 0n then T else X (t-1)
+  ∀P t. Zyesterday P t = if t = 0n then T else P (t-1)
 Proof
  rw_tac lustre_ss [Zyesterday_def]
 QED
@@ -448,6 +162,7 @@ QED
 (*---------------------------------------------------------------------------*)
 (* node Historically(i: bool) returns (o: bool);                             *)
 (* let                                                                       *)
+(*  -- some candidates                                                       *)
 (*	o = i and (true -> pre(o));                                          *)
 (*	o = true -> i and pre(o));                                           *)
 (*	o = i -> i and pre(o));                                              *)
@@ -455,27 +170,37 @@ QED
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-val Historically_def = Lustre_Def
-  "Historically"
+val Historically_def = Lustre_Node_Def
+   "Historically"
   “∀A. ?f. f = returns H.
-               H = (const T -> pre (A and H))”
+                H = (const T -> pre (A and H))”
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Important to draw the distinction between time and steps in the           *)
-(* computation. At time zero, global state is initialized. At time one is    *)
-(* when the first thread cycle happens, i.e., inputs are read, the step      *)
-(* function is called on the state and the inputs, and the state is written  *)
-(* and the outputs are performed.                                            *)
+(* Important to draw the distinction between *time* and *steps in the        *)
+(* computation*, (or "thread invocations"). At t=0, global state is          *)
+(* initialized. At t=1 is when the first thread cycle happens, i.e., inputs  *)
+(* are read, the step function is called on the state and the inputs, and    *)
+(* the state is written and the outputs are performed. For example, at t=1,  *)
+(* P(0) is accessed. Thus                                                    *)
+(*                                                                           *)
+(*   Historically P t = P(0) and ... and P(t-1)                              *)
+(*                                                                           *)
+(* One might instead think that                                              *)
+(*                                                                           *)
+(*   Historically P t <=> !n. n <= t ==> P n,                                *)
+(*                                                                           *)
+(* but that would mean that P would hold for t+1 invocations, which is one   *)
+(* step in the future.                                                       *)
 (*---------------------------------------------------------------------------*)
 
 Theorem Historically_thm :
- ∀t. Historically X t ⇔ ∀n. n < t ⇒ X n
+ ∀t. Historically P t ⇔ ∀n. n < t ⇒ P n
 Proof
  rw_tac lustre_ss [Historically_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘\i. ∀j. j < i ⇒ X j’
+ >- (qexists_tac ‘\i. ∀j. j < i ⇒ P j’
       >> Induct
       >> rw [EQ_IMP_THM]
       >> ‘j < x ∨ j = x’ by decide_tac
@@ -495,19 +220,19 @@ QED
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-val Once_def = Lustre_Def
+val Once_def = Lustre_Node_Def
   "Once"
   “∀A. ?f. f = returns H.
                H = (const F -> pre (A or H))”
 ;
 
 Theorem Once_thm :
- ∀t. Once X t ⇔ ∃n. n < t ∧ X n
+ ∀t. Once P t ⇔ ∃n. n < t ∧ P n
 Proof
  rw_tac lustre_ss [Once_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘\i. ∃j. j < i ∧ X j’
+ >- (qexists_tac ‘\i. ∃j. j < i ∧ P j’
       >> Induct
       >> rw [EQ_IMP_THM]
       >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
@@ -525,47 +250,29 @@ QED
 (* tel;                                                                      *)
 (*                                                                           *)
 (* The intuition is that there is a time where b is high and in the next     *)
-(* step a is high and stays that way. It is ambiguous what happens with a    *)
-(* trace of size one where B 0 is true. The following defn specifies the     *)
-(* situation where b starts high as being true. This makes for a clean       *)
-(* semantic specification (agrees with Havelund&Rosu) but then the           *)
-(* deMorgan equivalence with Trigger is not valid.                           *)
+(* step a sequence of a's goes all the way to the end of the trace.          *)
 (*---------------------------------------------------------------------------*)
 
-val Since_def = Lustre_Def
+val Since_def = Lustre_Node_Def
   "Since"
   “∀P Q. ∃f. f = returns S.
                S = (const F -> pre (Q or (P and S)))”;
+
+(*---------------------------------------------------------------------------*)
+(* Recursive function modelling Since                                        *)
+(*---------------------------------------------------------------------------*)
 
 Definition Since_Rec_def :
   (Since_Rec P Q 0 ⇔ F) ∧
   (Since_Rec P Q (SUC n) ⇔ Q n ∨ (P n ∧ Since_Rec P Q n))
 End
 
+(*---------------------------------------------------------------------------*)
+(* Recall that P and Q are being looked at strictly below t                  *)
+(*---------------------------------------------------------------------------*)
+
 Theorem Since_lr :
  ∀P Q t. Since P Q t ⇒ ∃i. i < t ∧ Q i ∧ ∀j. i < j ∧ j < t ⇒ P j
-Proof
-simp_tac lustre_ss [Since_def]
- >> rpt gen_tac
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘Since_Rec P Q’
-     >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> rpt strip_tac
-      >- (WEAKEN_TAC is_forall >> qexists_tac ‘t’ >> simp[])
-      >- (fs []
-          >> qexists_tac ‘i’
-          >> qpat_x_assum ‘∀a. p ⇔ q’ kall_tac
-          >> rw []
-          >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”]))
-QED
-
-Theorem Since_lr_leq :
- ∀P Q t. Since P Q t ⇒ ∃i. i ≤ t ∧ Q i ∧ ∀j. i < j ∧ j ≤ t ⇒ P j
 Proof
 simp_tac lustre_ss [Since_def]
  >> rpt gen_tac
@@ -617,13 +324,22 @@ QED
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-Definition Weak_Since_def :
- Weak_Since (A: num -> bool, B:num->bool) t =
-   if t=0 then
-      T
-    else
-      B(t) \/ (A(t) /\ Weak_Since (A,B) (t-1))
+val Weak_Since_def = Lustre_Node_Def
+   "Weak_Since"
+   “∀P Q. ∃f. f = returns S. S = (const T -> pre (Q or (P and S)))”;
+
+(*---------------------------------------------------------------------------*)
+(* Recursive definition modelling the Lustre                                 *)
+(*---------------------------------------------------------------------------*)
+
+Definition Weak_Since_Rec_def :
+ (Weak_Since_Rec P Q 0 ⇔ T) ∧
+ (Weak_Since_Rec P Q (SUC n) ⇔ Q n \/ (P n /\ Weak_Since_Rec P Q n))
 End
+
+(*---------------------------------------------------------------------------*)
+(* Needs spec and proof                                                      *)
+(*---------------------------------------------------------------------------*)
 
 (*---------------------------------------------------------------------------*)
 (* node Trigger (a: bool, b:bool) returns (o: bool);                         *)
@@ -632,154 +348,18 @@ End
 (* tel;                                                                      *)
 (*---------------------------------------------------------------------------*)
 
-Definition Trigger_def :
- (Trigger (A,B) 0 ⇔ A 0 ∧ B 0) ∧
- (Trigger (A,B) (SUC t) ⇔ B (SUC t) ∧ (A (SUC t) ∨ Trigger (A,B) t))
+val Trigger_def = Lustre_Node_Def
+   "Trigger"
+   “∀P Q. ∃f. f = returns S. S = (const T -> pre (Q and (P or S)))”;
+
+Definition Trigger_Rec_def :
+ (Trigger_Rec P Q 0 ⇔ T) ∧
+ (Trigger_Rec P Q (SUC t) ⇔ Q t ∧ (P t ∨ Trigger_Rec P Q t))
 End
 
-(*
-
 (*---------------------------------------------------------------------------*)
-(* Switch                                                                    *)
+(* Needs spec and proof                                                      *)
 (*---------------------------------------------------------------------------*)
 
-val Switch_def =
- Define
-  `(Switch (on,off) 0 = on 0) /\
-   (Switch (on,off) (SUC t) =
-      if Switch (on,off) t
-       then (not off) (SUC t)
-         else on (SUC t))`;
-
-val SwitchEq =
- prove
-  (``Switch (on,off) = if (false -> pre(Switch(on,off))) then not off else  on``,
-   CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
-    THEN RW_TAC arith_ss [Lustre_not_def,Lustre_false_def,Lustre_pre_def,
-                          Lustre_if_then_else_def,Lustre_init_stream_def]
-    THEN Induct_on `n`
-    THEN RW_TAC arith_ss [Switch_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,
-                          Lustre_if_then_else_def,Lustre_init_stream_def]);
-
-val SwitchUniqueImp =
- prove
-  (``!s on off. (s = if (false -> pre s) then not off else on) ==> (s = Switch (on,off))``,
-    REPEAT GEN_TAC
-     THEN CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
-     THEN REWRITE_TAC[Switch_def,Lustre_not_def,Lustre_false_def,
-                      Lustre_pre_def,Lustre_if_then_else_def,Lustre_init_stream_def]
-     THEN DISCH_TAC
-     THEN Induct
-     THEN ONCE_ASM_REWRITE_TAC[]
-     THEN REWRITE_TAC[Switch_def,Lustre_not_def,Lustre_false_def, Lustre_pre_def,
-                      Lustre_if_then_else_def,Lustre_init_stream_def,
-                      DECIDE``~(SUC n = 0) /\ (SUC n - 1 = n)``]
-     THEN POP_ASSUM(fn th => REWRITE_TAC[th]));
-
-val SwitchUnique =
- prove
-  (``!s on off. (s = if (false -> pre s) then not off else on) = (s = Switch (on,off))``,
-   METIS_TAC[SwitchUniqueImp, SwitchEq]);
-
-val Switch =
- prove
-  (``Switch (on,off) =
-     returns s.
-      (s = if (false -> pre s) then not off else on)``,
-   METIS_TAC[SwitchUnique]);
-
-(*---------------------------------------------------------------------------*)
-(* Counter                                                                   *)
-(*---------------------------------------------------------------------------*)
-
-val Count_def =
- Define
-  `(Count (reset,x) 0 =
-     if reset 0 then 0 else if x 0 then 1 else 0)
-   /\
-   (Count (reset,x) (SUC t) =
-     if reset(SUC t)
-      then 0 else
-     if x(SUC t) then Count (reset,x) t + 1 else Count (reset,x) t)`;
-
-val CountEq =
- prove
-  (``Count (reset,x) =
-      if reset  then
-       (const 0)
-      else
-       if x then
-         ((const 0 -> pre(Count(reset,x))) + const 1)
-       else
-         (const 0 -> pre(Count(reset,x)))``,
-   CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
-    THEN SIMP_TAC arith_ss [Lustre_not_def,Lustre_false_def,Lustre_pre_def,
-          Lustre_if_then_else_def,Lustre_const_def,Lustre_init_stream_def,Lustre_add_def]
-    THEN Induct_on `n`
-    THEN RW_TAC arith_ss [Count_def,Lustre_not_def,Lustre_false_def,
-			  Lustre_pre_def,Lustre_if_then_else_def,Lustre_init_stream_def]);
-
-val CountUniqueImp =
- prove
-  (``!c reset x.
-      (c = if reset then const 0
-            else if x then (const 0 -> pre c) + const 1
-            else (const 0 -> pre c))
-      ==>
-      (c = Count (reset,x))``,
-    REPEAT GEN_TAC
-     THEN CONV_TAC(DEPTH_CONV FUN_EQ_CONV)
-     THEN REWRITE_TAC[Count_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,
-          Lustre_if_then_else_def,Lustre_init_stream_def,Lustre_const_def,Lustre_add_def]
-     THEN DISCH_TAC
-     THEN Induct
-     THEN ONCE_ASM_REWRITE_TAC[]
-     THEN REWRITE_TAC[Count_def,Lustre_not_def,Lustre_false_def,Lustre_pre_def,
-                      Lustre_if_then_else_def,Lustre_init_stream_def,
-                      DECIDE``~(SUC n = 0) /\ (SUC n - 1 = n)``]
-     THEN EVAL_TAC
-     THEN POP_ASSUM(fn th => REWRITE_TAC[th]));
-
-val CountUnique =
- prove
-  (``!c reset x.
-      (c = if reset then const 0
-            else if x then (const 0 -> pre c) + const 1
-            else (const 0 -> pre c))
-      =
-      (c = Count (reset,x))``,
-   METIS_TAC[CountUniqueImp, CountEq]);
-
-val Count =
- prove
-  (``Count (reset,x) =
-     returns c.
-      (c = if reset then const 0
-            else if x then (const 0 -> pre c) + const 1
-            else (const 0 -> pre c))``,
-   METIS_TAC[CountUnique]);
-
-(* MinMaxAverage *)
-
-val MinMaxAverage_def =
- Define
-  `MinMaxAverage x = Average(MinMax x)`;
-
-val MinMaxAverageUnique =
- prove
-  (``(?min max. (a = Average (min,max)) /\ ((min,max) = MinMax x)) =
-     (a = MinMaxAverage x)``,
-   METIS_TAC[MinMaxAverage_def,pairTheory.PAIR]);
-
-val MinMaxAverage =
- prove
-  (``MinMaxAverage x =
-      returns a.
-       var min max.
-        (a = Average(min,max)) /\
-        ((min,max) = MinMax x)``,
-   METIS_TAC[MinMaxAverageUnique]);
 
 val _ = export_theory();
-
-*)

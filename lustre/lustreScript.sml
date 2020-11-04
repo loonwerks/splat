@@ -111,28 +111,21 @@ val _ = set_fixity "==" (Infixl 99);
 (* v1 ... vn making the equations true.                                      *)
 (*---------------------------------------------------------------------------*)
 
-(*
-val _ = new_binder("returns",type_of``$@``);
-val _ = new_binder("var",type_of``$?``);
-*)
-
-val _ = new_binder("returns",type_of``$@``);
-val _ = new_binder("var",type_of``$?``);
-
-val _ = overload_on ("returns", ``$@``);
-val _ = overload_on ("var",     ``$?``);
-
-fun subvert() =
+fun lustre_syntax() =
  let in
-   overload_on ("returns", ``$@``);
-   overload_on ("var",     ``$?``)
+   set_fixity "returns" Binder;
+   set_fixity "var" Binder;
+   overload_on ("returns", boolSyntax.select);
+   overload_on ("var",     boolSyntax.existential)
  end;
 
-fun revert() =
+fun undo_lustre_syntax() =
  let in
    clear_overloads_on "returns";
    clear_overloads_on "var"
  end;
+
+val _ = lustre_syntax();
 
 (*---------------------------------------------------------------------------*)
 (* Support for making Lustre-like definitions.                               *)
@@ -314,6 +307,31 @@ Proof
 QED
 
 (*---------------------------------------------------------------------------*)
+(* MinMaxAverage                                                             *)
+(*---------------------------------------------------------------------------*)
+(*
+
+val MinMaxAverage_def =
+ Define
+  `MinMaxAverage x = Average(MinMax x)`;
+
+val MinMaxAverageUnique =
+ prove
+  (``(?min max. (a = Average (min,max)) /\ ((min,max) = MinMax x)) =
+     (a = MinMaxAverage x)``,
+   METIS_TAC[MinMaxAverage_def,pairTheory.PAIR]);
+
+val MinMaxAverage =
+ prove
+  (``MinMaxAverage x =
+      returns a.
+       var min max.
+        (a = Average(min,max)) /\
+        ((min,max) = MinMax x)``,
+   METIS_TAC[MinMaxAverageUnique]);
+*)
+
+(*---------------------------------------------------------------------------*)
 (* Examples of recursive definitions.                                        *)
 (*                                                                           *)
 (*    N = 0 -> pre(N) + 1                                                    *)
@@ -423,236 +441,6 @@ Proof
 End
 *)
 
-(*===========================================================================*)
-(* Past-time temporal logic                                                  *)
-(*===========================================================================*)
-
-(*---------------------------------------------------------------------------*)
-(* node Yesterday(i: bool) returns (o: bool);                                *)
-(* 	let                                                                  *)
-(*		o = false -> pre(i);                                         *)
-(*	tel;                                                                 *)
-(*                                                                           *)
-(* node Zyesterday(i: bool) returns (o: bool);                               *)
-(* 	let                                                                  *)
-(*		o = true -> pre(i);                                          *)
-(*	tel;                                                                 *)
-(*---------------------------------------------------------------------------*)
-
-val Yesterday_def = Lustre_Def
-  "Yesterday"
-  “∀A. ?f. f = returns Out.
-                Out = (const F -> pre A)”;
-
-val Zyesterday_def = Lustre_Def
-  "Zyesterday"
-  “∀A. ?f. f = returns Out.
-                Out = (const T -> pre A)”;
-
-Theorem Yesterday_thm :
-  ∀X t. Yesterday X t = if t = 0n then F else X (t-1)
-Proof
- rw_tac lustre_ss [Yesterday_def]
-QED
-
-Theorem Zyesterday_thm :
-  ∀X t. Zyesterday X t = if t = 0n then T else X (t-1)
-Proof
- rw_tac lustre_ss [Zyesterday_def]
-QED
-
-
-(*---------------------------------------------------------------------------*)
-(* node Historically(i: bool) returns (o: bool);                             *)
-(* let                                                                       *)
-(*	o = i and (true -> pre(o));                                          *)
-(*	o = true -> i and pre(o));                                           *)
-(*	o = i -> i and pre(o));                                              *)
-(*	o = i and Zyesterday (o);                                            *)
-(* tel;                                                                      *)
-(*---------------------------------------------------------------------------*)
-
-val Historically_def = Lustre_Def
-  "Historically"
-  “∀A. ?f. f = returns H.
-               H = (const T -> pre (A and H))”
-;
-
-(*---------------------------------------------------------------------------*)
-(* Important to draw the distinction between time and steps in the           *)
-(* computation. At time zero, global state is initialized. At time one is    *)
-(* when the first thread cycle happens, i.e., inputs are read, the step      *)
-(* function is called on the state and the inputs, and the state is written  *)
-(* and the outputs are performed.                                            *)
-(*---------------------------------------------------------------------------*)
-
-Theorem Historically_thm :
- ∀t. Historically X t ⇔ ∀n. n < t ⇒ X n
-Proof
- rw_tac lustre_ss [Historically_def]
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘\i. ∀j. j < i ⇒ X j’
-      >> Induct
-      >> rw [EQ_IMP_THM]
-      >> ‘j < x ∨ j = x’ by decide_tac
-      >> metis_tac[])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
-QED
-
-(*---------------------------------------------------------------------------*)
-(* node Once (i: bool) returns (o: bool);                                    *)
-(* let                                                                       *)
-(*	o = i or (false -> pre(o));                                          *)
-(*	o = false ->  pre(i or o);                                          *)
-(* tel;                                                                      *)
-(*---------------------------------------------------------------------------*)
-
-val Once_def = Lustre_Def
-  "Once"
-  “∀A. ?f. f = returns H.
-               H = (const F -> pre (A or H))”
-;
-
-Theorem Once_thm :
- ∀t. Once X t ⇔ ∃n. n < t ∧ X n
-Proof
- rw_tac lustre_ss [Once_def]
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘\i. ∃j. j < i ∧ X j’
-      >> Induct
-      >> rw [EQ_IMP_THM]
-      >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
-QED
-
-(*---------------------------------------------------------------------------*)
-(* node Since (a: bool, b:bool) returns (o: bool);                           *)
-(* let                                                                       *)
-(*	o = b or (a and (false -> pre(o)));                                  *)
-(* tel;                                                                      *)
-(*                                                                           *)
-(* The intuition is that there is a time where b is high and in the next     *)
-(* step a is high and stays that way. It is ambiguous what happens with a    *)
-(* trace of size one where B 0 is true. The following defn specifies the     *)
-(* situation where b starts high as being true. This makes for a clean       *)
-(* semantic specification (agrees with Havelund&Rosu) but then the           *)
-(* deMorgan equivalence with Trigger is not valid.                           *)
-(*---------------------------------------------------------------------------*)
-
-val Since_def = Lustre_Def
-  "Since"
-  “∀P Q. ∃f. f = returns S.
-               S = (const F -> pre (Q or (P and S)))”;
-
-Definition Since_Rec_def :
-  (Since_Rec P Q 0 ⇔ F) ∧
-  (Since_Rec P Q (SUC n) ⇔ Q n ∨ (P n ∧ Since_Rec P Q n))
-End
-
-Theorem Since_lr :
- ∀P Q t. Since P Q t ⇒ ∃i. i < t ∧ Q i ∧ ∀j. i < j ∧ j < t ⇒ P j
-Proof
-simp_tac lustre_ss [Since_def]
- >> rpt gen_tac
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘Since_Rec P Q’
-     >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> rpt strip_tac
-      >- (WEAKEN_TAC is_forall >> qexists_tac ‘t’ >> simp[])
-      >- (fs []
-          >> qexists_tac ‘i’
-          >> qpat_x_assum ‘∀a. p ⇔ q’ kall_tac
-          >> rw []
-          >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”]))
-QED
-
-Theorem Since_lr_leq :
- ∀P Q t. Since P Q t ⇒ ∃i. i ≤ t ∧ Q i ∧ ∀j. i < j ∧ j ≤ t ⇒ P j
-Proof
-simp_tac lustre_ss [Since_def]
- >> rpt gen_tac
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘Since_Rec P Q’
-     >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> rpt strip_tac
-      >- (WEAKEN_TAC is_forall >> qexists_tac ‘t’ >> simp[])
-      >- (fs []
-          >> qexists_tac ‘i’
-          >> qpat_x_assum ‘∀a. p ⇔ q’ kall_tac
-          >> rw []
-          >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”]))
-QED
-
-Theorem Since_rl :
- ∀P Q t i. i < t ∧ Q i ∧ (∀j. i < j ∧ j < t ⇒ P j) ⇒ Since P Q t
-Proof
-rw_tac lustre_ss [Since_def]
- >> SELECT_ELIM_TAC
- >> conj_tac
- >- (qexists_tac ‘Since_Rec P Q’
-     >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> rpt strip_tac
-      >> ‘i < t ∨ i = t’ by decide_tac
-      >- fs[]
-      >- metis_tac[])
-QED
-
-Theorem Since_thm :
- ∀P Q t. Since P Q t ⇔ ∃i. i < t ∧ Q i ∧ ∀j. i < j ∧ j < t ⇒ P j
-Proof
- metis_tac [Since_lr,Since_rl]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* node Weak_Since (a: bool, b:bool) returns (o: bool);                      *)
-(* let                                                                       *)
-(*	o = b or (a and (true -> pre(o)));                                   *)
-(* tel;                                                                      *)
-(*---------------------------------------------------------------------------*)
-
-Definition Weak_Since_def :
- Weak_Since (A: num -> bool, B:num->bool) t =
-   if t=0 then
-      T
-    else
-      B(t) \/ (A(t) /\ Weak_Since (A,B) (t-1))
-End
-
-(*---------------------------------------------------------------------------*)
-(* node Trigger (a: bool, b:bool) returns (o: bool);                         *)
-(* let                                                                       *)
-(*	o = b and (a or (true -> pre(o)));                                   *)
-(* tel;                                                                      *)
-(*---------------------------------------------------------------------------*)
-
-Definition Trigger_def :
- (Trigger (A,B) 0 ⇔ A 0 ∧ B 0) ∧
- (Trigger (A,B) (SUC t) ⇔ B (SUC t) ∧ (A (SUC t) ∨ Trigger (A,B) t))
-End
 
 (*
 
@@ -775,28 +563,5 @@ val Count =
             else if x then (const 0 -> pre c) + const 1
             else (const 0 -> pre c))``,
    METIS_TAC[CountUnique]);
-
-(* MinMaxAverage *)
-
-val MinMaxAverage_def =
- Define
-  `MinMaxAverage x = Average(MinMax x)`;
-
-val MinMaxAverageUnique =
- prove
-  (``(?min max. (a = Average (min,max)) /\ ((min,max) = MinMax x)) =
-     (a = MinMaxAverage x)``,
-   METIS_TAC[MinMaxAverage_def,pairTheory.PAIR]);
-
-val MinMaxAverage =
- prove
-  (``MinMaxAverage x =
-      returns a.
-       var min max.
-        (a = Average(min,max)) /\
-        ((min,max) = MinMax x)``,
-   METIS_TAC[MinMaxAverageUnique]);
-
-val _ = export_theory();
 
 *)
