@@ -99,21 +99,18 @@ val _ = set_fixity "==" (Infixl 99);
 (* Support for Lustre-like syntax.                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun lustre_syntax() =
- let in
-   set_fixity "returns" Binder;
-   set_fixity "var" Binder;
-   overload_on ("returns", boolSyntax.select);
-   overload_on ("var",     boolSyntax.existential)
- end;
+fun lustre_syntax b =   (* turns treatment of "returns" and "var" on and off *)
+ if b then
+   (set_fixity "returns" Binder;
+    set_fixity "var" Binder;
+    overload_on ("returns", boolSyntax.select);
+    overload_on ("var",     boolSyntax.existential))
+ else
+  (clear_overloads_on "returns";
+   clear_overloads_on "var")
+;
 
-fun undo_lustre_syntax() =
- let in
-   clear_overloads_on "returns";
-   clear_overloads_on "var"
- end;
-
-val _ = lustre_syntax();
+val _ = lustre_syntax true;
 
 (*---------------------------------------------------------------------------*)
 (* Support for making Lustre-like definitions.                               *)
@@ -137,8 +134,6 @@ fun Lustre_Def tm =
    (defName^"_def", [defName],
     Ho_Rewrite.PURE_REWRITE_RULE [SKOLEM_THM] (METIS_PROVE [] def_tm))
   end;
-
-val _ = lustre_syntax();
 
 (*===========================================================================*)
 (* Past-time temporal logic                                                  *)
@@ -198,12 +193,11 @@ val Historically_def =
    “Historically A = returns H. H = (const T -> pre (A and H))”;
 
 (*---------------------------------------------------------------------------*)
-(* Important to draw the distinction between *time* and *steps in the        *)
-(* computation*, (or "thread invocations"). At t=0, global state is          *)
-(* initialized. At t=1 is when the first thread cycle happens, i.e., inputs  *)
-(* are read, the step function is called on the state and the inputs, and    *)
-(* the state is written and the outputs are performed. For example, at t=1,  *)
-(* P(0) is accessed. Thus                                                    *)
+(* Something subtle that plagues me: it is important to draw the distinction *)
+(* between *time* and *steps in the computation*, (or "thread invocations"). *)
+(* A memory-based stream needs to be given an initial value at time t=0,     *)
+(* while the first read of input streams happens at t=1. Thus input streams  *)
+(* are shifted by one. For example, at t=1, P(0) is accessed. Thus           *)
 (*                                                                           *)
 (*   Historically P t = P(0) and ... and P(t-1)                              *)
 (*                                                                           *)

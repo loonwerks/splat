@@ -115,21 +115,19 @@ val _ = set_fixity "==" (Infixl 99);
 (* equations specified in the body of the node.                              *)
 (*---------------------------------------------------------------------------*)
 
-fun lustre_syntax() =
- let in
-   set_fixity "returns" Binder;
-   set_fixity "var" Binder;
-   overload_on ("returns", boolSyntax.select);
-   overload_on ("var",     boolSyntax.existential)
- end;
+fun lustre_syntax b =   (* turns treatment of "returns" and "var" on and off *)
+ if b then
+   (set_fixity "returns" Binder;
+    set_fixity "var" Binder;
+    overload_on ("returns", boolSyntax.select);
+    overload_on ("var",     boolSyntax.existential))
+ else
+  (clear_overloads_on "returns";
+   clear_overloads_on "var")
+;
 
-fun undo_lustre_syntax() =
- let in
-   clear_overloads_on "returns";
-   clear_overloads_on "var"
- end;
+val _ = lustre_syntax true;
 
-val _ = lustre_syntax();
 
 (*---------------------------------------------------------------------------*)
 (* Support for making Lustre-like definitions.                               *)
@@ -159,18 +157,84 @@ fun Lustre_Def tm =
 (*===========================================================================*)
 
 (*---------------------------------------------------------------------------*)
-(* Max                                                                       *)
+(* Max (pointwise)                                                           *)
 (*---------------------------------------------------------------------------*)
 
 val Max_def =
  Lustre_Def
-  “Max A B = returns M.
-      M = if A >= B then A else B”;
+  “Max A B = returns M:num->num.
+      M = (if A >= B then A else B)”;
 
 Theorem Max_thm :
   Max A B t = MAX (A t) (B t)
 Proof
  rw_tac lustre_ss [MAX_DEF,Max_def]
+QED
+
+
+(*---------------------------------------------------------------------------*)
+(* Iterative Max on stream                                                   *)
+(*---------------------------------------------------------------------------*)
+
+val Max_Stream_def =
+ Lustre_Def
+  “Max_Stream A = returns M:num->num.
+      M = (A -> (if A >= pre M then A else pre M))”;
+
+(*---------------------------------------------------------------------------*)
+(* Witness                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+Definition MaxFn_def :
+  MaxFn X 0 = X 0 ∧
+  MaxFn X (SUC t) = MAX (X (SUC t)) (MaxFn X t)
+End
+
+Theorem Max_Stream_inhabits :
+  ∀t. ∃n. n ≤ t ∧ Max_Stream A t = A n
+Proof
+ rw_tac lustre_ss [Max_Stream_def]
+  >> SELECT_ELIM_TAC
+  >> conj_tac
+  >- (qexists_tac ‘MaxFn A’ >> Induct >> rw[MaxFn_def,MAX_DEF])
+  >- (rpt strip_tac
+      >> Induct_on ‘t’
+      >> ONCE_ASM_REWRITE_TAC[]
+      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
+      >- simp[]
+      >- (WEAKEN_TAC is_forall
+          >> rw[]
+          >> metis_tac [LESS_EQ_REFL,DECIDE “a <= SUC b ⇔ a≤b ∨ a = SUC b”]))
+QED
+
+Theorem Max_Stream_is_max :
+  ∀t n. n ≤ t ⇒ A n ≤ Max_Stream A t
+Proof
+ rw_tac lustre_ss [Max_Stream_def]
+  >> SELECT_ELIM_TAC
+  >> conj_tac
+  >- (qexists_tac ‘MaxFn A’ >> Induct >> rw[MaxFn_def,MAX_DEF])
+  >- (rpt strip_tac
+      >> Induct_on ‘t’
+      >> ONCE_ASM_REWRITE_TAC[]
+      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
+      >> WEAKEN_TAC is_forall
+      >> rw [DECIDE “a >= b ⇔ b ≤ a”]
+      >> fs [DECIDE “a <= SUC b ⇔ a≤b ∨ a = SUC b”])
+QED
+
+Theorem Max_Stream_is_MaxFn :
+  Max_Stream X = MaxFn X
+Proof
+ rw_tac lustre_ss [Max_Stream_def]
+  >> SELECT_ELIM_TAC
+  >> conj_tac
+  >- (qexists_tac ‘MaxFn X’ >> Induct >> rw[MaxFn_def,MAX_DEF])
+  >- (rpt strip_tac
+      >> Induct_on ‘x’
+      >> ONCE_ASM_REWRITE_TAC[]
+      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1,MaxFn_def,MAX_DEF]
+      >> rw[])
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -202,7 +266,11 @@ val Edge_def =
   “Edge X = returns E:num->bool.
       E = (false -> (X and not(pre X)))”;
 
-Theorem Edge_Primrec :
+(*---------------------------------------------------------------------------*)
+(* Characterization                                                          *)
+(*---------------------------------------------------------------------------*)
+
+Theorem Edge_thm :
   Edge X 0 = F /\
   Edge X (SUC t) = (~X t /\ X(t+1))
 Proof
@@ -211,7 +279,7 @@ QED
 
 
 (*---------------------------------------------------------------------------*)
-(* Running MinMax on stream                                                  *)
+(* Iterative MinMax on stream                                                *)
 (*---------------------------------------------------------------------------*)
 
 val MinMax_def =
@@ -235,11 +303,6 @@ QED
 Definition MinFn_def :
   MinFn X 0 = X 0 /\
   MinFn X (SUC t) = MIN (X (SUC t)) (MinFn X t)
-End
-
-Definition MaxFn_def :
-  MaxFn X 0 = X 0 ∧
-  MaxFn X (SUC t) = MAX (X (SUC t)) (MaxFn X t)
 End
 
 Theorem MinMax_thm :
