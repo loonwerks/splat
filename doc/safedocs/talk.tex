@@ -467,7 +467,7 @@ recognizing/parsing.
 
 \item Wouldn't it be great if the vast ocean of formal language theory could be applied?
 
-\item The self-describing aspect, unfortunately, defeats the use of
+\item The self-describing aspect, unfortunately, hampers the use of
   standard lexer and parser technology
 
 \item Regular languages are insufficient (as noted) and context-free
@@ -677,8 +677,8 @@ Operationally: \kemph{check the property; if it's true, continue on; if false, f
 {\small
 \begin{verbatim}
   charA = {ch : char, isA : Assert (ch = 97)}
-  charB = {ch : char, isA : Assert (ch = 98)}
-  charC = {ch : char, isA : Assert (ch = 99)}
+  charB = {ch : char, isB : Assert (ch = 98)}
+  charC = {ch : char, isC : Assert (ch = 99)}
 
   {A : {len: u16, elts : charA [len]}
    B : {len: u16, elts : charB [len]}
@@ -691,10 +691,7 @@ Operationally: \kemph{check the property; if it's true, continue on; if false, f
 
 \end{frame}
 
-
-
 \begin{frame}[fragile]\frametitle{Assertion example: no duplicate keys}
-
 
 {\small
 \begin{verbatim}
@@ -791,6 +788,59 @@ specification of the language to be parsed and returns an implementation
 \item Connect with recent work on formal proofs of space usage in CakeML
 
 \end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{End}
+\end{frame}
+
+
+\begin{frame}[fragile]\frametitle{Wellformed GPS}
+
+{\small
+\begin{verbatim}
+ AltitudeType = AGL | MSL
+
+ Location3D = {
+  Latitude  : f64
+  Longitude : f64
+  Altitude  : f32
+  AltitudeType : AltitudeType
+  Good-Location-Check :
+    -90.0 <= Latitude <= 90.0 and
+   -180.0 <= Longitude <= 180.0 and
+      0.0 <= Altitude <= 15000.0
+  }
+\end{verbatim}
+}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Wellformed GPS predicate}
+
+Symbolic simulation of $\LangTheta{\konst{Location3D}}$ yielding
+
+\[
+\begin{array}{l}
+ s \in \LangTheta{\konst{Location3D}} \iff \\
+\quad   \exists s_1 s_2 s_3 s_4. \\
+\qquad      s = s_1 \bullet s_2 \bullet s_3 \bullet s_4 \ \land \\
+\qquad    -90.0 \leq \konst{doubleVal}(s_1) \leq 90.0 \ \land \\
+\qquad   -180.0 \leq \konst{doubleVal}(s_2) \leq 180.0 \ \land \\
+\qquad      0.0 \leq \konst{floatVal}(s_3)  \leq 15000.0 \ \land \\
+\qquad        0 \leq \konst{natVal}(s_4) \leq 1
+\end{array}
+\]
+%
+\noindent where
+%
+\[
+\begin{array}{ll}
+ \konst{doubleVal} & : \konst{string} \to \konst{double} \\
+ \konst{floatVal}  & : \konst{string} \to \konst{float}  \\
+ \konst{natVal}    & : \konst{string} \to \konst{nat}  \\
+\end{array}
+\]
 
 \end{frame}
 
