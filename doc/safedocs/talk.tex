@@ -36,26 +36,25 @@
 
 % Title page
 
-\author{Konrad Slind}
-\institute{Collins Aerospace}
-
+\author{Konrad Slind \\ Collins Aerospace}
 \date{SafeDocs PI Meeting \par Nov. 10, 2020}
-\title{Specifying Message Formats with Contiguity Types}
+\title{Specifying Message Formats \\ with Contiguity Types}
 \maketitle
 
 \begin{frame}\frametitle{Overview}
 
 \begin{enumerate}
 \item Context: Architectural Transformations in \konst{CASE}
-\item Specifying Message Formats
+\item Self-Describing Messages
 \item Contiguity Types
+\item Extensions and Future Work
 \end{enumerate}
 \end{frame}
 
 
-\section {Architectural Transformations}
+\section {Context: Architectural Transformations in CASE}
 
-\begin{frame}\frametitle{System Architecture}
+\begin{frame}\frametitle{System Architecture Languages}
 \begin{itemize}
 
 \item General setting: \textbf{Architectural Design Languages}
@@ -80,7 +79,7 @@
 \begin{itemize}
 
 \item In the DARPA \textbf{CASE} project we are developing the idea of
-  \kemph{Security-Enhancing} transformations on such architectural
+  \kemph{Security-Enhancing} transformations on system architecture
   descriptions.
 
 \item Acronym: \colorbox{orange}{SEAT}
@@ -95,7 +94,7 @@
  \end{itemize}
 
 \item A key aspect is use of formal specification languages and
-  automatic synthesis of security mechanisms
+  automatic synthesis of security mechanisms.
 
 \end{itemize}
 
@@ -111,52 +110,10 @@ Check it out:
 
 \end{frame}
 
-%% \begin{frame}\frametitle{AADL}
-
-%% We have been using Architecture Analysis and Design Language (AADL) as
-%% our architecture modelling language.
-
-%% \begin {itemize}
-%% \item Expressive: allows specification of
-%% \begin{itemize}
-%%      \item [$\blacktriangleright$] memory and buses
-%%      \item [$\blacktriangleright$] software (types + behavior)
-%%       \item[$\blacktriangleright$] hierarchical organization of components
-%%      \item [$\blacktriangleright$] communication
-%%      \item [$\blacktriangleright$] scheduling
-%% \end{itemize}
-%% \item Tool support in Eclipse (via OSATE)
-%% \item Popular: growing user base, tutorials, books, etc.
-%% \end{itemize}
-
-%% \hspace*{30mm}
-%% \includegraphics[width=20mm,height=28mm]{book-title-0.jpg}
-%% \hspace*{5mm}
-%% \includegraphics[width=20mm,height=28mm]{book-cover.jpg}
-
-
-%% \end{frame}
-
-%% \begin{frame}\frametitle{AADL in CASE}
-
-%% AADL is extensible via \emph{annexes}. At Collins we have developed
-%% two annexes used on many projects in the Trusted Systems Group:
-
-%% \begin{description}
-%% \item [AGREE] SMT-based reasoning over Assume-Guarantee contracts on components
-%% \item [Resolute] Assurance cases as formal entities, using proof search to explore cases.
-%% \end{description}
-
-%% In CASE, AGREE is used to formulate behavioral security rqts.
-
-%% Resolute is used for structural properties, and also for linking
-%% results from disparate proof systems.
-
-%% \end{frame}
 
 \begin{frame}\frametitle{Architecture Transformations}
 
-We have been developing a collection of architecture-to-architecture maps that can be applied to
+An architecture-to-architecture map that can be applied to
 \kemph{provably increase} the security of a system.
 
 \vspace*{4mm}
@@ -259,7 +216,6 @@ fat arrow/.style={single arrow,thick,draw=blue!70,fill=blue!30,minimum height=60
 Efficient Monitoring of Safety Properties, Havelund and Rosu, TACAS 2002.
 \end{quote}
 
-
 \end{frame}
 
 
@@ -328,48 +284,45 @@ Attestation inserts measurement mechanisms into a system. These
 examine various aspects of system behavior, and send summaries back to
 an observer system.
 
-%% \newcommand\rightEye[1][1.2ex]
-%% {%
-%% \begin{tikzpicture}[scale=#1/1cm]
-%%   \draw (0,0) circle (.5);
-%%   \fill (.25,0) circle (.25);
-%% \end{tikzpicture}%
-%% }
+%% %% \newcommand\rightEye[1][1.2ex]
+%% %% {%
+%% %% \begin{tikzpicture}[scale=#1/1cm]
+%% %%   \draw (0,0) circle (.5);
+%% %%   \fill (.25,0) circle (.25);
+%% %% \end{tikzpicture}%
+%% %% }
 
-\begin{center}
-\begin{tikzpicture}[
-lefteyes/.style =
-  {circle,
-   draw=red!60, fill=red!5,
-   minimum height=20mm, minimum width = 20mm}
-]
-%Nodes
-\draw (0,0) rectangle (1,1);
-\draw (3,0) rectangle (1,1);
+%% \begin{center}
+%% \begin{tikzpicture}[
+%% lefteyes/.style =
+%%   {circle,
+%%    draw=red!60, fill=red!5,
+%%    minimum height=20mm, minimum width = 20mm}
+%% ]
+%% %Nodes
+%% \draw (0,0) rectangle (1,1);
+%% \draw (3,0) rectangle (1,1);
 
-\draw (0,-3) rectangle (1,1);
-\draw (3,-3) rectangle (1,1);
-\draw (3,-3.5) rectangle (0.5,0.5);
+%% \draw (0,-3) rectangle (1,1);
+%% \draw (3,-3) rectangle (1,1);
+%% \draw (3,-3.5) rectangle (0.5,0.5);
 
-\draw (3,-4) circle (.5);
-\fill (3.25,-4) circle (.25);
-\end{tikzpicture}
-\end{center}
+%% \draw (3,-4) circle (.5);
+%% \fill (3.25,-4) circle (.25);
+%% \end{tikzpicture}
+%% \end{center}
 
-%\hspace*{10mm}\includegraphics[width=90mm,height=40mm]{att.jpg}
+\hspace*{10mm}\includegraphics[width=90mm,height=40mm]{att.jpg}
 
 
 \end{frame}
 
-\begin{frame}\frametitle{CakeML connection}
+\begin{frame}\frametitle{CakeML implementations}
 
-  The filter, monitor, and attestation transforms generate CakeML implementations.
+  The filter, monitor, and attestation transforms generate \konst{CakeML} implementations.
 
 \begin{itemize}
- \item [$\blacktriangleright$] Currently generating source CakeML
-
- \item [$\blacktriangleright$] Want to generate binaries via the magic
-   `translator` bridge between HOL and CakeML
+ \item [$\blacktriangleright$] CakeML is a formally verified ML compiler
 
 \item This allows a theorem that connects the high-level spec of a
   component with the execution of the binary on an ISA.
@@ -380,25 +333,17 @@ lefteyes/.style =
 
 \section {Specifying Message Formats}
 
-\begin{frame}\frametitle{Solutions lead to new problems}
-
-Once implementations are created for the new system components, we
-have to guard against \kemph{increasing the attack surface} of the system.
-
-Formal specification and proof to the rescue!
-
-\end{frame}
-
-\begin{frame}\frametitle{Ports and messages}
+\begin{frame}\frametitle{Ports vs messages}
 
 Question: what does a filter operate over?
 
 \begin{itemize}
 
-\item A component communicates with other components via \kemph{typed connections}
+\item In AADL a component communicates with other components via
+  \kemph{typed connections}
 
-\item  Types are the usual finite types from programming: booleans,
-  integers, floats, arrays, records, unions, etc.
+\item Port types are the usual finite types from programming:
+  booleans, integers, floats, arrays, records, unions, etc.
 
 \item Properties in our specification language are therefore
   written over these port types.
@@ -409,7 +354,7 @@ Question: what does a filter operate over?
 
 \end{frame}
 
-\begin{frame}[fragile]\frametitle{Example : Wellformed GPS coordinates in AGREE}
+\begin{frame}[fragile]\frametitle{Example : Wellformed GPS coordinates}
 
 {\small
 \begin{verbatim}
@@ -464,16 +409,19 @@ arrays (essentially untyped).
 We need to span the gap between specifications on high level data and
 implementations over flat strings.
 
-Our approach : \kemph{\textbf{SPLAT}} (Semantic Properties for Language and Automata Theory)
-
 Seek to apply ideas from Formal Language Theory to showing properties
 of operations on high-level data.
+
+\vspace*{10mm}
+
+\kemph{\konst{SPLAT} = Semantic Properties over Language and Automata Theory}
 
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{SPLAT the early days}
 
-Initial version of SPLAT was based on HOL4 library of regexps developed with Scott Owens.
+Initial version of \konst{SPLAT} was based on a HOL4 theory of regexps and regexp
+compilation developed with Scott Owens.
 
 \begin{itemize}[<+->]
 \item [$\blacktriangleright$] Regard a message as a concatenation of \emph{fields}
@@ -481,17 +429,18 @@ Initial version of SPLAT was based on HOL4 library of regexps developed with Sco
 \item [$\blacktriangleright$] An interval spec can be translated to a regexp which is a
   predicate on the binary representation of the field.
 \item The concatenation of regexps for the message fields gives a big regexp for the message.
-\item [$\blacktriangleright$] Filter is obtained by compiling (via bespoke \konst{EVAL}) regexp to DFA.
-\item [$\blacktriangleright$] Worked example by Johannes in CakeML distrib: \verb+examples/filterProgScript.sml+
+\item [$\blacktriangleright$] Filter is obtained by compiling (deductively) regexp to DFA.
 \end{itemize}
 
 \end{frame}
+
+\section{Self-describing messages}
 
 \begin{frame}[fragile]\frametitle{Self-describing messages}
 
 Unfortunately, many message formats can't be captured by regexps.
 
-Message formats commonly have \kemph{self-describing} aspects such as
+Message formats commonly have self-describing aspects such as
 
 \begin{itemize}
 
@@ -504,59 +453,67 @@ Message formats commonly have \kemph{self-describing} aspects such as
 
 \end{itemize}
 
-In combination these features can lead to tricky formats.
-
-Such self-describing aspects can't be handled properly with regular or
-context-free languages. Maybe context-sensitive langs could work but I
-hear they are hopeless.
-
+In general, \kemph{the deeper you go the more you know} and we need to
+do a good job of modelling that accumulation of information while
+recognizing/parsing.
 
 \end{frame}
 
-\begin{frame}[fragile]\frametitle{Example: uxAS LineSearchTask messages}
+\begin{frame}\frametitle{Approaches to self-describing messages}
 
-\begin{description}
+\begin{itemize}
 
-  \item [TaskID] \verb+i64+, basic type
+\item Many message format description languages have been invented over time.
 
-  \item [Label] \verb+vString+, variable-length string
+\item Wouldn't it be great if the vast ocean of formal language theory could be applied?
 
-  \item [EligibleEntities] \verb+BoundedArray i64 32+, \\
-    variable length array of ints, length max 32.
+\item The self-describing aspect, unfortunately, defeats the use of
+  standard lexer and parser technology
 
-  \item [Parameters] \verb+BoundedArray keyValuePair_Option 8+, \\
-variable length array of optional pairs of \verb+vString+, max size 8.
+\item Regular languages are insufficient (as noted) and context-free
+  grammars can’t capture the dependency of one field (or collection of
+  fields) on another.
 
-  \item [PointList] \verb+ BoundedArray location3D_Option 1024+, \\
+\end{itemize}
+\end{frame}
 
-  \item [etc]
-\end{description}
+\begin{frame}\frametitle{Approaches to self-describing messages}
+\begin{itemize}
+
+\item Context-sensitive grammars seem like a possibility, but there is
+  very little tool support for them
+
+\item Parser combinators allow  hand-rolled parsers to be very quickly
+  constructed, and can be adapted to support the accumulation and
+  propagation of the necessary dependency information.
+
+\item Also an impressive body of work using dependent types in Coq
+
+\end{itemize}
+
+However we would like to stay on the formal language side of things
+for now since there is a strong connection between messages (sequences
+of bits/bytes) and the strings of formal language theory.
 
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{Contiguity types}
 
-We specify message formats using \kemph{contiguity types}. With this
-representation we can automatically
+  The notion is that message processing consists of
 
 \begin{itemize}
-\item generate verified message filters (and parsers)
-
-\item generate random test messages
-
-\item prove that the message-level filter has the specfied representation-level property
-  (\verb+Good_Location_Mesg+ in our example)
-
+\item accumulating field information
+\item computing values from that information when needed
 \end{itemize}
 
-%% The goal is to automatically generate an implementation of the
-%% well-formedness predicate \verb+Good_Location+ from its specification.
+In particular, we need
 
-%% There is a problem : the encoding from datastructures to strings is not specified.
+\begin{itemize}
+\item \kemph{Arithmetic} expressions for computing length fields
+\item \kemph{Boolean} expressions for computing decisions in unions
+\end{itemize}
 
-%% For uxAs, this is a fairly complex encoding.
 \end{frame}
-
 
 \begin{frame}[fragile]\frametitle{Contiguity types: syntax}
 
@@ -577,12 +534,65 @@ collection of base types closed under formation of records and arrays.
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{Contiguity types: examples}
+
+%% \fbox{
+%% \begin{verbatim}
+%%   {A : char
+%%   B  : i32
+%%   C  : u32 [1024]}
+%% \end{verbatim}
+%% }
+
+\begin{tabular}{ll}
+Simple record &
+\fbox{
+\begin{tabular}{rcl}
+  \{A & : & char \\
+  B & : & i32 \\
+  C & : & u32 [1024]\}
+\end{tabular}
+}
+\\ \\
+
+Array &
+\fbox{
+\begin{tabular}{rcl}
+  \{len & : & u16 \\
+   A   & : & i32 [\kemph{len}]\}
+\end{tabular}
+}
+\\ \\
+
+Array &
+\fbox{
+\begin{tabular}{rcl}
+  \{Dims & : & \{rows :  u16 \\
+         & &   {~} cols : u16\} \\
+ Image & : & i32 [\kemph{Dims.rows * Dims.cols}]\}
+\end{tabular}
+}
+\end{tabular}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Contiguity types: examples}
+
+Union
+
+\fbox{
+\begin{tabular}{lcl}
+  \{relno & : & u32 \\
+  \phantom{\{} B & : & i32 \\
+\phantom{\{} C & : & Union (\kemph{relno \textless 14}, \{D : u32 [B]\}) \\
+  & & {~~} (\kemph{not(relno \textless 14)}, \{ P : bool, Q : i64 [B]\}\}
+\end{tabular}
+}
+
 \end{frame}
 
 \begin{frame}[fragile]\frametitle{Contiguity types: semantics}
 
-The semantics of contiguity types is in terms of formal languages
-(sets of strings):
+The semantics of contiguity types is in terms of formal languages:
 
 \[
 % \begin{array}{l}
@@ -614,10 +624,102 @@ The semantics of contiguity types is in terms of formal languages
 \]
 \end{frame}
 
-\begin{frame}[fragile]\frametitle{Correctness of parameterized matcher}
+\begin{frame}[fragile]\frametitle{Contiguity types: semantics}
 
-We can define a function \textbf{match} which takes a contig type and
-a string and returns an assignment of slices of the string to elements of the type.
+In words:
+
+\begin{itemize}
+\item Each base type has a width and the meaning of a base type is the
+  set of all strings of the given width.
+
+\item A record translates to the language concatenation of the translations of its fields.
+
+\item An array $\konst{Array}\;\tau\; \mathit{exp}$ is the $n$-ary
+  concatenation of the language of $\tau$, where $n$ is the value of
+  $\mathit{exp}$.
+
+\item A union $\konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots
+  (\mathit{bexp}_n : \tau_n)$ maps to the translation of $\tau_i$ if
+  $\mathit{bexp}_i$ is the only boolean expression that evaluates to
+  \konst{true}.
+
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}\frametitle{Assertions}
+
+Contiguity types can express in-message assertions:
+
+\[
+\begin{array}{l}
+\konst{Assert}\;\mathit{bexp}  =
+\konst{Union}\; (\mathit{bexp}, \konst{SKIP})  (\neg\mathit{bexp}, \konst{VOID}) \\
+
+\konst{SKIP}  =  \konst{Recd} [\, ] \\
+\konst{VOID}  =  \konst{Union} (\konst{false}, -)
+\end{array}
+\]
+
+Declarative reading: evaluate the boolean expression in the current context;
+  if it is true then $\varepsilon$ else $\emptyset$,
+
+Operationally: \kemph{check the property; if it's true, continue on; if false, fail.}
+
+\konst{NB} The expressiveness is determined by the type of boolean expressions.
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Assertion example $a^n b^n c^n$}
+
+
+{\small
+\begin{verbatim}
+  charA = {ch : char, isA : Assert (ch = 97)}
+  charB = {ch : char, isA : Assert (ch = 98)}
+  charC = {ch : char, isA : Assert (ch = 99)}
+
+  {A : {len: u16, elts : charA [len]}
+   B : {len: u16, elts : charB [len]}
+   C : {len: u16, elts : charC [len]}
+   check-lang
+     : Assert (A.len = B.len and B.len = C.len)
+  }
+\end{verbatim}
+}
+
+\end{frame}
+
+
+
+\begin{frame}[fragile]\frametitle{Assertion example: no duplicate keys}
+
+
+{\small
+\begin{verbatim}
+  string = {len : u16, elts : char[len]}
+
+  {Dict : {len  : u16,
+           elts : {key:string, value: i32} [len]}
+
+   check : Assert (forall i < Dict.len,
+                   forall j < Dict.len.
+            (Dict.elts[i].key = Dict.elts[j].key iff (i = j)))
+  }
+\end{verbatim}
+}
+
+\konst{NB} The check is happening down at the byte-stream level. No
+data structures being built.
+
+\end{frame}
+
+\begin{frame}\frametitle{Matching algorithm}
+
+We have formally defined a function \textbf{match} which takes a
+contig type and a string and returns an assignment $\theta$ of slices
+of the string to elements of the type.
 
 \begin{theorem}[Soundness]
   \[
@@ -629,23 +731,65 @@ a string and returns an assignment of slices of the string to elements of the ty
 \textbf{match} has the flavor of a \kemph{parser generator}: it takes a
 specification of the language to be parsed and returns an implementation
 
-\colorbox{orange}{We use \textbf{match} to implement all filters in
-  the transformed uxAS.}
+\kemph{We use \textbf{match} to implement all filters in \konst{CASE}.}
 
 \end{frame}
 
-\begin{frame}[fragile]\frametitle{In-message assertions}
+
+\begin{frame}\frametitle{Matching algorithm}
+
+\begin{itemize}
+
+\item A successful match says that the string meets the constraints of
+  the contig type, including all constraints specified via internal
+  assertions.
+
+
+\item Operates in \emph{worklist} style
+
+\item Alternately flattens contig-type down until a base type is exposed
+
+\item At base type, the corresponding chunk of string is consumed and added to context $\theta$
+
+\item There is also an instrumented version which produces parse trees
+
+\item \kemph{Incredibly simple implementation} (approx 200 lines of SML)
+\end{itemize}
+
 \end{frame}
 
+
+\begin{frame}\frametitle{Implemented extensions}
+
+\begin{itemize}
+
+\item Changing to support bit-level message specs changes only a few lines
+
+\item Guest parsers relatively easy to support
+
+\item Easy to set up a basic test-gen capability (although see Simon
+  W. from Galois for how hard it is to do properly)
+
+\end{itemize}
+
+\end{frame}
 
 \begin{frame}\frametitle{Current and  Future Work}
 
 \begin{itemize}
-\item incorporating decoder and encoder to close the gap with the type-level specs
-\item completeness proof
-\item symbolic evaluation of a contig-type in the semantics
-\item compiling contig-types into fast copy-free implementations
-\item comparison with dependent type approach
+
+\item Symbolic evaluation of a contig-type in the semantics to \emph{pull out} properties
+
+\item Compiling contig-types into fast copy-free implementations
+
+\item Comparison with dependent type approach
+
+\item Tackle completeness proof
+
+\item Kleene star would be nice to add, but would like to avoid non-determinism
+
+\item Connect with recent work on formal proofs of space usage in CakeML
+
 \end{itemize}
 
 \end{frame}
