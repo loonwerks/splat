@@ -89,11 +89,11 @@ val _ = overload_on(">=",``Lustre_gte``);
 val _ = overload_on("COND",``Lustre_if_then_else``);
 val _ = overload_on("COND",``bool$COND``);
 
-val _ = set_fixity "->" (Infixr 470);
+val _ = set_fixity "->"  (Infix(NONASSOC,90));
 val _ = set_fixity "not" (Prefix 900);
 val _ = set_fixity "and" (Infixr 399);
-val _ = set_fixity "or" (Infixr 299);
-val _ = set_fixity "==" (Infixl 99);
+val _ = set_fixity "or"  (Infixr 299);
+val _ = set_fixity "=="  (Infixl 99);
 
 (*---------------------------------------------------------------------------*)
 (* Support for Lustre-like syntax.                                           *)
@@ -190,7 +190,7 @@ QED
 
 val Historically_def =
  Lustre_Def
-   “Historically A = returns H. H = (const T -> pre (A and H))”;
+   “Historically A = returns H. H = (A -> A and pre H)”;
 
 (*---------------------------------------------------------------------------*)
 (* Something subtle that plagues me: it is important to draw the distinction *)
@@ -209,22 +209,26 @@ val Historically_def =
 (* step in the future.                                                       *)
 (*---------------------------------------------------------------------------*)
 
+
+Triviality leq_suc = DECIDE “a ≤ SUC b ⇔ a≤ b ∨ a = SUC b”;
+Triviality leq_zero = DECIDE “a ≤ 0 ⇔ a = 0”;
+
+
 Theorem Historically_thm :
- ∀t. Historically P t ⇔ ∀n. n < t ⇒ P n
+ ∀t. Historically P t ⇔ ∀n. n ≤ t ⇒ P n
 Proof
  rw_tac lustre_ss [Historically_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘\i. ∀j. j < i ⇒ P j’
+ >- (qexists_tac ‘\i. ∀j. j ≤ i ⇒ P j’
       >> Induct
       >> rw [EQ_IMP_THM]
-      >> ‘j < x ∨ j = x’ by decide_tac
-      >> metis_tac[])
+      >> metis_tac[leq_suc])
  >- (rpt strip_tac
       >> Induct_on ‘t’
       >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
+      >> REWRITE_TAC [leq_zero,NOT_SUC,SUC_SUB1]
+      >> metis_tac [leq_zero,leq_suc])
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -237,23 +241,23 @@ QED
 
 val Once_def =
  Lustre_Def
-  “Once A = returns H. H = (const F -> pre (A or H))”;
+  “Once A = returns H. H = (A -> A or pre H)”;
 
 Theorem Once_thm :
- ∀t. Once P t ⇔ ∃n. n < t ∧ P n
+ ∀t. Once P t ⇔ ∃n. n ≤ t ∧ P n
 Proof
  rw_tac lustre_ss [Once_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘\i. ∃j. j < i ∧ P j’
+ >- (qexists_tac ‘\i. ∃j. j ≤ i ∧ P j’
       >> Induct
       >> rw [EQ_IMP_THM]
-      >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
+      >> metis_tac [leq_suc])
  >- (rpt strip_tac
       >> Induct_on ‘t’
       >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”])
+      >> REWRITE_TAC [leq_zero,NOT_SUC,SUC_SUB1]
+      >> metis_tac [leq_suc])
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -263,20 +267,24 @@ QED
 (* tel;                                                                      *)
 (*                                                                           *)
 (* The intuition is that there is a time where b is high and in the next     *)
-(* step a sequence of a's goes all the way to the end of the trace.          *)
+(* step a sequence of a's goes all the way to the end of the trace. As a     *)
+(* regexp it would be .*ba*                                                  *)
 (*---------------------------------------------------------------------------*)
 
 val Since_def =
  Lustre_Def
-   “Since P Q = returns S. S = (const F -> pre (Q or (P and S)))”;
+   “Since A B = returns S.
+     var X.
+       (S = (B or (A and X))) ∧
+       (X = (const F -> pre S))”;
 
 (*---------------------------------------------------------------------------*)
 (* Recursive function modelling Since                                        *)
 (*---------------------------------------------------------------------------*)
 
 Definition Since_Rec_def :
-  (Since_Rec P Q 0 ⇔ F) ∧
-  (Since_Rec P Q (SUC n) ⇔ Q n ∨ (P n ∧ Since_Rec P Q n))
+  (Since_Rec A B 0 ⇔ B 0) ∧
+  (Since_Rec A B (SUC n) ⇔ B n ∨ (A n ∧ Since_Rec A B n))
 End
 
 (*---------------------------------------------------------------------------*)

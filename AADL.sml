@@ -1080,9 +1080,9 @@ fun dest_propertyConst json =
             ("propertyType", expect_aadl_integer) ::
             ("value", valuegunk) :: _) =>
      (case total value_of valuegunk
-      of SOME (Number (Int i)) =>
+       of SOME (Number (Int i)) =>
              ConstDec (dest_qid qid,BaseTy(IntTy (AST.Int NONE)), mk_intLit i)
-       | unexpected =>  raise ERR "dest_propertyConst" "expected an integer literal")
+        | unexpected =>  raise ERR "dest_propertyConst" "expected an integer literal")
    | otherwise => raise ERR "dest_propertyConst" ""
 
 
