@@ -1,4 +1,6 @@
-local open ptltlTheory realLib intLib stringLib in end;
+local open realLib intLib stringLib in end;
+
+val _ = numLib.prefer_num();
 
 (*
 thread CASE_Monitor_Req_thr
@@ -138,68 +140,68 @@ Datatype ‘AutomationRequest =
 ;
 
 (*---------------------------------------------------------------------------*)
+(* History TL primitive (semantic version). Also needs to be a programmatic  *)
+(* version.                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+Definition Historically_def :
+ Historically P t ⇔ ∀i. i ≤ t ⇒ P i
+End
+
+(*---------------------------------------------------------------------------*)
 (* Represent an event data port by a pair of streams. Event and Data are the *)
 (* projections.                                                              *)
 (*---------------------------------------------------------------------------*)
 
 Definition Event_def :
- Event (a,b) = a
+ Event (A:num->bool,B:num->'a) = A
 End
 
 Definition Data_def :
- Data (a,b) = b
-End
-
-(* -------------------------------------------------------------------------- *)
-(*        eq counter_increment : int =                                        *)
-(*         0 ->                                                               *)
-(*         if (event(observed))                                               *)
-(*            then 0                                                          *)
-(*         else if (event(reference_1))                                       *)
-(*            then 1                                                          *)
-(*         else pre(counter_increment);                                       *)
-(* -------------------------------------------------------------------------- *)
-
-Definition counter_increment_def :
-  counter_increment (reqt,resp) (t:num) =
-    if t = 0 then
-       0n
-    else if Event resp t then
-       0
-    else if Event reqt t then
-       1
-    else counter_increment (reqt,resp) (t-1)
-End
-
-(* -------------------------------------------------------------------------- *)
-(*      eq count : int =                                                      *)
-(*         0 ->                                                               *)
-(*         if (event(reference_1) or event(observed))                         *)
-(*            then 0                                                          *)
-(*         else pre(count) + counter_increment;                               *)
-(* -------------------------------------------------------------------------- *)
-
-Definition count_def :
-  count (reqt,resp) (t:num) =
-    if t = 0 then
-       0n
-    else if Event resp t ∨ Event reqt t then
-       0
-    else count (reqt,resp) (t-1) +
-         counter_increment (reqt,resp) t
+ Data (A:num->bool,B:num->'a) = B
 End
 
 Definition nMonitorInvocations_def :
   nMonitorInvocations = 10n
 End
 
+Definition FAIL_def :
+ FAIL = nMonitorInvocations + 1
+End
+
+Definition Inc_def :
+ Inc x = if x < nMonitorInvocations then x+1 else FAIL
+End
+
+Definition ticks_def :
+ (ticks (reqt,resp) 0 =
+    if Event resp 0 then
+       FAIL
+    else if Event reqt 0 then 1 else 0) /\
+  (ticks (reqt,resp) t =
+   if Event reqt t /\ Event resp t then
+      FAIL
+   else
+   if ~(Event reqt t \/ Event resp t) then
+      (if ticks (reqt,resp) (t-1) = 0 then
+         0
+       else Inc (ticks (reqt,resp) (t-1)))
+   else
+   if Event resp t then
+      (if (1 <= ticks (reqt,resp) (t-1)) then 0 else FAIL)
+   else
+      (if (ticks (reqt,resp) (t-1) = 0) then 1 else FAIL))
+End
+
+val ticks_thm = SIMP_RULE arith_ss [] ticks_def;
+
 (* -------------------------------------------------------------------------- *)
-(*    eq response_received_in_time : bool = count < nMonitorInvocations;      *)
+(*    eq response_received_in_time : bool = ticks < nMonitorInvocations;      *)
 (* -------------------------------------------------------------------------- *)
 
 Definition response_received_in_time_def :
   response_received_in_time (reqt,resp) (t:num) <=>
-     count (reqt,resp) t < nMonitorInvocations
+     ticks (reqt,resp) t < nMonitorInvocations
 End
 
 (* --------------------------------------------------------------------------*)
@@ -207,12 +209,13 @@ End
 (*       Historically(response_received_in_time);                            *)
 (*                                                                           *)
 (* Same as saying count has, up to this point, always been less than         *)
-(* nMonitorInvocations?                                                      *)
+(* nMonitorInvocations.                                                      *)
 (* --------------------------------------------------------------------------*)
 
 Definition CASE_Monitor_Reqt_Resp_policy_def :
-  CASE_Monitor_Reqt_Resp_policy (reqt,resp) t <=>
-     ∀t'. t' ≤ t ⇒ response_received_in_time (reqt,resp) t'
+  CASE_Monitor_Reqt_Resp_policy (reqt,resp)
+   <=>
+  Historically (response_received_in_time (reqt,resp))
 End
 
 (* --------------------------------------------------------------------------*)
@@ -227,10 +230,10 @@ End
 (* OR, if alert was a mere event port (no data):                             *)
 (*                                                                           *)
 (*   Event(alert) <=> false -> (is_latched and pre(event(alert)))            *)
-(*                      or                                                   *)
-(*                      not CASE_Monitor_Req_Resp_policy;                    *)
+(*                             or                                            *)
+(*                             not CASE_Monitor_Req_Resp_policy;             *)
 (* --------------------------------------------------------------------------*)
-
+(*
 Definition Monitor_Spec_def :
   Monitor_Spec (reqt,resp,alert,is_latched) <=>
    ∀t. (Data alert t =
@@ -243,6 +246,7 @@ Definition Monitor_Spec_def :
       ∧
       (Event alert t ⇔ Data alert t)
 End
+*)
 
 (*============================================================================*)
 (* Code generation.                                                           *)
@@ -250,50 +254,38 @@ End
 (* Suppose there is a collection of definitions made as part of the           *)
 (* monitor declaration. The idea is that they all get evaluated on the        *)
 (* current inputs, setting state variables if necessary, and then the         *)
-(* monitor specification is checked against those variables.                  *)
+(* monitor specification is checked against those updated variables.          *)
 (*============================================================================*)
 
-fun event(a,b) = a;
-fun data(a,b) = b;
+val ERR = mk_HOL_ERR "xlationScript";
+
+datatype 'a edport = EDPORT of bool * 'a;
+
+fun Event (EDPORT (a,b)) = a;
+fun Data (EDPORT (a,b)) = b;
 
 (*---------------------------------------------------------------------------*)
-(* pre is invoked on a value (expression?) accessed before variable(s)       *)
-(* are updated.                                                              *)
+(* constants                                                                 *)
 (*---------------------------------------------------------------------------*)
 
-fun pre x = !x;
+val is_latched = true;
 
-val counter_increment = ref 0;
-val count = ref 0;
+val nMonitorInvocations = 10;
 
-fun step_counter_increment(rqt,rsp) =
-  if event(rsp)      then (counter_increment := 0)
-  else if event(rqt) then (counter_increment := 1)
-  else (counter_increment := pre counter_increment);
+val FAILURE = nMonitorInvocations + 1;
 
-fun step_count(rqt,rsp) =
-  if event(rqt) orelse event(rsp) then
-       count := 0
-  else count := pre count + !counter_increment
+fun Inc x = if x < nMonitorInvocations then x+1 else FAILURE;
 
-fun response_received_in_time (rqt,resp) = !count < 10;
+type state = {time : int,
+	      H : bool,
+              alert : bool,
+              ticks : int};
 
-val policyVar := ref true;
-
-fun CASE_Monitor_Req_Resp_policy(rqt,rsp) =
-    policyVar := (!policyVar) andalso response_received_in_time (rqt,resp);
-
-
-(*---------------------------------------------------------------------------*)
-(* How does HAMR want init value of alert set up on output port?  Check      *)
-(* filter code.                                                              *)
-(*---------------------------------------------------------------------------*)
-
-val latched = true;
-
-(* imperative representation of an event-data-port as a pair of streams *)
-
-val alert = (ref false, ref ());
+val stateVars : state ref =
+    ref {time = 0,
+	 H = false,
+         alert = false,
+         ticks = ~42};
 
 (*---------------------------------------------------------------------------*)
 (* Take a step of the monitor. First, run all input-dependent local          *)
@@ -305,117 +297,45 @@ val alert = (ref false, ref ());
 (*                      not CASE_Monitor_Req_Resp_policy;                    *)
 (*---------------------------------------------------------------------------*)
 
-fun step_monitor (rqt,rsp,alert) =
- let val _ = step_counter_increment(rqt,rsp)
-     val _ = step_count(rqt,rsp)
-     val Policy = CASE_Monitor_Req_Resp_policy(rqt,rsp)
+fun stepFn (reqt,resp) state =
+ case state
+  of {time,H,alert,ticks} =>
+     if time = 0 then
+        let val ticks = (if Event resp then FAILURE
+                         else if Event reqt then 1 else 0)
+            val timely = ticks < nMonitorInvocations
+            val H = timely
+	    val alert = not H
+        in
+          {time = time + 1, H = H, alert = alert, ticks = ticks}
+        end
+     else (* t > 0 *)
+        let val ticks =
+             (case (Event reqt,Event resp)
+               of (true,true)   => FAILURE
+                | (false,false) => (if ticks = 0 then 0 else Inc ticks)
+                | (false,true)  => (if 1 <= ticks then 0 else FAILURE)
+                | (true,false)  => (if ticks = 0 then 1 else FAILURE))
+            val timely = ticks < nMonitorInvocations
+            val H = timely andalso H
+	    val alert = (is_latched andalso alert) orelse not H
+        in
+           {time = time + 1, H = H, alert = alert, ticks = ticks}
+        end
+;
+
+fun getReqt() : bool edport = raise ERR "getReqt" "stub";
+fun getResp() : bool edport = raise ERR "getResp" "stub";
+fun putAlert x = raise ERR "putAlert" "stub";
+
+val alertHi = EDPORT(true,true);
+val alertLo = EDPORT(true,false);
+
+fun stepMon () =
+ let val (rqt,rsp) = (getReqt(),getResp())
+     val state = !stateVars
+     val state' = stepFn (rqt,rsp) state
+     val _ = stateVars := state'
  in
-   if (latched andalso pre(event(alert)) orelse not Policy then
-       alert := (true,())
-   else ()
+   if #alert(!stateVars) then putAlert alertHi else putAlert alertLo
  end
-
-
-(*---------------------------------------------------------------------------
-
- Now follows the deprecated formalization wherein we modelled event data
- ports as stream of options. That would hamper syntax-directed translation
- of AGREE lustre.
-
-Definition Event_def :
- Event = IS_SOME
-End
-
-(* -------------------------------------------------------------------------- *)
-(*        eq counter_increment : int =                                        *)
-(*         0 ->                                                               *)
-(*         if (event(observed))                                               *)
-(*            then 0                                                          *)
-(*         else if (event(reference_1))                                       *)
-(*            then 1                                                          *)
-(*         else pre(counter_increment);                                       *)
-(* -------------------------------------------------------------------------- *)
-
-Definition counter_increment_def :
-  counter_increment (resp,reqt) (t:num) =
-    if t = 0 then
-       0n
-    else if Event (resp t) then
-       0
-    else if Event (reqt t) then
-       1
-    else counter_increment (resp,reqt) (t-1)
-End
-
-(* -------------------------------------------------------------------------- *)
-(*      eq count : int =                                                      *)
-(*         0 ->                                                               *)
-(*         if (event(reference_1) or event(observed))                         *)
-(*            then 0                                                          *)
-(*         else pre(count) + counter_increment;                               *)
-(* -------------------------------------------------------------------------- *)
-
-Definition count_def :
-  count (resp,reqt) (t:num) =
-    if t = 0 then
-       0n
-    else if Event (resp t) ∨ Event (reqt t) then
-       0
-    else count (resp,reqt) (t-1) +
-         counter_increment (resp,reqt) t
-End
-
-Definition nMonitorInvocations_def :
-  nMonitorInvocations = 10n
-End
-
-(* -------------------------------------------------------------------------- *)
-(*    eq response_received_in_time : bool = count < nMonitorInvocations;      *)
-(* -------------------------------------------------------------------------- *)
-
-Definition response_received_in_time_def :
-  response_received_in_time (resp,reqt) (t:num) <=>
-     count (resp,reqt) t < nMonitorInvocations
-End
-
-(* --------------------------------------------------------------------------*)
-(*  property CASE_Monitor_Reqt_Resp_policy =                                  *)
-(*       Historically(response_received_in_time);                            *)
-(*                                                                           *)
-(* Same as saying count has, up to this point, always been less than         *)
-(* nMonitorInvocations?                                                      *)
-(* --------------------------------------------------------------------------*)
-
-Definition CASE_Monitor_Req_Resp_policy_def :
-  CASE_Monitor_Req_Resp_policy (resp,reqt) t <=>
-     ∀t'. t' ≤ t ⇒ response_received_in_time (resp,reqt) t'
-End
-
-(* --------------------------------------------------------------------------*)
-(*  guarantee Req002_ReqRespMonitorEvent                                     *)
-(*  "Monitor shall only output an alert when the monitor policy is false"    *)
-(*   alert <=> false -> (is_latched and pre(event(alert)))                   *)
-(*                      or                                                   *)
-(*                      not CASE_Monitor_Req_Resp_policy;                    *)
-(*                                                                           *)
-(* OR, if alert was a mere event port (no data):                             *)
-(*                                                                           *)
-(*   Event(alert) <=> false -> (is_latched and pre(event(alert)))            *)
-(*                      or                                                   *)
-(*                      not CASE_Monitor_Req_Resp_policy;                    *)
-(* --------------------------------------------------------------------------*)
-
-Definition Monitor_Spec_def :
-  Monitor_Spec (resp,reqt,alert,is_latched) <=>
-   ∀t. alert(t) =
-         if t = 0n then
-            NONE
-         else
-         if is_latched ∧ Event(alert (t-1)) then
-           SOME T
-         else
-         if ~CASE_Monitor_Reqt_Resp_policy (resp,reqt) t then
-          SOME T
-         else NONE
-End
-*)
