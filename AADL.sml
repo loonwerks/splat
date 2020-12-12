@@ -33,10 +33,14 @@ in end;
            (string * ty * string * string) list *
            (string * exp) list
 
- datatype monitor  (*  (name,ports,latched, props)  *)
-    = MonitorDec of qid * (string * ty * string * string) list
-                        * bool
-                        * (string * string * exp) list
+ datatype monitor  (*  (name,ports,latched,decs,ivars,policy,props,guars)  *)
+    = MonitorDec of qid
+                 * (string * ty * string * string) list
+                 * bool
+                 * tmdec list
+                 * (string * ty * exp) list
+                 * ((string * exp) option * (string  * exp) list)
+                 * (string * string * exp) list
 
  type decls =
   (* pkgName *)   string
@@ -115,7 +119,7 @@ fun tmdec_qid (ConstDec (qid,_,_)) = qid
   | tmdec_qid (FnDec (qid,_,_,_)) = qid
 
 fun filtdec_qid (FilterDec (qid,_,_)) = qid
-fun mondec_qid (MonitorDec (qid,_,_,_)) = qid
+fun mondec_qid (MonitorDec (qid,_,_,_,_,_,_)) = qid
 
 (* Principled approach, doing a one-for-one mapping between AADL integer types and,
    eventually, HOL types. Not sure how well it will work with all AGREE specs limited
@@ -367,6 +371,8 @@ fun dest_exp e =
        => mk_fncall ("","Prev",[dest_exp e1, dest_exp e2])
    | AList [("kind", String "PreExpr"), ("expr", e)]
        => mk_fncall("","Pre",[dest_exp e])
+   | AList [("kind", String "GetPropertyExpr"), ("property", String pname),_]
+       => mk_fncall("","getProperty",[VarExp pname])
    | other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);
@@ -440,8 +446,10 @@ fun mk_eq_stmt_def compName features (AList alist) =
 fun mk_def compName features json =
   mk_const_def compName json    handle HOL_ERR _ =>
   mk_fun_def compName json      handle HOL_ERR _ =>
+(*
   mk_property_stmt_def compName features json handle HOL_ERR _ =>
   mk_eq_stmt_def compName features json handle HOL_ERR _ =>
+*)
   raise ERR "mk_def" "unexpected syntax";
 
 fun get_annex_stmts (AList alist) =
@@ -527,6 +535,18 @@ fun is_monitor props =
           andalso
           (dropString (value_of(value_of prop)) = "MONITOR"
            handle _ => false)
+ in exists isaMon props
+ end
+
+fun is_filter_new props =
+ let fun isaFilter prop =
+       dropString(name_of prop) = "CASE_Properties::Filtering" handle _ => false
+ in exists isaFilter props
+ end
+
+fun is_monitor_new props =
+ let fun isaMon prop =
+          dropString(name_of prop) = "CASE_Properties::Monitoring" handle _ => false
  in exists isaMon props
  end
 
@@ -1002,29 +1022,98 @@ fun dest_guar_stmt stmt =
 
 fun jname_eq s1 s2 = (dropString s1 = dropString s2)
 
+val constFalse = mk_bool_const "false";
+
+fun is_pure_dec json =
+  let val id = dropString(kind_of json)
+  in mem id ["ConstStatement","FnDef"]
+  end
+  handle HOL_ERR _ => false;
+
 fun get_monitor comp =
  let val properties = dropList(properties_of comp)
      val _ = if is_monitor properties then ()
              else raise ERR "get_monitor" "unable to find MONITOR property"
      val qid = dest_qid (dropString (name_of comp))
-     val ports = dropList (features_of comp)
-     val annexen = dropList (annexes_of comp)
+     val ports = map get_monitor_port(dropList (features_of comp))
+     val annexL = dropList (annexes_of comp)
+     val annex = (case annexL
+                  of [x] => x
+		   | otherwise => raise ERR "get_monitor" "unexpected annex structure")
      val specNames = get_spec_names properties
-     val is_latched = get_latched properties
-     val portL = map get_monitor_port ports
-     val stmts = List.concat (map get_annex_stmts annexen)
-     val eq_stmts   = mapfilter dest_eq_stmt stmts (* should turn into FnDecs elsewhere in scrape *)
-     val prop_stmts = mapfilter dest_property_stmt stmts
+     val is_latched = get_latched properties  (* ? *)
+     val stmts = get_annex_stmts annex
+     val (jdecs,others) = Lib.partition is_pure_dec stmts
+     val decs = map (mk_def (fst qid) []) jdecs  (* consts and fndecs *)
+     val eq_stmts   = mapfilter dest_eq_stmt others
+     val guar_stmts = mapfilter dest_guar_stmt others
+     val prop_stmts = mapfilter dest_property_stmt others
      fun is_policy(s,_) = last (String.tokens (equal #"_") s) = "policy"
-     val ((pname,policy),prop_stmts') = pluck is_policy prop_stmts
-     val guar_stmts = mapfilter dest_guar_stmt stmts
-     val monitor_guars = filter (C mem specNames o #1) guar_stmts
+     val props =
+        (case total (pluck is_policy) prop_stmts
+          of NONE => (NONE,prop_stmts)
+          | SOME (pol,rst) => (SOME pol,rst))
+     val guars = filter (C mem specNames o #1) guar_stmts
  in
-     MonitorDec(qid, portL, is_latched, (pname,"",policy)::monitor_guars)
+     MonitorDec(qid, ports, is_latched, decs, eq_stmts, props, guars)
  end
- handle _ => raise ERR "get_monitor" "unexpected syntax"
+ handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
 ;
 
+val boolTy = BaseTy BoolTy;
+
+val initStepVar = ("initStep",boolTy);
+
+fun split_fby exp =
+  case exp
+   of Binop(Fby,e1,e2) => (e1,e2)
+    | otherwise => (exp,exp);
+
+(*---------------------------------------------------------------------------*)
+(* There should be enough information in the outgoing FnDecl so that code    *)
+(* can be generated, and also logic definitions.                             *)
+(*                                                                           *)
+(* Wondering if output ports should be part of the state. Seems like there   *)
+(* should be a state variable for an output port if the port value is used   *)
+(* subsequent computations. But it would be possible to have an output port  *)
+(* value calculated from an expression ... hmmm maybe this isn't a           *)
+(* distinction worth making.                                                 *)
+(*                                                                           *)
+(* TODO: sort Lustre variables in dependency order. Right now I assume that  *)
+(* has been done by the programmer/system designer.                          *)
+(*---------------------------------------------------------------------------*)
+
+datatype port
+  = Event of string
+  | Data of string * ty
+  | EventData of string * ty;
+
+fun feature2port (s,ty,dir,kind) =
+ case kind
+  of "EventDataPort" => EventData(s,ty)
+   | "DataPort" => Data(s,ty)
+   | "EventPort" => Event s
+
+datatype monitor_code
+  = MonitorCode of qid
+                 * port list  (* inports *)
+                 * port list  (* outports *)
+                 * (string * ty) list (* state vars *)
+                 * (exp * exp) list  (* init *)
+                 * (exp * exp) list  (* step *)
+
+fun mk_monitor_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
+ let val stepFn_name = snd qid ^ "StepFn"
+     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
+     val inputs = map feature2port inports
+     val outputs = map feature2port outports
+     val stateVars = map (fn (name,ty,exp) => (name,ty)) eq_stmts
+     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
+     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
+     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
+ in
+   MonitorCode (qid, inputs, outputs, initStepVar::stateVars, init_code, step_code)
+ end
 
 fun dest_publist plist =
  let fun dest_with ("with", List wlist) = wlist
@@ -1086,6 +1175,8 @@ fun dest_propertyConst json =
    | otherwise => raise ERR "dest_propertyConst" ""
 
 
+fun decs_of_monitor (MonitorDec(qid, ports, is_latched, decs, eq_stmts, props, guars)) = decs;
+
 fun scrape pkg =
  case pkg
   of AList (("name", String pkgName) ::
@@ -1098,8 +1189,11 @@ fun scrape pkg =
             val comp_fndecls =  List.concat(mapfilter mk_comp_defs complist)
             val filters = mapfilter get_filter complist
             val monitors = mapfilter get_monitor complist
+            val mon_fndecls = List.concat (map decs_of_monitor monitors)
         in
-           (pkgName,(tydecls, annex_fndecls@comp_fndecls, filters, monitors))
+           (pkgName,(tydecls,
+                     annex_fndecls@comp_fndecls@mon_fndecls,
+                    filters, monitors))
         end
    | AList (("name", String pkgName) ::
             ("kind", String "PropertySet") ::
@@ -1271,6 +1365,8 @@ val (opkgs as
 
 val pkgNames = map name_of opkgs;
 
+val pkg = el 13 opkgs;  (* SW *)
+
 val modlist = mapfilter scrape opkgs
 val modlist' = replace_null_fields modlist
 val modlist'' = map extend_recd_decs modlist'
@@ -1388,10 +1484,18 @@ fun amn_filter_dec fdec =
 
 fun amn_monitor_dec fdec =
  let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
+     fun amn_eq_stmt (s,ty,e) = (s,amn_ty ty,amn_exp e)
+     fun amn_policy (s,e) = (s,amn_exp e)
+     fun amn_props (NONE,list) = (NONE,map amn_policy list)
+       | amn_props (SOME p,list) = (SOME (amn_policy p), map amn_policy list)
      fun amn_cprop (s1,s2,e) = (s1,s2,amn_exp e)
  in case fdec
-     of MonitorDec(qid, ports, b, cprops) =>
-        MonitorDec(qid, map amn_port ports, b, map amn_cprop cprops)
+     of MonitorDec(qid, ports, latched, decs, eq_stmts, policy, cprops) =>
+        MonitorDec(qid, map amn_port ports, latched,
+                   map amn_tmdec decs,
+                   map amn_eq_stmt eq_stmts,
+                   amn_props policy,
+		   map amn_cprop cprops)
  end
 ;
 
@@ -2299,12 +2403,11 @@ fun pkgs2hol thyName pkgs =
 val thyName = "UAS";
 
 val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = scrape_pkgs jpkg;
-
 val (pkgName,(tydecs,tmdecs,fdecs,mondecs)) = pkg6;
 val [mondec1,mondec2] = mondecs;
 
-val MonitorDec(qid,features,latched,props) = mondec1;
-val MonitorDec(qid,features,latched,props) = mondec2;
+val MonitorDec(qid,features,latched,eq_stmts,policy,props) = mondec1;
+val MonitorDec(qid,features,latched,eq_stmts,policy,props) = mondec2;
 
 
 fun step pkg (tyE,tyD,tmD,fS,mS) =
@@ -2477,6 +2580,29 @@ fun export_cakeml_filters dir const_alist filterdecs =
           String.concatWith "\n   " names, "\n"])
   in
      List.app (inst_filter_template dir const_alist) filterdecs
+   ; stdErr_print " ... Done.\n\n"
+  end
+
+(*---------------------------------------------------------------------------*)
+(* Instantiate monitor template with monitor-specific info                   *)
+(*---------------------------------------------------------------------------*)
+
+fun inst_monitor_template dir const_alist mondec =
+    let val monFnDecl = mk_monitor_stepFn mondec
+        val stepFn_cakeml = PP_CakeML.pp_mon_stepFn ~1 monFnDecl
+    raise ERR "inst_monitor_template" "not implemented";
+
+fun export_cakeml_monitors dir const_alist mondecs =
+  if null mondecs then
+     ()
+  else
+  let val qids = map mondec_qid mondecs
+      val names = map qid_string qids
+      val _ = stdErr_print (String.concat
+         ["Creating CakeML monitor implementation(s) for:\n   ",
+          String.concatWith "\n   " names, "\n"])
+  in
+     List.app (inst_monitor_template dir const_alist) mondecs
    ; stdErr_print " ... Done.\n\n"
   end
 
