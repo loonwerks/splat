@@ -189,6 +189,51 @@ be invoked in a setting where the first inputs to the component have been read.
 
 \end{frame}
 
+\begin{frame}[fragile]\frametitle{Example}
+
+Consider a Lustre program that keeps a running maximum of two integer
+input ports, signaling an alert if the max. ever is 42.
+
+\konst{MAX} takes the max. of two integers.
+
+{\small
+\begin{verbatim}
+  max = 0 -> MAX (MAX(in1,in2), pre max)
+  alert = (max = 42)
+\end{verbatim}
+}
+
+But this will miss inputs at time 0. Repaired by changing to
+
+{\small
+\begin{verbatim}
+  max = MAX(in1,in2) -> MAX (MAX(in1,in2), pre max)
+  alert = (max = 42)
+\end{verbatim}
+}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Example (stepFn)}
+
+{\small
+\begin{verbatim}
+  stepFn (in1,in2) (initStep,max,alert) =
+      if initStep then
+        let val max' = MAX(in1,in2)
+            val alert' = (max' = 42)
+        in (False,max',alert')
+        end
+      else
+        let val max' = MAX(MAX(in1,in2),max)
+            val alert' = (max' = 42)
+        in (False,max',alert')
+        end
+\end{verbatim}
+}
+
+\end{frame}
+
 \section {From Steps to Traces}
 
 \begin{frame}\frametitle{Traces and step functions}
@@ -231,6 +276,39 @@ type of the elements of the trace.
   details of the step function.
 
 \end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Example Trace construction}
+
+\[ \konst{TRACE} : (\mathbb{N}\to\konst{int}, \mathbb{N}\to\konst{int})
+ \to (\mathbb{N}\to\konst{int}, \mathbb{N}\to\konst{bool})
+ \to \mathbb{N}\to\konst{bool}
+\]
+
+{\small
+\begin{verbatim}
+  TRACE (In1,In2) (Max,Alert) 0 <=>
+     (Max 0 = MAX (In1 0, In2 0))
+     and
+     (Alert 0 = (Max 0 = 42))
+
+  TRACE (In1,In2) (Max,Alert) (t+1) <=>
+     (Max (t+1) = MAX(MAX (In1 (t+1), In2 (t+1)), Max(t)))
+     and
+     (Alert (t+1) = (Max (t+1) = 42))
+\end{verbatim}
+}
+
+\end{frame}
+
+\begin{frame}\frametitle{What is the point?}
+
+By giving semantics to Lustre programs running under the guarantees of
+the AADL runtime, we can represent CASE component behavior in
+predicate logic.
+
+Also ... AGREE properties may have to be adjusted in light of this semantics.
 
 \end{frame}
 
