@@ -1,0 +1,240 @@
+\documentclass{beamer}
+\usetheme{metropolis}
+\usepackage{latexsym}
+\usepackage{amssymb}
+\usepackage{amsbsy}
+\usepackage{alltt}
+\usepackage{tikz}
+\usetikzlibrary{shapes}
+\usepackage{stmaryrd}
+\usepackage{graphicx}
+
+\newcommand{\imp}{\Rightarrow}
+\newcommand{\etal}{\textit{et. al}}
+\newcommand{\adhoc}{\textit{ad hoc}}
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\etc}{\textit{etc}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\kemph}[1]{\colorbox{orange}{#1}}
+\newcommand{\konst}[1]{\ensuremath{\mbox{\bf{#1}}}}
+\newcommand{\nil}{\konst{[\,]}}
+\newcommand{\cons}[2]{{#1}\boldsymbol{:}\boldsymbol{:}{#2}}
+\newcommand{\hollamb}{\boldsymbol{\lambda}}
+\newcommand{\itelse}[3]{\mbox{$\mbox{\tt if}\ {#1}\ \mbox{\tt then}\ {#2}\
+    \mbox{\tt else}\ {#3}$}}
+\newcommand{\set}[1]{\{ {#1} \}}
+\newcommand{\Lang}[1]{\ensuremath{{\cal L}({#1})}}
+\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
+\newcommand{\inbox}[1] {\begin{center}
+                         \framebox{\parbox{0.984\textwidth}{#1}}
+                         \end{center}}
+
+% for backslashes in alltt environments
+\newcommand{\bs}{\texttt{\symbol{92}}}
+
+\begin{document}
+
+% Title page
+
+\author{Konrad Slind \\ Collins Aerospace ATC}
+\date{Staff Meeting, Dec. 15, 2020}
+\title{Modelling CASE System Behavior}
+\maketitle
+
+\begin{frame}\frametitle{Overview}
+
+\begin{enumerate}
+\item CASE Semantic Stew
+\item AADL Threads and Lustre
+\item Extension to Traces
+\item Predicate logic view of system behavior
+\item What are the interesting system properties?
+\end{enumerate}
+\end{frame}
+
+
+\section {CASE Semantic Stew}
+
+\begin{frame}\frametitle{AADL}
+\begin{itemize}
+\item [$\blacktriangleright$] Architecture Description Language
+\item [$\blacktriangleright$] Beyond boxes and arrows, it has a ``runtime system''
+\item [$\blacktriangleright$] Essential for inter-component (and intra-) communication
+\item [$\blacktriangleright$] Comms layer  (HAMR) that gets slathered on at \kemph{system build} time.
+\item [$\blacktriangleright$] Semantics under development by John Hatcliff and others
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{AGREE/Lustre}
+\begin{itemize}
+\item [$\blacktriangleright$] \kemph{AGREE} provides reasoning about AADL component contracts
+\item [$\blacktriangleright$] Embedded in AADL via annex extension capability
+\item [$\blacktriangleright$] \kemph{Lustre} is used to describe (possibly stateful) computation
+\item [$\blacktriangleright$] Also provides the formulas of the AGREE logic
+\item [$\blacktriangleright$] AG-reasoning via $k$-induction model checkers (jKind, Kind)
+\end{itemize}
+\end{frame}
+
+\begin{frame}\frametitle{Past time Temporal Logic}
+\begin{itemize}
+\item [$\blacktriangleright$] Monitor behaviors specified by formulas (\kemph{policies}) in pt-LTL
+\item [$\blacktriangleright$] pt-LTL + Lustre is very expressive
+\item [$\blacktriangleright$] pt-LTL can be translated cleanly to Lustre
+\end{itemize}
+\end{frame}
+
+\begin{frame}\frametitle{Regexps and Contiguity Types}
+\begin{itemize}
+\item [$\blacktriangleright$] \kemph{Regexps} used to specify simple DFA-based filters
+\item [$\blacktriangleright$] \kemph{Contig. types} used to specify complex filters
+\item [$\blacktriangleright$] Semantics (formal language theory) and correctness proofs in HOL4
+\item [$\blacktriangleright$] Extension to trace level by Johannes at Data61 (CakeML)
+\end{itemize}
+\end{frame}
+
+\begin{frame}\frametitle{CakeML and seL4}
+\begin{itemize}
+\item [$\blacktriangleright$] Formal compiler for CakeML (HOL4)
+\item [$\blacktriangleright$] Verified OS (Isabelle/HOL)
+\item [$\blacktriangleright$] Very large formalizations
+\end{itemize}
+\end{frame}
+
+\begin{frame}\frametitle{Attestation}
+\begin{itemize}
+\item [$\blacktriangleright$] Modelling and implementation of remote attestation framework
+\item [$\blacktriangleright$] Modelling in Coq
+\item [$\blacktriangleright$] Implementation in CakeML
+\end{itemize}
+\end{frame}
+
+\begin{frame}\frametitle{Comments}
+\begin{itemize}
+\item [$\blacktriangleright$] An amazing jumble of \kemph{formal stuff}
+\item [$\blacktriangleright$] We want to have a coherent view
+\item [$\blacktriangleright$]
+\kemph{$\set{\konst{AGREE},\konst{pt-LTL}}$} map to Lustre
+\item [$\blacktriangleright$]
+  \kemph{$\set{\konst{Regexp},\konst{contig},\konst{CakeML}, \konst{seL4}}$} map to higher order logic
+\item [$\blacktriangleright$] Many remaining gaps
+\end{itemize}
+\end{frame}
+
+
+\section {AADL Threads and Lustre}
+
+\begin{frame}\frametitle{AADL Threads}
+
+\konst{Assumption} An AADL thread/component has the following
+behavior: when the scheduler picks it to run
+
+\begin{itemize}
+\item [$\blacktriangleright$] it reads its input ports,
+\item [$\blacktriangleright$] performs its computation, which might use and modify persistent state
+\item [$\blacktriangleright$] writes its output ports
+\item [$\blacktriangleright$] gets put back in the queue
+
+\end{itemize}
+
+\konst{Another Assumption} This takes zero time
+\end{frame}
+
+\begin{frame}\frametitle{`performs its computation`}
+
+The computation can be modelled by a function
+
+\[
+\konst{stepFn} : \mathit{inports} \times \mathit{stateVars} \to \mathit{stateVars}
+\]
+
+that will be called in the context
+
+\[
+\begin{array}{ll}
+ \mathit{inportVals} & = \konst{readInputs}(); \\
+ (v_1,\ldots,v_k) & = \konst{readState}() ; \\
+ ({v_1}',\ldots,{v_k}') & = \kemph{\konst{stepFn}} (\mathit{inportVals},\mathit{stateVars}) ; \\
+ \multicolumn{2}{l}{\konst{writeState}({v_1}',\ldots,{v_k}');} \\
+ \multicolumn{2}{l}{\konst{writeOutputs}({v_1}',\ldots,{v_k}');} \\
+\end{array}
+\]
+
+\end{frame}
+
+\begin{frame}\frametitle{Lustre semantics}
+
+The \kemph{\konst{stepFn}} is synthesized from all the Lustre
+`\konst{eq}' statements given in the AADL annex for a
+component. Lustre semantics has some subtleties:
+
+\begin{itemize}
+\item [$\blacktriangleright$] State variables need to be evaluated in dependency order
+
+\item [$\blacktriangleright$] Once a state variable is assigned to,
+  its new value gets used in computing the values of variables that
+  depend on it.
+
+\item [$\blacktriangleright$] Lustre `\konst{eq}' statements of the form
+\[ \mathit{init} \to \mathit{step}
+\]
+need to be written taking into account that $\mathit{init}$ code will
+be invoked in a setting where the first inputs to the component have been read.
+
+\item [$\blacktriangleright$] (Eh?) Variable initialization \kemph{and}
+  processing first input port values happens in the first step.
+
+
+\end{itemize}
+
+\end{frame}
+
+\section {From Steps to Traces}
+
+\begin{frame}\frametitle{Traces and step functions}
+
+A trace $\konst{Tr} = \konst{Tr}_0,\konst{Tr}_1,\konst{Tr}_2, \ldots$
+can be modelled by a function $\mathbb{N}\to\tau$, where $\tau$ is the
+type of the elements of the trace.
+
+\begin{itemize}
+\item [$\blacktriangleright$] (Foreshadowing) We ultimately want to
+  think about the behavior of the entire system as a predicate on the
+  traces representing the external ports of the system.
+
+\item [$\blacktriangleright$] For a component $C$ with synthesized $\konst{stepFn}_{C}$, we
+  want to build the corresponding trace $\konst{Tr}_{C}$ and show
+
+\[ \vdash \forall t. \; \konst{stepFn}^{t}\;\mathit{dummy} = \konst{Tr}_{C}(t) \]
+
+\item [$\blacktriangleright$] In other words, the trace agrees with
+  iterating the step function, beginning with a dummy state
+  $\mathit{dummy}$.
+
+\end{itemize}
+
+\end{frame}
+
+
+\begin{frame}\frametitle{Traces and step functions contd}
+
+\begin{itemize}
+
+\item [$\blacktriangleright$] The trace can be (automatically) defined
+  by recursion, guided by the structure of the step function.
+
+\item [$\blacktriangleright$] Equivalence proof can be automated (in progresss). The essence
+  is showing the iteration is equal to the recursion.
+
+\item [$\blacktriangleright$] Subsequently we can use $\konst{Tr}_{C}$ in
+  further formal modelling, abstracting away from the computational
+  details of the step function.
+
+\end{itemize}
+
+\end{frame}
+
+\section {Predicate Logic view of System Behavior}
+
+
+\end{document}
