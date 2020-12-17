@@ -1,0 +1,179 @@
+\documentclass{article}
+
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\etc}{\textit{etc.}}
+\newcommand{\adhoc}{\textit{ad hoc}}
+
+% Packages and abbreviations used by Konrad
+\usepackage{latexsym}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsbsy}
+
+\newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\imp}{\Rightarrow}
+\newcommand{\lval}{\ensuremath{\mathit{lval}}}
+\newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
+\newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
+\newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
+\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
+\newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usetikzlibrary{arrows}
+\usetikzlibrary{shapes.multipart}
+
+\begin{document}
+
+
+\title{Ideas for SafeDocs-CASE Interaction}
+\author{Konrad Slind \\ Trusted Systems Group \\ Collins Aerospace}
+\date{\today}
+
+\begin{abstract}
+The research work of the SafeDocs and CASE projects has some overlap
+in the area of message description languages and parsing. We discuss
+some technical ideas in this intersection.
+\end{abstract}
+
+\maketitle
+
+\section*{Introduction}
+
+The present author gave a talk to the SafeDocs PI meeting (November
+10, 2020), titled \emph{Specifying Message Formats with Contiguity
+  Types}. The talk provided an overview of the CASE project with a
+focus on work formalizing and proving correct a message format
+language and its parsing algorithm.
+
+\emph{Contiguity types} provide a small but expressive DSL for
+specifying message formats, especially those with "self-describing"
+aspects such as length fields and `unions`. Filters and parsers
+can be automatically generated from contiguity type specifications,
+backed up by a formal correctness proof. In CASE, contiguity types
+have been used to implement the "insert-filter" and "insert-monitor"
+architectural transformations for the set of UxAS message types. These
+messages can be very large and complex; we were pleased to see that
+contiguity type specifications capture UxAS message structure and
+constraints transparently.
+
+There are several aspects of contiguity types that seem worth pursuing
+further:
+
+\begin{description}
+
+\item [First class `look-behind`] As the contig-type parser processes
+  a message, each field is added to the context (a finite map from
+  lvars to message slices). This context is used in the computation of
+  length fields, and in calculating which element of a union to
+  choose. \footnote{Attribute grammars seem to also offer a uniform
+    naming scheme for accessing context. The relationship needs more
+    study and we have been talking to the SRI SafeDocs performers
+    about this.}
+
+\item [In-message assertions] Message constraints can be expressed
+  within a contig type. This allows data constraints to be expressed
+  alongside the data in the message. In an implementation, this can be
+  leveraged to provide fast failure and copy-free filtering.
+
+\item [Context-sensitive sum] There is no unadorned `sum' operation
+  (\ie, the union of two formal languages) in the syntax of contiguity
+  types. Instead, there is a `guarded union` type
+  \[
+    \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n)
+  \]
+  where evaluation of the $\mathit{bexp}_i$, in the accumulated
+  context, is used to determine which $\tau_i$ to continue parsing
+  with. There are similar notions in other parser frameworks, \eg, PEG
+  parsers and ANTLR, but their tendency is to exploit \emph{lookahead}
+  information, handling look-behind in an \adhoc{} way.
+
+
+\end{description}
+
+\section{Context-free parsing}
+
+ It would be interesting to extend ideas from contiguity types to
+context-free recognition and parsing, with the ultimate goal of being
+able to handle self-describing messages inside a parser generator
+framework. The envisioned work would have the following components
+
+\begin{enumerate}
+
+\item Augment parser state with "accumulated context" that gets added
+      to as parsing proceeds. This is an explicit and systematic
+      addition to standard parser technology. A simple
+      characterization of this would be "enhanced location
+      information".
+
+\item Use accumulated context to control parsing. This will require a
+      uniform addressing scheme able to index elements on the parser
+      stack as well other context elements. Ad hoc approaches can be
+      found in, e.g. the "semantic predicates" of ANTLR, or in the use
+      of semantic actions in conventional parser frameworks to control
+      the parser.
+
+\item Use such a parser to do on-the-fly property checking of standard
+      interchange formats, such as Json augmented with constraints.
+
+\item Correctness proofs, of course.
+\end{enumerate}
+
+\section{Stratified (modular) parsing}
+
+   One common requirement in parsing is modularity: e.g., a parser for
+   programming-language statements is notionally parameterized by a
+   parser for expressions. In most cases, these can be written in the
+   same grammar, but that works against worthy aims such as re-use and
+   separation. The SafeDocs experience shows that this idea must be
+   taken seriously for difficult languages such as PDF. What seems to
+   be needed is a way to---in the midst of parsing language A---select
+   a subsequence of the input to separately parse with parser B. In
+   determining the slice of the input to give to B, the accumulated
+   context often needs to be consulted. Contiguity types give a way to
+   handle this, and, in particular, seem to offer a framework in which
+   the context accumulated by B is added back to that of A. Message
+   processing, with its piggy-backing of messages, has much the same
+   flavor.
+
+\section{Property-enhanced lexing}
+
+   We have a formalized, proved correct lexer generator that uses the
+   maximal-munch heuristic. To be more performant, it needs to be
+   converted to be table-driven, and we would like it to be a
+   property-producing lexer.
+
+   Conventional lexers return a stream of lexemes. Regular expressions
+   are able to enforce basic well-formedness properties of lexemes,
+   and these would need to be propagated to the parser in order for
+   the parser to enforce its own well-formedness constraints. This can
+   be extended to stratified parsing situations (see below).
+
+
+\paragraph{Contiguity types and lexing}
+
+   Two ideas seem worth thinking about a little more. In one, we use
+   contiguity types as a high-powered lexer language; in the other, we
+   add a regexp-based lexer as a base contiguity type.
+
+\begin{itemize}
+
+\item Since contiguity types are deterministic, they could possibly be
+      useful as a lexer replacement in certain parsing scenarios. A
+      contig-type parser being used as a lexer would generate a "parse
+      tree" lexeme that would be folded into the parser stack.
+
+\item Contiguity types with regexp-based lexing added as a supplement
+      to the existing suite of fixed-width base types. This amounts to
+      a controlled use of Kleene star. This would add a nice way to
+      handle C-style strings in messages, or any other such message
+      portion of arbitrary length ending with a specific delimiter.
+
+      <CASE-relevant example, with finding numbers in headers>
+\end{itemize}
+
+ \end{document}
