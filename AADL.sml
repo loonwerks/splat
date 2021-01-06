@@ -42,13 +42,20 @@ in end;
                  * ((string * exp) option * (string  * exp) list)
                  * (string * string * exp) list
 
- type decls =
+datatype port
+    = Event of string
+    | Data of string * ty
+    | EventData of string * ty
+
+type decls =
   (* pkgName *)   string
   (* types *)     * (tydec list *
   (* consts *)       tmdec list *
   (* filters *)      filter list *
   (* monitors *)     monitor list)
   ;
+
+datatype pkg = Pkg of decls;
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
 
@@ -1059,61 +1066,6 @@ fun get_monitor comp =
  end
  handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
 ;
-
-val boolTy = BaseTy BoolTy;
-
-val initStepVar = ("initStep",boolTy);
-
-fun split_fby exp =
-  case exp
-   of Binop(Fby,e1,e2) => (e1,e2)
-    | otherwise => (exp,exp);
-
-(*---------------------------------------------------------------------------*)
-(* There should be enough information in the outgoing FnDecl so that code    *)
-(* can be generated, and also logic definitions.                             *)
-(*                                                                           *)
-(* Wondering if output ports should be part of the state. Seems like there   *)
-(* should be a state variable for an output port if the port value is used   *)
-(* subsequent computations. But it would be possible to have an output port  *)
-(* value calculated from an expression ... hmmm maybe this isn't a           *)
-(* distinction worth making.                                                 *)
-(*                                                                           *)
-(* TODO: sort Lustre variables in dependency order. Right now I assume that  *)
-(* has been done by the programmer/system designer.                          *)
-(*---------------------------------------------------------------------------*)
-
-datatype port
-  = Event of string
-  | Data of string * ty
-  | EventData of string * ty;
-
-fun feature2port (s,ty,dir,kind) =
- case kind
-  of "EventDataPort" => EventData(s,ty)
-   | "DataPort" => Data(s,ty)
-   | "EventPort" => Event s
-
-datatype monitor_code
-  = MonitorCode of qid
-                 * port list  (* inports *)
-                 * port list  (* outports *)
-                 * (string * ty) list (* state vars *)
-                 * (exp * exp) list  (* init *)
-                 * (exp * exp) list  (* step *)
-
-fun mk_monitor_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
- let val stepFn_name = snd qid ^ "StepFn"
-     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
-     val inputs = map feature2port inports
-     val outputs = map feature2port outports
-     val stateVars = map (fn (name,ty,exp) => (name,ty)) eq_stmts
-     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
-     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
-     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
- in
-   MonitorCode (qid, inputs, outputs, initStepVar::stateVars, init_code, step_code)
- end
 
 fun dest_publist plist =
  let fun dest_with ("with", List wlist) = wlist
@@ -2402,13 +2354,16 @@ fun pkgs2hol thyName pkgs =
 (*
 val thyName = "UAS";
 
-val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = scrape_pkgs jpkg;
-val (pkgName,(tydecs,tmdecs,fdecs,mondecs)) = pkg6;
+val pkgs as [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6] = scrape_pkgs jpkg;
+val pkglist = map Pkg pkgs;
+val (pkgName,(tydecs,tmdecs,fdecs,mondecs)) = pkg5;
 val [mondec1,mondec2] = mondecs;
 
-val MonitorDec(qid,features,latched,eq_stmts,policy,props) = mondec1;
-val MonitorDec(qid,features,latched,eq_stmts,policy,props) = mondec2;
+val MonitorDec(qid,features,latched,decs,eq_stmts,policy,props) = mondec1;
+val MonitorDec(qid,features,latched,decs,eq_stmts,policy,props) = mondec2;
 
+val stepFn1 = mk_monitor_stepFn mondec1;
+val stepFn2 = mk_monitor_stepFn mondec2;
 
 fun step pkg (tyE,tyD,tmD,fS,mS) =
   let val (tyEnv',tydefs,fndefs,filtspecs,monspecs) = mk_pkg_defs thyName tyE pkg
@@ -2588,9 +2543,13 @@ fun export_cakeml_filters dir const_alist filterdecs =
 (*---------------------------------------------------------------------------*)
 
 fun inst_monitor_template dir const_alist mondec =
+    raise ERR "inst_monitor_template" "not implemented";
+(*
+fun inst_monitor_template dir const_alist mondec =
     let val monFnDecl = mk_monitor_stepFn mondec
         val stepFn_cakeml = PP_CakeML.pp_mon_stepFn ~1 monFnDecl
     raise ERR "inst_monitor_template" "not implemented";
+*)
 
 fun export_cakeml_monitors dir const_alist mondecs =
   if null mondecs then

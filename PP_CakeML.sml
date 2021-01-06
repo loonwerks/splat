@@ -1,7 +1,7 @@
-structure PP_CakeML =
+structure PP_CakeML :> PP_CakeML =
 struct
 
-open Lib Feedback MiscLib PPfns AST;
+open Lib Feedback MiscLib PPfns AST AADL;
 
 val ERR = mk_HOL_ERR "PP_CakeML";
 fun unimplemented s = ERR s "unimplemented";
@@ -9,28 +9,27 @@ fun unimplemented s = ERR s "unimplemented";
 fun pp_qid ("",s) = s
   | pp_qid (s1,s2) = String.concat[s1,".",s2];
 
-fun qid_string p = Lib.quote(pp_qid p);
+fun qid_string p = pp_qid p;
 
 (*---------------------------------------------------------------------------*)
 (* CakeML Prettyprinters for AST                                             *)
 (*---------------------------------------------------------------------------*)
 
-fun base_ty_name (BaseTy BoolTy)   = "bool"
-  | base_ty_name (BaseTy CharTy)   = "char"
-  | base_ty_name (BaseTy StringTy) = "string"
-  | base_ty_name (BaseTy FloatTy)  = "float"
-  | base_ty_name (BaseTy DoubleTy)  = "double"
-  | base_ty_name (BaseTy (IntTy _))= "int"
-  | base_ty_name (NamedTy args) = pp_qid args
-  | base_ty_name (BaseTy RegexTy)  = raise ERR "base_ty_name" "regex"
+fun base_ty_name BoolTy   = "bool"
+  | base_ty_name CharTy   = "char"
+  | base_ty_name StringTy = "string"
+  | base_ty_name FloatTy  = "double"
+  | base_ty_name DoubleTy  = "double"
+  | base_ty_name (IntTy _) = "int"
+  | base_ty_name RegexTy   = raise ERR "base_ty_name" "regex"
 
 fun pp_ty depth ty =
  let open PolyML
  in if depth = 0 then PrettyString "<ty>"
    else
    case ty
-    of BaseTy _ => PrettyString (base_ty_name ty)
-     | NamedTy _ => PrettyString (base_ty_name ty)
+    of BaseTy bty => PrettyString (base_ty_name bty)
+     | NamedTy args => PrettyString (pp_qid args)
      | RecdTy(qid,fields) =>
          PrettyBlock(2,true,[],
            [PrettyString (pp_qid qid), PrettyBreak(0,0),
@@ -39,9 +38,7 @@ fun pp_ty depth ty =
             PrettyString "}"])
      | ArrayTy(eltype,dims) =>
          PrettyBlock(2,true,[],
-            [pp_ty (depth-1) eltype, PrettyBreak (1,0),
-             PrettyString "[", pp_comma_list (pp_exp (depth-1)) dims,
-             PrettyString "]"])
+            [pp_ty (depth-1) eltype, PrettyBreak (1,0), PrettyString "array"])
  end
  and pp_exp depth exp =
   let open PolyML
@@ -130,6 +127,31 @@ fun pp_ty depth ty =
              case argOpt of NONE => []
                | SOME vexp => [PrettyString"(", pp_exp (depth-1) vexp,
                                PrettyString")"])])
+      | Fncall ((_,"IfThenElse"),[e1,e2,e3]) =>
+          PrettyBlock(2,true,[],
+            [PrettyString"if ", pp_exp (depth-1) e1, PrettyString" then", Space,
+             pp_exp (depth-1) e2,Space,
+             PrettyString"else ", pp_exp (depth-1) e3])
+      | Fncall ((_,"LET"),eqlist) =>
+	let val (binds,res) = front_last eqlist
+        in PrettyBlock(5,true,[],
+              [PrettyString"let ",
+               PrettyBlock(0,true,[],
+                 [gen_pp_list emptyString [Line_Break] (pp_valbind (depth-1)) binds]),
+               Space, PrettyString"in",
+               Space, pp_exp (depth-1) res,
+               Line_Break, PrettyString "end"])
+	end
+      | Fncall(("","Tuple"),list) =>
+          if null list then
+            PrettyString "!!<EMPTY TUPLE FAILURE>!!"
+          else if length list = 1 then
+             pp_exp (depth-1) (hd list)
+          else PrettyBlock(2,true,[],
+                 [PrettyString"(",
+                  PrettyBlock(0,false,[],
+                     [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1)) list]),
+                  PrettyString")"])
       | Fncall (qid,args) => PrettyBlock(2,true,[],
            [PrettyString(pp_qid qid), PrettyString"(",
             PrettyBlock(0,false,[],
@@ -159,13 +181,22 @@ and pp_binop d (str,e1,e2) =
 and pp_exp_field d (id,exp) =
  let open PolyML
  in PrettyBlock(0,true,[],
-     [PrettyString id, PrettyString":",pp_exp (d-1) exp])
+     [PrettyString id, PrettyString" = ",pp_exp (d-1) exp])
  end
 and pp_ty_field d (id,ty) =
  let open PolyML
  in PrettyBlock(0,true,[],
      [PrettyString id, PrettyString":",pp_ty (d-1) ty])
  end
+and pp_valbind d (Binop(Equal,e1,e2)) =
+    let open PolyML
+    in PrettyBlock(5,true,[],
+        [PrettyString "val ",
+         pp_exp (d-1) e1, PrettyString " =", Space,
+         pp_exp (d-1) e2])
+    end
+  | pp_valbind other wise = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
+
 ;
 
 fun pp_vdec_semi d (id,ty) =
@@ -285,10 +316,6 @@ fun pp_decl depth decl =
               pp_constr_list (depth-1) constrs,
               PrettyString";"])
           end
-     | VarDecl vdec
-       => PrettyBlock(0,true,[],
-             [PrettyString "var", Space, pp_ty_field (depth-1) vdec,
-              PrettyString";"])
      | ConstDecl(id,ty,exp)
        => PrettyBlock(2,true,[],
              [PrettyString "const ",
@@ -353,28 +380,10 @@ fun pp_decl depth decl =
        => PrettyBlock(0,true,[],
            [PrettyString "numeral type = ",
             pp_ty (depth-1) (BaseTy(IntTy nkind)), PrettyString";"])
-     | GraphDecl(id,nty,ety)
-       => PrettyBlock(2,true,[],
-             [PrettyString ("graphtype "^id), Space, PrettyString"= (",
-              PrettyString "nodeLabel = ", pp_ty (depth-1) nty, Comma,Space,
-              PrettyString "edgeLabel = ", pp_ty (depth-1) ety,PrettyString");"])
-     | SizedDataDecl(id,ty,e1,NONE)
-       => PrettyBlock(2,true,[],
-             [PrettyString "sized ",
-              pp_ty_field (depth-1) (id,ty),
-              PrettyString" (", pp_exp (depth-1) e1, PrettyString");"])
-     | SizedDataDecl(id,ty,e1,SOME e2)
-       => PrettyBlock(2,true,[],
-             [PrettyString "sized ",
-              pp_ty_field (depth-1) (id,ty),
-              PrettyString" (", pp_exp (depth-1) e1, PrettyString") :=",
-              Space, pp_exp (depth-1) e2, PrettyString ";"])
-     | SizedGraphDecl(id,ty,e1,e2)
-       => PrettyBlock(2,true,[],
-             [PrettyString "sized ",
-              pp_ty_field (depth-1) (id,ty),
-              PrettyString" (", pp_exp (depth-1) e1, Comma,
-                                pp_exp (depth-1) e2, PrettyString");"])
+     | VarDecl vdec
+       => PrettyBlock(0,true,[],
+             [PrettyString "var", Space, pp_ty_field (depth-1) vdec,
+              PrettyString";"])
      | EfnDecl(id,params,retvalOpt)
        => PrettyBlock(2,true,[],
              [PrettyString "imported function", Space,
@@ -387,53 +396,92 @@ fun pp_decl depth decl =
                   | SOME vdec => [PrettyString" returns ",
                                   pp_ty_field (depth-1) vdec]),
               PrettyString";"])
-
+     | otherwise => PrettyString"<!!Unexpected decl!!>"
  end
+
+fun pp_tydec depth tydec =
+ let open PolyML
+ in if depth = 0 then PrettyString "<decl>"
+   else
+   case tydec
+    of EnumDec(qid,enums) => PrettyString (snd qid)
+     | RecdDec(qid,fields) => PrettyString (snd qid)
+     | ArrayDec(qid,ty)    => PrettyString (snd qid)
+     | UnionDec(qid,constrs) => PrettyString (snd qid)
+ end;
+
+fun pp_param (s,ty) = PolyML.PrettyString s;
+
+fun pp_tmdec depth tmdec =
+ let open PolyML
+ in if depth = 0 then PrettyString "<decl>"
+    else
+  case tmdec
+   of ConstDec (qid,ty,exp) =>
+      PrettyBlock(0,true,[],
+        [PrettyString "val ",
+         PrettyString (snd qid),
+         PrettyString " =", Space,
+         pp_exp (depth-1) exp,
+         Semicolon])
+    | FnDec (qid,params,ty,exp) =>
+       PrettyBlock(0,true,[],
+        [PrettyString "fun ",
+         PrettyString (snd qid),
+         gen_pp_list Space [Space] pp_param params,
+         PrettyString " =", Space,
+         pp_exp (depth-1) exp,
+         Semicolon])
+ end;
+
+fun pp_filter depth (FilterDec (qid,ports,props)) =
+ let open PolyML
+ in if depth = 0 then PrettyString "<decl>"
+    else
+      PrettyBlock(0,true,[],
+	  [PrettyString "FILTER: ",
+	   PrettyString (qid_string qid)])
+ end;
+
 
 fun dest_inout (InOut p) = p
   | dest_inout otherwise = raise ERR "dest_inout" "";
 fun dest_in (In p) = p
   | dest_in otherwise = raise ERR "dest_in" "";
 
-
-datatype port
-  = Event of string
-  | Data of string * ty
-  | EventData of string * ty;
-
 fun portname (Event s) = s
   | portname (Data(s,ty)) = s
   | portname (EventData(s,ty)) = s;
 
-datatype monitor_code
-  = MonitorCode of qid
-                 * port list
-                 * port list
-                 * (string * ty) list
-                 * (exp * exp) list  (* init *)
-                 * (exp * exp) list  (* step *)
-
-fun pp_bind depth (v,e) =
+(*
+fun pp_bind depth (vlist,e) =  (* vlist is a n.e. list of strings *)
  let open PolyML
+     val parenp = length vlist > 1
  in PrettyBlock(0,true,[],
     [PrettyString "val ",
-     pp_exp (depth-1) v,
+      let val commafied = pp_comma_list PrettyString vlist
+      in if parenp then
+           PrettyBlock(0,true,[],
+            [PrettyString"(", commafied, PrettyString ")"])
+         else commafied
+      end,
      PrettyString " = ",
      pp_exp (depth-1) e])
  end
 
 fun pp_lets depth (binds,exp) =
  let open PolyML
+     val binds' = filter (fn (list,_) => length list > 0) binds
  in  PrettyBlock(4,true,[],
     case binds
      of [] => [pp_exp (depth-1) exp]
       | otherwise =>
          [PrettyString"let", Space,
-          gen_pp_list emptyString [Line_Break] (pp_bind (depth-1)) binds,
+          gen_pp_list emptyString [Line_Break] (pp_bind (depth-1)) binds',
           Line_Break, PrettyString"in ",Line_Break, pp_exp (depth-1) exp,
           Line_Break, PrettyString "end"])
  end;
-
+*)
 
 (*---------------------------------------------------------------------------*)
 (* The stepFn synthesized for a monitor has the form                         *)
@@ -470,60 +518,114 @@ fun pp_lets depth (binds,exp) =
 (* that the correct projection function can be used.                         *)
 (*---------------------------------------------------------------------------*)
 
-fun pp_mon_stepFn depth (MonitorCode(qid,inputs, outputs, stateVars, init, step)) -
+val boolTy = BaseTy BoolTy;
+
+val initStepVar = ("initStep",boolTy);
+
+fun split_fby exp =
+  case exp
+   of Binop(Fby,e1,e2) => (e1,e2)
+    | otherwise => (exp,exp);
+
+(*---------------------------------------------------------------------------*)
+(* There should be enough information in the outgoing FnDecl so that code    *)
+(* can be generated, and also logic definitions.                             *)
+(*                                                                           *)
+(* Wondering if output ports should be part of the state. Seems like there   *)
+(* should be a state variable for an output port if the port value is used   *)
+(* subsequent computations. But it would be possible to have an output port  *)
+(* value calculated from an expression ... hmmm maybe this isn't a           *)
+(* distinction worth making.                                                 *)
+(*                                                                           *)
+(* TODO: sort Lustre variables in dependency order. Right now I assume that  *)
+(* has been done by the programmer/system designer.                          *)
+(*---------------------------------------------------------------------------*)
+
+fun feature2port (s,ty,dir,kind) =
+ case kind
+  of "EventDataPort" => EventData(s,ty)
+   | "DataPort" => Data(s,ty)
+   | "EventPort" => Event s
+   | otherwise => raise ERR "feature2port" "";
+
+datatype moncode =
+	 MonitorCode of qid * port list * port list
+                            * (string * ty) list
+                            * (exp * exp) list
+                            * (exp * exp) list
+;
+
+fun mk_monitor_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
+ let val stepFn_name = snd qid ^ "StepFn"
+     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
+     val inputs = map feature2port inports
+     val outputs = map feature2port outports
+     val stateVars = map (fn (name,ty,exp) => (name,ty)) eq_stmts
+     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
+     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
+     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
+ in
+   MonitorCode (qid, inputs, outputs, initStepVar::stateVars, init_code, step_code)
+ end
+
+val False_initStep = ConstExp(BoolLit false)
+
+fun mk_tuple list = Fncall(("","Tuple"),list)
+
+fun letExp binds exp =
+    let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
+    in Fncall(("","LET"),eqs@[exp])
+    end;
+
+fun pp_mon_stepFn depth (MonitorCode(qid,inputs, outputs, stateVars, init, step)) =
  let open PolyML
  in if depth = 0 then PrettyString "<decl>"
     else
     let val stepFn_name = snd qid ^ "stepFn"
-        val inportVars = map portname inputs
-        val outportVars = map portname outputs
-        fun pp_unpack() = PrettyBlock (2,true,[],
-                   [PrettyString let,Space,
-                    PrettyString"(",
-                    PrettyBlock(0,false,[],
-                         [pp_comma_list (pp_param(depth-1)) params]),
-                    PrettyString")",
-                    PrettyBlock (2,true,[],
-                         case retvalOpt
-                          of NONE => []
-                           | SOME vdec => [PrettyString" returns ",
-                                           pp_ty_field (depth-1) vdec])])
-             fun pp_init() = PrettyBlock(0,true,[],
-                    iter_pp emptyString  [Line_Break] (pp_lets (depth-1)) init)
-             fun pp_step() = PrettyBlock(0,true,[],
-                    iter_pp emptyString  [Line_Break] (pp_lets (depth-1)) step)
-              fun pp_top_stmt [] = pp_body()
-                | pp_top_stmt locals =
-                    PrettyBlock(0,false,[],
-                      [PrettyString"var",
-                       PrettyBreak (1,0),
-                       PrettyBlock(0,true,[],
-                         iter_pp emptyString [Line_Break] (pp_vdec_semi (depth-1)) locals),
-                       Line_Break,
-                       PrettyString"in",
-                       Line_Break,
-                       pp_body()])
-          in
-           PrettyBlock(2,false,[],
-             [PrettyString ("fun "^stepFn_name^" inports outports stateVars = "),
-              Line_Break, PrettyString " ",
-              pp_unpacking()
-              (* if-then-else *)
-              PrettyBlock(2,true,[],
-                [PrettyString"if initStep", Space,
-                 PrettyString"then ", pp_init(),Space,
-                 PrettyString"else ", pp_step()])
-              Line_Break,
-              PrettyString"end"])
-          end
+        val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
+        val outportBs = (mk_tuple(map (VarExp o portname) outputs),VarExp"outports")
+        val stateBs   = (mk_tuple(map (VarExp o fst) stateVars),VarExp"stateVars")
+        val stateExps = False_initStep::map (fn (s,ty) => VarExp s) (tl stateVars)
+        val retTuple  = mk_tuple stateExps
+        val initExp   = letExp init retTuple
+        val stepExp   = letExp step retTuple
+        val condExp   = Fncall(("","IfThenElse"),[VarExp"initStep",initExp,stepExp])
+        val bodyExp   = letExp [inportBs,outportBs,stateBs] condExp
+    in
+      PrettyBlock(2,true,[],
+        [PrettyString ("fun "^stepFn_name^" inports outports stateVars = "),
+         Line_Break, PrettyString " ",
+         pp_exp (depth - 1) bodyExp
+        ])
+    end
  end;
 
+fun pp_monitor depth mondec =
+ let val moncode = mk_monitor_stepFn mondec
+ in pp_mon_stepFn depth moncode
+ end
 
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_mon_stepFn i mon);
+fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
+ let open PolyML
+ in if depth = 0 then PrettyString "<decl>"
+   else
+    PrettyBlock(2,true,[],
+        [PrettyString ("structure "^pkgName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         end_pp_list Line_Break Line_Break (pp_tydec (depth-1)) types, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1)) consts, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors, Line_Break,
+         PrettyString "end"
+        ])
+ end
 
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn ty => pp_ty i ty);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_exp i e);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn stmt => pp_stmt i stmt);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn decl => pp_decl i decl);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tydec => pp_tydec i tydec);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tmdec => pp_tmdec i tmdec);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_mon_stepFn i mon);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
 
 end (* PP_CakeML *)
