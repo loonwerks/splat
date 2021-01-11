@@ -14,12 +14,10 @@
 
 \newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
 \newcommand{\imp}{\Rightarrow}
-\newcommand{\lval}{\ensuremath{\mathit{lval}}}
 \newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
 \newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
 \newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
-\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
-\newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+\newcommand{\Angled}[1]{\ensuremath{\langle {#1} \rangle}}
 
 \usepackage{graphicx}
 \usepackage{tikz}
@@ -35,9 +33,10 @@
 \date{\today}
 
 \begin{abstract}
-The research work of the SafeDocs and CASE projects has some overlap
-in the area of message description languages and parsing. We discuss
-some technical ideas in this intersection.
+The SafeDocs and CASE projects have shared interests in expressive
+message description languages, secure parsing, and verified
+implementations. We discuss some research ideas in this area,
+confining ourselves to a technical discussion.
 \end{abstract}
 
 \maketitle
@@ -48,10 +47,11 @@ The present author gave a talk to the SafeDocs PI meeting (November
 10, 2020), titled \emph{Specifying Message Formats with Contiguity
   Types}. The talk provided an overview of the CASE project with a
 focus on work formalizing and proving correct a message format
-language and its parsing algorithm.
+language and its parsing algorithm. The ensuing discussion revealed an
+overlap in research concerns that should be explored.
 
 \emph{Contiguity types} provide a small but expressive DSL for
-specifying message formats, especially those with "self-describing"
+specifying message formats, especially those with \emph{self-describing}
 aspects such as length fields and `unions`. Filters and parsers
 can be automatically generated from contiguity type specifications,
 backed up by a formal correctness proof. In CASE, contiguity types
@@ -61,46 +61,197 @@ messages can be very large and complex; we were pleased to see that
 contiguity type specifications capture UxAS message structure and
 constraints transparently.
 
-There are several aspects of contiguity types that seem worth pursuing
-further:
+We feel that the following aspects of contiguity types and message
+parsing seem worth pursuing in wider contexts:
 
 \begin{description}
 
-\item [First class `look-behind`] As the contig-type parser processes
-  a message, each field is added to the context (a finite map from
-  lvars to message slices). This context is used in the computation of
-  length fields, and in calculating which element of a union to
+\item [First class `look-behind`] A common aspect of message parsing
+  is that \emph{context}, \ie, already seen information in the
+  message, is used to control further parsing steps. In our work, as a
+  contiguity type parser processes a message, each field is added to
+  the context (a finite map from C-style \emph{lvars} to message
+  elements). This context is used in the computation of length fields,
+  and in calculating which element of a union to
   choose. \footnote{Attribute grammars seem to also offer a uniform
     naming scheme for accessing context. The relationship needs more
     study and we have been talking to the SRI SafeDocs performers
     about this.}
 
 \item [In-message assertions] Message constraints can be expressed
-  within a contig type. This allows data constraints to be expressed
-  alongside the data in the message. In an implementation, this can be
-  leveraged to provide fast failure and copy-free filtering.
+  within a contiguity type. This allows data constraints to be
+  expressed alongside the data in the message specification. In an
+  implementation, this can be leveraged to provide fast failure and
+  copy-free filtering.
 
 \item [Context-sensitive sum] There is no unadorned `sum' operation
-  (\ie, the union of two formal languages) in the syntax of contiguity
-  types. Instead, there is a `guarded union` type
+  representing the union of two formal languages in the syntax of
+  contiguity types. Instead, there is a `guarded union` type
   \[
     \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n)
   \]
   where evaluation of the $\mathit{bexp}_i$, in the accumulated
   context, is used to determine which $\tau_i$ to continue parsing
   with. There are similar notions in other parser frameworks, \eg, PEG
-  parsers and ANTLR, but their tendency is to exploit \emph{lookahead}
+  parsers and ANTLR, but those designs exploit \emph{lookahead}
   information, handling look-behind in an \adhoc{} way.
-
 
 \end{description}
 
+The syntax of contiguioty types is given in Figure \ref{contig-types}.
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+ \mathit{base} & = & \konst{bool} \mid \konst{char} \mid \konst{u8} \mid
+ \konst{u16} \mid \konst{u32} \mid \konst{u64}  \mid \konst{i16} \mid
+ \konst{i32} \mid \konst{i64} \mid \konst{float} \mid \konst{double} \\
+ \tau & = & \mathit{base} \\
+      & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
+      & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
+      & \mid & \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n)
+\end{array}
+\]
+\label{contig-types}
+\caption{Contiguity types}
+\end{figure}
+
+In the following, we describe a few ideas. Some are straightforward,
+but necessary building blocks, while others represent significant
+advances. An important consideration is that---at least in the
+embedded system context of CASE---messages are essentially flattened
+versions of datastructures. Such formats are unambiguous and easy to
+parse. This allows us to ignore some aspects of context-free parsing
+such as infixity, associativity, and precedence. Implementations will
+likely require a stack for parsing tree-shaped data, but the full
+expressive power permitted by context-free grammars and parser
+generators may not be needed, and may actually be too much.
+
+\section{Generalized contiguity types}
+
+In the current incarnation of contiguity types all data is bounded,
+since all \konst{Array} types are given an explicit bound, and all
+base types are of fixed sizes. Removing this restriction would greatly
+increase expressiveness. We are considering the following two changes.
+
+\subsection*{Add a lexer}
+
+Currently, the set of base contiguity types is set to be the usual
+base types expected in most programming languages, \ie, signed and
+unsigned integers of width 8, 16, 32, and 64 bits, plus floating point
+(32 and 64 bits). Semantically, a base type denotes a set of string of
+the given width, but it is also coupled with an \emph{interpretation
+  function} for example, the contiguity type \verb+u8+ denotes the set
+of all one-byte strings, interpreted by the usual unsigned valuation
+function:
+
+  \[ \konst{u8} = \langle \set{s \mid \konst{length}(s) = 1}, \konst{uvalFn} \rangle
+  \]
+
+  This cannot, however, capture base types such as string literals of
+  arbitrary size, or bignums, or the situation in \emph{packed}
+  bit-level encodings where fields are of \emph{ad hoc} sizes aimed at
+  saving space. An obvious generalization is to express base types via
+  regular expressions paired with interpretation functions. Thus \konst{u8}
+  can be redefined as
+
+  \[ \konst{u8} = \langle \Lang{.}, \konst{uvalFn} \rangle
+  \]
+
+  (where `.' is the standard regular expression denoting any character). Similarly
+
+  \[ \konst{C-string} = \langle \Lang{[\backslash 001-\backslash 255]+ \backslash 000}, \konst{I} \rangle
+  \]
+
+  denotes a zero-terminated string as found in the C language. Its
+  interpretation is just the identity function.
+
+  We already have a HOL4 theory of correct regular-expression based
+  lexer generation, and it should be relatively easy to adapt
+  contiguity types to use its lexemes instead of the current
+  restricted set of base types. One piece of important work yet to be
+  done will be to make the lexer DFA be table-driven.
+
+ \subsection*{Add Kleene Star}
+  From a formal language point of view contiguity types are an odd
+  duck since, among other things, they lack Kleene star. The use of
+  bounded \konst{Array} types provides much expressiveness for
+  representing sequences of data, but ultimately means that some kinds
+  of message can't be handled, for example those where there is no way
+  to predict the number of nestings of structure in a
+  message. Examples are s-expressions, logical formulas, and
+  programming language syntax trees. We address this by providing a
+  new contiguity type constructor--- \konst{List} --- of unbounded
+  lists. A message matching a $\konst{List}\;\tau$ contig-type will
+  have a particular encoding similar to implementations of lists in
+  functional languages. In particular, a list will be a sequence of
+  tagged $\tau$ elements of the form $\Angled{\konst{ConsTag}}\; \tau
+  \ldots \tau \Angled{\konst{NilTag}}$.
+
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+ \tau & =    & \konst{Base}\; \langle \mathit{regexp}, \mathit{valFn} \rangle \\
+      & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
+      & \mid & \konst{List}\; \tau \\
+      & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
+      & \mid & \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n)
+\end{array}
+\]
+\label{gen-contig-types}
+\caption{Generalized contiguity types}
+\end{figure}
+
+
 \section{Context-free parsing}
 
- It would be interesting to extend ideas from contiguity types to
-context-free recognition and parsing, with the ultimate goal of being
-able to handle self-describing messages inside a parser generator
-framework. The envisioned work would have the following components
+ It would be interesting and useful to be able to apply and extend
+ some of the ideas from contiguity types to context-free recognition
+ and parsing, with the ultimate goal of being able to handle
+ self-describing tree-shaped data inside a parser generator
+ framework.
+
+ \subsection{Examples}
+
+It is worth having some simple examples in mind.
+
+\begin{enumerate}
+
+\item A JSON parser that enforces the requirement that \textsf{Object}
+  elements\footnote{An \textsf{Object} is essentially a finite map
+    where the domain is strings.} have no duplicate keys. It is of
+  course quite easy to enforce this property on the resulting parse
+  tree, by making another pass over the data, but the challenge is to
+  combine parsing and data validation in a single pass. How can we
+  express this constraint inside the grammar, and generate an
+  implementation that checks the constraint on the fly? Note that the
+  messages in this example do not have a self-describing aspect.
+
+\item A filter for wellformed first order terms where, to be
+  \emph{wellformed}, all functions need to be applied to the correct number
+  of arguments. Thus message input for the filter would have the form
+
+  \[ \langle \mathit{sig} , \mathit{term}\; \konst{list} \rangle \]
+
+  and, given a message $\langle S, L \rangle$, each term $t$ in $L$
+  needs to be (recursively) checked to ensure that each application
+  $f(t_1,\ldots,t_n)$ is such that $f$ is in $S$, with arity $n$.
+  (Note there is another constraint, namely that $S$ has no duplicate
+  function names, as in (1).)
+
+\item Embedding the wellformed terms of (2) into the JSON parser
+  of (1) in order to get a parser for wellformed terms encoded in
+  JSON. This example captures a common pattern, for which JSON and XML
+  for example are well-suited, namely refining a general format to a
+  specific language.
+
+\end{enumerate}
+
+
+\subsection{Steps toward the goal}
+
+   The envisioned work would have the following components
 
 \begin{enumerate}
 
