@@ -11,6 +11,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{amsbsy}
+\usepackage{amsthm}
 
 \newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
 \newcommand{\imp}{\Rightarrow}
@@ -18,6 +19,11 @@
 \newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
 \newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
 \newcommand{\Angled}[1]{\ensuremath{\langle {#1} \rangle}}
+
+\theoremstyle{definition}
+\newtheorem*{example}{Example}
+\newtheorem*{remark}{Remark}
+
 
 \usepackage{graphicx}
 \usepackage{tikz}
@@ -51,15 +57,16 @@ language and its parsing algorithm. The ensuing discussion revealed an
 overlap in research concerns that should be explored.
 
 \emph{Contiguity types} provide a small but expressive DSL for
-specifying message formats, especially those with \emph{self-describing}
-aspects such as length fields and `unions`. Filters and parsers
-can be automatically generated from contiguity type specifications,
-backed up by a formal correctness proof. In CASE, contiguity types
-have been used to implement the "insert-filter" and "insert-monitor"
-architectural transformations for the set of UxAS message types. These
-messages can be very large and complex; we were pleased to see that
-contiguity type specifications capture UxAS message structure and
-constraints transparently.
+specifying message formats, especially those with
+\emph{self-describing} aspects such as length fields and
+`unions`. Filters and parsers can be automatically generated from
+contiguity type specifications, backed up by a formal correctness
+proof. The syntax of contiguity types is given in Figure \ref{ctypes}.
+In CASE, contiguity types have been used to implement the
+"insert-filter" and "insert-monitor" architectural transformations for
+the set of UxAS message types. These messages can be very large and
+complex; we were pleased to see that contiguity type specifications
+capture UxAS message structure and constraints transparently.
 
 We feel that the following aspects of contiguity types and message
 parsing seem worth pursuing in wider contexts:
@@ -93,12 +100,11 @@ parsing seem worth pursuing in wider contexts:
   where evaluation of the $\mathit{bexp}_i$, in the accumulated
   context, is used to determine which $\tau_i$ to continue parsing
   with. There are similar notions in other parser frameworks, \eg, PEG
-  parsers and ANTLR, but those designs exploit \emph{lookahead}
+  parsers and ANTLR, but those designs focus on \emph{lookahead}
   information, handling look-behind in an \adhoc{} way.
 
 \end{description}
 
-The syntax of contiguity types is given in Figure \ref{ctypes}.
 
 \begin{figure}
 \[
@@ -118,32 +124,26 @@ The syntax of contiguity types is given in Figure \ref{ctypes}.
 
 In the following, we describe a few ideas. Some are straightforward,
 but necessary building blocks, while others represent significant
-advances. An important consideration is that---at least in the
-embedded system context of CASE---messages are essentially flattened
-versions of datastructures. Such formats are unambiguous and easy to
-parse. This allows us to ignore some aspects of context-free parsing
-such as infixity, associativity, and precedence. Implementations will
-likely require a stack for parsing tree-shaped data, but the full
-expressive power permitted by context-free grammars and parser
-generators may not be needed, and may actually be too much.
+advances.
 
-\section{Generalized contiguity types}
+\section{Generalizing contiguity types}
 
 In the current incarnation of contiguity types all data is bounded,
 since all \konst{Array} types are given an explicit bound, and all
-base types are of fixed sizes. Removing this restriction would greatly
-increase expressiveness. We are considering the following two changes.
+base types are of fixed sizes. Removing these two restrictions would
+greatly increase expressiveness. We have thus been thinking about
+adding a lexer and a suitably adapted version of Kleene star. The
+augmented syntax can be seen in Figure \ref{gen-contig-types}.
 
-\subsection*{Add a lexer}
+\subsection{Lexing}
 
 Currently, the set of base contiguity types is set to be the usual
-base types expected in most programming languages, \ie, signed and
-unsigned integers of width 8, 16, 32, and 64 bits, plus floating point
-(32 and 64 bits). Semantically, a base type denotes a set of string of
-the given width, but it is also coupled with an \emph{interpretation
-  function} for example, the contiguity type \verb+u8+ denotes the set
-of all one-byte strings, interpreted by the usual unsigned valuation
-function:
+base types expected in most programming languages, see Figure
+\ref{ctypes}. Semantically, a base type denotes a set of strings of
+the specified width, but it is also coupled with an
+\emph{interpretation function} for example, the contiguity type
+\verb+u8+ denotes the set of all one-byte strings, interpreted by the
+usual unsigned valuation function:
 
   \[ \konst{u8} = \langle \set{s \mid \konst{length}(s) = 1}, \konst{uvalFn} \rangle
   \]
@@ -152,42 +152,47 @@ function:
   arbitrary size, or bignums, or the situation in \emph{packed}
   bit-level encodings where fields are of \emph{ad hoc} sizes aimed at
   saving space. An obvious generalization is to express base types via
-  regular expressions paired with interpretation functions. Thus \konst{u8}
-  can be redefined as
+  regular expressions paired with interpretation functions. Now \konst{u8}
+  can be defined as
 
-  \[ \konst{u8} = \langle \Lang{.}, \konst{uvalFn} \rangle
+  \[ \konst{u8} = \langle . \; , \konst{uvalFn} \rangle
   \]
 
-  (where `.' is the standard regular expression denoting any character). Similarly
+\noindent (where `.' is the standard regular expression denoting any character). Similarly,
 
-  \[ \konst{C-string} = \langle \Lang{[\backslash 001-\backslash 255]+ \backslash 000}, \konst{I} \rangle
+  \[ \konst{Cstring} = \langle [\backslash 001-\backslash 255]+ \backslash 000, \konst{I} \rangle
   \]
 
-  denotes a zero-terminated string as found in the C language. Its
-  interpretation is just the identity function.
+\noindent denotes a zero-terminated string as used in the C
+language. Its interpretation is just the identity function, but could
+also be a function that dropped the terminating \verb+\000+ character.
 
-  We already have a HOL4 theory of correct regular-expression based
-  lexer generation, and it should be relatively easy to adapt
-  contiguity types to use its lexemes instead of the current
-  restricted set of base types. One piece of important work yet to be
-  done will be to make the lexer DFA be table-driven.
+\begin{remark} [verification] There already exists a
+  HOL4 theory of regexp based, maximal munch, lexer generation,
+  and it should be relatively easy to adapt contiguity types to use
+  its lexemes instead of the current restricted set of base types. One
+  piece of important work yet to be done will be to make the lexer DFA
+  be table-driven.
+\end{remark}
 
- \subsection*{Add Kleene Star}
-  From a formal language point of view contiguity types are an odd
-  duck since, among other things, they lack Kleene star. The use of
-  bounded \konst{Array} types provides much expressiveness for
-  representing sequences of data, but ultimately means that some kinds
-  of message can't be handled, for example those where there is no way
-  to predict the number of nestings of structure in a
-  message. Examples are s-expressions, logical formulas, and
+\subsection{Kleene Star}
+  Contiguity types lack Kleene star. The use of bounded \konst{Array}
+  types provides much expressiveness for representing sequences of
+  data, but ultimately some kinds of message can't be handled, \ie,
+  those where there is no way to predict the number of nestings of
+  structure. Examples are s-expressions, logical formulas, and
   programming language syntax trees. We address this by providing a
   new contiguity type constructor--- \konst{List} --- of unbounded
-  lists. A message matching a $\konst{List}\;\tau$ contig-type will
-  have a particular encoding similar to implementations of lists in
-  functional languages. In particular, a list will be a sequence of
-  tagged $\tau$ elements of the form $\Angled{\konst{ConsTag}}\; \tau
-  \ldots \tau \Angled{\konst{NilTag}}$.
+  lists. A message matching a $\konst{List}\;\tau$ type will have an
+  encoding similar to implementations of lists in functional
+  languages. The recognition and parsing algorithms for contiguity
+  types are extended to handle \konst{List} objects by iteratively
+  unrolling the recursive equation
 
+\[ \kstar{L} = \varepsilon \cup L \cdot \kstar{L} \]
+
+Further work is needed to establish the details, but the following
+sketch should give a sense of how we expect things to be.
 
 \begin{figure}
 \[
@@ -199,22 +204,114 @@ function:
       & \mid & \konst{Union}\; (\mathit{bexp}_1 : \tau_1) \ldots (\mathit{bexp}_n : \tau_n)
 \end{array}
 \]
-\label{gen-contig-types}
 \caption{Generalized contiguity types}
+\label{gen-contig-types}
 \end{figure}
 
+\begin{example}[Recursive lists]
+
+\end{example}
+The type $\konst{List}\;\tau$ is represented by the following
+recursive record type:
+
+\[
+ \konst{List}\;\tau =
+   \left\{
+     \begin{array}{lcl}
+       \konst{tag} & : & \konst{u8} \\
+       \konst{test} & : &
+       \begin{array}[t] {lcl}
+         \konst{Union} \{ \\
+         \quad \konst{tag} = \konst{NilTag} & \longrightarrow & \varepsilon \\
+         \quad \konst{tag} = \konst{ConsTag} & \longrightarrow &
+          \{ \konst{hd} : \tau, \ \konst{tl} : \konst{List}\; \tau \}
+        \end{array}
+     \end{array}
+   \right.
+\]
+
+In words, a $\konst{List}\;\tau$ matches a sequence of records where
+a single-byte tag (\konst{NilTag} or \konst{ConsTag}) is read, then tested to see
+whether to stop parsing the list (\konst{NilTag}) or to continue on to
+parse a $\tau$ into the \konst{hd} field and recurse in order to
+process the remainder of the list. Thus, the list of integers
+
+\[ \konst{Cons}(1, \konst{Cons}(2, \konst{Cons}(3, \konst{Nil}))) \]
+
+can be represented in a message as (\konst{Code} is an encoder for integers)
+
+\[ \konst{ConsTag}\cdot \konst{Code}(1) \cdot
+   \konst{ConsTag}\cdot \konst{Code}(2) \cdot
+   \konst{ConsTag}\cdot \konst{Code}(3) \cdot \konst{NilTag} \]
+
+and a contig-based parser, given type $\konst{List}\; \konst{int}$
+would succeed, returning the context
+
+\[
+\begin{array}{rcl}
+\konst{root.tag} & \mapsto & \konst{ConsTag} \\
+\konst{root.hd} & \mapsto & \konst{Code}(1) \\
+\konst{root.tl.tag} & \mapsto & \konst{ConsTag} \\
+\konst{root.tl.hd} & \mapsto & \konst{Code}(2) \\
+\konst{root.tl.tl.tag} & \mapsto & \konst{ConsTag} \\
+\konst{root.tl.tl.hd} & \mapsto & \konst{Code}(3) \\
+\konst{root.tl.tl.tl.tag} & \mapsto & \konst{NilTag}
+\end{array}
+\]
+
+We expect this solution to be compositional, in the sense that
+\konst{List} types can be the arguments of other contiguity types, can
+be applied to themselves, \eg, $\konst{List}(\konst{List}\;\tau)$,
+\etc \; Thus arbitrary branching structures of arbitrary depth can be
+specified and parsed with this extension.
+
+
+%% An important consideration is that---at least in the
+%% embedded system context of CASE---messages are essentially flattened
+%% versions of datastructures. Such formats are unambiguous and easy to
+%% parse. This allows us to ignore some aspects of context-free parsing
+%% such as infixity, associativity, and precedence. Implementations will
+%% likely require a stack for parsing tree-shaped data, but the full
+%% expressive power permitted by context-free grammars and parser
+%% generators may not be needed, and may actually be too much.
 
 \section{Context-free parsing}
 
- It would be interesting and useful to be able to apply and extend
- some of the ideas from contiguity types to context-free recognition
- and parsing, with the ultimate goal of being able to handle
- self-describing tree-shaped data inside a parser generator
- framework.
+The outlined approach seems to indicate that the contiguity-type
+approach can be extended to certain classes of
+\emph{context-free-like} languages.\footnote{It isn't clear where in
+  the Chomsky hierarchy this work falls.} However, the approach
+is distinctly different in flavor, mainly because sums are determined
+by \emph{looking behind} when computing which choice to follow in a
+\konst{Union} type. Thus the list parser sketched above branches
+\emph{after} it has seen the tag. This approach runs into difficulties when
+confronted by grammars that use non-deterministic sum to express
+branching. Consider the following grammar rules for JSON-style lists
+(called \konst{Array} in JSON specifications). We assume the lexer has
+removed whitespace.
+\[
+\begin{array}{rcl}
+ \konst{Array} & ::= & [\; ] \mid [ \mathit{Elts} ] \\
+ \konst{Elts}  & ::= & \konst{Value} \mid \konst{Value} ,  \konst{Elts} \\
+\end{array}
+\]
 
- \subsection{Examples}
+Without diving too deeply into details, a parser for this language has
+to deal with a situation where it has read the initial open bracket
+([) for an \konst{Array} and now needs to parse either a closing bracket
+  (for the empty list) or a \konst{Value}. In this case, the parser
+  needs lookahead to resolve the choice, and the look-behind of
+  contiguity types isn't helpful. It could be that the difficulty can
+  be avoided, by somehow pretending that the next lexeme is in the
+  context, and thus available in the evaluation of boolean expressions
+  of the \konst{Union} construct. But that raises other questions
+  which are currently being worked on. It is also likely that such
+  questions find answers in the voluminous literature on parsing.
 
-It is worth having some simple examples in mind.
+
+\subsection{Examples}
+
+It is worth having some simple but challenging examples in mind.
 
 \begin{enumerate}
 
@@ -240,39 +337,14 @@ It is worth having some simple examples in mind.
   (Note there is another constraint, namely that $S$ has no duplicate
   function names, as in (1).)
 
-\item Embedding the wellformed terms of (2) into the JSON parser
-  of (1) in order to get a parser for wellformed terms encoded in
+\item Embedding the wellformed terms of (2) into the JSON parser of
+  (1) in order to get a parser for wellformed terms encoded in
   JSON. This example captures a common pattern, for which JSON and XML
-  for example are well-suited, namely refining a general format to a
-  specific language.
+  for example are well-suited, namely using a general format to
+  represent a specific language.
 
 \end{enumerate}
 
-
-\subsection{Steps toward the goal}
-
-   The envisioned work would have the following components
-
-\begin{enumerate}
-
-\item Augment parser state with "accumulated context" that gets added
-      to as parsing proceeds. This is an explicit and systematic
-      addition to standard parser technology. A simple
-      characterization of this would be "enhanced location
-      information".
-
-\item Use accumulated context to control parsing. This will require a
-      uniform addressing scheme able to index elements on the parser
-      stack as well other context elements. Ad hoc approaches can be
-      found in, e.g. the "semantic predicates" of ANTLR, or in the use
-      of semantic actions in conventional parser frameworks to control
-      the parser.
-
-\item Use such a parser to do on-the-fly property checking of standard
-      interchange formats, such as Json augmented with constraints.
-
-\item Correctness proofs, of course.
-\end{enumerate}
 
 \section{Stratified (modular) parsing}
 
@@ -324,7 +396,6 @@ It is worth having some simple examples in mind.
       handle C-style strings in messages, or any other such message
       portion of arbitrary length ending with a specific delimiter.
 
-      <CASE-relevant example, with finding numbers in headers>
 \end{itemize}
 
- \end{document}
+\end{document}
