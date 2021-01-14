@@ -122,7 +122,7 @@ parsing seem worth pursuing in wider contexts:
 \label{ctypes}
 \end{figure}
 
-In the following, we describe a few ideas. Some are straightforward,
+In the following, we describe a few ideas. Some are straightforward
 but necessary building blocks, while others represent significant
 advances.
 
@@ -149,7 +149,7 @@ usual unsigned valuation function:
   \]
 
   This cannot, however, capture base types such as string literals of
-  arbitrary size, or bignums, or the situation in \emph{packed}
+  arbitrary size, or bignums, or the situation in packed
   bit-level encodings where fields are of \emph{ad hoc} sizes aimed at
   saving space. An obvious generalization is to express base types via
   regular expressions paired with interpretation functions. Now \konst{u8}
@@ -212,7 +212,7 @@ sketch should give a sense of how we expect things to be.
 
 \end{example}
 The type $\konst{List}\;\tau$ is represented by the following
-recursive record type:
+contiguity type, a recursive record:
 
 \[
  \konst{List}\;\tau =
@@ -265,6 +265,18 @@ be applied to themselves, \eg, $\konst{List}(\konst{List}\;\tau)$,
 \etc \; Thus arbitrary branching structures of arbitrary depth can be
 specified and parsed with this extension.
 
+\begin{remark} [verification] There already exists a
+  HOL4 theory of contiguity types, with a syntax, semantics, and
+  parser generator correctness proof. Adding Kleene star to the syntax
+  and semantics is straightforwad, and we have outlined above how the
+  parser generator would handle recursive lists. The potentially
+  unbounded iteration of Kleene star has often posed termination
+  problems when formalizing matchers, but we have previous
+  experience in circumventing such problems and, moreover, our solution
+  above always moves forward in the input when handling a
+  $\konst{List}\;\tau$ type.
+\end{remark}
+
 
 %% An important consideration is that---at least in the
 %% embedded system context of CASE---messages are essentially flattened
@@ -280,36 +292,103 @@ specified and parsed with this extension.
 The outlined approach seems to indicate that the contiguity-type
 approach can be extended to certain classes of
 \emph{context-free-like} languages.\footnote{It isn't clear where in
-  the Chomsky hierarchy this work falls.} However, the approach
-is distinctly different in flavor, mainly because sums are determined
-by \emph{looking behind} when computing which choice to follow in a
+  the Chomsky hierarchy this work falls.} However, the approach is
+distinctly different in flavor, mainly because sums are determined by
+\emph{looking behind} when computing which choice to follow in a
 \konst{Union} type. Thus the list parser sketched above branches
-\emph{after} it has seen the tag. This approach runs into difficulties when
-confronted by grammars that use non-deterministic sum to express
+\emph{after} it has seen the tag. This approach runs into difficulties
+when confronted by grammars that use non-deterministic sum to express
 branching. Consider the following grammar rules for JSON-style lists
 (called \konst{Array} in JSON specifications). We assume the lexer has
-removed whitespace.
+removed whitespace and note that occurrences of open and close
+brackets in the rules are terminals of the grammar.
 \[
 \begin{array}{rcl}
- \konst{Array} & ::= & [\; ] \mid [ \mathit{Elts} ] \\
+ \konst{Array} & ::= & [\; ] \mid [ \konst{Elts} ] \\
  \konst{Elts}  & ::= & \konst{Value} \mid \konst{Value} ,  \konst{Elts} \\
 \end{array}
 \]
 
 Without diving too deeply into details, a parser for this language has
 to deal with a situation where it has read the initial open bracket
-([) for an \konst{Array} and now needs to parse either a closing bracket
-  (for the empty list) or a \konst{Value}. In this case, the parser
-  needs lookahead to resolve the choice, and the look-behind of
+([) for an \konst{Array} and now needs to parse either a closing
+  bracket (for the empty list) or a \konst{Value}. In this case, the
+  parser needs lookahead to resolve the choice, and the look-behind of
   contiguity types isn't helpful. It could be that the difficulty can
   be avoided, by somehow pretending that the next lexeme is in the
   context, and thus available in the evaluation of boolean expressions
   of the \konst{Union} construct. But that raises other questions
-  which are currently being worked on. It is also likely that such
-  questions find answers in the voluminous literature on parsing.
+  which are currently being worked on. It is likely that such
+  questions find answers in the voluminous literature on parsing, \eg,
+  the computation of ``first'' and ``follow'' sets in parser
+  generators may be pertinent. It would, in any case, be a nice result
+  if there was a smooth combination of look-behind and look-ahead
+  parsing.
 
+\subsection{Contiguity types as lexemes}
 
-\subsection{Examples}
+Standard parser technology is based on a set of grammar rules phrased
+in terms of a collection of terminals and non-terminals, where the
+terminals are specified by regular expressions. It seems interesting
+to consider specifying terminals by contiguity types rather than
+regular expressions. Thus, suppose we have a contiguity type
+specifying wellformed GPS coordinates
+
+{\small
+\begin{verbatim}
+  gps = {lat : double
+         lon : double
+         alt : double
+         check : Assert ...
+        }
+\end{verbatim}}
+
+and wanted to specify a list of such. Then the following grammar rules
+seem natural in parsing a binary encoded list of wellformed GPS
+coordinates:
+\[
+\begin{array}{rcl}
+ \konst{GPSList} & ::=  & \konst{NilTag} \\
+                 & \mid & \konst{ConsTag} \cdot \konst{gps} \cdot \konst{GPSList} \\
+\end{array}
+\]
+
+The lexeme \konst{gps} is produced by the contiguity type parser, as
+are the tags, while the sequencing of terminals and non-terminals,
+along with the recursion, is handled by the grammar rules. The
+construction of parse trees from the grammar must smoothly incorporate
+parse trees coming from the lexer. This general approach would
+provide, if the implementation can be made to work, a nice example of
+combining contiguity types and standard parser technology, while
+leaving both implementations mostly unchanged. However, we expect
+there are quite a few obstacles to be surmounted.
+
+\begin{remark} [verification] There already exists
+  HOL4 theories of SLR and PEG parsing. Similarly, there are several
+  verified parser generators in the Coq world. It would be interesting
+  to marry that work with a verified contiguity type lexer to get a
+  fully verified parser generator implementation with builtin
+  assertion checking.
+\end{remark}
+
+\subsection{Stratified (modular) parsing}
+
+ One common requirement in parsing is modularity: \eg, a parser for
+ programming-language statements is notionally parameterized by a
+ parser for expressions. In most cases, these languages can be
+ combined in the same grammar, but that works against worthy aims such
+ as re-use and separation. The SafeDocs experience shows that this
+ idea must be taken seriously for difficult languages such as
+ PDF. What seems to be needed is a way to---in the midst of parsing
+ language A---select a subsequence of the input to separately parse
+ with parser B. In determining the slice of the input to give to B,
+ the accumulated context often needs to be consulted. Contiguity types
+ give a way to handle this, and, in particular, seem to offer a
+ framework in which the context accumulated by B is added back to that
+ of A. Message processing, with its piggy-backing of messages, has
+ much the same flavor (albeit simpler).
+
+\section{Examples}
 
 It is worth having some simple but challenging examples in mind.
 
@@ -345,57 +424,48 @@ It is worth having some simple but challenging examples in mind.
 
 \end{enumerate}
 
+\section{Conclusion}
 
-\section{Stratified (modular) parsing}
-
-   One common requirement in parsing is modularity: e.g., a parser for
-   programming-language statements is notionally parameterized by a
-   parser for expressions. In most cases, these can be written in the
-   same grammar, but that works against worthy aims such as re-use and
-   separation. The SafeDocs experience shows that this idea must be
-   taken seriously for difficult languages such as PDF. What seems to
-   be needed is a way to---in the midst of parsing language A---select
-   a subsequence of the input to separately parse with parser B. In
-   determining the slice of the input to give to B, the accumulated
-   context often needs to be consulted. Contiguity types give a way to
-   handle this, and, in particular, seem to offer a framework in which
-   the context accumulated by B is added back to that of A. Message
-   processing, with its piggy-backing of messages, has much the same
-   flavor.
-
-\section{Property-enhanced lexing}
-
-   We have a formalized, proved correct lexer generator that uses the
-   maximal-munch heuristic. To be more performant, it needs to be
-   converted to be table-driven, and we would like it to be a
-   property-producing lexer.
-
-   Conventional lexers return a stream of lexemes. Regular expressions
-   are able to enforce basic well-formedness properties of lexemes,
-   and these would need to be propagated to the parser in order for
-   the parser to enforce its own well-formedness constraints. This can
-   be extended to stratified parsing situations (see below).
+The world of parsing, one of the great achievements of Computer
+Science, continues to generate new research problems. The ideas
+sketched above, if achievable, can solve some problems not addressed
+by current technology.
 
 
-\paragraph{Contiguity types and lexing}
 
-   Two ideas seem worth thinking about a little more. In one, we use
-   contiguity types as a high-powered lexer language; in the other, we
-   add a regexp-based lexer as a base contiguity type.
+%% \section{Property-enhanced lexing}
 
-\begin{itemize}
+%%    We have a formalized, proved correct lexer generator that uses the
+%%    maximal-munch heuristic. To be more performant, it needs to be
+%%    converted to be table-driven, and we would like it to be a
+%%    property-producing lexer.
 
-\item Since contiguity types are deterministic, they could possibly be
-      useful as a lexer replacement in certain parsing scenarios. A
-      contig-type parser being used as a lexer would generate a "parse
-      tree" lexeme that would be folded into the parser stack.
+%%    Conventional lexers return a stream of lexemes. Regular expressions
+%%    are able to enforce basic well-formedness properties of lexemes,
+%%    and these would need to be propagated to the parser in order for
+%%    the parser to enforce its own well-formedness constraints. This can
+%%    be extended to stratified parsing situations (see below).
 
-\item Contiguity types with regexp-based lexing added as a supplement
-      to the existing suite of fixed-width base types. This amounts to
-      a controlled use of Kleene star. This would add a nice way to
-      handle C-style strings in messages, or any other such message
-      portion of arbitrary length ending with a specific delimiter.
 
-\end{itemize}
+%% \paragraph{Contiguity types and lexing}
+
+%%    Two ideas seem worth thinking about a little more. In one, we use
+%%    contiguity types as a high-powered lexer language; in the other, we
+%%    add a regexp-based lexer as a base contiguity type.
+
+%% \begin{itemize}
+
+%% \item Since contiguity types are deterministic, they could possibly be
+%%       useful as a lexer replacement in certain parsing scenarios. A
+%%       contig-type parser being used as a lexer would generate a "parse
+%%       tree" lexeme that would be folded into the parser stack.
+
+%% \item Contiguity types with regexp-based lexing added as a supplement
+%%       to the existing suite of fixed-width base types. This amounts to
+%%       a controlled use of Kleene star. This would add a nice way to
+%%       handle C-style strings in messages, or any other such message
+%%       portion of arbitrary length ending with a specific delimiter.
+
+%% \end{itemize}
 
 \end{document}
