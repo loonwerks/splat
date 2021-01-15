@@ -59,11 +59,11 @@ overlap in research concerns that should be explored.
 \emph{Contiguity types} provide a small but expressive DSL for
 specifying message formats, especially those with
 \emph{self-describing} aspects such as length fields and
-`unions`. Filters and parsers can be automatically generated from
+`unions'. Filters and parsers can be automatically generated from
 contiguity type specifications, backed up by a formal correctness
 proof. The syntax of contiguity types is given in Figure \ref{ctypes}.
 In CASE, contiguity types have been used to implement the
-"insert-filter" and "insert-monitor" architectural transformations for
+``insert-filter" and ``insert-monitor" architectural transformations for
 the set of UxAS message types. These messages can be very large and
 complex; we were pleased to see that contiguity type specifications
 capture UxAS message structure and constraints transparently.
@@ -73,7 +73,7 @@ parsing seem worth pursuing in wider contexts:
 
 \begin{description}
 
-\item [First class `look-behind`] A common aspect of message parsing
+\item [First class `look-behind'] A common aspect of message parsing
   is that \emph{context}, \ie, already seen information in the
   message, is used to control further parsing steps. In our work, as a
   contiguity type parser processes a message, each field is added to
@@ -387,6 +387,8 @@ there are quite a few obstacles to be surmounted.
  framework in which the context accumulated by B is added back to that
  of A. Message processing, with its piggy-backing of messages, has
  much the same flavor (albeit simpler).
+
+\section{Efficient implementations}
 
 \section{Examples}
 
