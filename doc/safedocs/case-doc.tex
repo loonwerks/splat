@@ -401,24 +401,6 @@ languages formulated under the assumption that \emph{the deeper into
   decisions}. These sorts of questions are beyond our current
 interests and abilities however.
 
-\section{Stratified (modular) parsing}
-
- One common requirement in parsing is modularity: \eg, a parser for
- statements of a programming language is notionally parameterized by a
- parser for expressions. In most cases, these languages can be
- combined in the same grammar, but that works against worthy aims such
- as re-use and separation. The SafeDocs experience shows that this
- idea must be taken seriously for difficult languages such as
- PDF. What seems to be needed is a way to---in the midst of parsing
- language $A$---select a subsequence of the input to separately parse
- with the parser for language $B$. In determining the slice of the
- input to give to $B$, the accumulated context often needs to be
- consulted. Contiguity types give a way to handle this, and, in
- particular, may offer a framework in which the context accumulated by
- $B$ is added back to that of $A$. Network message processing, with
- its nesting of messages in layers of headers, has much the same
- flavor (albeit simpler).
-
 \section{Efficient implementations}
 
 Our current implementation of contiguity types is in an
@@ -458,7 +440,7 @@ return a result that agrees with the semantics of contiguity types.
 \end{remark}
 
 Focusing only on filtering, \ie{} the \emph{Recognition} problem, we
-have the concept of \emph{zero copy}, namely, that no data is copied
+have the concept of \emph{copy freedom}, namely, that no data is copied
 out of the input buffer in order to make the accept/reject verdict on
 the input. Contiguity types are a natural fit for this since they
 explicitly describe the message at the string (or byte array) level
@@ -475,6 +457,24 @@ seems hard to apply to larger programs; it would be nice to work with
 a motivated student to try to push the work ahead, using our examples.
 \end{remark}
 
+
+\section{Stratified (modular) parsing}
+
+ One common requirement in parsing is modularity: \eg, a parser for
+ statements of a programming language is notionally parameterized by a
+ parser for expressions. In most cases, these languages can be
+ combined in the same grammar, but that works against worthy aims such
+ as re-use and separation. The SafeDocs experience shows that this
+ idea must be taken seriously for difficult languages such as
+ PDF. What seems to be needed is a way to---in the midst of parsing
+ language $A$---select a subsequence of the input to separately parse
+ with the parser for language $B$. In determining the slice of the
+ input to give to $B$, the accumulated context often needs to be
+ consulted. Contiguity types give a way to handle this, and, in
+ particular, may offer a framework in which the context accumulated by
+ $B$ is added back to that of $A$. Network message processing, with
+ its nesting of messages in layers of headers, has much the same
+ flavor (albeit simpler).
 
 \section{Examples}
 
