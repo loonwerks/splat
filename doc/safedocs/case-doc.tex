@@ -69,7 +69,7 @@ complex; we were pleased to see that contiguity type specifications
 capture UxAS message structure and constraints transparently.
 
 We feel that the following aspects of contiguity types and message
-parsing seem worth pursuing in wider contexts:
+parsing are worth pursuing in wider contexts:
 
 \begin{description}
 
@@ -80,10 +80,10 @@ parsing seem worth pursuing in wider contexts:
   the context (a finite map from C-style \emph{lvars} to message
   elements). This context is used in the computation of length fields,
   and in calculating which element of a union to
-  choose. \footnote{Attribute grammars seem to also offer a uniform
-    naming scheme for accessing context. The relationship needs more
-    study and we have been talking to the SRI SafeDocs performers
-    about this.}
+  choose. \footnote{Attribute grammars also offer a uniform naming
+    scheme for accessing context. The relationship needs more study
+    and we have been talking to the SRI SafeDocs performers about
+    this.}
 
 \item [In-message assertions] Message constraints can be expressed
   within a contiguity type. This allows data constraints to be
@@ -126,46 +126,47 @@ In the following, we describe a few ideas. Some are straightforward
 but necessary building blocks, while others represent significant
 advances.
 
-\section{Generalizing contiguity types}
+\section{Generalized contiguity types}
 
 In the current incarnation of contiguity types all data is bounded,
 since all \konst{Array} types are given an explicit bound, and all
 base types are of fixed sizes. Removing these two restrictions would
-greatly increase expressiveness. We have thus been thinking about
-adding a lexer and a suitably adapted version of Kleene star. The
-augmented syntax can be seen in Figure \ref{gen-contig-types}.
+greatly increase expressiveness. We have thus been exploring the
+addition of a lexer and a version of Kleene star. The augmented syntax
+can be seen in Figure \ref{gen-contig-types}.
 
 \subsection{Lexing}
 
-Currently, the set of base contiguity types is set to be the usual
-base types expected in most programming languages, see Figure
+Currently, the set of base contiguity types comprises the usual base
+types expected in most programming languages, see Figure
 \ref{ctypes}. Semantically, a base type denotes a set of strings of
 the specified width, but it is also coupled with an
 \emph{interpretation function} for example, the contiguity type
 \verb+u8+ denotes the set of all one-byte strings, interpreted by the
 usual unsigned valuation function:
 
-  \[ \konst{u8} = \langle \set{s \mid \konst{length}(s) = 1}, \konst{uvalFn} \rangle
+  \[ \konst{u8} = (\set{s \mid \konst{length}(s) = 1}, \konst{uvalFn} )
   \]
 
-  This cannot, however, capture base types such as string literals of
-  arbitrary size, or bignums, or the situation in packed
+  This approach cannot, however, capture base types such as string
+  literals of arbitrary size, or bignums, or the situation in packed
   bit-level encodings where fields are of \emph{ad hoc} sizes aimed at
-  saving space. An obvious generalization is to express base types via
-  regular expressions paired with interpretation functions. Now \konst{u8}
-  can be defined as
+  saving space. A common generalization is to express base types via
+  regular expressions paired with interpretation functions. Now
+  \konst{u8} can be defined as
 
-  \[ \konst{u8} = \langle . \; , \konst{uvalFn} \rangle
+  \[ \konst{u8} = ( . \; , \konst{uvalFn})
   \]
 
 \noindent (where `.' is the standard regular expression denoting any character). Similarly,
 
-  \[ \konst{Cstring} = \langle [\backslash 001-\backslash 255]+ \backslash 000, \konst{I} \rangle
+  \[ \konst{Cstring} = ([\backslash 001-\backslash 255]+ \backslash 000, \konst{I} )
   \]
 
-\noindent denotes a zero-terminated string as used in the C
-language. Its interpretation is just the identity function, but could
-also be a function that dropped the terminating \verb+\000+ character.
+\noindent denotes the set of zero-terminated strings, as found in the
+C language. Its interpretation is just the identity function, but
+could also be a function that dropped the terminating \verb+\000+
+character.
 
 \begin{remark} [verification] There already exists a
   HOL4 theory of regexp based, maximal munch, lexer generation,
@@ -197,7 +198,7 @@ sketch should give a sense of how we expect things to be.
 \begin{figure}
 \[
 \begin{array}{rcl}
- \tau & =    & \konst{Base}\; \langle \mathit{regexp}, \mathit{valFn} \rangle \\
+ \tau & =    & \konst{Base}\; \mathit{regexp} \times \mathit{valFn} \\
       & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
       & \mid & \konst{List}\; \tau \\
       & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
@@ -262,20 +263,28 @@ would succeed, returning the context
 We expect this solution to be compositional, in the sense that
 \konst{List} types can be the arguments of other contiguity types, can
 be applied to themselves, \eg, $\konst{List}(\konst{List}\;\tau)$,
-\etc \; Thus arbitrary branching structures of arbitrary depth can be
-specified and parsed with this extension.
+\etc \; Thus arbitrary branching structures of arbitrary finite depth
+and width can be specified and parsed with this extension.  The
+approach captures a certain class of \emph{context-free-like}
+languages.\footnote{It isn't clear to us where in the Chomsky
+  hierarchy this work falls.}  However, it differs distinctly from the
+standard Chomsky hierarchy, mainly because sums are determined by
+\emph{looking behind} when computing which choice to follow in a
+\konst{Union} type; for example, the list parser sketched above
+branches \emph{after} it has seen the tag. This approach does not
+address any use of non-deterministic sum to express branching in
+conventional grammars; we discuss the issue more in Section \ref{cfl}.
 
 \begin{remark} [verification] There already exists a
   HOL4 theory of contiguity types, with a syntax, semantics, and
   parser generator correctness proof. Adding Kleene star to the syntax
   and semantics is straightforwad, and we have outlined above how the
-  parser generator would handle recursive lists. The potentially
-  unbounded iteration of Kleene star has often posed termination
-  problems when formalizing matchers, but we have previous
-  experience in circumventing such problems and, moreover, our solution
-  above always moves forward in the input when handling a
-  $\konst{List}\;\tau$ type.
+  matcher would handle recursive lists.  The potentially unbounded
+  iteration of Kleene star has often posed reasoning problems when
+  formalizing matchers, but we have previous experience in
+  circumventing such problems and are eager to extend the existing proof.
 \end{remark}
+
 
 
 %% An important consideration is that---at least in the
@@ -287,21 +296,20 @@ specified and parsed with this extension.
 %% expressive power permitted by context-free grammars and parser
 %% generators may not be needed, and may actually be too much.
 
-\section{Context-free parsing}
+\section{Conventional context-free parsing}
+\label{cfl}
 
-The outlined approach seems to indicate that the contiguity-type
-approach can be extended to certain classes of
-\emph{context-free-like} languages.\footnote{It isn't clear where in
-  the Chomsky hierarchy this work falls.} However, the approach is
-distinctly different in flavor, mainly because sums are determined by
-\emph{looking behind} when computing which choice to follow in a
-\konst{Union} type. Thus the list parser sketched above branches
-\emph{after} it has seen the tag. This approach runs into difficulties
-when confronted by grammars that use non-deterministic sum to express
-branching. Consider the following grammar rules for JSON-style lists
-(called \konst{Array} in JSON specifications). We assume the lexer has
-removed whitespace and note that occurrences of open and close
-brackets in the rules are terminals of the grammar.
+What of conventional context-free parsing technolgy? Is there a nice
+marriage between the notions in contiguity types and parsing
+techniques for context-free languages? We discuss two approaches in
+the following: the first combination looks relatively simple while the
+other seems to require a complete rebuild `from-the-ground-up'.
+
+As an introduction to some of the issues, consider the following
+grammar rules for JSON-style lists (confusingly called \konst{Array}
+in JSON specifications). We assume the lexer has removed whitespace
+and note that occurrences of open and close brackets in the rules are
+terminals of the grammar.
 \[
 \begin{array}{rcl}
  \konst{Array} & ::= & [\; ] \mid [ \konst{Elts} ] \\
@@ -325,14 +333,14 @@ to deal with a situation where it has read the initial open bracket
   if there was a smooth combination of look-behind and look-ahead
   parsing.
 
-\subsection{Contiguity types as lexemes}
+\subsection{Contiguity types as lexeme specifications}
 
-Standard parser technology is based on a set of grammar rules phrased
-in terms of a collection of terminals and non-terminals, where the
-terminals are specified by regular expressions. It seems interesting
-to consider specifying terminals by contiguity types rather than
-regular expressions. Thus, suppose we have a contiguity type
-specifying wellformed GPS coordinates
+Standard context-free grammars are typically presented by a set of
+grammar rules phrased in terms of a collection of terminals and
+non-terminals, where the terminals are specified by regular
+expressions. It is interesting to consider specifying terminals by
+contiguity types rather than regular expressions. Thus, suppose we
+have a contiguity type specifying wellformed GPS coordinates
 
 {\small
 \begin{verbatim}
@@ -344,7 +352,7 @@ specifying wellformed GPS coordinates
 \end{verbatim}}
 
 and wanted to specify a list of such. Then the following grammar rules
-seem natural in parsing a binary encoded list of wellformed GPS
+naturally express a binary encoded list of wellformed GPS
 coordinates:
 \[
 \begin{array}{rcl}
@@ -354,14 +362,14 @@ coordinates:
 \]
 
 The lexeme \konst{gps} is produced by the contiguity type parser, as
-are the tags, while the sequencing of terminals and non-terminals,
-along with the recursion, is handled by the grammar rules. The
-construction of parse trees from the grammar must smoothly incorporate
-parse trees coming from the lexer. This general approach would
-provide, if the implementation can be made to work, a nice example of
-combining contiguity types and standard parser technology, while
-leaving both implementations mostly unchanged. However, we expect
-there are quite a few obstacles to be surmounted.
+are the lexemes for the tags, while the sequencing of terminals and
+non-terminals, along with the recursion, is handled by the grammar
+rules. The construction of parse trees from the grammar must smoothly
+incorporate parse trees coming from the lexer. This general approach
+would provide, if the implementation can be made to work, a nice
+example of combining contiguity types and standard parser technology,
+while leaving both implementations mostly unchanged. However, we
+expect there are quite a few obstacles to be surmounted.
 
 \begin{remark} [verification] There already exists
   HOL4 theories of SLR and PEG parsing. Similarly, there are several
@@ -371,24 +379,90 @@ there are quite a few obstacles to be surmounted.
   assertion checking.
 \end{remark}
 
-\subsection{Stratified (modular) parsing}
+\subsection{Thoroughly merging the ideas}
+
+A much more challenging task would be to integrate the basic
+contiguity type ideas `at the ground level' into standard
+presentations of context-free languages. This would add the bounded
+\konst{Array} construct and the context-determined \konst{Union}
+operators into the specification of the class of context-free
+languages. Whether that would be theoretically nice, \eg, would there
+be decent closure properties, is an important question. These sorts of
+questions are beyond our current interests, however.
+
+\section{Stratified (modular) parsing}
 
  One common requirement in parsing is modularity: \eg, a parser for
- programming-language statements is notionally parameterized by a
+ statements of a programming language is notionally parameterized by a
  parser for expressions. In most cases, these languages can be
  combined in the same grammar, but that works against worthy aims such
  as re-use and separation. The SafeDocs experience shows that this
  idea must be taken seriously for difficult languages such as
  PDF. What seems to be needed is a way to---in the midst of parsing
- language A---select a subsequence of the input to separately parse
- with parser B. In determining the slice of the input to give to B,
- the accumulated context often needs to be consulted. Contiguity types
- give a way to handle this, and, in particular, seem to offer a
- framework in which the context accumulated by B is added back to that
- of A. Message processing, with its piggy-backing of messages, has
- much the same flavor (albeit simpler).
+ language $A$---select a subsequence of the input to separately parse
+ with the parser for language $B$. In determining the slice of the
+ input to give to $B$, the accumulated context often needs to be
+ consulted. Contiguity types give a way to handle this, and, in
+ particular, may offer a framework in which the context accumulated by
+ $B$ is added back to that of $A$. Network message processing, with
+ its nesting of messages in layers of headers, has much the same
+ flavor (albeit simpler).
 
 \section{Efficient implementations}
+
+Our current implementation of contiguity types is in an
+\emph{interpreted} style: the evaluation of numeric \konst{Array}
+bounds and boolean guards on \konst{Union} conditions is done with
+respect to the current context, which is explicitly accumulated as the
+message is processed. However, notice that the host programming
+language (CakeML for us, but could be any programming language) will
+no doubt already provide compilation for numeric and boolean
+expressions. This leads to the idea of \emph{compiling contiguity
+  types}: the current contiguity type matching algorithm can be
+replaced by generating equivalent host-language code which is compiled
+by the host-language compiler. Although the current contiguity type
+matcher has proved to be fast enough to keep up with the real-time
+demands of the UxAS system, we expect that a compiled version of the
+code would be much faster.
+
+\begin{remark} [verification] We would like to formalize the compilation
+algorithm and prove it correct. Since the CakeML formalization
+provides an explicit semantics for its expressions, it should be able
+to prove a correctness theorem. Suppose the following: a contiguity type
+$\mathit{ctype}$ is represented as a CakeML datatype element
+$\mathit{AST}_{\mathit{ctype}}$ ; function $\konst{Trans}$ is a
+compilation pass that translates such elements to ordinary CakeML ASTs;
+and \konst{App} is a $\mathit{AST}$ node that applies a function to an
+argument. Then the following should be provable in the CakeML semantics:
+
+\[
+ \konst{Eval}(\konst{Compile} (\konst{App}(\konst{Trans}\; \mathit{AST}_\mathit{ctype},s))) \iff s \in \Lang{\mathit{ctype}}
+\]
+
+In words, translating $\mathit{ctype}$ to a CakeML program, and
+compiling and running its application to input string $s$, will
+return a result that agrees with the semantics of contiguity types.
+
+\end{remark}
+
+Focusing only on filtering, \ie{} the \emph{Recognition} problem, we
+have the concept of \emph{zero copy}, namely, that no data is copied
+out of the input buffer in order to make the accept/reject verdict on
+the input. Contiguity types are a natural fit for this since they
+explicitly describe the message at the string (or byte array) level
+using a notation that looks like high-level datastructures. We are
+very interested in generating and measuring the performance of such
+implementations.
+
+\begin{remark} [verification]
+There has recently been some work by the CakeML compiler group in
+specifying and proving space bounds on CakeML programs. It would be
+really interesting to be able to formally prove space bounds on a
+copy-free filter implementation. However, their theory, anecdotally,
+seems hard to apply to larger programs; it would be nice to work with
+a motivated student to try to push the work ahead, using our examples.
+\end{remark}
+
 
 \section{Examples}
 
@@ -410,9 +484,9 @@ It is worth having some simple but challenging examples in mind.
   \emph{wellformed}, all functions need to be applied to the correct number
   of arguments. Thus message input for the filter would have the form
 
-  \[ \langle \mathit{sig} , \mathit{term}\; \konst{list} \rangle \]
+  \[ ( \mathit{sig} , \mathit{term}\; \konst{list} ) \]
 
-  and, given a message $\langle S, L \rangle$, each term $t$ in $L$
+  and, given a message $(S, L)$, each term $t$ in $L$
   needs to be (recursively) checked to ensure that each application
   $f(t_1,\ldots,t_n)$ is such that $f$ is in $S$, with arity $n$.
   (Note there is another constraint, namely that $S$ has no duplicate
@@ -428,10 +502,12 @@ It is worth having some simple but challenging examples in mind.
 
 \section{Conclusion}
 
-The world of parsing, one of the great achievements of Computer
-Science, continues to generate new research problems. The ideas
-sketched above, if achievable, can solve some problems not addressed
-by current technology.
+The theory and practice of parsing is one of the great achievements of
+Computer Science. Parsing continues to provide new solutions to
+important problems. The ideas we have sketched in this document
+promise nice solutions to some problems that pushed us beyond current
+technology. It would be interesting to discuss relevant applications
+to develop and test our ideas on.
 
 
 
