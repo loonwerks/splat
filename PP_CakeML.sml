@@ -65,16 +65,16 @@ fun pp_exp depth pkgName exp =
       | Unop(OrdOp,e) => PrettyBlock(2,true,[],
            [PrettyString"Char.ord",
             PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Binop(Or,e1,e2) => pp_binop depth ("orelse",e1,e2)
-      | Binop(And,e1,e2) => pp_binop depth ("andalso",e1,e2)
-      | Binop(Equal,e1,e2) => pp_binop depth ("=",e1,e2)
-      | Binop(Greater,e1,e2) => pp_binop depth (">",e1,e2)
-      | Binop(GreaterEqual,e1,e2) => pp_binop depth (">=",e1,e2)
-      | Binop(Less,e1,e2) => pp_binop depth ("<",e1,e2)
-      | Binop(LessEqual,e1,e2) => pp_binop depth ("<=",e1,e2)
-      | Binop(Minus,e1,e2) => pp_binop depth ("-",e1,e2)
-      | Binop(Multiply,e1,e2) => pp_binop depth ("*",e1,e2)
-      | Binop(Plus,e1,e2) => pp_binop depth ("+",e1,e2)
+      | Binop(Or,e1,e2) => pp_infix depth pkgName ("orelse",e1,e2)
+      | Binop(And,e1,e2) => pp_infix depth pkgName ("andalso",e1,e2)
+      | Binop(Equal,e1,e2) => pp_infix depth pkgName ("=",e1,e2)
+      | Binop(Greater,e1,e2) => pp_infix depth pkgName (">",e1,e2)
+      | Binop(GreaterEqual,e1,e2) => pp_infix depth pkgName (">=",e1,e2)
+      | Binop(Less,e1,e2) => pp_infix depth pkgName ("<",e1,e2)
+      | Binop(LessEqual,e1,e2) => pp_infix depth pkgName ("<=",e1,e2)
+      | Binop(Minus,e1,e2) => pp_infix depth pkgName ("-",e1,e2)
+      | Binop(Multiply,e1,e2) => pp_infix depth pkgName ("*",e1,e2)
+      | Binop(Plus,e1,e2) => pp_infix depth pkgName ("+",e1,e2)
       | Binop(Divide,e1,e2) => pp_exp depth "" (Fncall (("Int","div"),[e1,e2]))
       | Binop(Modulo,e1,e2) => pp_exp depth "" (Fncall (("Int","mod"),[e1,e2]))
       | ArrayExp elist => PrettyBlock(0,true,[],
@@ -97,7 +97,7 @@ fun pp_exp depth pkgName exp =
         in PrettyBlock(5,true,[],
               [PrettyString"let ",
                PrettyBlock(0,true,[],
-                 [gen_pp_list emptyString [Line_Break] (pp_valbind (depth-1)) binds]),
+                 [gen_pp_list emptyString [Line_Break] (pp_valbind (depth-1) pkgName) binds]),
                Space, PrettyString"in",
                Space, pp_exp (depth-1) pkgName  res,
                Line_Break, PrettyString "end"])
@@ -106,16 +106,36 @@ fun pp_exp depth pkgName exp =
           if null list then
             PrettyString "!!<EMPTY TUPLE FAILURE>!!"
           else if length list = 1 then
-             pp_exp (depth-1) pkgName  (hd list)
+             pp_exp (depth-1) pkgName (hd list)
           else PrettyBlock(2,true,[],
                  [PrettyString"(",
                   PrettyBlock(0,false,[],
                      [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1) pkgName ) list]),
                   PrettyString")"])
+      | Fncall(("","Lambda"),list) =>
+         (case list
+           of [v,e] =>
+                PrettyBlock(2,true,[],
+                 [PrettyString"(fn ", pp_exp (depth-1) pkgName v, PrettyString" =>", Space,
+                  pp_exp (depth-1) pkgName e,
+                  PrettyString")"])
+            | otherwise => PrettyString "!!<Lambda-as-Fncall needs 2 args>!!")
+      | Fncall(("","Array_Forall"),list) =>
+         (case list
+           of [v,arry,P] =>
+                pp_exp (depth-1) pkgName
+                   (Fncall(("Array","all"), [Fncall(("","Lambda"),[v,P]),arry]))
+            | otherwise => PrettyString "!!<Array_Forall needs 3 args>!!")
+      | Fncall(("","Array_Exists"),list) =>
+         (case list
+           of [v,arry,P] =>
+                pp_exp (depth-1) pkgName
+                   (Fncall(("Array","exists"), [Fncall(("","Lambda"),[v,P]),arry]))
+            | otherwise => PrettyString "!!<Array_Exists needs 3 args>!!")
       | Fncall (qid,args) => PrettyBlock(2,true,[],
-           [PrettyString(pp_qid qid), PrettyString"(",
+           [PrettyString"(",PrettyString(pp_pkg_qid pkgName qid), Space,
             PrettyBlock(0,false,[],
-               [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1) pkgName ) args]),
+               [gen_pp_list Space [emptyBreak] (pp_exp (depth-1) pkgName ) args]),
             PrettyString")"])
       | ConstrExp(qid, constr,argOpt) =>
          PrettyBlock(2,true,[],
@@ -125,55 +145,46 @@ fun pp_exp depth pkgName exp =
                | SOME vexp => [PrettyString"(", pp_exp (depth-1) pkgName  vexp,
                                PrettyString")"])])
       | RecdExp (qid,fields) => PrettyBlock(2,true,[],
-           [PrettyString(pp_qid qid), PrettyString("["),
+           [PrettyString("("),PrettyString(pp_pkg_qid pkgName qid), Space,
             PrettyBlock(0,false,[],
-                        [pp_comma_list (pp_exp_field (depth-1)) fields]),
-            PrettyString"]"])
+                        [pp_space_list (pp_exp (depth-1) pkgName) (map snd fields)]),
+            PrettyString")"])
       | RecdProj(recd,field) => PrettyBlock(0,false,[],
-           [pp_exp (depth-1) pkgName  recd,PrettyString".",PrettyString field])
+           [pp_exp (depth-1) pkgName recd,PrettyString".",PrettyString field])
+      | other => PrettyString "<UNKNOWN AST NODE>!?"
   end
-and pp_binop d (str,e1,e2) =
+and pp_infix d pkgName (str,e1,e2) =
     let open PolyML
     in PrettyBlock(2,true,[],
-        [PrettyString"(",pp_exp (d-1) e1,
-         Space,PrettyString str, Space,
-         pp_exp (d-1) e2,PrettyString")"])
+        [PrettyString"(",pp_exp (d-1) pkgName e1,
+         Space, PrettyString str, Space,
+         pp_exp (d-1) pkgName e2,PrettyString")"])
     end
-and pp_exp_field d (id,exp) =
- let open PolyML
- in PrettyBlock(0,true,[],
-     [PrettyString id, PrettyString" = ",pp_exp (d-1) exp])
- end
-and pp_ty_field d (id,ty) =
- let open PolyML
- in PrettyBlock(0,true,[],
-     [PrettyString id, PrettyString":",pp_ty (d-1) ty])
- end
-and pp_valbind d (Binop(Equal,e1,e2)) =
+and pp_valbind d pkgName (Binop(Equal,e1,e2)) =
     let open PolyML
     in PrettyBlock(5,true,[],
         [PrettyString "val ",
-         pp_exp (d-1) e1, PrettyString " =", Space,
-         pp_exp (d-1) e2])
+         pp_exp (d-1) pkgName e1,
+         PrettyString " =", Space,
+         pp_exp (d-1) pkgName e2])
     end
-  | pp_valbind other wise = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
-
+  | pp_valbind other input stuff = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
 ;
 
 (*
-      | Binop(Exponent,e1,e2) => pp_binop depth ("exp",e1,e2)
-      | Binop(LogicalLShift,e1,e2) => pp_binop depth ("<<",e1,e2)
-      | Binop(LogicalRShift,e1,e2) => pp_binop depth ("l>>",e1,e2)
-      | Binop(CastWidth,e1,e2) => pp_binop depth ("width",e1,e2)
+      | Binop(Exponent,e1,e2) => pp_infix depth ("exp",e1,e2)
+      | Binop(LogicalLShift,e1,e2) => pp_infix depth ("<<",e1,e2)
+      | Binop(LogicalRShift,e1,e2) => pp_infix depth ("l>>",e1,e2)
+      | Binop(CastWidth,e1,e2) => pp_infix depth ("width",e1,e2)
       | Binop(RegexMatch,e1,e2) => pp_exp depth (Fncall(("","match"),[e1,e2]))
       | Binop(Since,e1,e2) => pp_exp depth (Fncall(("","Since"),[e1,e2]))
       | Binop(Trigger,e1,e2) => pp_exp depth (Fncall(("","Trigger"),[e1,e2]))
-      | Binop(Fby,e1,e2) => pp_binop depth ("->",e1,e2)
-      | Binop(Imp,e1,e2) => pp_binop depth ("==>",e1,e2)
-      | Binop(ArithmeticRShift,e1,e2) => pp_binop depth ("a>>",e1,e2)
-      | Binop(BitAnd,e1,e2) => pp_binop depth ("&",e1,e2)
-      | Binop(BitOr,e1,e2) => pp_binop depth ("|",e1,e2)
-      | Binop(BitXOR,e1,e2) => pp_binop depth ("^",e1,e2)
+      | Binop(Fby,e1,e2) => pp_infix depth ("->",e1,e2)
+      | Binop(Imp,e1,e2) => pp_infix depth ("==>",e1,e2)
+      | Binop(ArithmeticRShift,e1,e2) => pp_infix depth ("a>>",e1,e2)
+      | Binop(BitAnd,e1,e2) => pp_infix depth ("&",e1,e2)
+      | Binop(BitOr,e1,e2) => pp_infix depth ("|",e1,e2)
+      | Binop(BitXOR,e1,e2) => pp_infix depth ("^",e1,e2)
       | Unop(BitNot,e) => PrettyBlock(2,true,[],
            [PrettyString"not",
             PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
@@ -210,6 +221,7 @@ and pp_valbind d (Binop(Equal,e1,e2)) =
             PrettyString "}"])
 *)
 
+(*
 fun pp_vdec_semi d (id,ty) =
  let open PolyML
  in PrettyBlock(0,true,[],
@@ -290,7 +302,7 @@ fun pp_stmt depth stmt =
              PrettyString"do ", pp_stmt (depth-1) stmt])
 
  end;
-
+*)
 
 fun pp_decl depth pkgName decl =
  let open PolyML
@@ -308,7 +320,7 @@ fun pp_decl depth pkgName decl =
        let fun pp_constr d (id,tys) =
                PrettyBlock(3,false,[],
                   [PrettyString id,Space,
-                   pp_space_list (pp_ty (d-1) pkgName ) tys])
+                   pp_space_list (pp_ty (d-1) pkgName) tys])
               fun pp_constr_list d list =
                let fun iter [] = []
                  | iter [x] = [pp_constr (d-1) x]
@@ -324,22 +336,17 @@ fun pp_decl depth pkgName decl =
           end
      | ConstDecl(id,ty,exp)
        => PrettyBlock(2,true,[],
-             [PrettyString ("val "^id^" = "),
-              pp_exp (depth-1) pkgName  pkgName exp, PrettyString";"])
+             [PrettyString ("val "^id^" ="),Space,
+              pp_exp (depth-1) pkgName exp, PrettyString";"])
      | FnDecl(id,params,retvalOpt,locals,stmts)
-       => let fun pp_params() = PrettyBlock (2,true,[],
+       => PrettyString "<FnDecl>!?"
+(*
+let fun pp_params() = PrettyBlock (2,true,[],
                    [PrettyString id,Space,
-                    PrettyString"(",
                     PrettyBlock(0,false,[],
-                         [pp_comma_list (pp_param (depth-1)) params]),
-                    PrettyString")",
-                    PrettyBlock (2,true,[],
-                         case retvalOpt
-                          of NONE => []
-                           | SOME vdec => [PrettyString" returns ",
-                                           pp_ty_field (depth-1) vdec])])
+                         [pp_space_list (pp_param (depth-1)) params])])
              fun pp_body() = PrettyBlock(0,true,[],
-                    iter_pp emptyString  [Line_Break] (pp_stmt (depth-1)) stmts)
+                    iter_pp emptyString  [Line_Break] (pp_stmt (depth-1)) pkgName stmts)
               fun pp_top_stmt [] = pp_body()
                 | pp_top_stmt locals =
                     PrettyBlock(0,false,[],
@@ -360,6 +367,7 @@ fun pp_decl depth pkgName decl =
               Line_Break,
               PrettyString"}"])
           end
+*)
      | otherwise => PrettyString"<!!Unexpected decl!!>"
  end
 
@@ -375,7 +383,8 @@ fun pp_tydec depth pkgName tydec =
  in if depth = 0 then PrettyString "<decl>"
    else
    case tydec
-    of EnumDec(qid,enums) => pp_decl depth (DatatypeDecl(snd qid, map (fn e => (e,[])) enums))
+    of EnumDec(qid,enums) =>
+         pp_decl depth pkgName (DatatypeDecl(snd qid, map (fn e => (e,[])) enums))
      | RecdDec(qid,fields) =>
         let val tyName = snd qid
             val tys = map snd fields
@@ -414,8 +423,8 @@ fun pp_tmdec depth pkgName tmdec =
        in
        PrettyBlock(0,true,[],
         [PrettyString "fun ",
-         PrettyString (snd qid),
-         gen_pp_list Space [Space] pp_param params,
+         PrettyString (snd qid), PrettyString " ",
+         gen_pp_list Space [emptyBreak] pp_param params,
          PrettyString " =", Space,
          pp_exp (depth-1) pkgName exp,
          Semicolon])
@@ -570,20 +579,21 @@ fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
     PrettyBlock(2,true,[],
         [PrettyString ("structure "^pkgName^" = "), Line_Break,
          PrettyString "struct", Line_Break_2,
-         end_pp_list Line_Break Line_Break (pp_tydec (depth-1)) pkgName types, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1)) pkgName consts, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) pkgName filters, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) pkgName monitors, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors, Line_Break,
          PrettyString "end"
         ])
  end
 
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn ty => pp_ty i "<pkg>" ty);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_exp i "<pkg>" e);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn stmt => pp_stmt i "<pkg>" stmt);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tydec => pp_tydec i "<pkg>" tydec);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tmdec => pp_tmdec i "<pkg>" tmdec);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_mon_stepFn i "<pkg>" mon);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_mon_stepFn i mon);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
+
+(* val _ = PolyML.addPrettyPrinter (fn i => fn () => fn stmt => pp_stmt i "<pkg>" stmt); *)
 
 end (* PP_CakeML *)
