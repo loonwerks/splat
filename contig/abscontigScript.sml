@@ -30,6 +30,7 @@ val var_eq_tac = rpt BasicProvers.VAR_EQ_TAC;
 
 fun qspec q th = th |> Q.SPEC q
 fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
+fun simpCases_on q = Cases_on q >> fs [] >> rw[];
 
 Triviality IS_SOME_NEG :
  IS_SOME = \x. ~(x=NONE)
@@ -87,20 +88,32 @@ val contig_size_def = fetch "-" "contig_size_def";
 (* Expression evaluation. Looking up lvals is partial, which infects evalExp *)
 (*---------------------------------------------------------------------------*)
 
+(* LSB with padding to width *)
+Definition layout_def :
+ layout b n width = PAD_RIGHT 0n width (n2l b n)
+End
+
+Definition repFn_def :
+  repFn w n = MAP CHR (layout 256 n w)
+End
+
+Definition valFn_def :
+  valFn s = if s = "" then NONE else SOME (l2n 256 (MAP ORD s))
+End
+
 Definition evalExp_def :
- evalExp (lvalMap,valFn) (Loc lval) =
-   (case FLOOKUP lvalMap lval
+ evalExp theta (Loc lval) =
+   (case FLOOKUP theta lval
      of SOME s => valFn s
       | NONE => NONE) /\
- evalExp E (numLit n)  = SOME n /\
- evalExp E (Add e1 e2) =
-   (case evalExp E e1
+ evalExp theta (numLit n)  = SOME n /\
+ evalExp theta (Add e1 e2) =
+   (case evalExp theta e1
      of NONE => NONE
       | SOME n1 =>
-    case evalExp E e2
+    case evalExp theta e2
      of NONE => NONE
       | SOME n2 => SOME (n1+n2))
-
 End
 
 (*---------------------------------------------------------------------------*)
@@ -108,44 +121,44 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition evalBexp_def :
- (evalBexp E (boolLit b) = SOME b) /\
- (evalBexp (lvalMap,valFn) (BLoc lval) =
-    case FLOOKUP lvalMap lval
+ (evalBexp theta (boolLit b) = SOME b) /\
+ (evalBexp theta (BLoc lval) =
+    case FLOOKUP theta lval
      of NONE => NONE
       | SOME s =>
      case valFn s
       of NONE => NONE
       | SOME n => SOME (~(n = 0n))) /\
- (evalBexp E (Bnot b) =
-   case evalBexp E b
+ (evalBexp theta (Bnot b) =
+   case evalBexp theta b
      of NONE => NONE
       | SOME bval => SOME (~bval)) /\
- (evalBexp E (Bor b1 b2) =
-   case evalBexp E b1
+ (evalBexp theta (Bor b1 b2) =
+   case evalBexp theta b1
      of NONE => NONE
      |  SOME bv1 =>
-    case evalBexp E b2
+    case evalBexp theta b2
      of NONE => NONE
       | SOME bv2 => SOME (bv1 \/ bv2)) /\
- (evalBexp E (Band b1 b2) =
-   case evalBexp E b1
+ (evalBexp theta (Band b1 b2) =
+   case evalBexp theta b1
      of NONE => NONE
       | SOME bv1 =>
-    case evalBexp E b2
+    case evalBexp theta b2
      of NONE => NONE
       | SOME bv2 => SOME (bv1 /\ bv2)) /\
- (evalBexp E (Beq e1 e2) =
-   case evalExp E e1
+ (evalBexp theta (Beq e1 e2) =
+   case evalExp theta e1
      of NONE => NONE
       | SOME n1 =>
-    case evalExp E e2
+    case evalExp theta e2
      of NONE => NONE
       | SOME n2 => SOME (n1 = n2)) /\
- (evalBexp E (Blt e1 e2) =
-   case evalExp E e1
+ (evalBexp theta (Blt e1 e2) =
+   case evalExp theta e1
      of NONE => NONE
       | SOME n1 =>
-    case evalExp E e2
+    case evalExp theta e2
      of NONE => NONE
       | SOME n2 => SOME (n1 < n2))
 End
@@ -166,13 +179,6 @@ Definition atomWidth_def:
  atomWidth U16  = 2 /\
  atomWidth U32  = 4
 End
-
-val layout_def =  (* LSB with padding to width *)
- Define
-  `layout b n width = PAD_RIGHT 0n width (n2l b n)`;
-
-val repFn_def = Define `repFn w n = MAP CHR (layout 256 n w)`;
-val valFn_def = Define `valFn s = if s = "" then NONE else SOME (l2n 256 (MAP ORD s))`;
 
 Theorem contig_size_lem:
  !plist p. MEM p plist ==> contig_size (SND p) < contig1_size plist
@@ -234,21 +240,11 @@ QED
 Theorem lvsize_lvprefixes :
  ∀lval lv. lv IN lvprefixes lval ⇒ lvsize lv < lvsize lval ∨ lv = lval
 Proof
- Induct >> rw[lvprefixes_def,lvsize_def] >> res_tac
- >- (disj1_tac >> decide_tac)
- >- rw[]
- >- (disj1_tac >> decide_tac)
- >- rw[]
+ Induct
+   >> rw[lvprefixes_def,lvsize_def]
+   >> res_tac
+   >> rw[]
 QED
-
-Theorem lvprefixes_Recd_acyclic :
- ∀lval f. ~(RecdProj lval f IN lvprefixes lval)
-Proof
- Induct >> rw[lvprefixes_def]
- >- metis_tac [lvprefixes_refl]
- >-
-QED
-
 
 (*
 Theorem lvprefixes_Recd_subterm :
@@ -283,7 +279,7 @@ Definition Contig_Lang_def:
     {CONCAT slist
       | LIST_REL (\s contig. s IN Contig_Lang theta contig) slist (MAP SND fields)} /\
   Contig_Lang theta (Array c e) =
-    (case evalExp (theta,valFn) e
+    (case evalExp theta e
       of NONE => {}
        | SOME n =>
      {CONCAT slist
@@ -291,7 +287,7 @@ Definition Contig_Lang_def:
   Contig_Lang theta (List c) =
       (KSTAR ({[ConsTag]} dot (Contig_Lang theta c)) dot {[NilTag]}) /\
   Contig_Lang theta (Alt bexp c1 c2) =
-    (case evalBexp (theta,valFn) bexp
+    (case evalBexp theta bexp
       of NONE => {}
        | SOME T => Contig_Lang theta c1
        | SOME F => Contig_Lang theta c2)
@@ -311,41 +307,22 @@ Theorem IN_Contig_Lang :
                 LIST_REL (\s contig. s IN Contig_Lang theta contig) slist (MAP SND fields)) /\
      (s IN Contig_Lang theta (Array c e) ⇔
         ∃slist.
-            evalExp (theta,valFn) e = SOME (LENGTH slist) ∧
+            evalExp theta e = SOME (LENGTH slist) ∧
             s = CONCAT slist ∧
             EVERY (Contig_Lang theta c) slist) ∧
      (s IN Contig_Lang theta (List c) ⇔
        ∃slist.
-            0 < LENGTH slist ∧
-            s = CONCAT slist ∧
-            LAST slist = [NilTag] ∧
-            EVERY (\plist. ∃elt. plist = ConsTag::elt ∧ elt IN Contig_Lang theta c)
-                  (FRONT slist)) ∧
+            s = STRCAT (CONCAT slist) [NilTag] ∧
+            EVERY (\plist. ∃elt. plist = ConsTag::elt ∧ elt IN Contig_Lang theta c) slist) ∧
      (s IN Contig_Lang theta (Alt bexp c1 c2) ⇔
-         ∃b. evalBexp (theta,valFn) bexp = SOME b ∧
+         ∃b. evalBexp theta bexp = SOME b ∧
               if b then s IN Contig_Lang theta c1
                    else s IN Contig_Lang theta c2)
 Proof
  rw [Contig_Lang_def,EXTENSION]
   >> every_case_tac
-  >> rw []
-  >- metis_tac[]
-  >- (rw [Once IN_dot,EQ_IMP_THM]
-      >- (fs[IN_KSTAR_LIST]
-           >> qexists_tac ‘wlist ++ [[NilTag]]’
-           >> rw [FRONT_APPEND,FRONT_CONS]
-           >> fs [IN_dot])
-      >- (rw [IN_dot,IN_KSTAR_LIST]
-          >> qexists_tac ‘CONCAT (FRONT slist)’
-          >> rw[]
-          >- (‘slist ≠ []’ by (Cases_on ‘slist’ >> fs[])
-              >> ‘FRONT slist ++ [LAST slist] = slist’
-                     by metis_tac [APPEND_FRONT_LAST]
-              >> ‘FLAT slist = FLAT (FRONT slist) ++ FLAT [LAST slist]’
-                     by metis_tac [FLAT_APPEND]
-              >> fs [])
-          >- metis_tac[])
-     )
+  >> rw [IN_dot,IN_KSTAR_LIST]
+  >> metis_tac[]
 QED
 
 
@@ -413,6 +390,14 @@ Proof
  Induct_on ‘L1’ >> rw_tac list_ss [list_size_def]
 QED
 
+Triviality strlen_eq_1 :
+ !L. (STRLEN L = 1) ⇔ ∃n. n < 256 ∧ L = [CHR n]
+Proof
+ Cases_on ‘L’
+ >> rw_tac list_ss [STRLEN_DEF,EQ_IMP_THM]
+ >> metis_tac[CHR_ONTO]
+QED
+
 Theorem atomWidth_pos :
  !b. 0 < atomWidth b
 Proof
@@ -420,8 +405,8 @@ Proof
 QED
 
 Definition choiceFn_def :
-  choiceFn theta valFn bexp =
-    case evalBexp (theta,valFn) bexp
+  choiceFn theta bexp =
+    case evalBexp theta bexp
      of NONE => F
       | SOME bval => bval
 End
@@ -450,39 +435,38 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition predFn_def :
- predFn vFn (worklist,s,theta) =
+ predFn (worklist,s,theta) =
   case worklist
    of [] => T
     | (lval,Basic a)::t =>
         (case take_drop (atomWidth a) s
            of NONE => F
             | SOME (segment,rst) =>
-              predFn vFn (t, rst, theta |+ (lval,segment)))
+              predFn (t, rst, theta |+ (lval,segment)))
    | (lval,Void)::t => F
    | (lval,Recd fields)::t =>
-       predFn vFn (MAP (fieldFn lval) fields ++ t,s,theta)
+       predFn (MAP (fieldFn lval) fields ++ t,s,theta)
    | (lval,Array c exp)::t =>
-       (case evalExp (theta,vFn) exp
+       (case evalExp theta exp
          of NONE => F
           | SOME dim =>
-            predFn vFn (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
+            predFn (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
    | (lval, List c)::t =>
       (case take_drop 1 s
            of NONE => F
             | SOME (segment,rst) =>
-              predFn vFn
-                   (ListRecd lval c::t, rst, theta |+ (RecdProj lval "tag",segment)))
+              predFn (ListRecd lval c::t, rst, theta |+ (RecdProj lval "tag",segment)))
    | (lval,Alt bexp c1 c2)::t =>
-       case evalBexp (theta,vFn) bexp
+       case evalBexp theta bexp
         of NONE => F
-         | SOME T => predFn vFn ((lval,c1)::t,s,theta)
-         | SOME F => predFn vFn ((lval,c2)::t,s,theta)
+         | SOME T => predFn ((lval,c1)::t,s,theta)
+         | SOME F => predFn ((lval,c2)::t,s,theta)
 Termination
  WF_REL_TAC ‘inv_image
               (measure LENGTH
                LEX
                mlt_list (measure (csize o SND)))
-              (\(a,b,c,d). (c,b))’
+              (\(b,c,d). (c,b))’
    >> rw [APPEND_EQ_SELF]
    >> rw [csize_def]
    >> fs [MEM_MAP,MEM_SPLIT]
@@ -498,7 +482,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition matchFn_def :
- matchFn vFn (worklist,s,theta) =
+ matchFn (worklist,s,theta) =
  case worklist
   of [] => SOME (s,theta)
    | (lval,Basic a)::t =>
@@ -507,15 +491,15 @@ Definition matchFn_def :
           | SOME (segment,rst) =>
         if lval IN FDOM theta then
             NONE
-        else matchFn vFn (t, rst, theta |+ (lval,segment)))
+        else matchFn (t, rst, theta |+ (lval,segment)))
    | (lval,Void)::t => NONE
    | (lval,Recd fields)::t =>
-        matchFn vFn (MAP (fieldFn lval) fields ++ t,s,theta)
+        matchFn (MAP (fieldFn lval) fields ++ t,s,theta)
    | (lval,Array c exp)::t =>
-       (case evalExp (theta,vFn) exp
+       (case evalExp theta exp
          of NONE => NONE
           | SOME dim =>
-             matchFn vFn (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
+             matchFn (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
    | (lval, List c)::t =>
       (case take_drop 1 s
            of NONE => NONE
@@ -523,25 +507,24 @@ Definition matchFn_def :
               if RecdProj lval "tag" IN FDOM theta then
                  NONE
               else
-              matchFn vFn
-                   (ListRecd lval c::t, rst, theta |+ (RecdProj lval "tag",segment)))
+              matchFn (ListRecd lval c::t, rst, theta |+ (RecdProj lval "tag",segment)))
    | (lval,Alt bexp c1 c2)::t =>
-       case evalBexp (theta,vFn) bexp
+       case evalBexp theta bexp
         of NONE => NONE
-         | SOME T => matchFn vFn ((lval,c1)::t,s,theta)
-         | SOME F => matchFn vFn ((lval,c2)::t,s,theta)
+         | SOME T => matchFn ((lval,c1)::t,s,theta)
+         | SOME F => matchFn ((lval,c2)::t,s,theta)
 Termination
  WF_REL_TAC ‘inv_image
               (measure LENGTH
                LEX
                mlt_list (measure (csize o SND)))
-              (\(a,b,c,d). (c,b))’
+              (\(b,c,d). (c,b))’
    >> rw [APPEND_EQ_SELF]
    >> rw [csize_def]
    >> fs [MEM_MAP,MEM_SPLIT]
+   >- (imp_res_tac take_drop_thm >> rw [] >> metis_tac [atomWidth_pos])
+   >- (imp_res_tac take_drop_thm >> rw [] >> metis_tac [atomWidth_pos])
    >- (Cases_on `y` >> fs[list_size_append,list_size_def,fieldFn_def])
-   >- (imp_res_tac take_drop_thm >> rw [] >> metis_tac [atomWidth_pos])
-   >- (imp_res_tac take_drop_thm >> rw [] >> metis_tac [atomWidth_pos])
    >- (Cases_on `y` >> fs[list_size_append,list_size_def,indexFn_def])
 End
 
@@ -554,42 +537,42 @@ Definition remaining_lvals_def :
 End
 
 Definition substFn_def :
- substFn vFn theta (lval,contig) =
+ substFn theta (lval,contig) =
   case contig
    of Basic _ => FLOOKUP theta lval
     | Void  => NONE
     | Recd fields =>
        concatPartial
-         (MAP (\(fName,c). substFn vFn theta (RecdProj lval fName,c)) fields)
+         (MAP (\(fName,c). substFn theta (RecdProj lval fName,c)) fields)
     | Array c exp =>
-       (case evalExp (theta,vFn) exp
+       (case evalExp theta exp
          of NONE => NONE
           | SOME dim =>
             concatPartial
-               (MAP (\i. substFn vFn theta (ArraySub lval (numLit i), c))
+               (MAP (\i. substFn theta (ArraySub lval (numLit i), c))
                     (COUNT_LIST dim)))
     | List c =>
        (case FLOOKUP theta (RecdProj lval "tag")
          of NONE => NONE
           | SOME segment =>
             if segment = [NilTag] then
-               SOME segment
+               SOME [NilTag]
             else
             if segment = [ConsTag] then
              concatPartial
-                 [SOME segment;
-                  substFn vFn theta (RecdProj lval "hd",c);
-                  substFn vFn theta (RecdProj lval "tl",List c)]
+                 [SOME [ConsTag];
+                  substFn theta (RecdProj lval "hd",c);
+                  substFn theta (RecdProj lval "tl",List c)]
              else NONE)
     | Alt bexp c1 c2 =>
-       (case evalBexp (theta,vFn) bexp
+       (case evalBexp theta bexp
          of NONE => NONE
-          | SOME T => substFn vFn theta (lval,c1)
-          | SOME F => substFn vFn theta (lval,c2))
+          | SOME T => substFn theta (lval,c1)
+          | SOME F => substFn theta (lval,c2))
 Termination
  WF_REL_TAC ‘inv_image
               (measure csize LEX measure remaining_lvals)
-              (\(a,b,c,d). (d,(b,c)))’
+              (\(b,c,d). (d,(b,c)))’
   >> rw [csize_def]
   >- (fs [remaining_lvals_def,ConsTag_def, NilTag_def]
         >> rw[]
@@ -612,15 +595,15 @@ End
 
 
 (*---------------------------------------------------------------------------*)
-(* Successful evaluation is stable when theta gets bigger.                   *)
+(* Successful evaluation is stable.                                          *)
 (*---------------------------------------------------------------------------*)
 
 Theorem evalExp_submap :
- ∀e vFn theta1 theta2 v.
+ ∀e theta1 theta2 v.
    theta1 SUBMAP theta2 ∧
-   evalExp(theta1,vFn) e = SOME v
+   evalExp theta1 e = SOME v
    ⇒
-   evalExp(theta2,vFn) e = SOME v
+   evalExp theta2 e = SOME v
 Proof
 Induct
  >> rw [evalExp_def]
@@ -629,11 +612,11 @@ Induct
 QED
 
 Theorem evalBexp_submap :
- ∀bexp vFn theta1 theta2 v.
+ ∀bexp theta1 theta2 v.
    theta1 SUBMAP theta2 ∧
-   evalBexp(theta1,vFn) bexp = SOME v
+   evalBexp theta1 bexp = SOME v
    ⇒
-   evalBexp(theta2,vFn) bexp = SOME v
+   evalBexp theta2 bexp = SOME v
 Proof
 Induct
  >> rw [evalBexp_def]
@@ -643,12 +626,12 @@ Induct
 QED
 
 (*---------------------------------------------------------------------------*)
-(* The matcher never overwrites any binding in theta.                        *)
+(* The matcher only adds new bindings to theta.                              *)
 (*---------------------------------------------------------------------------*)
 
 Theorem match_submap :
- !vFn wklist s theta s2 theta'.
-    matchFn vFn (wklist,s,theta) = SOME (s2, theta')
+ !wklist s theta s2 theta'.
+    matchFn (wklist,s,theta) = SOME (s2, theta')
     ==>
    finite_map$SUBMAP theta theta'
 Proof
@@ -668,430 +651,127 @@ QED
 (*---------------------------------------------------------------------------*)
 
 Definition substWk_def :
-  substWk vFn theta wklist = concatPartial (MAP (substFn vFn theta) wklist)
+  substWk theta wklist = concatPartial (MAP (substFn theta) wklist)
 End
 
+(*---------------------------------------------------------------------------*)
+(* The substitution computed by matchFn is correctly applied by substWk      *)
+(*---------------------------------------------------------------------------*)
+
 Theorem match_lem :
-!vFn wklist (s:string) theta s2 theta'.
-   matchFn vFn (wklist,s,theta) = SOME (s2, theta')
+!wklist (s:string) theta s2 theta'.
+   matchFn (wklist,s,theta) = SOME (s2, theta')
    ==>
-   ?s1. substWk vFn theta' wklist = SOME s1 /\  s1 ++ s2 = s
+   ?s1. substWk theta' wklist = SOME s1 /\  s1 ++ s2 = s
 Proof
  simp_tac list_ss [substWk_def]
  >> recInduct matchFn_ind
  >> rpt gen_tac
  >> strip_tac
  >> rw_tac list_ss [Once matchFn_def]
- >> every_case_tac
- >> rw[] >> fs[] >> rfs[]
- >> TRY (rw[concatPartial_thm] >> NO_TAC)
- >> TRY (rw[Once substFn_def]
-         >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
+ >> simpCases_on ‘worklist’
+ >> TRY (Cases_on ‘h’ >> simpCases_on ‘r’)
+ >- rw[concatPartial_thm]
+ >- (simpCases_on ‘take_drop (atomWidth a) s’
+     >> simpCases_on ‘x’
+     >> qexists_tac ‘q' ++ s1’
+     >> ‘s = STRCAT q' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
+     >> rw []
+     >> rw [Once substFn_def]
+     >> ‘(theta |+ (q,q')) SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘FLOOKUP (theta |+ (q,q')) q = SOME q'’ by metis_tac [FLOOKUP_UPDATE]
+     >> ‘FLOOKUP theta' q = SOME q'’ by metis_tac [FLOOKUP_SUBMAP]
+     >> rw[]
+     >> fs [concatPartial_thm])
+ >- (rw[Once substFn_def]
+     >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
+     >> rw []
+     >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
+     >> metis_tac [NOT_EXISTS])
+ >- (simpCases_on ‘evalExp theta e’
+     >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘evalExp theta' e = SOME x’ by metis_tac [evalExp_submap]
+     >> rw[Once substFn_def]
+     >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
+     >> rw []
+     >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
+     >> metis_tac [NOT_EXISTS])
+ >- (simpCases_on ‘take_drop 1 s’
+     >> simpCases_on ‘x’
+     >> ‘∃tag lval. q' = tag ∧ q = lval’ by metis_tac[] >> ntac 2 (pop_subst_tac)
+     >> qexists_tac ‘tag ++ s1’
+     >> ‘s = STRCAT tag (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
+     >> ‘(theta |+ (RecdProj lval "tag", tag)) SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘FLOOKUP (theta |+ (RecdProj lval "tag",tag))
+                 (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_UPDATE]
+     >> ‘FLOOKUP theta' (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_SUBMAP]
+     >> pop_assum (fn th => popk_tac >> assume_tac th)
+     >> rw[Once substFn_def]
+     >- (fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,LAMBDA_PROD,IS_SOME_NEG]
          >> rw []
          >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-         >> metis_tac [NOT_EXISTS] >> NO_TAC)
- >> TRY (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-         >> ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-         >> rw[Once substFn_def]
-         >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
+         >> rw [Once substFn_def,ListRecd_def,evalBexp_def,evalExp_def,NilTag_def,valFn_def]
+         >> rw [Once substFn_def,concatPartial_nil])
+     >- (fs [ConsTag_def, NilTag_def] >> rw[]
+         >> qpat_x_assum ‘matchFn _ = _’ kall_tac
+         >> qpat_x_assum ‘take_drop _ _ = _’ kall_tac
+         >> qpat_x_assum ‘~(_ IN _)’ kall_tac
+         >> qpat_x_assum ‘_ SUBMAP _’ kall_tac
+         >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,LAMBDA_PROD,IS_SOME_NEG]
          >> rw []
-         >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-         >> metis_tac [NOT_EXISTS]
-         >> NO_TAC)
- >> TRY (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-         >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-         >> rw[]
-         >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
+         >> qpat_x_assum ‘EVERY _ _’ kall_tac
+         >> qpat_x_assum ‘~(substFn _ _ = NONE)’
+               (mp_tac o SIMP_RULE (srw_ss()) [Once substFn_def,ListRecd_def])
+         >> rw [evalBexp_def,evalExp_def,NilTag_def,ConsTag_def,valFn_def]
+         >> qpat_x_assum ‘~(substFn _ _ = NONE)’
+               (mp_tac o SIMP_RULE (srw_ss()) [Once substFn_def])
+         >> rw [evalBexp_def,evalExp_def,NilTag_def,ConsTag_def,valFn_def]
+         >> qpat_x_assum ‘~(substFn _ _ = NONE)’
+               (mp_tac o SIMP_RULE (srw_ss()) [Once substFn_def])
+         >> rw [concatPartial_thm]
+         (* last clause *)
+         >> rw [SimpRHS, Once substFn_def,ListRecd_def]
+         >> rw [evalBexp_def,evalExp_def,NilTag_def,ConsTag_def,valFn_def]
+         >> rw [SimpRHS, Once substFn_def]
+         >> rw [evalBexp_def,evalExp_def,NilTag_def,ConsTag_def,valFn_def]
+         >> rw [SimpRHS, Once substFn_def]
+         >> rw [concatPartial_thm])
+     >- (qpat_x_assum ‘concatPartial _ = _ ’ mp_tac
+         >> rw [Once substFn_def,ListRecd_def,evalBexp_def,evalExp_def,NilTag_def]
+         >> ‘∃n. valFn tag = SOME n ∧ ~(n=0) ∧ ~(n=1)’
+            by (‘STRLEN tag = 1’ by metis_tac [take_drop_thm]
+                  >> fs [strlen_eq_1,NilTag_def,ConsTag_def]
+                  >> rw[]
+                  >> ntac 2 (pop_assum mp_tac)
+                  >> rw [CHR_11]
+                  >> qexists_tac ‘n’
+                  >> rw[valFn_def,l2n_def])
+         >> full_case_tac >> fs[] >> rw[] >> rfs[]
+         >> rw [concatPartial_thm]
+         >> pop_assum mp_tac
+         >> rw [Once substFn_def,ListRecd_def,evalBexp_def,evalExp_def,ConsTag_def]
+         >> rw [Once substFn_def,concatPartial_thm]))
+ >- (simpCases_on ‘evalBexp theta b’
+     >> simpCases_on ‘x’
+     >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
+     >> rw[]
+     >- (‘evalBexp theta' b = SOME T’ by metis_tac [evalBexp_submap]
+          >> rw[Once substFn_def]
+          >> every_case_tac
+          >> rw [])
+     >- (‘evalBexp theta' b = SOME F’ by metis_tac [evalBexp_submap]
          >> rw[Once substFn_def]
          >> every_case_tac
-         >> rw []
-         >> NO_TAC)
- >> TRY (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-         >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-         >> rw[]
-         >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-         >> rw[Once substFn_def]
-         >> every_case_tac
-         >> rw []
-         >> NO_TAC)
-
-    >- (qexists_tac ‘q' ++ s1’
-        >> ‘s = STRCAT q' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-        >> rw []
-        >> rw [Once substFn_def]
-        >> ‘(theta |+ (q,q')) SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘FLOOKUP (theta |+ (q,q')) q = SOME q'’ by metis_tac [FLOOKUP_UPDATE]
-        >> ‘FLOOKUP theta' q = SOME q'’ by metis_tac [FLOOKUP_SUBMAP]
-        >> rw[]
-        >> fs [concatPartial_thm])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-   (* Again *)
-
-   >- rw[concatPartial_thm]
-   >- (rw[Once substFn_def]
-       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-       >> rw []
-       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-       >> metis_tac [NOT_EXISTS])
-   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-       >> ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-       >> rw[Once substFn_def]
-       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-       >> rw []
-       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-       >> metis_tac [NOT_EXISTS])
-   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-       >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-       >> rw[]
-       >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-       >> rw[Once substFn_def]
-       >> every_case_tac
-       >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- cheat
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
- >- (qexists_tac ‘q'' ++ s1’
-        >> ‘s = STRCAT q'' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-        >> rw []
-        >> rw [Once substFn_def]
-        >> ‘(theta |+ (q',q'')) SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘FLOOKUP (theta |+ (q',q'')) q' = SOME q''’ by metis_tac [FLOOKUP_UPDATE]
-        >> ‘FLOOKUP theta' q' = SOME q''’ by metis_tac [FLOOKUP_SUBMAP]
-        >> rw[]
-        >> fs [concatPartial_thm])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
- >- (qexists_tac ‘q'' ++ s1’
-        >> ‘s = STRCAT q'' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-        >> rw []
-        >> rw [Once substFn_def]
-        >> ‘(theta |+ (q',q'')) SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘FLOOKUP (theta |+ (q',q'')) q' = SOME q''’ by metis_tac [FLOOKUP_UPDATE]
-        >> ‘FLOOKUP theta' q' = SOME q''’ by metis_tac [FLOOKUP_SUBMAP]
-        >> rw[]
-        >> fs [concatPartial_thm])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- cheat
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
+         >> rw []))
 QED
 
-(*---------------------------------------------------------------------------*)
-(* Applying the computed substitution to the contig gives the string back.   *)
-(*---------------------------------------------------------------------------*)
-
-Theorem match_lem :
-!vFn wklist (s:string) theta s2 theta'.
-   matchFn vFn (wklist,s,theta) = SOME (s2, theta')
-   ==>
-   ?s1. substWk vFn theta' wklist = SOME s1 /\  s1 ++ s2 = s
-Proof
- simp_tac list_ss [substWk_def]
- >> recInduct matchFn_ind
- >> rpt gen_tac
- >> strip_tac
- >> rw_tac list_ss [Once matchFn_def]
- >> every_case_tac
- >> rw[] >> fs[] >> rfs[] >> rw []
-   >- rw[concatPartial_thm]
-   >- (rw[Once substFn_def]
-       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-       >> rw []
-       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-       >> metis_tac [NOT_EXISTS])
-   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-       >> ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-       >> rw[Once substFn_def]
-       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-       >> rw []
-       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-       >> metis_tac [NOT_EXISTS])
-   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-       >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-       >> rw[]
-       >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-       >> rw[Once substFn_def]
-       >> every_case_tac
-       >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (qexists_tac ‘q' ++ s1’
-        >> ‘s = STRCAT q' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-        >> rw []
-        >> rw [Once substFn_def]
-        >> ‘(theta |+ (q,q')) SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘FLOOKUP (theta |+ (q,q')) q = SOME q'’ by metis_tac [FLOOKUP_UPDATE]
-        >> ‘FLOOKUP theta' q = SOME q'’ by metis_tac [FLOOKUP_SUBMAP]
-        >> rw[]
-        >> fs [concatPartial_thm])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-   (* Again *)
-
-   >- rw[concatPartial_thm]
-   >- (rw[Once substFn_def]
-       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-       >> rw []
-       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-       >> metis_tac [NOT_EXISTS])
-   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-       >> ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-       >> rw[Once substFn_def]
-       >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-       >> rw []
-       >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-       >> metis_tac [NOT_EXISTS])
-   >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-       >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-       >> rw[]
-       >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-       >> rw[Once substFn_def]
-       >> every_case_tac
-       >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- cheat
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
- >- (qexists_tac ‘q'' ++ s1’
-        >> ‘s = STRCAT q'' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-        >> rw []
-        >> rw [Once substFn_def]
-        >> ‘(theta |+ (q',q'')) SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘FLOOKUP (theta |+ (q',q'')) q' = SOME q''’ by metis_tac [FLOOKUP_UPDATE]
-        >> ‘FLOOKUP theta' q' = SOME q''’ by metis_tac [FLOOKUP_SUBMAP]
-        >> rw[]
-        >> fs [concatPartial_thm])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
- >- (qexists_tac ‘q'' ++ s1’
-        >> ‘s = STRCAT q'' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-        >> rw []
-        >> rw [Once substFn_def]
-        >> ‘(theta |+ (q',q'')) SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘FLOOKUP (theta |+ (q',q'')) q' = SOME q''’ by metis_tac [FLOOKUP_UPDATE]
-        >> ‘FLOOKUP theta' q' = SOME q''’ by metis_tac [FLOOKUP_SUBMAP]
-        >> rw[]
-        >> fs [concatPartial_thm])
-    >- (rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap] >>
-        ‘evalExp (theta',vFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> rw[Once substFn_def]
-        >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,indexFn_def,LAMBDA_PROD,IS_SOME_NEG]
-        >> rw []
-        >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
-        >> metis_tac [NOT_EXISTS])
-    >- cheat
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘∃lval bexp. lval = q ∧ bexp = q'’ by metis_tac[]
-        >> rw[]
-        >> ‘evalBexp (theta',vFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw[Once substFn_def]
-        >> every_case_tac
-        >> rw [])
-QED
 
 Theorem match_subst_thm :
  !vFn wklist (s:string) theta s2 theta'.
-    matchFn vFn (wklist,s,theta) = SOME (s2, theta')
+    matchFn (wklist,s,theta) = SOME (s2, theta')
     ==>
-    THE (substWk vFn theta' wklist) ++ s2 = s
+    THE (substWk theta' wklist) ++ s2 = s
 Proof
  metis_tac [match_lem,optionTheory.THE_DEF]
 QED
@@ -1218,7 +898,7 @@ QED
 
 Theorem Recd_Array_flat :
  ∀s e n c clist theta.
-  evalExp (theta,valFn) e = SOME n
+  evalExp theta e = SOME n
    ==>
    (s IN Contig_Lang theta (arb_label_recd (Array c e::clist))
     <=>
@@ -1244,7 +924,7 @@ QED
 
 Theorem Recd_Alt_flatA :
  ∀s b c1 c2 clist theta.
-  evalBexp (theta,valFn) b = SOME T
+  evalBexp theta b = SOME T
    ==>
    (s IN Contig_Lang theta (arb_label_recd (Alt b c1 c2::clist))
     <=>
@@ -1255,7 +935,7 @@ QED
 
 Theorem Recd_Alt_flatB :
  ∀s b c1 c2 clist theta.
-  evalBexp (theta,valFn) b = SOME F
+  evalBexp theta b = SOME F
    ==>
    (s IN Contig_Lang theta (arb_label_recd (Alt b c1 c2::clist))
     <=>
@@ -1265,10 +945,8 @@ Proof
 QED
 
 Theorem matchFn_wklist_sound :
- !vFn wklist s fmap suffix theta.
-   (vFn = valFn)
-    ==>
-   matchFn vFn (wklist,s,fmap) = SOME (suffix, theta)
+ !wklist s fmap suffix theta.
+   matchFn (wklist,s,fmap) = SOME (suffix, theta)
     ==>
    ∃prefix. (s = prefix ++ suffix) ∧ prefix IN Contig_Lang theta (arb_label_recd (MAP SND wklist))
 Proof
@@ -1277,62 +955,92 @@ Proof
   >> rpt gen_tac
   >> strip_tac
   >> simp_tac list_ss [Once matchFn_def]
-  >> every_case_tac
-  >> rw[] >> fs[] >> rfs[] >> rw []
-    >- rw [IN_Contig_Lang,arb_label_recd_def]
-    >- (fs[map_snd_fieldFn]
-        >> ‘Contig_Lang theta' (arb_label_recd (MAP SND l ⧺ MAP SND t)) =
-            Contig_Lang theta' (arb_label_recd (Recd l::MAP SND t))’
-            by (rw [arb_label_recd_def,Recd_flat,EXTENSION]
-                  >> AP_TERM_TAC
-                  >> match_mp_tac field_names_ignored
-                  >> rw[map_snd_lem])
-        >> metis_tac[])
-    >- (fs[map_snd_indexFn]
-        >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘evalExp (theta',valFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> ‘Contig_Lang theta' (arb_label_recd (Array c e::MAP SND t)) =
-            Contig_Lang theta' (arb_label_recd (REPLICATE x c ⧺ MAP SND t))’
-           by rw [EXTENSION,GSYM Recd_Array_flat]
-        >> metis_tac [map_snd_indexFn])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘evalBexp (theta',valFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw [Recd_Alt_flatA])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘evalBexp (theta',valFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw [Recd_Alt_flatB])
-    >- (qexists_tac ‘q' ++ prefix’
-        >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS]
-           >- (imp_res_tac take_drop_thm >> fs [])b
-           >- (imp_res_tac take_drop_thm
-                >> fs [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
+  >> simpCases_on ‘worklist’
+  >> TRY (Cases_on ‘h’ >> simpCases_on ‘r’)
+  >- rw [IN_Contig_Lang,arb_label_recd_def]
+  >- (simpCases_on ‘take_drop (atomWidth a) s’
+      >> simpCases_on ‘x’
+      >> qexists_tac ‘q' ++ prefix’
+      >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS]
+         >- (imp_res_tac take_drop_thm >> fs [])
+         >- (imp_res_tac take_drop_thm
+             >> fs [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
+             >> rw[]
+             >> metis_tac[]))
+  >- (fs[map_snd_fieldFn]
+      >> ‘Contig_Lang theta' (arb_label_recd (MAP SND l ⧺ MAP SND t)) =
+          Contig_Lang theta' (arb_label_recd (Recd l::MAP SND t))’
+          by (rw [arb_label_recd_def,Recd_flat,EXTENSION]
+              >> AP_TERM_TAC
+              >> match_mp_tac field_names_ignored
+              >> rw[map_snd_lem])
+      >> metis_tac[])
+  >- (simpCases_on ‘evalExp theta e’
+      >> fs[map_snd_indexFn]
+      >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+      >> ‘evalExp theta' e = SOME x’ by metis_tac [evalExp_submap]
+      >> ‘Contig_Lang theta' (arb_label_recd (Array c e::MAP SND t)) =
+          Contig_Lang theta' (arb_label_recd (REPLICATE x c ⧺ MAP SND t))’
+          by rw [EXTENSION,GSYM Recd_Array_flat]
+      >> metis_tac [map_snd_indexFn])
+ >- (simpCases_on ‘take_drop 1 s’
+     >> simpCases_on ‘x’
+     >> ‘∃tag lval. q' = tag ∧ q = lval’ by metis_tac[] >> ntac 2 (pop_subst_tac)
+     >> qexists_tac ‘tag ++ prefix’
+     >> ‘s = STRCAT tag (STRCAT prefix suffix)’ by metis_tac [take_drop_thm]
+     >> rw[]
+     >> ‘(theta |+ (RecdProj lval "tag", tag)) SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘FLOOKUP (theta |+ (RecdProj lval "tag",tag))
+                 (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_UPDATE]
+     >> ‘FLOOKUP theta' (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_SUBMAP]
+     >> pop_assum (fn th => popk_tac >> assume_tac th)
+     >> qpat_x_assum ‘matchFn _ = _’ kall_tac
+     >> ‘STRLEN tag = 1’ by metis_tac [take_drop_thm]
+     >> qpat_x_assum ‘take_drop _ _ = _’ kall_tac
+     >> qpat_x_assum ‘~(_ IN _)’ kall_tac
+     >> qpat_x_assum ‘_ SUBMAP _’ kall_tac
+     >> qpat_x_assum ‘prefix IN Contig_Lang _ _’
+          (strip_assume_tac o SIMP_RULE (srw_ss())
+           [IN_Contig_Lang,arb_label_recd_def,ListRecd_def,PULL_EXISTS,map_snd_lem,
+            evalExp_def, evalBexp_def])
+     >> rw[] >> rfs[option_case_eq] >> fs [] >> rw[]
+     >> simpCases_on ‘n1’
+     >- (‘tag = [NilTag]’
+           by (fs [strlen_eq_1,NilTag_def]
                 >> rw[]
-                >> metis_tac[]))
-    >- (fs[map_snd_fieldFn]
-        >> ‘Contig_Lang theta' (arb_label_recd (MAP SND l ⧺ MAP SND t)) =
-            Contig_Lang theta' (arb_label_recd (Recd l::MAP SND t))’
-            by (rw [arb_label_recd_def,Recd_flat,EXTENSION]
-                  >> AP_TERM_TAC
-                  >> match_mp_tac field_names_ignored
-                  >> rw[map_snd_lem])
-        >> metis_tac[])
-    >- (fs[map_snd_indexFn]
-        >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘evalExp (theta',valFn) e = SOME x’ by metis_tac [evalExp_submap]
-        >> ‘Contig_Lang theta' (arb_label_recd (Array c e::MAP SND t)) =
-            Contig_Lang theta' (arb_label_recd (REPLICATE x c ⧺ MAP SND t))’
-           by rw [EXTENSION,GSYM Recd_Array_flat]
-        >> pop_assum SUBST_ALL_TAC
-        >> metis_tac [map_snd_indexFn])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘evalBexp (theta',valFn) b = SOME T’ by metis_tac [evalBexp_submap]
-        >> rw [Recd_Alt_flatA])
-    >- (‘theta SUBMAP theta'’ by metis_tac [match_submap]
-        >> ‘evalBexp (theta',valFn) b = SOME F’ by metis_tac [evalBexp_submap]
-        >> rw [Recd_Alt_flatB])
+                >> fs[valFn_def,l2n_def]
+                >> qpat_x_assum ‘_ = 0’ mp_tac
+                >> rw [ORD_CHR_RWT])
+         >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
+         >> qexists_tac ‘xs’
+         >> qexists_tac ‘[]’
+         >> rw [])
+     >- (‘tag = [ConsTag]’
+           by (fs [strlen_eq_1,ConsTag_def]
+                >> rw[]
+                >> fs[valFn_def,l2n_def]
+                >> qpat_x_assum ‘_ = 1’ mp_tac
+                >> rw [ORD_CHR_RWT])
+          >> qpat_x_assum ‘valFn tag = _’ kall_tac
+          >> qpat_x_assum ‘valFn tag = _’ kall_tac
+          >> qpat_x_assum ‘STRLEN tag = _’ kall_tac
+          >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
+          >> qexists_tac ‘xs’
+          >> qexists_tac ‘STRCAT [ConsTag] s' :: slist'’
+          >> rpt conj_tac
+          >- rw []
+          >- rw []
+          >- metis_tac[]))
+ >- (simpCases_on ‘evalBexp theta b’
+     >> simpCases_on ‘x’
+     >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+     >- (‘evalBexp theta' b = SOME T’ by metis_tac [evalBexp_submap]
+          >> rw [Recd_Alt_flatA])
+     >- (‘evalBexp theta' b = SOME F’ by metis_tac [evalBexp_submap]
+         >> rw [Recd_Alt_flatB]))
 QED
 
-Theorem Contig_Degenerate_Recd :
+Theorem Contig_Singleton_Recd :
  !s theta contig fName.
      s IN Contig_Lang theta (Recd [(fName,contig)])
       <=>
@@ -1343,14 +1051,14 @@ QED
 
 Theorem matchFn_sound :
  !contig s theta.
-   matchFn (atomWidth,valFn) ([(VarName"root",contig)],s,FEMPTY) = SOME ("", theta)
+   matchFn ([(VarName"root",contig)],s,FEMPTY) = SOME ("", theta)
     ==>
    s IN Contig_Lang theta contig
 Proof
   rw[]
   >> imp_res_tac (matchFn_wklist_sound |> SIMP_RULE std_ss [])
   >> rw []
-  >> fs [arb_label_recd_def,Contig_Degenerate_Recd]
+  >> fs [arb_label_recd_def,Contig_Singleton_Recd]
 QED
 
 
