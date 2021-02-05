@@ -76,6 +76,7 @@ End
 Datatype:
   contig = Basic atom
          | Void
+         | Assert bexp
          | Recd ((string # contig) list)
          | Array contig exp
          | List contig
@@ -181,7 +182,8 @@ End
 Theorem contig_size_lem:
  !plist p. MEM p plist ==> contig_size (SND p) < contig1_size plist
 Proof
- simp_tac list_ss [FORALL_PROD] >> Induct
+ simp_tac list_ss [FORALL_PROD]
+ >> Induct
  >> rw_tac list_ss [contig_size_def]
  >- rw_tac list_ss [contig_size_def]
  >- (‘contig_size p_2 < contig1_size plist’ by metis_tac[] >> decide_tac)
@@ -191,6 +193,8 @@ val _ = DefnBase.add_cong list_size_cong;
 
 Definition csize_def :
   (csize (Basic a)     = 0) /\
+  (csize Void          = 0) /\
+  (csize (Assert b)    = 0) /\
   (csize (Recd fields) = 1 + list_size (\(a,c). csize  c) fields) /\
   (csize (Array c dim) = 1 + csize c) /\
   (csize (List c)      = 1 + csize c) /\
@@ -261,6 +265,11 @@ End
 Definition Contig_Lang_def:
   Contig_Lang theta (Basic a) = {s | LENGTH s = atomWidth a} /\
   Contig_Lang theta Void = {} /\
+  Contig_Lang theta (Assert b) =
+    (case evalBexp theta b
+      of NONE => {}
+       | SOME T => {""}
+       | SOME F => {}) /\
   Contig_Lang theta (Recd fields) =
     {CONCAT slist
       | LIST_REL (\s contig. s IN Contig_Lang theta contig) slist (MAP SND fields)} /\
@@ -284,10 +293,24 @@ Termination
   >> decide_tac
 End
 
+(*---------------------------------------------------------------------------*)
+(* Assert derivable. Complicates termination proof for Contig_Lang, so       *)
+(* expanded form used in Contig_Lang_def above.                              *)
+(*---------------------------------------------------------------------------*)
+
+Theorem Assert_Alt :
+  Contig_Lang theta (Assert b) = Contig_Lang theta (Alt b (Recd []) Void)
+Proof
+  rw[Contig_Lang_def]
+   >> every_case_tac
+   >> rw[EXTENSION]
+QED
+
 Theorem IN_Contig_Lang :
   ∀s.
      (s IN Contig_Lang theta (Basic a) ⇔ LENGTH s = atomWidth a) ∧
      (s IN Contig_Lang theta Void ⇔ F) ∧
+     (s IN Contig_Lang theta (Assert b) ⇔ (s = "" ∧ evalBexp theta b = SOME T)) ∧
      (s IN Contig_Lang theta (Recd fields) ⇔
         ∃slist. s = CONCAT slist ∧
                 LIST_REL (\s contig. s IN Contig_Lang theta contig) slist (MAP SND fields)) /\
@@ -430,6 +453,11 @@ Definition predFn_def :
             | SOME (segment,rst) =>
               predFn (t, rst, theta |+ (lval,segment)))
    | (lval,Void)::t => F
+   | (lval,Assert b)::t =>
+       (case evalBexp theta b
+         of NONE   => F
+          | SOME F => F
+          | SOME T => predFn (t,s,theta))
    | (lval,Recd fields)::t =>
        predFn (MAP (fieldFn lval) fields ++ t,s,theta)
    | (lval,Array c exp)::t =>
@@ -479,6 +507,11 @@ Definition matchFn_def :
             NONE
         else matchFn (t, rst, theta |+ (lval,segment)))
    | (lval,Void)::t => NONE
+   | (lval,Assert b)::t =>
+       (case evalBexp theta b
+         of NONE   => NONE
+          | SOME F => NONE
+          | SOME T => matchFn (t,s,theta))
    | (lval,Recd fields)::t =>
         matchFn (MAP (fieldFn lval) fields ++ t,s,theta)
    | (lval,Array c exp)::t =>
@@ -527,6 +560,11 @@ Definition substFn_def :
   case contig
    of Basic _ => FLOOKUP theta lval
     | Void  => NONE
+    | Assert b =>
+       (case evalBexp theta b
+         of NONE   => NONE
+          | SOME F => NONE
+          | SOME T => SOME "")
     | Recd fields =>
        concatPartial
          (MAP (\(fName,c). substFn theta (RecdProj lval fName,c)) fields)
@@ -668,6 +706,11 @@ Proof
      >> ‘FLOOKUP (theta |+ (q,q')) q = SOME q'’ by metis_tac [FLOOKUP_UPDATE]
      >> ‘FLOOKUP theta' q = SOME q'’ by metis_tac [FLOOKUP_SUBMAP]
      >> rw[]
+     >> fs [concatPartial_thm])
+ >- (simpCases_on ‘evalBexp theta b’
+     >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘evalBexp theta' b = SOME T’ by metis_tac [evalBexp_submap]
+     >> rw[Once substFn_def]
      >> fs [concatPartial_thm])
  >- (rw[Once substFn_def]
      >> fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,fieldFn_def,LAMBDA_PROD,IS_SOME_NEG]
@@ -884,6 +927,16 @@ Proof
  rw[IN_Contig_Lang,arb_label_recd_def,EQ_IMP_THM,PULL_EXISTS]
 QED
 
+Theorem Contig_Singleton_Recd :
+ !s theta contig fName.
+     s IN Contig_Lang theta (Recd [(fName,contig)])
+      <=>
+     s IN Contig_Lang theta contig
+Proof
+ rw [IN_Contig_Lang,PULL_EXISTS]
+QED
+
+
 Theorem matchFn_wklist_sound :
  !wklist s fmap suffix theta.
    matchFn (wklist,s,fmap) = SOME (suffix, theta)
@@ -908,6 +961,11 @@ Proof
              >> fs [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
              >> rw[]
              >> metis_tac[]))
+  >- (simpCases_on ‘evalBexp theta b’
+      >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
+      >> ‘evalBexp theta' b = SOME T’ by metis_tac [evalBexp_submap]
+      >> fs[IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
+      >> metis_tac[])
   >- (fs[map_snd_fieldFn]
       >> ‘Contig_Lang theta' (arb_label_recd (MAP SND l ⧺ MAP SND t)) =
           Contig_Lang theta' (arb_label_recd (Recd l::MAP SND t))’
@@ -979,15 +1037,6 @@ Proof
           >> rw [Recd_Alt_flatA])
      >- (‘evalBexp theta' b = SOME F’ by metis_tac [evalBexp_submap]
          >> rw [Recd_Alt_flatB]))
-QED
-
-Theorem Contig_Singleton_Recd :
- !s theta contig fName.
-     s IN Contig_Lang theta (Recd [(fName,contig)])
-      <=>
-     s IN Contig_Lang theta contig
-Proof
- rw [IN_Contig_Lang,PULL_EXISTS]
 QED
 
 Theorem matchFn_sound :
