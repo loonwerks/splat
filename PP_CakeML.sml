@@ -108,7 +108,9 @@ fun pp_exp depth pkgName exp =
           else if length list = 1 then
              pp_exp (depth-1) pkgName (hd list)
           else PrettyBlock(2,true,[],
-                 [PrettyString"(",
+                 [PrettyString"case recd", Space,
+                  PrettyString "of ",
+                  PrettyString
                   PrettyBlock(0,false,[],
                      [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1) pkgName ) list]),
                   PrettyString")"])
@@ -171,138 +173,7 @@ and pp_valbind d pkgName (Binop(Equal,e1,e2)) =
   | pp_valbind other input stuff = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
 ;
 
-(*
-      | Binop(Exponent,e1,e2) => pp_infix depth ("exp",e1,e2)
-      | Binop(LogicalLShift,e1,e2) => pp_infix depth ("<<",e1,e2)
-      | Binop(LogicalRShift,e1,e2) => pp_infix depth ("l>>",e1,e2)
-      | Binop(CastWidth,e1,e2) => pp_infix depth ("width",e1,e2)
-      | Binop(RegexMatch,e1,e2) => pp_exp depth (Fncall(("","match"),[e1,e2]))
-      | Binop(Since,e1,e2) => pp_exp depth (Fncall(("","Since"),[e1,e2]))
-      | Binop(Trigger,e1,e2) => pp_exp depth (Fncall(("","Trigger"),[e1,e2]))
-      | Binop(Fby,e1,e2) => pp_infix depth ("->",e1,e2)
-      | Binop(Imp,e1,e2) => pp_infix depth ("==>",e1,e2)
-      | Binop(ArithmeticRShift,e1,e2) => pp_infix depth ("a>>",e1,e2)
-      | Binop(BitAnd,e1,e2) => pp_infix depth ("&",e1,e2)
-      | Binop(BitOr,e1,e2) => pp_infix depth ("|",e1,e2)
-      | Binop(BitXOR,e1,e2) => pp_infix depth ("^",e1,e2)
-      | Unop(BitNot,e) => PrettyBlock(2,true,[],
-           [PrettyString"not",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Unop(Signed,e) => PrettyBlock(2,true,[],
-           [PrettyString"signed",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Unop(Unsigned,e) => PrettyBlock(2,true,[],
-           [PrettyString"unsigned",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Unop(Unbounded,e) => PrettyBlock(2,true,[],
-           [PrettyString"unbounded",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Unop(Yesterday,e) => PrettyBlock(2,true,[],
-           [PrettyString"Yesterday",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Unop(ZYesterday,e) => PrettyBlock(2,true,[],
-           [PrettyString"ZYesterday",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Unop(Historically,e) => PrettyBlock(2,true,[],
-           [PrettyString"Historically",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
-      | Quantified (quant,bvars,body) =>
-          PrettyBlock(2,true,[],
-           [PrettyString(case quant of Forall => "forall " | Exists => "exists "),
-            PrettyBlock(0,false,[],
-               [gen_pp_list Space [] (pp_ty_field (depth-1)) bvars]),
-                pp_exp (depth-1) pkgName  body])
-*)
 
-(*         PrettyBlock(2,true,[],
-           [PrettyString (pp_qid qid), PrettyBreak(0,0),
-            PrettyString "{",
-            pp_comma_list (pp_ty_field (depth-1)) fields,
-            PrettyString "}"])
-*)
-
-(*
-fun pp_vdec_semi d (id,ty) =
- let open PolyML
- in PrettyBlock(0,true,[],
-     [PrettyString id, PrettyString":",pp_ty (d-1) ty,PrettyString";"])
- end;
-
-
-fun pp_param d param =
- let open PolyML
-     fun ppp mpp d (id,ty) =
-       PrettyBlock(2,false,[],
-         [PrettyString id, Space, PrettyString":",
-          Space, mpp, Space, pp_ty (d-1) ty])
- in case param
-     of In vdec => ppp (PrettyString"in") d vdec
-      | Out vdec => ppp (PrettyString"out") d vdec
-      | InOut vdec => ppp (PrettyString"inout") d vdec
- end;
-
-fun pp_stmt depth stmt =
- let open PolyML
- in if depth = 0 then PrettyString "<stmt>"
-  else
-   case stmt
-    of Skip => PrettyString "Skip;"
-     | Check e =>
-         PrettyBlock(2,true,[],
-            [PrettyString "check",Space,
-             pp_exp (depth-1) pkgName  e, PrettyString";"])
-     | Assign(e1,e2) =>
-         PrettyBlock(2,true,[],
-         [pp_exp (depth-1) pkgName  e1, PrettyString " :=",
-          Space, pp_exp (depth-1) pkgName  e2, PrettyString";"])
-     | Call((pkgName,fnName),elist) =>
-          PrettyBlock(2,true,[],
-            [PrettyString (pkgName^"."^fnName),PrettyBreak(0,0),
-             PrettyString"(", pp_comma_list (pp_exp (depth-1) pkgName ) elist,
-             PrettyString");"])
-     | IfThenElse(e,s1,s2) =>
-          PrettyBlock(2,true,[],
-            [PrettyString"if ", pp_exp (depth-1) pkgName  e, Space,
-             PrettyString"then ", pp_stmt (depth-1) s1,Space,
-             PrettyString"else ", pp_stmt (depth-1) s2])
-     | Case(e,rules) =>
-        let fun pp_rule d (p,s) =
-         PrettyBlock(2,true,[],
-          [pp_exp (d-1) p, PrettyString" =>", Space,
-           pp_stmt (d-1) s])
-        in
-          PrettyBlock(2,true,[],
-           [PrettyString "match ", pp_exp (depth-1) pkgName  e,
-            PrettyString " {", Line_Break,
-            gen_pp_list emptyString [Space] (pp_rule (depth-1)) rules,
-            Line_Break, PrettyString "}"])
-        end
-     | Block stmts =>
-           PrettyBlock(0,true,[],
-            [PrettyString"{", Line_Break,
-             PrettyBlock(2,true,[],
-              [gen_pp_list emptyString [Space] (pp_stmt (depth-1)) stmts]),
-             PrettyBreak(0,0),PrettyString "}"])
-     | For((id,ty),e1,e2,istmt,body) =>
-          PrettyBlock(4,true,[],
-            [PrettyString"for", PrettyString"(",
-             PrettyBlock(2,false,[],
-               [PrettyString id,Space,PrettyString":",
-                Space, pp_ty (depth-1) ty, Space,
-                PrettyString"=", Space, pp_exp (depth-1) pkgName  e1]),
-              PrettyString";", Space,
-             pp_exp (depth-1) pkgName  e2,
-             PrettyString";", Space,
-             pp_stmt (depth-1) istmt,
-             PrettyString")", PrettyBreak(9999,0),
-             pp_stmt (depth-1) body])
-     | While(e,stmt) =>
-          PrettyBlock(2,false,[],
-            [PrettyString"while ", pp_exp (depth-1) pkgName  e, Line_Break,
-             PrettyString"do ", pp_stmt (depth-1) stmt])
-
- end;
-*)
 
 fun pp_decl depth pkgName decl =
  let open PolyML
@@ -340,6 +211,7 @@ fun pp_decl depth pkgName decl =
               pp_exp (depth-1) pkgName exp, PrettyString";"])
      | FnDecl(id,params,retvalOpt,locals,stmts)
        => PrettyString "<FnDecl>!?"
+
 (*
 let fun pp_params() = PrettyBlock (2,true,[],
                    [PrettyString id,Space,
@@ -406,6 +278,318 @@ fun pp_tydec depth pkgName tydec =
             Semicolon])
  end;
 
+(*---------------------------------------------------------------------------*)
+(* CakeML doesn't have records, so we replace records by single-constructor  *)
+(* datatypes, and implement field accesses by application of projection      *)
+(* functions.                                                                *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Replace all record field projections with explicit function calls.        *)
+(*---------------------------------------------------------------------------*)
+
+(*
+fun convert_tydec tydec =
+ let open AST
+ in
+  case tydec
+   of EnumDec (qid, enames) => DatatypeDecl (snd qid, map (fn s => (s,[])) enames)
+    | RecdDec (qid, fields) => RecdDecl(snd qid, fields)
+    | ArrayDec (qid, ty)    => TyAbbrevDecl (snd qid,ty)
+    | UnionDec (qid, constrs) =>
+        DatatypeDecl (snd qid, map (fn (s,ty) => (s,[ty])) constrs)
+ end
+
+fun convert_tmdec tmdec =
+ let open AST
+ in
+  case tmdec
+   of ConstDec (qid,ty,exp) => ConstDecl(snd qid,ty,exp)
+    | FnDec (qid, args, rty, body) =>
+      FnDecl(snd qid, map In args,
+             SOME ("retVal",rty),[],
+             [Assign(VarExp"retVal",body)])
+ end
+
+fun tmdecs_of_mon mondec =
+ case mondec
+  of MonitorDec(qid,ports,latched,decs,ivars,policy,guars) => decs
+;
+
+fun pkg_to_package (pkg:AADL.pkg) =
+ let val Pkg (pkgName,(tydecs,tmdecs,filters,monitors)) = pkg
+     val tydecls = map convert_tydec tydecs
+     val mondecs = List.concat (map tmdecs_of_mon monitors)
+     val tmdecs' = tmdecs @ mondecs
+     val tmdecls = map convert_tmdec tmdecs'
+ in
+    (pkgName, tydecls@tmdecls) : AST.package
+ end
+
+val plist = map (pkg_to_package o Pkg) pkgs;
+
+val tyE = tyEnvs pkg
+
+val tyE = itlist (fn p => fn E =>
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Type of array elements.                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun eltyper n tyE ty =
+ if n <= 0 then raise ERR "eltype" "too many links chased, maybe circular"
+ else
+ case ty
+  of ArrayTy(elty,_) => elty
+   | NamedTy qid =>
+       (case tyE qid
+        of SOME ty' => eltyper (n-1) tyE ty'
+         | NONE => raise ERR "eltype" ("Named type not found : "^qid_string qid))
+   | BaseTy _ => raise ERR "eltype" "expected an array type; found BaseTy"
+   | RecdTy(qid,_) => raise ERR "eltype"
+           ("expected an array type; found RecdTy "^qid_string qid)
+
+val eltype = eltyper 12;
+
+(*---------------------------------------------------------------------------*)
+(* Replace field projections in L/Rvals by projection functions              *)
+(*                                                                           *)
+(* tyE maps qids to declared types, varE maps function parameters to their   *)
+(* types, TODO: add an environment for constants, since it is possible to    *)
+(* have  a constant  that is a record, and to access a field of it, etc.     *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* A record projection function is the concatenation of the record name and  *)
+(* the fieldName.                                                            *)
+(*---------------------------------------------------------------------------*)
+
+fun recd_projFn_name tyName fieldName = tyName^"_"^fieldName^"_of";
+
+fun fieldFn tyE rty fieldName =
+ let fun recdtyper n tyE ty =
+       if n <= 0 then
+          raise ERR "recdtyper" "too many links chased, maybe circular"
+       else
+       case ty
+         of RecdTy _ => ty
+          | NamedTy qid =>
+            (case tyE qid
+              of SOME ty' => recdtyper (n-1) tyE ty'
+               | NONE => raise ERR "recdtyper"
+                          ("Named type not found : "^qid_string qid))
+          | otherwise => raise ERR "recdtyper" "not a record type"
+ in
+   case recdtyper 12 tyE rty
+    of RecdTy((qid as (pkgName,recdName)),fields)
+        => (case assoc1 fieldName fields
+             of NONE => raise ERR "fieldFn"
+                 ("seeking "^fieldName^" in type "^qid_string qid)
+              | SOME (_,fty) => ((pkgName,recd_projFn_name recdName fieldName),fty))
+     | otherwise => raise ERR "fieldFn" "expected a RecdTy"
+ end;
+
+fun proj_intro (E as ((tyE,constE),varE)) exp =
+ (case exp
+   of VarExp id =>
+        (case varE id
+          of SOME ty => (exp, ty)
+           | NONE =>
+         case constE id
+          of SOME ty => (exp,ty)
+           | NONE => raise ERR "proj_intro" ("Unable to find identifier "^Lib.quote id))
+    | ArrayIndex(e', i) =>
+       let val (e'', ty) = proj_intro E e'
+       in (ArrayIndex(e'',i),eltype tyE ty)
+       end
+    | RecdProj(e, fldName) =>
+       let val (e', rty) = proj_intro E e
+           val (proj_qid,fty) = fieldFn tyE rty fldName
+       in (Fncall(proj_qid,[e']), fty)
+       end
+    | otherwise => (exp,NamedTy("--","--"))
+ )
+ handle e =>
+  let val pretty = pp_exp 72 "<PKG>" exp
+      val buf = ref []
+      fun addbuf s = buf := s :: !buf
+      val _ = PolyML.prettyPrint (addbuf,72) pretty
+      val expString = String.concat (rev (!buf))
+  in raise wrap_exn "PP_CakeML" ("proj_intro on expression : "^expString)  e
+  end;
+
+fun extendE env (v,u) x =
+ case env x
+  of SOME y => SOME y
+   | NONE => if x = v then SOME u else NONE;
+
+fun dest_varExp (VarExp id) = id
+  | dest_varExp otherwise = raise ERR "dest_varExp" "expected a VarExp";
+
+fun transRval E e =
+ case e
+  of ConstExp _ => e
+   | Unop (uop,e')     => Unop(uop,transRval E e')
+   | Binop (bop,e1,e2) => Binop (bop,transRval E e1, transRval E e2)
+   | ArrayExp elist    => ArrayExp (map (transRval E) elist)
+   | ConstrExp(qid,id,eOpt) => ConstrExp(qid,id,Option.map (transRval E) eOpt)
+   | Fncall(qid as ("","Array_Forall"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Forall")
+   | Fncall(qid as ("","Array_Exists"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Forall")
+   | Fncall(qid,elist)      => Fncall(qid,map (transRval E) elist)
+   | RecdExp(qid,fields)    => RecdExp(qid,map (I##transRval E) fields)
+   | Quantified (q,params,exp) => Quantified (q,params,transRval E exp)
+   | otherwise => fst(proj_intro E e)
+;
+
+fun empty_varE _ = NONE;
+
+fun assocFn alist x =
+ case assoc1 x alist
+  of NONE => NONE
+   | SOME (a,b) => SOME b;
+
+
+fun transRval_decl E tmdec =
+ case tmdec
+  of ConstDec (qid,ty,exp)
+       => ConstDec (qid,ty,transRval (E,empty_varE) exp)
+   | FnDec (qid,params,ty,exp)
+       => FnDec (qid,params,ty, transRval (E,assocFn params) exp)
+;
+
+fun transRval_filter E filterdec =
+ case filterdec
+ of FilterDec (qid,ports,props) =>
+      let val props' = map (I##transRval (E,empty_varE)) props
+      in FilterDec (qid,ports,props')
+      end handle e => raise wrap_exn "PP_CakeML" "transRval_filter" e;
+
+fun transRval_monitor E mondec =
+  let fun ivar_decFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
+      fun policyFn (bindOpt,binds) =
+           (Option.map (I##transRval (E,empty_varE)) bindOpt,
+            List.map (I##transRval (E,empty_varE)) binds)
+      fun guarFn (a,b,e) = (a,b,transRval (E,empty_varE) e)
+  in
+   case mondec
+    of MonitorDec (qid,ports,latched,decs,ivardecs,policy,guars) =>
+        let val decs' = map (transRval_decl E) decs
+            val ivardecs' = map ivar_decFn ivardecs
+            val policy' = policyFn policy
+            val guars' = map guarFn guars
+        in MonitorDec(qid,ports,latched,decs',ivardecs',policy',guars')
+        end
+  end
+  handle e => raise wrap_exn "PP_CakeML" "transRval_monitor" e;
+
+fun transRval_pkg E (Pkg (pkgName,(tydecs,tmdecs,filters,monitors))) =
+ Pkg(pkgName,
+       (tydecs,
+        map (transRval_decl E) tmdecs,
+        map (transRval_filter E) filters,
+        map (transRval_monitor E) monitors));
+
+fun tydec_to_ty tydec =
+  case tydec
+   of RecdDec (qid,fields) => RecdTy(qid,fields)
+    | ArrayDec(qid,ty) => ty
+    | EnumDec (qid,_) => NamedTy qid
+    | UnionDec(qid,_) => NamedTy qid
+
+fun mk_tyE pkglist =
+ let fun tydecs_of (Pkg(pkgName,(tys,consts,filters,monitors))) = tys
+     val all_tydecs = List.concat (map tydecs_of pkglist)
+     fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
+     val tydec_alist = map mk_tydec_bind all_tydecs
+ in assocFn tydec_alist
+ end
+
+fun is_const_dec (ConstDec _) = true | is_const_dec other = false;
+
+fun mk_constE pkglist =
+ let fun cdecs_of (Pkg(pkgName,(tys,consts,filters,monitors))) = consts
+     val all_cdecs = List.concat (map cdecs_of pkglist)
+     val all_const_decs = filter is_const_dec all_cdecs
+     fun mk_const_bind (ConstDec(qid,ty,e)) = (snd qid,ty)
+       | mk_const_bind otherwise = raise ERR "mk_constE" "expected a ConstDec"
+     val alist = map mk_const_bind all_const_decs
+ in assocFn alist
+ end
+
+fun transRval_pkglist plist =
+ let val tyE = mk_tyE plist
+     val constE = mk_constE plist
+ in map (transRval_pkg (tyE,constE)) plist
+ end;
+
+fun dest_recd_dec (RecdDec (qid, fields)) = (qid,fields)
+  | dest_recd_dec otherwise = raise ERR "dest_recd_dec" ""
+
+fun mk_recd_projns tys =
+ let open AST
+     val recd_tydecs = mapfilter dest_recd_dec tys
+
+     fun mk_proj (tyqid as (pkgName,tyName)) vars ((fieldName,ty),var) =
+         let val fnName = recd_projFn_name tyName fieldName
+         in FnDec((pkgName,fnName),
+                  [("recd", NamedTy tyqid)], ty,
+                  Fncall(("","Record-Projection"),var::vars))
+         end
+     fun mk_projFns (qid,fields) =
+	  let val vars = map (fn i => VarExp("v"^Int.toString i))
+                         (upto 1 (length fields))
+              val field_vars = zip fields vars
+          in map (mk_proj qid vars) field_vars
+          end
+     val projFns = List.concat (map mk_projFns recd_tydecs)
+ in
+   projFns
+ end
+
+fun dest_recd_projnFn tmdec =
+ case tmdec
+  of FnDec(qid,[("recd", NamedTy tyqid)], ty,
+           Fncall(("","Record-Projection"),var::vars)) => SOME(qid,tyqid,var,vars)
+   | otherwise => NONE
+;
+
+fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
+ let open PolyML
+ in if null vars then
+       PrettyString "<BADLY FORMED PROJECTION FN!>"
+    else
+      PrettyBlock(2,true,[],
+        [PrettyString "fun ",
+         PrettyString (snd qid), PrettyString " recd =",Space,
+         PrettyString "case recd", Line_Break,
+         PrettyString "  of ", PrettyString (snd tyqid), PrettyString " ",
+         pp_list_with_style false Space [emptyBreak]
+                (pp_exp (depth-1) pkgName) vars,
+         PrettyString " => ", (pp_exp (depth-1) pkgName) var,
+         Semicolon])
+ end;
+
 fun pp_tmdec depth pkgName tmdec =
  let open PolyML
  in if depth = 0 then PrettyString "<decl>"
@@ -420,16 +604,19 @@ fun pp_tmdec depth pkgName tmdec =
          Semicolon])
     | FnDec (qid,params,ty,exp) =>
        let fun pp_param (s,ty) = PolyML.PrettyString s
-       in
-       PrettyBlock(0,true,[],
-        [PrettyString "fun ",
-         PrettyString (snd qid), PrettyString " ",
-         gen_pp_list Space [emptyBreak] pp_param params,
-         PrettyString " =", Space,
-         pp_exp (depth-1) pkgName exp,
-         Semicolon])
+       in case dest_recd_projnFn tmdec
+           of NONE =>
+                PrettyBlock(0,true,[],
+                  [PrettyString "fun ",
+                   PrettyString (snd qid), PrettyString " ",
+                   gen_pp_list Space [emptyBreak] pp_param params,
+                   PrettyString " =", Space,
+                   pp_exp (depth-1) pkgName exp,
+                   Semicolon])
+           | SOME data => pp_projFn depth pkgName data
        end
  end;
+
 
 fun pp_filter depth (FilterDec (qid,ports,props)) =
  let open PolyML
@@ -439,7 +626,6 @@ fun pp_filter depth (FilterDec (qid,ports,props)) =
 	  [PrettyString "FILTER: ",
 	   PrettyString (qid_string qid)])
  end;
-
 
 fun dest_inout (InOut p) = p
   | dest_inout otherwise = raise ERR "dest_inout" "";
@@ -572,15 +758,22 @@ fun pp_monitor depth mondec =
  in pp_mon_stepFn depth moncode
  end
 
+(*---------------------------------------------------------------------------*)
+(* Add in projection functions, and tranform expressions with field          *)
+(* projections.                                                              *)
+(*---------------------------------------------------------------------------*)
+
 fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
  let open PolyML
+     val projFns = mk_recd_projns types
+     val consts' = projFns @ consts
  in if depth = 0 then PrettyString "<decl>"
    else
     PrettyBlock(2,true,[],
         [PrettyString ("structure "^pkgName^" = "), Line_Break,
          PrettyString "struct", Line_Break_2,
          end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts', Line_Break,
          end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters, Line_Break,
          end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors, Line_Break,
          PrettyString "end"
