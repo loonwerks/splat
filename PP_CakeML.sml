@@ -107,10 +107,8 @@ fun pp_exp depth pkgName exp =
             PrettyString "!!<EMPTY TUPLE FAILURE>!!"
           else if length list = 1 then
              pp_exp (depth-1) pkgName (hd list)
-          else PrettyBlock(2,true,[],
-                 [PrettyString"case recd", Space,
-                  PrettyString "of ",
-                  PrettyString
+          else PrettyBlock(0,true,[],
+                 [PrettyString "(",
                   PrettyBlock(0,false,[],
                      [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1) pkgName ) list]),
                   PrettyString")"])
@@ -137,7 +135,7 @@ fun pp_exp depth pkgName exp =
       | Fncall (qid,args) => PrettyBlock(2,true,[],
            [PrettyString"(",PrettyString(pp_pkg_qid pkgName qid), Space,
             PrettyBlock(0,false,[],
-               [gen_pp_list Space [emptyBreak] (pp_exp (depth-1) pkgName ) args]),
+               [gen_pp_list Space [emptyBreak] (pp_exp (depth-1) pkgName) args]),
             PrettyString")"])
       | ConstrExp(qid, constr,argOpt) =>
          PrettyBlock(2,true,[],
@@ -172,8 +170,6 @@ and pp_valbind d pkgName (Binop(Equal,e1,e2)) =
     end
   | pp_valbind other input stuff = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
 ;
-
-
 
 fun pp_decl depth pkgName decl =
  let open PolyML
@@ -362,7 +358,7 @@ val eltype = eltyper 12;
 
 (*---------------------------------------------------------------------------*)
 (* A record projection function is the concatenation of the record name and  *)
-(* the fieldName.                                                            *)
+(* the fieldName, and then "_of"                                             *)
 (*---------------------------------------------------------------------------*)
 
 fun recd_projFn_name tyName fieldName = tyName^"_"^fieldName^"_of";
@@ -673,8 +669,6 @@ fun portname (Event s) = s
 
 val boolTy = BaseTy BoolTy;
 
-val initStepVar = ("initStep",boolTy);
-
 fun split_fby exp =
   case exp
    of Binop(Fby,e1,e2) => (e1,e2)
@@ -694,34 +688,15 @@ fun split_fby exp =
 (* has been done by the programmer/system designer.                          *)
 (*---------------------------------------------------------------------------*)
 
+val initStepVar = ("initStep",boolTy);
+val False_initStep = ConstExp(BoolLit false)
+
 fun feature2port (s,ty,dir,kind) =
  case kind
   of "EventDataPort" => EventData(s,ty)
    | "DataPort" => Data(s,ty)
    | "EventPort" => Event s
    | otherwise => raise ERR "feature2port" "";
-
-datatype moncode =
-	 MonitorCode of qid * port list * port list
-                            * (string * ty) list
-                            * (exp * exp) list
-                            * (exp * exp) list
-;
-
-fun mk_monitor_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
- let val stepFn_name = snd qid ^ "StepFn"
-     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
-     val inputs = map feature2port inports
-     val outputs = map feature2port outports
-     val stateVars = map (fn (name,ty,exp) => (name,ty)) eq_stmts
-     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
-     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
-     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
- in
-   MonitorCode (qid, inputs, outputs, initStepVar::stateVars, init_code, step_code)
- end
-
-val False_initStep = ConstExp(BoolLit false)
 
 fun mk_tuple list = Fncall(("","Tuple"),list)
 
@@ -730,32 +705,48 @@ fun letExp binds exp =
     in Fncall(("","LET"),eqs@[exp])
     end;
 
-fun pp_mon_stepFn depth (MonitorCode(qid,inputs, outputs, stateVars, init, step)) =
- let open PolyML
- in if depth = 0 then PrettyString "<decl>"
-    else
-    let val stepFn_name = snd qid ^ "stepFn"
-        val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
-        val outportBs = (mk_tuple(map (VarExp o portname) outputs),VarExp"outports")
-        val stateBs   = (mk_tuple(map (VarExp o fst) stateVars),VarExp"stateVars")
-        val stateExps = False_initStep::map (fn (s,ty) => VarExp s) (tl stateVars)
-        val retTuple  = mk_tuple stateExps
-        val initExp   = letExp init retTuple
-        val stepExp   = letExp step retTuple
-        val condExp   = Fncall(("","IfThenElse"),[VarExp"initStep",initExp,stepExp])
-        val bodyExp   = letExp [inportBs,outportBs,stateBs] condExp
-    in
-      PrettyBlock(2,true,[],
-        [PrettyString ("fun "^stepFn_name^" inports outports stateVars = "),
-         Line_Break, PrettyString " ",
-         pp_exp (depth - 1) (fst qid) bodyExp
-        ])
-    end
+val dummyTy = NamedTy("","dummyTy");
+
+fun mk_mon_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
+ let val stepFn_name = snd qid ^ "stepFn"
+     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
+     val inputs = map feature2port inports
+     val outputs = map feature2port outports
+     val stateVars = initStepVar::map (fn (name,ty,exp) => (name,ty)) eq_stmts
+     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
+     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
+     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
+     val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
+     val outportBs = (mk_tuple(map (VarExp o portname) outputs),VarExp"outports")
+     val stateBs   = (mk_tuple(map (VarExp o fst) stateVars),VarExp"stateVars")
+     val stateExps = False_initStep::map (fn (s,ty) => VarExp s) (tl stateVars)
+     val retTuple  = mk_tuple stateExps
+     val initExp   = letExp init_code retTuple
+     val stepExp   = letExp step_code retTuple
+     val condExp   = Fncall(("","IfThenElse"),[VarExp"initStep",initExp,stepExp])
+     val bodyExp   = letExp [inportBs,outportBs,stateBs] condExp
+  in
+    FnDec((fst qid,stepFn_name),
+          [("inports",dummyTy),("outports",dummyTy),("stateVars",dummyTy)],
+          dummyTy,
+          bodyExp)
  end;
 
+fun install_latched pkgName latched decs =
+ let fun is_latched (ConstDec((_,"is_latched"),_,_)) = true
+       | is_latched otherwise = false
+     val decs' = filter (not o is_latched) decs
+     val ldec = ConstDec((pkgName,"is_latched"),boolTy,ConstExp(BoolLit latched))
+ in ldec::decs'
+ end
+
 fun pp_monitor depth mondec =
- let val moncode = mk_monitor_stepFn mondec
- in pp_mon_stepFn depth moncode
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,guars) = mondec
+     val stepFn = mk_mon_stepFn mondec
+     val decs1 = install_latched (fst qid) latched decs
+     val decs2 = decs1 @ [stepFn]
+ in
+  end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
  end
 
 (*---------------------------------------------------------------------------*)
@@ -784,9 +775,7 @@ val _ = PolyML.addPrettyPrinter (fn i => fn () => fn ty => pp_ty i "<pkg>" ty);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_exp i "<pkg>" e);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tydec => pp_tydec i "<pkg>" tydec);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tmdec => pp_tmdec i "<pkg>" tmdec);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_mon_stepFn i mon);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_monitor i mon);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
-
-(* val _ = PolyML.addPrettyPrinter (fn i => fn () => fn stmt => pp_stmt i "<pkg>" stmt); *)
 
 end (* PP_CakeML *)
