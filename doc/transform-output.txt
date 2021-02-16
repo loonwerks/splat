@@ -1,0 +1,282 @@
+Code generation for CASE filters and monitors
+----------------------------------------------
+
+ Filters and monitors in CASE are created by a user who gives enough
+information in the CASE IDE to create a template component. In some
+cases the template is essentially complete and no more work needs to
+be done in order to generate code. However, in many other situations,
+more work needs to be done. Here we discuss code generation in enough
+detail that users should be able to make progress on their goal of
+getting executables from their filter and monitor specifications.
+
+ The result of generating a filter or monitor from the IDE is an
+AADL component with the following rough form:
+
+ thread threadName
+   features <port list>
+   properties
+
+      CASE_Properties::Component_Type => MONITOR;  // or FILTER
+      CASE_Properties::Component_Spec => (s1, ..., sn);
+      ...
+   annex agree {**
+     <const>,  <def>, and <eq> declarations
+
+     guarantee s1 "..." : code_exp1;
+       ...
+     guarantee sn "..." : code_expn;
+
+     <other guarantees>
+
+   **}
+
+ Assume the component has n output ports. Then there needs to be
+exactly n distinct strings s1,...,sn listed in the
+CASE_Properties::Component_Spec, and at least n guarantees named
+s1,...,sn. These guarantees describe the code code_exp1,...,code_expn
+to execute for each output port. In general, this code can depend on a
+lot of other definitions, some local, and some found in other
+packages. In a thread invocation, each of code_exp1,...,code_expn is
+executed to obtain the contents of the corresponding output buffers.
+The value of each code_expi is independent of the others and of the
+contents of output buffers.
+
+ The kind of code generated depends on the port type. There are
+therefore 3 possible forms expected for a code expression, depending
+on the output port type.
+
+  1. Event port. The expected form is
+
+       event(port) <=> exp
+
+     This indicates that port is an event port and it will be set (or not)
+     according to the value of exp, which is boolean.
+
+  2. Data port. The expected form is
+
+       port = exp
+
+     This indicates that port is a data port and that the value of exp
+     will be written to it.
+
+  3. Event data port. The expected form is
+
+       if exp1 then
+         event (port) and port = exp2
+       else not (event port)
+
+     This checks the condition exp1 to see whether an event on port
+     should happen, and exp2 gives the output value if so. Note that
+     any input event (or event data) port p occurring in exp2 must be
+     guaranteed to have an event by an event(p) check in exp1.
+
+ In all of 1,2,3, the expressions should not mention any output ports,
+i.e. the value to be sent out is determined by a computation over input
+ports and state variables only.
+
+
+Filter
+======
+
+Simple filtering is straightforward. The transform generates a guarantee of the form
+
+  guarantee (threadName^portName) "Well-formed message":
+   if event(input) and WELL_FORMED input then
+      event(output) and output = input
+   else not(event(output));
+
+and SPLAT uses WELL_FORMED to generate code. WELL_FORMED is user
+defined, either in some other package or locally.
+
+Example. Filter with multiple outputs.
+--------------------------------------
+
+In some cases the output of a filter has multiple recipients. In that
+case, the event-plus-well-formedness check can be done once and
+re-used, as in this snippet from CASE PhaseII (SW.aadl) which sends
+the filter output to two components:
+
+   eq good_rqt : bool =
+      event(filter_in) and
+      CASEAgree::WELL_FORMED_AUTOMATION_REQUEST(filter_in);
+
+   guarantee out_UXAS "Well-formed Automation Request message" :
+      if good_rqt then
+         event(filter_out_UXAS) and (filter_out_UXAS = filter_in)
+      else not (event (filter_out_UXAS));
+
+   guarantee out_MON_REQ "Well-formed Automation Request message" :
+      if good_rqt then
+         event(filter_out_MON_REQ) and (filter_out_MON_REQ = filter_in)
+      else not (event (filter_out_MON_REQ));
+
+
+Monitor
+=======
+
+Monitors in general can have more powerful behaviors than filters
+since monitors can examine multiple inputs, maintain histories, etc.
+
+1. Monitor simple case.
+
+ For a monitor we assume that the IDE transform instantiates a
+thread template with at least the following things:
+
+  - An is_latched property (boolean)
+
+  - An output event-port named "alert" (Note: alert is not an event-data port)
+
+  - A Policy, defined by Lustre equations written by the user. The
+    Policy can mention the current values on input ports and also state variables.
+
+  - A boolean variable named "alerted" defined as follows
+
+      eq alerted : bool =
+         (not Policy) -> ((is_latched and pre(alerted)) or not Policy);
+
+  - A code-guarantee that tells what to send on the alert port
+
+     guarantee ReqRespMonitor_alert "alert port tracks alerted state variable" :
+     event(alert) <=> alerted;
+
+  - A guarantee that says
+
+      event(alert) <=>
+        (not Policy -> if is_latched then Once (not Policy) else not Policy)
+
+    This guarantee is a trace-level proof obligation that SPLAT will attempt to prove.
+
+ The user writes Lustre code to define the Policy, and writes any
+extra guarantees desired.
+
+
+Example: Request-response monitor.
+--------------------------------
+
+For the request-response monitor of CASE PhaseII (SW.aadl) we have the
+following completed template. Much of it is to be auto-generated; the user
+has only to define "Policy", which in this case is rather complex.
+
+  thread CASE_Monitor_Req_thr
+  features
+    reqt : in event data port CMASI::AutomationRequest.i;
+    resp : in event data port CMASI::AutomationResponse.i;
+    alert: out event port;
+  properties
+     ...
+    CASE_Properties::Monitor_Latched => false; -- indicates if the monitor is latched
+     ...
+  annex agree {**
+
+   const is_latched : bool = Get_Property(this, CASE_Properties::Monitor_Latched);
+
+   const nMonitorInvocations : int = 10;
+
+   const FAIL : int = nMonitorInvocations + 1;
+
+   fun Inc (x:int) : int = if x < nMonitorInvocations then x+1 else FAIL;
+
+   eq ticks : int =
+       (if event(resp) then FAIL
+        else (if event (reqt) then 1 else 0))
+      ->
+       if (event(reqt) and event(resp)) then
+          FAIL
+       else
+       if not (event(reqt) or event(resp)) then
+          (if (pre(ticks) = 0) then 0 else Inc (pre(ticks)))
+       else
+       if event(resp) then
+         (if (1 <= pre(ticks)) then 0 else FAIL)
+       else -- rqts set ticks to 1, so rqt.rqt.resp is fine
+         1;
+
+   eq Policy : bool = ticks < nMonitorInvocations;
+
+   -- auto-generated
+   eq alerted : bool = (not Policy) -> ((is_latched and pre(alerted)) or not Policy);
+
+   -- auto-generated
+   guarantee ReqRespMonitor_alert "alert port tracks alerted state variable" :
+   event(alert) <=>  alerted;
+
+   -- auto-generated
+   guarantee ReqRespMonitor_trace "alert trace property, to be proved by SPLAT" :
+   event(alert) <=>  not Policy -> (if is_latched then Once (not Policy) else not Policy);
+
+End Example.
+
+
+2. Monitor general case.
+
+ The general case is in many ways simpler than the simple case. It
+applies when there may be other output ports in addition to the alert
+port. In full generality, these could be event ports, event-data
+ports, or even data ports. There need not even be an alert port, as in
+the following example which specifies gating behavior.
+
+Example: Attestation gate monitor.
+----------------------------------
+
+ There are three ports for three different kinds of input
+message. There is also a "trusted_ids" input, which is consulted in
+order to validate input events. There is no policy defined, just
+"output code" guarantees for the three message types. We assume that
+any combination of the input event-data ports may have an event in any
+thread invocation. However, only one event, at most, can pass
+through. The "first" trusted event is passed through, where the
+ordering is OperatingRegion, then LineSearchTask, then
+AutomationRequest. Since the code for each output port is executed
+independently, we define a "selection" variable that tells which of
+the three output ports is selected, if any are.
+
+
+  thread CASE_AttestationGate_thr
+  features
+    trusted_ids          : in data port CMASI::AddressArray.i;
+    AutomationRequest_in : in event data port CMASI::AddressAttributedMessage.i;
+    OperatingRegion_in   : in event data port CMASI::AddressAttributedMessage.i;
+    LineSearchTask_in    : in event data port CMASI::AddressAttributedMessage.i;
+    OperatingRegion_out  : out event data port CMASI::OperatingRegion.i;
+    LineSearchTask_out   : out event data port CMASI::LineSearchTask.i;
+    AutomationRequest_out: out event data port CMASI::AutomationRequest.i;
+
+  properties
+    CASE_Properties::Component_Type => MONITOR;
+    CASE_Properties::Component_Spec =>
+         ("CASE_AttestationGate_OperatingRegion_out",
+          "CASE_AttestationGate_LinesearchTask_out",
+          "CASE_AttestationGate_AutomationRequest_out");
+    ...
+  annex agree {**
+    fun IS_TRUSTED(srcid : CMASI::Address.i) : bool
+         = (exists id in trusted_ids, (id = srcid));
+
+    eq selection : int =
+       if event(OperatingRegion_in) and IS_TRUSTED(OperatingRegion_in.id) then 0 else
+       if event(LineSearchTask_in)   and IS_TRUSTED(LineSearchTask_in.id) then 1 else
+       if event(AutomationRequest_in) and IS_TRUSTED(AutomationRequest_in.id) then 2
+       else 42;
+
+    guarantee CASE_AttestationGate_OperatingRegion_out
+    "Only messages from trusted sources shall be forwarded" :
+      if selection = 0
+      then event(OperatingRegion_out) and
+           OperatingRegion_out = OperatingRegion_in.payload.OperatingRegion
+      else not(event(OperatingRegion_out));
+
+    guarantee CASE_AttestationGate_LinesearchTask_out
+    "Only messages from trusted sources shall be forwarded" :
+      if selection = 1
+      then event(LineSearchTask_out) and
+           LineSearchTask_out = LineSearchTask_in.payload.LineSearchTask
+      else not(event(LineSearchTask_out));
+
+    guarantee CASE_AttestationGate_AutomationRequest_out
+    "Only messages from trusted sources shall be forwarded" :
+      if selection = 2
+      then event(AutomationRequest_out) and
+           AutomationRequest_out = AutomationRequest_in.payload.AutomationRequest
+      else not(event(AutomationRequest_out));
+
+End Example.
