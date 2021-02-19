@@ -47,7 +47,8 @@ fun pp_exp depth pkgName exp =
     case exp
      of VarExp id => PrettyString id
       | ConstExp (IdConst qid) => PrettyString (pp_pkg_qid pkgName qid)
-      | ConstExp (BoolLit b) => PrettyString (Bool.toString b)
+      | ConstExp (BoolLit true) => PrettyString "True"
+      | ConstExp (BoolLit false) => PrettyString "False"
       | ConstExp (CharLit c) => PrettyString ("'#"^Char.toString c^"'")
       | ConstExp (StringLit s) => PrettyString (Lib.quote(String.toString s))
       | ConstExp (IntLit{kind, value}) => PrettyString (Int.toString value)
@@ -77,6 +78,7 @@ fun pp_exp depth pkgName exp =
       | Binop(Plus,e1,e2) => pp_infix depth pkgName ("+",e1,e2)
       | Binop(Divide,e1,e2) => pp_exp depth "" (Fncall (("Int","div"),[e1,e2]))
       | Binop(Modulo,e1,e2) => pp_exp depth "" (Fncall (("Int","mod"),[e1,e2]))
+      | Binop(Fby,e1,e2) => pp_infix depth pkgName ("->",e1,e2)
       | ArrayExp elist => PrettyBlock(0,true,[],
           [PrettyString "Array.fromList",Space,
            PrettyString"[",
@@ -87,6 +89,7 @@ fun pp_exp depth pkgName exp =
                | trans exp (d::dims) = trans (Fncall (("Array","sub"),[exp,d])) dims
          in pp_exp depth pkgName (trans A dims)
          end
+      | Fncall ((_,"unitExp"),[]) => PrettyString "()"
       | Fncall ((_,"IfThenElse"),[e1,e2,e3]) =>
           PrettyBlock(2,true,[],
             [PrettyString"if ", pp_exp (depth-1) pkgName  e1, PrettyString" then", Space,
@@ -132,14 +135,15 @@ fun pp_exp depth pkgName exp =
                 pp_exp (depth-1) pkgName
                    (Fncall(("Array","exists"), [Fncall(("","Lambda"),[v,P]),arry]))
             | otherwise => PrettyString "!!<Array_Exists needs 3 args>!!")
-      | Fncall (qid,args) => PrettyBlock(2,true,[],
-           [PrettyString"(",PrettyString(pp_pkg_qid pkgName qid), Space,
-            PrettyBlock(0,false,[],
-               [gen_pp_list Space [emptyBreak] (pp_exp (depth-1) pkgName) args]),
+      | Fncall (qid,args) => PrettyBlock(2,false,[],
+           [PrettyString"(",
+            PrettyString(pp_pkg_qid pkgName qid), PrettyString" ",
+            if null args then PrettyString "()" else
+            pp_list_with_style false Space [emptyBreak] (pp_exp (depth-1) pkgName) args,
             PrettyString")"])
       | ConstrExp(qid, constr,argOpt) =>
          PrettyBlock(2,true,[],
-           [PrettyString(pp_pkg_qid pkgName qid), Space,
+           [PrettyString(pp_pkg_qid pkgName (fst qid,constr)), Space,
             PrettyBlock(0,false,[],
              case argOpt of NONE => []
                | SOME vexp => [PrettyString"(", pp_exp (depth-1) pkgName  vexp,
@@ -162,11 +166,18 @@ and pp_infix d pkgName (str,e1,e2) =
     end
 and pp_valbind d pkgName (Binop(Equal,e1,e2)) =
     let open PolyML
-    in PrettyBlock(5,true,[],
-        [PrettyString "val ",
-         pp_exp (d-1) pkgName e1,
-         PrettyString " =", Space,
-         pp_exp (d-1) pkgName e2])
+    in case e1
+        of Fncall(("","FUN"), VarExp fName::args) =>
+           PrettyBlock(5,true,[],
+             [PrettyString ("fun "^fName^" "),
+              gen_pp_list Space [emptyBreak] (pp_exp (d-1) pkgName) args,
+              PrettyString" =", Space, pp_exp (d-1) pkgName e2])
+         | otherwise =>
+           PrettyBlock(5,true,[],
+             [PrettyString "val ",
+              pp_exp (d-1) pkgName e1,
+              PrettyString " =", Space,
+              pp_exp (d-1) pkgName e2])
     end
   | pp_valbind other input stuff = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
 ;
@@ -592,7 +603,7 @@ fun pp_tmdec depth pkgName tmdec =
     else
   case tmdec
    of ConstDec (qid,ty,exp) =>
-      PrettyBlock(0,true,[],
+      PrettyBlock(3,true,[],
         [PrettyString "val ",
          PrettyString (snd qid),
          PrettyString " =", Space,
@@ -605,6 +616,7 @@ fun pp_tmdec depth pkgName tmdec =
                 PrettyBlock(0,true,[],
                   [PrettyString "fun ",
                    PrettyString (snd qid), PrettyString " ",
+                   if null params then PrettyString"()" else
                    gen_pp_list Space [emptyBreak] pp_param params,
                    PrettyString " =", Space,
                    pp_exp (depth-1) pkgName exp,
@@ -705,29 +717,30 @@ fun letExp binds exp =
     in Fncall(("","LET"),eqs@[exp])
     end;
 
+fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
+
 val dummyTy = NamedTy("","dummyTy");
 
 fun mk_mon_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
  let val stepFn_name = snd qid ^ "stepFn"
      val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
      val inputs = map feature2port inports
-     val outputs = map feature2port outports
      val stateVars = initStepVar::map (fn (name,ty,exp) => (name,ty)) eq_stmts
      val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
      val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
      val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
      val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
-     val outportBs = (mk_tuple(map (VarExp o portname) outputs),VarExp"outports")
      val stateBs   = (mk_tuple(map (VarExp o fst) stateVars),VarExp"stateVars")
+     val pre_def   = localFnExp("pre",[VarExp"x"],VarExp"x")
      val stateExps = False_initStep::map (fn (s,ty) => VarExp s) (tl stateVars)
      val retTuple  = mk_tuple stateExps
      val initExp   = letExp init_code retTuple
      val stepExp   = letExp step_code retTuple
      val condExp   = Fncall(("","IfThenElse"),[VarExp"initStep",initExp,stepExp])
-     val bodyExp   = letExp [inportBs,outportBs,stateBs] condExp
+     val bodyExp   = letExp [inportBs,stateBs,pre_def] condExp
   in
     FnDec((fst qid,stepFn_name),
-          [("inports",dummyTy),("outports",dummyTy),("stateVars",dummyTy)],
+          [("inports",dummyTy),("stateVars",dummyTy)],
           dummyTy,
           bodyExp)
  end;
@@ -740,14 +753,254 @@ fun install_latched pkgName latched decs =
  in ldec::decs'
  end
 
+(*---------------------------------------------------------------------------*)
+(* Takes a "code guarantee" and generates output code from it. There are 3   *)
+(* possible forms expected for the code expression, depending on the output  *)
+(* port type.                                                                *)
+(*                                                                           *)
+(*  1. Event port. The expected form is                                      *)
+(*                                                                           *)
+(*       event(port) = exp                                                   *)
+(*                                                                           *)
+(*     This indicates that port is an event port and it will be set (or not) *)
+(*     according to the value of exp, which is boolean.                      *)
+(*                                                                           *)
+(*  2. Data port. The expected form is                                       *)
+(*                                                                           *)
+(*       port = exp                                                          *)
+(*                                                                           *)
+(*     This indicates that port is a data port and that the value of exp     *)
+(*     will be written to it.                                                *)
+(*                                                                           *)
+(*  3. Event data port. The expected form is                                 *)
+(*                                                                           *)
+(*       if exp1 then                                                        *)
+(*         event (port) and port = exp2                                      *)
+(*       else not (event port)                                               *)
+(*                                                                           *)
+(*     This checks the condition exp1 to see whether an event on port will   *)
+(*     happen, and exp2 gives the output value if so. Note that any input    *)
+(*     event (or event data) port p occurring in exp2 must be guaranteed to  *)
+(*     have an event by event(-) checks in exp1.                             *)
+(*                                                                           *)
+(* In all of 1,2,3, the expressions should not mention any output ports,     *)
+(* i.e. the value to be sent out is determined by a computation over input   *)
+(* ports and state variables only.                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
+fun mk_callFFI_out portName d =
+  Fncall(("API","callFFI"),[VarExp (Lib.quote ("put_"^portName)),d]);
+
+val unitExp = Fncall(("","unitExp"),[]);
+
+fun mk_output ports (gName,docstring,code) =
+ case code
+  of Binop(Equal,e1,e2) =>
+      (case e1
+        of Fncall(("","event"),[VarExp p]) =>
+            mk_ite(e2,mk_callFFI_out p (VarExp (Lib.quote"")),
+                   unitExp)
+         | VarExp portName => mk_callFFI_out portName e2
+         | otherwise => raise ERR "mk_output"
+            "unexpected syntax in output port code spec")
+   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
+        (case e1
+          of Binop(And,Fncall(("","event"),[VarExp p]), Binop(Equal,VarExp p1,exp))
+             => mk_ite(b,mk_callFFI_out p exp, unitExp)
+           | otherwise => raise ERR "mk_output"
+                         "unexpected syntax in output port code spec")
+   | otherwise => raise ERR "mk_output" "unexpected syntax in output port code spec"
+
+
+fun mk_mon_cycleFn mondec =
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
+     val output_code = map (mk_output ports) outCode
+     val outputBs = map (fn x => (unitExp,x)) output_code
+     val bodyExp = letExp outputBs unitExp
+ in
+    FnDec((fst qid,"cycleFn"), [], dummyTy, bodyExp)
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Buffer sizes for messages declared in CM_Property_Set.                    *)
+(*---------------------------------------------------------------------------*)
+
+fun byteSize e = Binop(Divide,e,mk_uintLit 8);
+
+fun mk_buf pkgName (name,ty,dir,kind) =
+ case ty
+  of NamedTy(pkg,tyName) =>
+     let val exp = Fncall(("Word8Array","array"),
+             [byteSize(VarExp("CM_Property_Set."^tyName^"_Bit_Codec_Max_Size")),
+              VarExp("Utils.w8zero")])
+     in ConstDec((pkgName,name^"Buf"),dummyTy, exp)
+     end
+  | otherwise => raise ERR "mk_buf" "expected a named type";
+
+fun is_data_port (name,ty,dir,kind) = not(kind = "EventPort");
+
+fun mk_stateVardecs n =
+  let val NoneExp = ConstrExp(("","Option"),"None",NONE)
+      val nexpList = map (K NoneExp) (upto 1 n)
+      val Some_True_Exp = ConstrExp(("","Option"),"Some",SOME (ConstExp(BoolLit true)))
+      val intial_stateVar_contents = Some_True_Exp::nexpList
+      val refTuple = Fncall(("","Ref"),[mk_tuple (Some_True_Exp::nexpList )])
+  in ConstDec(("","stateVars"),dummyTy, refTuple)
+  end
+
+(*---------------------------------------------------------------------------*)
+(* Monitor declaration results in                                            *)
+(*                                                                           *)
+(* - I/O buffers declared, one per port, sizes taken from CM_Property_Set    *)
+(* - declare maps (decoders) from buffers to datastructures                  *)
+(* - declare stateVars as refs to NONE                                       *)
+(* - declare stepFn and all related computational support                    *)
+(* - declare cycleFn                                                         *)
+(*---------------------------------------------------------------------------*)
+
 fun pp_monitor depth mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,guars) = mondec
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
      val stepFn = mk_mon_stepFn mondec
+     val cycleFn = mk_mon_cycleFn mondec
+     val dataports = filter is_data_port ports
+     val iobufdecs = map (mk_buf (fst qid)) dataports
+     val stateVars_dec = mk_stateVardecs (length ivardecs)
      val decs1 = install_latched (fst qid) latched decs
-     val decs2 = decs1 @ [stepFn]
+     val decs2 = iobufdecs @ [stateVars_dec] @ decs1 @ [stepFn,cycleFn]
  in
   end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
  end
+
+(*
+structure API =
+struct
+
+val operating_regionAASizeBytes = 256;  (* Set in architecture *)
+
+val filterBuffer =
+  Word8Array.array operating_regionAASizeBytes Utils.w8zero;
+
+(*---------------------------------------------------------------------------*)
+(* When called, HAMR has filled the input buffers. Now we copy them into our *)
+(* local buffers and turn the local buffers into strings.                    *)
+(*---------------------------------------------------------------------------*)
+
+fun read_filter_in() =
+  let val () = Utils.clear_buf filterBuffer
+      val () = #(api_get_filter_in) "" filterBuffer
+  in
+     Utils.buf2string filterBuffer
+  end;
+
+(*---------------------------------------------------------------------------*)
+(* Strip off leading event byte before sending along                         *)
+(*---------------------------------------------------------------------------*)
+
+fun write_filter_out string =
+  let val string' = Word8Array.substring
+                       filterBuffer 1 (Word8Array.length filterBuffer - 1)
+  in
+     #(api_send_filter_out) string' Utils.emptybuf
+  end
+
+end
+
+structure OR_Filter =
+struct
+
+fun filter_step () =
+ let val string = read_filter_in()
+ in
+    if Contig.wellformed UXAS.caseEnv
+            (UXAS.eventData UXAS.fullOperatingRegionMesg) string
+    then push_output string
+    else print"Filter rejects message.\n"
+ end
+
+end (* OR_Filter *)
+
+
+structure Control =
+struct
+
+  fun pacer_emit() =
+      (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+  fun pacer_wait() =
+      (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+  (* Signal HAMR to do communication on input/output *)
+
+  fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+  fun sendOutput()   = #(api_sendOutput)   "" Utils.emptybuf;
+
+  fun loop () =
+    if pacer_wait() then (
+      receiveInput();
+      OR_Filter.filter_step();
+      sendOutput();
+      pacer_emit();
+      loop()
+    )
+    else
+      loop();
+
+  fun start () = ( pacer_emit() ; loop() );
+
+end;
+
+val _ = Control.start();
+*)
+
+(*
+structure Control =
+struct
+
+  fun pacer_emit() =
+      (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+  fun pacer_wait() =
+      (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+  (* Signal HAMR to do communication on input/output *)
+  fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+  fun sendOutput()   = #(api_sendOutput)   "" Utils.emptybuf;
+
+  fun write_output_buffers (oVal1,...,oValk) =
+    let val () = if isNone oVal1 then
+                   ()
+                 else
+                   #(api_send_OperatingRegion_out)
+                     (Option.valOf oVal1) Utils.emptyBuf
+         ...
+     in () end
+
+   fun cycleFn () =
+    if pacer_wait() then
+       let val () = receiveInput()
+           val inputs = fill_input_buffers()
+           val (stateVars',outputs) = stepFn inputs (!stateVars)
+           val () = write_output_buffers outputs
+           val () = sendOutput()
+           stateVars := stateVars'
+       in
+          pacer_emit() ; cycleFn()
+       end
+    else
+      cycleFn();
+
+  fun start () = ( pacer_emit() ; cycleFn() );
+
+end (* Control structure *)
+
+val _ = Control.start();
+
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Add in projection functions, and tranform expressions with field          *)
