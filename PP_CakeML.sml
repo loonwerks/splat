@@ -89,6 +89,8 @@ fun pp_exp depth pkgName exp =
                | trans exp (d::dims) = trans (Fncall (("Array","sub"),[exp,d])) dims
          in pp_exp depth pkgName (trans A dims)
          end
+      | Fncall ((_,"Comment"),elist) =>
+            gen_pp_list emptyString [Line_Break] (pp_exp (depth-1) pkgName) elist
       | Fncall ((_,"unitExp"),[]) => PrettyString "()"
       | Fncall ((_,"IfThenElse"),[e1,e2,e3]) =>
           PrettyBlock(2,true,[],
@@ -102,12 +104,12 @@ fun pp_exp depth pkgName exp =
                PrettyBlock(0,true,[],
                  [gen_pp_list emptyString [Line_Break] (pp_valbind (depth-1) pkgName) binds]),
                Space, PrettyString"in",
-               Space, pp_exp (depth-1) pkgName  res,
+               Space, pp_exp (depth-1) pkgName res,
                Line_Break, PrettyString "end"])
 	end
       | Fncall(("","Tuple"),list) =>
           if null list then
-            PrettyString "!!<EMPTY TUPLE FAILURE>!!"
+            PrettyString "()"
           else if length list = 1 then
              pp_exp (depth-1) pkgName (hd list)
           else PrettyBlock(0,true,[],
@@ -135,6 +137,7 @@ fun pp_exp depth pkgName exp =
                 pp_exp (depth-1) pkgName
                    (Fncall(("Array","exists"), [Fncall(("","Lambda"),[v,P]),arry]))
             | otherwise => PrettyString "!!<Array_Exists needs 3 args>!!")
+      | Fncall(("","AssignExp"),[v,e]) => pp_infix (depth-1) pkgName (":=",v,e)
       | Fncall (qid,args) => PrettyBlock(2,false,[],
            [PrettyString"(",
             PrettyString(pp_pkg_qid pkgName qid), PrettyString" ",
@@ -173,11 +176,13 @@ and pp_valbind d pkgName (Binop(Equal,e1,e2)) =
               gen_pp_list Space [emptyBreak] (pp_exp (d-1) pkgName) args,
               PrettyString" =", Space, pp_exp (d-1) pkgName e2])
          | otherwise =>
-           PrettyBlock(5,true,[],
-             [PrettyString "val ",
-              pp_exp (d-1) pkgName e1,
-              PrettyString " =", Space,
-              pp_exp (d-1) pkgName e2])
+           case e2
+             of Fncall(("","Comment"),_) => pp_exp (d-1) pkgName e2
+              | _ => PrettyBlock(5,true,[],
+                       [PrettyString "val ",
+                        pp_exp (d-1) pkgName e1,
+                        PrettyString " =", Space,
+                        pp_exp (d-1) pkgName e2])
     end
   | pp_valbind other input stuff = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
 ;
@@ -680,11 +685,27 @@ fun portname (Event s) = s
 (*---------------------------------------------------------------------------*)
 
 val boolTy = BaseTy BoolTy;
+val dummyTy = NamedTy("","dummyTy");
 
-fun split_fby exp =
-  case exp
-   of Binop(Fby,e1,e2) => (e1,e2)
-    | otherwise => (exp,exp);
+val unitExp = Fncall(("","unitExp"),[]);
+
+fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
+fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
+fun mk_tuple list = Fncall(("","Tuple"),list)
+
+fun letExp binds exp =
+    let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
+    in Fncall(("","LET"),eqs@[exp])
+    end;
+
+fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
+
+val NoneExp = ConstrExp(("Option","option"),"None",NONE);
+fun mk_Some e = ConstrExp(("Option","option"),"Some",SOME e)
+
+fun mk_boolOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
+
+fun mk_comment slist = Fncall(("","Comment"), map VarExp slist);
 
 (*---------------------------------------------------------------------------*)
 (* There should be enough information in the outgoing FnDecl so that code    *)
@@ -700,9 +721,6 @@ fun split_fby exp =
 (* has been done by the programmer/system designer.                          *)
 (*---------------------------------------------------------------------------*)
 
-val initStepVar = ("initStep",boolTy);
-val False_initStep = ConstExp(BoolLit false)
-
 fun feature2port (s,ty,dir,kind) =
  case kind
   of "EventDataPort" => EventData(s,ty)
@@ -710,48 +728,89 @@ fun feature2port (s,ty,dir,kind) =
    | "EventPort" => Event s
    | otherwise => raise ERR "feature2port" "";
 
-fun mk_tuple list = Fncall(("","Tuple"),list)
+fun split_fby exp =
+  case exp
+   of Binop(Fby,e1,e2) => (e1,e2)
+    | otherwise => (exp,exp);
 
-fun letExp binds exp =
-    let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
-    in Fncall(("","LET"),eqs@[exp])
-    end;
+fun outCode_target (gName,docstring,codeG) =
+ case codeG
+  of Binop(Equal,e1,e2) =>
+      (case e1
+        of Fncall(("","event"),[VarExp p]) => p
+         | VarExp p => p
+         | otherwise => raise ERR "outCode_target" "unexpected syntax")
+   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
+      (case e1
+        of Binop(And,Fncall(("","event"),[VarExp p]),
+                     Binop(Equal,VarExp p1,exp))
+           => if p=p1 then p
+              else raise ERR "outCode_target" "inconsistent port names"
+         | otherwise => raise ERR "outCode_target" "unexpected syntax")
+   | otherwise => raise ERR "outCode_target" "unexpected syntax";
 
-fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
+fun mk_outExp (gName,docstring,codeG) =
+ case codeG
+  of Binop(Equal,e1,e2) =>
+      (case e1
+        of Fncall(("","event"),_) => mk_boolOpt e2
+         | VarExp p => e2
+         | otherwise => raise ERR "mk_outExp" "unexpected syntax")
+   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
+      (case e1
+        of Binop(And,_,Binop(Equal,_,exp)) => mk_ite (b,mk_Some exp,NoneExp)
+         | otherwise => raise ERR "mk_outExp" "unexpected syntax")
+   | otherwise => raise ERR "mk_outExp" "unexpected syntax";
 
-val dummyTy = NamedTy("","dummyTy");
+val stateVar = VarExp"state";
+val initStepVar = VarExp"initStep";
 
-fun mk_mon_stepFn (MonitorDec(qid, ports, _, _, eq_stmts, _, _)) =
- let val stepFn_name = snd qid ^ "stepFn"
+val stateVal_comment =
+ (VarExp"foo",
+  mk_comment ["",
+	      "(*--------------------------*)",
+              "(* Compute new state values *)",
+              "(*--------------------------*)"]);
+
+val outVal_comment =
+ (VarExp"foo",
+  mk_comment ["",
+	      "(*-----------------------*)",
+              "(* Compute output values *)",
+              "(*-----------------------*)"]);
+
+fun mk_mon_stepFn mondec =
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
+     val stepFn_name = snd qid ^ "stepFn"
      val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
-     val inputs = map feature2port inports
-     val stateVars = initStepVar::map (fn (name,ty,exp) => (name,ty)) eq_stmts
-     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) eq_stmts
+     val inputs    = map feature2port inports
+     val outputs   = map outCode_target outCode
+     val stateVars = map (fn (name,ty,exp) => VarExp name) ivardecs
+     val stateVarT = mk_tuple stateVars
+     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) ivardecs
      val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
+                     @ [(unitExp, mk_assignExp initStepVar (ConstExp(BoolLit false)))]
      val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
      val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
-     val stateBs   = (mk_tuple(map (VarExp o fst) stateVars),VarExp"stateVars")
+     val stateBs   = (mk_tuple stateVars,VarExp"stateVars")
+     val outportBs = (mk_tuple(map VarExp outputs),VarExp"outports")
      val pre_def   = localFnExp("pre",[VarExp"x"],VarExp"x")
-     val stateExps = False_initStep::map (fn (s,ty) => VarExp s) (tl stateVars)
-     val retTuple  = mk_tuple stateExps
+     val retTuple  = mk_tuple stateVars
      val initExp   = letExp init_code retTuple
      val stepExp   = letExp step_code retTuple
      val condExp   = Fncall(("","IfThenElse"),[VarExp"initStep",initExp,stepExp])
-     val bodyExp   = letExp [inportBs,stateBs,pre_def] condExp
+     val outVars   = map VarExp outputs
+     val outVarT   = mk_tuple outVars
+     val topBinds  = letExp ([inportBs,stateBs,pre_def, stateVal_comment,
+                              (stateVarT,condExp),outVal_comment]
+                             @ zip outVars (map mk_outExp outCode))
+                            (mk_tuple [stateVarT,outVarT])
   in
-    FnDec((fst qid,stepFn_name),
+    FnDec((fst qid,"stepFn"),
           [("inports",dummyTy),("stateVars",dummyTy)],
           dummyTy,
-          bodyExp)
+          topBinds)
  end;
-
-fun install_latched pkgName latched decs =
- let fun is_latched (ConstDec((_,"is_latched"),_,_)) = true
-       | is_latched otherwise = false
-     val decs' = filter (not o is_latched) decs
-     val ldec = ConstDec((pkgName,"is_latched"),boolTy,ConstExp(BoolLit latched))
- in ldec::decs'
- end
 
 (*---------------------------------------------------------------------------*)
 (* Takes a "code guarantee" and generates output code from it. There are 3   *)
@@ -788,11 +847,8 @@ fun install_latched pkgName latched decs =
 (* ports and state variables only.                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_callFFI_out portName d =
   Fncall(("API","callFFI"),[VarExp (Lib.quote ("put_"^portName)),d]);
-
-val unitExp = Fncall(("","unitExp"),[]);
 
 fun mk_output ports (gName,docstring,code) =
  case code
@@ -866,10 +922,9 @@ fun pp_monitor depth mondec =
      val dataports = filter is_data_port ports
      val iobufdecs = map (mk_buf (fst qid)) dataports
      val stateVars_dec = mk_stateVardecs (length ivardecs)
-     val decs1 = install_latched (fst qid) latched decs
-     val decs2 = iobufdecs @ [stateVars_dec] @ decs1 @ [stepFn,cycleFn]
+     val decs1 = iobufdecs @ [stateVars_dec] @ decs @ [stepFn,cycleFn]
  in
-  end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
+  end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs1
  end
 
 (*
