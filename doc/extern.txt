@@ -1,0 +1,126 @@
+Specifying predicates for monitors and filters
+===============================================
+
+ As people have pointed out, both filters and monitors can be viewed
+of as "predicate plus output actions". Right now, the most natural way
+to specify both predicate and output actions is by writing Lustre over
+state variable and input port values, the latter of which have been
+defined by declarations of high-level types, plus well-formedness
+checkers. This is a good approach. It works! But there are some
+issues.
+
+1. Strings versus datatypes. There is an awkward fit with Splat, which
+   may want to deal with raw input/output buffers instead of
+   higher-level types. The predicate "is this a well-formed message"
+   in these cases is expressed in a separate formal specification
+   language (regexps, contiguity types, bitcodec specs, ...) which for
+   now is beyond the ken of AGREE.
+
+2. Invoking non-Lustre functions. At least in code generation, we want
+   to be able to specify internal and external functionality which
+   gets called in order to check data validity and integrity. For
+   example, the invocation of the contiguity type matcher on an input
+   port needs to mention which contig type is being used for
+   matching. For another example, we'd like to be able to express
+   authentication and possibly encryption as part of a filter, by
+   reference to some code supplied by a library. (This may impact the
+   security level of our high assurance code but it's still important
+   functionality to be able to specify.)
+
+Splat needs the following:
+
+  - to be able to find out which input ports are to be parsed into
+    data structures for Lustre-level well-formedness checks, versus
+    those ports which are fodder for the contig-type matcher and so
+    need to be left as unprocessed message buffers.
+
+  - to be able to specify which matcher/validator is being called, and
+    on what data
+
+  - to know which encoder to call on data being sent on output ports.
+
+
+Suggestion
+-----------
+
+ It would be enough to have uninterpreted functions in AGREE/Lustre of the form
+
+   fun foo (a1:ty1, ..., ak: tyk) : ty
+
+This would provide the necessary "tag" functionality to specify
+non-Lustre "extern-style" predicates and functions over communications
+buffers.
+
+Example.
+--------
+
+In the case of the Phase II architecture, we'd have
+
+.... in package CMASI:
+
+   type uxasKind
+          = OpRegion
+          | AutoRqt
+          | AutoResp
+          | ...
+
+   -- functions mapping between representation and abstract levels.
+   -- Notional inverses of each other.
+
+   fun mesgFormat (ty:uxasKind, x:UXAS)  : string
+   fun mesgParse  (ty:uxasKind, x:string) : UXAS
+
+
+.... in package Splat (new addition) :
+
+   fun contigCheck (mesgKind : uxasKind, input : string) : bool
+   fun regexpCheck (mesgKind : uxasKind, input : string) : bool
+    ....
+
+A. An example Splat filter invocation would then be
+
+     Splat::contigCheck(CMASI::OpRegion, CMASI::mesgFormat (CMASI::OpRegion,port))
+
+   This would instruct Splat to use the contig type specified for
+   OperatingRegion messages on the unparsed port contents. There would
+   also be a proof obligation generated
+
+        forall s. Splat::contigCheck(CMASI::OpRegion, s)
+	          <=>
+		  WELL_FORMED (Splat::mesgParse s)
+
+   where WELL_FORMED is a predicate defined in the filter component
+   over CMASI.OperatingRegion. This states that the high-level
+   wellformedness check can be replaced by the message-level
+   contiguity type check. This proof obligation would be proved in
+   HOL4.
+
+B. In contrast, the Geofence monitor---which is highly
+   data-centric---would look as it does now, except that the KeepIn
+   and KeepOut zone inputs, along with the observed input, have to be
+   parsed so that the various zone calculations can be made. Thus the
+   current Policy declaration
+
+    eq Policy : bool =
+       if event(observed) then
+           F1(F2(observed), keep_in_zones) and
+           F3(F2(observed), keep_out_zones) and
+           not (F4(F2(observed)))
+       else true;
+
+    which uses complicated AGREE-specified functions F1-F4 would stay
+    the same, but there needs to be calls to CMASI::mesgParse from the
+    ports to high-level types, e.g.
+
+     eq observed : AutomationResponse = mesgParse (AutoRqt,observed-port);
+     eq keep_in_zones  : Polygon = mesgParse(Pgon, kizones-port);
+     eq keep_out_zones : Polygon = mesgParse(Pgon, kozones-port);
+
+Proposal.
+---------
+
+1. Support uninterpreted functions in AGREE. I am working around this
+   for now by making dummy fun declarations.
+
+2. Add a property to filter and monitor declarations that says which
+   ports are to be parsed.
