@@ -1,0 +1,42 @@
+(*
+type Polygon = Location3D array;
+
+type VehicleAction = i64 array;
+*)
+(*---------------------------------------------------------------------------*)
+(* type Waypoint =
+  {Location    : Location3D,
+   Number      : i64,
+   NextWaypoint: i64,
+   Speed       : real32,
+   SpeedType   : SpeedType,
+   ClimbRate   : real32,
+   TurnType    : TurnType,
+   VehicleActionList    : i64 array array,
+   ContingencyWaypointA : i64,
+   ContingencyWaypointB : i64,
+   AssociatedTasks      : i64 array
+ };
+
+datatype Waypoint =
+ WPT Location3D
+     int
+     int
+     real32
+     SpeedType
+     real32
+     TurnType
+     (int array array)
+     int
+     int
+     (int array)
+;
+
+datatype VehicleActionCommand = VAC int int (VehicleAction array) CommandStatusType;
+
+datatype MissionCommand = MC VehicleActionCommand (Waypoint array) int;
+
+datatype AutomationResponse =
+  AR (MissionCommand array)
+     (VehicleActionCommand array)
+     (KeyValPair array);
