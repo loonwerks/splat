@@ -21,8 +21,8 @@ fun pp_pkg_qid pkgName (pkg,s) =
 fun base_ty_name BoolTy   = "bool"
   | base_ty_name CharTy   = "char"
   | base_ty_name StringTy = "string"
-  | base_ty_name FloatTy  = "double"
-  | base_ty_name DoubleTy  = "double"
+  | base_ty_name FloatTy  = "Double.double"
+  | base_ty_name DoubleTy  = "Double.double"
   | base_ty_name (IntTy _) = "int"
   | base_ty_name RegexTy   = raise ERR "base_ty_name" "regex"
 
@@ -112,11 +112,10 @@ fun pp_exp depth pkgName exp =
             PrettyString "()"
           else if length list = 1 then
              pp_exp (depth-1) pkgName (hd list)
-          else PrettyBlock(0,true,[],
-                 [PrettyString "(",
-                  PrettyBlock(0,false,[],
-                     [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1) pkgName ) list]),
-                  PrettyString")"])
+          else PrettyBlock(1,false,[],
+                 List.concat [[PrettyString "("],
+                  iter_pp Comma [emptyBreak] (pp_exp (depth-1) pkgName) list,
+                  [PrettyString")"]])
       | Fncall(("","Lambda"),list) =>
          (case list
            of [v,e] =>
@@ -272,7 +271,7 @@ fun pp_tydec depth pkgName tydec =
      | RecdDec(qid,fields) =>
         let val tyName = snd qid
             val tys = map snd fields
-            val dty = DatatypeDecl (tyName,[(tyName,tys)])
+            val dty = DatatypeDecl (tyName,[(tyName^"Recd",tys)])
         in pp_decl depth pkgName dty
         end
      | UnionDec(qid,constrs) =>
@@ -593,9 +592,9 @@ fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
     else
       PrettyBlock(2,true,[],
         [PrettyString "fun ",
-         PrettyString (snd qid), PrettyString " recd =",Space,
+         PrettyString ("lc"^snd qid), PrettyString " recd =",Space,
          PrettyString "case recd", Line_Break,
-         PrettyString "  of ", PrettyString (snd tyqid), PrettyString " ",
+         PrettyString "  of ", PrettyString (snd tyqid^"Recd"), PrettyString " ",
          pp_list_with_style false Space [emptyBreak]
                 (pp_exp (depth-1) pkgName) vars,
          PrettyString " => ", (pp_exp (depth-1) pkgName) var,
@@ -686,8 +685,8 @@ fun portname (Event s) = s
 
 val boolTy = BaseTy BoolTy;
 val dummyTy = NamedTy("","dummyTy");
-
 val unitExp = Fncall(("","unitExp"),[]);
+val emptyString = VarExp(Lib.quote"")
 
 fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
@@ -706,6 +705,9 @@ fun mk_Some e = ConstrExp(("Option","option"),"Some",SOME e)
 fun mk_boolOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
 
 fun mk_comment slist = Fncall(("","Comment"), map VarExp slist);
+
+fun mk_ref e = Fncall(("","Ref"),[e]);
+fun mk_deref e = Fncall(("","!"),[e]);
 
 (*---------------------------------------------------------------------------*)
 (* There should be enough information in the outgoing FnDecl so that code    *)
@@ -770,21 +772,52 @@ val stateVal_comment =
   mk_comment ["",
 	      "(*--------------------------*)",
               "(* Compute new state values *)",
-              "(*--------------------------*)"]);
+              "(*--------------------------*)",""]);
 
 val outVal_comment =
  (VarExp"foo",
   mk_comment ["",
 	      "(*-----------------------*)",
               "(* Compute output values *)",
-              "(*-----------------------*)"]);
+              "(*-----------------------*)", ""]);
+
+(*---------------------------------------------------------------------------*)
+(* Mapping AADL types to contiguity type names. The corresponding contig     *)
+(* types will be found in structure Uxas. The mapping is used to generate    *)
+(* parsers via a call                                                        *)
+(*                                                                           *)
+(*   Contig.parseFn Uxas.uxasEnv                                             *)
+(*           (Contig.VarName"root")                                          *)
+(*           contig                                                          *)
+(*           ([],string,Contig.mk_empty_lvalMap())                           *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val parseTable =
+  [(NamedTy("CMASI","AddressAttributedMessage"), "aaMesg"),
+   (NamedTy("CMASI","OperatingRegion"),          "OperatingRegion"),
+   (NamedTy("CMASI","LineSearchTask"),           "LineSearchTask"),
+   (NamedTy("CMASI","AutomationRequest"),        "AutomationRequest"),
+   (NamedTy("CMASI","AutomationResponse"),       "AutomationResponse"),
+   (NamedTy("CMASI","AddressArray"),             "address_array"),
+   (NamedTy("CMASI","Polygon"),                  "polygon")]
+
+(*
+fun mk_parseFn_call inputs =
+ let val table =
+
+fun mk_predFn_call inputs =
+ let val table =
+*)
 
 fun mk_mon_stepFn mondec =
  let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
-     val stepFn_name = snd qid ^ "stepFn"
+     val stepFn_name = "stepFn"
      val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
      val inputs    = map feature2port inports
      val outputs   = map outCode_target outCode
+     val outVars   = map VarExp outputs
+     val outVarT   = mk_tuple outVars
      val stateVars = map (fn (name,ty,exp) => VarExp name) ivardecs
      val stateVarT = mk_tuple stateVars
      val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) ivardecs
@@ -792,16 +825,18 @@ fun mk_mon_stepFn mondec =
                      @ [(unitExp, mk_assignExp initStepVar (ConstExp(BoolLit false)))]
      val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
      val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
+(*     val inportVs  = (mk_tuple(map (VarExp o portname) inputs),
+                      mk_tuple (map mk_parse inputs))
+*)
      val stateBs   = (mk_tuple stateVars,VarExp"stateVars")
      val outportBs = (mk_tuple(map VarExp outputs),VarExp"outports")
      val pre_def   = localFnExp("pre",[VarExp"x"],VarExp"x")
      val retTuple  = mk_tuple stateVars
      val initExp   = letExp init_code retTuple
      val stepExp   = letExp step_code retTuple
-     val condExp   = Fncall(("","IfThenElse"),[VarExp"initStep",initExp,stepExp])
-     val outVars   = map VarExp outputs
-     val outVarT   = mk_tuple outVars
-     val topBinds  = letExp ([inportBs,stateBs,pre_def, stateVal_comment,
+     val condExp   = Fncall(("","IfThenElse"),[mk_deref initStepVar,initExp,stepExp])
+     val topBinds  = letExp ([inportBs,(* inportVs,*)
+                              stateBs,pre_def, stateVal_comment,
                               (stateVarT,condExp),outVal_comment]
                              @ zip outVars (map mk_outExp outCode))
                             (mk_tuple [stateVarT,outVarT])
@@ -814,8 +849,8 @@ fun mk_mon_stepFn mondec =
 
 (*---------------------------------------------------------------------------*)
 (* Takes a "code guarantee" and generates output code from it. There are 3   *)
-(* possible forms expected for the code expression, depending on the output  *)
-(* port type.                                                                *)
+(* possible forms expected for the guarantee, depending on the output port   *)
+(* type.                                                                     *)
 (*                                                                           *)
 (*  1. Event port. The expected form is                                      *)
 (*                                                                           *)
@@ -840,7 +875,7 @@ fun mk_mon_stepFn mondec =
 (*     This checks the condition exp1 to see whether an event on port will   *)
 (*     happen, and exp2 gives the output value if so. Note that any input    *)
 (*     event (or event data) port p occurring in exp2 must be guaranteed to  *)
-(*     have an event by event(-) checks in exp1.                             *)
+(*     have an event by event(-) checks in computed in exp1.                 *)
 (*                                                                           *)
 (* In all of 1,2,3, the expressions should not mention any output ports,     *)
 (* i.e. the value to be sent out is determined by a computation over input   *)
@@ -871,9 +906,19 @@ fun mk_output ports (gName,docstring,code) =
 
 fun mk_mon_cycleFn mondec =
  let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
-     val output_code = map (mk_output ports) outCode
-     val outputBs = map (fn x => (unitExp,x)) output_code
-     val bodyExp = letExp outputBs unitExp
+     val inputsVar = VarExp "inputs"
+     val theStateVar = VarExp "theState"
+     val stateValsVar = VarExp "stateVals"
+     val outputValsVar = VarExp "outputVals"
+     val inputsBind = (unitExp, Fncall(("","receiveInputs"),[unitExp]))
+     val inbufsBind = (inputsVar, Fncall(("","fill_input_buffers"),[unitExp]))
+     val stepRetBind = (mk_tuple[stateValsVar,outputValsVar],
+                        Fncall(("","stepFn"),[inputsVar,mk_deref theStateVar]))
+     val fill_outbufs = (unitExp, Fncall(("","fill_output_buffers"),[outputValsVar]))
+     val update_state = (unitExp, mk_assignExp theStateVar stateValsVar)
+     val outputsBind = (unitExp, Fncall(("","sendOutputs"),[unitExp]))
+     val bodyExp = letExp [inputsBind,inbufsBind,stepRetBind,
+                           fill_outbufs,update_state,outputsBind] unitExp
  in
     FnDec((fst qid,"cycleFn"), [], dummyTy, bodyExp)
  end
@@ -895,14 +940,30 @@ fun mk_buf pkgName (name,ty,dir,kind) =
   | otherwise => raise ERR "mk_buf" "expected a named type";
 
 fun is_data_port (name,ty,dir,kind) = not(kind = "EventPort");
+fun is_inport (name,ty,dir,kind) = (dir = "in")
+
+fun mk_fillFn inports =
+ let val names = map (fn (name,ty,dir,kind) => name)  inports
+     val bufnames = map (fn p => p^"Buf") names
+     val bufVars = map VarExp bufnames
+     fun mk_clear v = (unitExp,Fncall(("Utils","clearBuf"),[v]))
+     fun mk_get name v = (unitExp,Fncall(("","#(api_get_"^name^")"),[emptyString,v]))
+     fun mk_b2s v = Fncall(("Utils","buf2string"),[v])
+     val clears = map mk_clear bufVars
+     val gets = map2 mk_get names bufVars
+     val strings = mk_tuple (map mk_b2s bufVars)
+     val bodyExp = letExp (clears @ gets) strings
+ in
+  FnDec (("","fill_input_buffers"),[],dummyTy, bodyExp)
+ end
 
 fun mk_stateVardecs n =
   let val NoneExp = ConstrExp(("","Option"),"None",NONE)
       val nexpList = map (K NoneExp) (upto 1 n)
       val Some_True_Exp = ConstrExp(("","Option"),"Some",SOME (ConstExp(BoolLit true)))
       val intial_stateVar_contents = Some_True_Exp::nexpList
-      val refTuple = Fncall(("","Ref"),[mk_tuple (Some_True_Exp::nexpList )])
-  in ConstDec(("","stateVars"),dummyTy, refTuple)
+      val refTuple = Fncall(("","Ref"),[mk_tuple nexpList])
+  in ConstDec(("","theState"),dummyTy, refTuple)
   end
 
 (*---------------------------------------------------------------------------*)
@@ -921,8 +982,9 @@ fun pp_monitor depth mondec =
      val cycleFn = mk_mon_cycleFn mondec
      val dataports = filter is_data_port ports
      val iobufdecs = map (mk_buf (fst qid)) dataports
+     val infiller_dec = mk_fillFn (filter is_inport dataports)
      val stateVars_dec = mk_stateVardecs (length ivardecs)
-     val decs1 = iobufdecs @ [stateVars_dec] @ decs @ [stepFn,cycleFn]
+     val decs1 = iobufdecs @ [infiller_dec,stateVars_dec] @ decs @ [stepFn,cycleFn]
  in
   end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs1
  end
@@ -987,7 +1049,7 @@ struct
       (#(sb_pacer_notification_wait) "" Utils.singlebuf;
        Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
 
-  (* Signal HAMR to do communication on input/output *)
+  (* Signal HAMR to do communication *)
 
   fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
   fun sendOutput()   = #(api_sendOutput)   "" Utils.emptybuf;
@@ -1026,7 +1088,7 @@ struct
   fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
   fun sendOutput()   = #(api_sendOutput)   "" Utils.emptybuf;
 
-  fun write_output_buffers (oVal1,...,oValk) =
+  fun fill_output_buffers (oVal1,...,oValk) =
     let val () = if isNone oVal1 then
                    ()
                  else
@@ -1040,7 +1102,7 @@ struct
        let val () = receiveInput()
            val inputs = fill_input_buffers()
            val (stateVars',outputs) = stepFn inputs (!stateVars)
-           val () = write_output_buffers outputs
+           val () = fill_output_buffers outputs
            val () = sendOutput()
            stateVars := stateVars'
        in

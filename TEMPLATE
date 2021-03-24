@@ -522,6 +522,13 @@ fun scanTo delim string =
 val scanCstring = scanTo (Char.chr 0);
 
 val epsilon_contig = Recd [];
+val SKIP = epsilon_contig;
+
+fun varloc s = Loc(VarName s);
+
+(*---------------------------------------------------------------------------*)
+(* Intervals                                                                 *)
+(*---------------------------------------------------------------------------*)
 
 fun intervalExp fName pair =
  let val (i,j) = pair
@@ -533,7 +540,7 @@ fun const_intervalExp fName pair =
  let val (s1,s2) = pair
  in Band (Ble (ConstName s1) (Loc(VarName fName)))
          (Ble (Loc(VarName fName)) (ConstName s2))
-  end
+ end
 
 fun varloc s = Loc(VarName s);
 
@@ -546,7 +553,6 @@ fun doubleintervalExp fName pair =
  let val (d1,d2) = pair
  in Band (DleA d1 (varloc fName)) (DleB (varloc fName) d2)
  end
-
 
 end  (* Contig *)
 

@@ -1,4 +1,4 @@
-signature PPfns = 
+signature PPfns =
 sig
 
  type pretty = PolyML.pretty
@@ -25,6 +25,7 @@ sig
   val end_pp_list : pretty -> pretty -> ('a -> pretty) -> 'a list -> pretty
   val pp_comma_list : ('a -> pretty) -> 'a list -> pretty
   val pp_semicolon_list : ('a -> pretty) -> 'a list -> pretty
+  val pp_space_list : ('a -> pretty) -> 'a list -> pretty
 
   val spliceList : 'a -> 'a list -> 'a list
 end

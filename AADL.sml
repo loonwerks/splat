@@ -325,7 +325,7 @@ fun dest_exp e =
        => VarExp s
    | AList [("kind", String "EventExpr"),
             ("id", AList [("kind", String "NamedElmExpr"),("name", String s)])]
-       => mk_fncall("","Event",[VarExp s])
+       => mk_fncall("","event",[VarExp s])
    | AList [("kind", String "BoolLitExpr"), ("value", String bstr)]
        => mk_bool_const bstr
    | AList [("kind", String "IntLitExpr"), ("value", String intstr)]
@@ -377,7 +377,7 @@ fun dest_exp e =
             ("init",e2)]
        => mk_fncall ("","Prev",[dest_exp e1, dest_exp e2])
    | AList [("kind", String "PreExpr"), ("expr", e)]
-       => mk_fncall("","Pre",[dest_exp e])
+       => mk_fncall("","pre",[dest_exp e])
    | AList [("kind", String "GetPropertyExpr"), ("property", String pname),_]
        => mk_fncall("","getProperty",[VarExp pname])
    | other => raise ERR "dest_exp" "unexpected expression form"
@@ -527,21 +527,29 @@ mk_def pkgName features stmt41;
 
 *)
 
+fun propName prop = dropString(name_of prop)
+fun propValue prop = value_of (value_of prop) handle _ => value_of prop
 
 fun is_filter props =
  let fun isaFilter prop =
-          dropString(name_of prop) = "CASE_Properties::Component_Type"
-          andalso
-          (dropString(value_of (value_of prop)) = "FILTER" handle _ => false)
+     (propName prop = "CASE_Properties::Filtering"
+      orelse
+      mem (propName prop)
+          ["CASE_Properties::Component_Type", "CASE_Properties::COMP_TYPE"]
+      andalso
+      mem (dropString(propValue prop)) ["FILTER","Filtering"]) handle _ => false
  in exists isaFilter props
  end
 
 fun is_monitor props =
  let fun isaMon prop =
-          dropString(name_of prop) = "CASE_Properties::Component_Type"
-          andalso
-          (dropString (value_of(value_of prop)) = "MONITOR"
-           handle _ => false)
+      (propName prop = "CASE_Properties::Monitoring"
+       orelse
+       mem (propName prop)
+           ["CASE_Properties::Component_Type","CASE_Properties::COMP_TYPE"]
+       andalso
+       mem (dropString(propValue prop))
+           ["MONITOR","Monitoring"]) handle _ => false
  in exists isaMon props
  end
 
@@ -706,7 +714,7 @@ fun recd_decl pkgName names decl =
             ("localName", _) ::
             ("kind",String "ComponentImplementation") ::
             ("category", String "data") ::_)
-     => RecdDec(dest_qid (Option.valOf (dropImpl name_impl)),[])
+     => RecdDec(dest_qid (Option.valOf (dropImpl name_impl)),[]) (* no fields *)
    | other => raise ERR "recd_decl" "expected a record declaration";
 
 fun dest_enum_props (alist1,alist2) =
@@ -898,11 +906,16 @@ fun filter_req_name_eq js1 js2 =
 
 fun get_filter_rqtNames props =
  let fun get prop =
-       case total (dropString o name_of) prop
-        of SOME "CASE_Properties::Component_Spec" =>
-            (map value_of (dropList (value_of (value_of prop)))
-             handle _ => raise ERR "get_filter_rqtNames" "")
-         | otherwise => raise ERR "get_filter_rqtNames" ""
+      (case total propName prop
+        of NONE => raise ERR "get_filter_rqtNames" "get"
+         | SOME name =>
+       case total propValue prop
+        of NONE => raise ERR "get_filter_rqtNames" "get"
+         | SOME value =>
+            if mem name ["CASE_Properties::Component_Spec","CASE_Properties::COMP_SPEC"]
+            then map value_of (dropList value) handle _ => dropList value
+            else raise ERR "get_filter_rqtNames" "")
+       handle _ => raise ERR "get_filter_rqtNames" "get"
  in
    tryfind get props
  end
@@ -1047,8 +1060,8 @@ fun get_monitor comp =
      val annex = (case annexL
                   of [x] => x
 		   | otherwise => raise ERR "get_monitor" "unexpected annex structure")
-     val specNames = get_spec_names properties
-     val is_latched = get_latched properties  (* ? *)
+     val codespecNames = get_spec_names properties
+     val is_latched = get_latched properties handle _ => false (* might not be an alert line *)
      val stmts = get_annex_stmts annex
      val (jdecs,others) = Lib.partition is_pure_dec stmts
      val decs = map (mk_def (fst qid) []) jdecs  (* consts and fndecs *)
@@ -1056,13 +1069,13 @@ fun get_monitor comp =
      val guar_stmts = mapfilter dest_guar_stmt others
      val prop_stmts = mapfilter dest_property_stmt others
      fun is_policy(s,_) = last (String.tokens (equal #"_") s) = "policy"
-     val props =
+     val props =  (* no longer sure what this is for *)
         (case total (pluck is_policy) prop_stmts
           of NONE => (NONE,prop_stmts)
           | SOME (pol,rst) => (SOME pol,rst))
-     val guars = filter (C mem specNames o #1) guar_stmts
+     val code_guars = filter (C mem codespecNames o #1) guar_stmts
  in
-     MonitorDec(qid, ports, is_latched, decs, eq_stmts, props, guars)
+     MonitorDec(qid, ports, is_latched, decs, eq_stmts, props, code_guars)
  end
  handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
 ;
@@ -1141,11 +1154,9 @@ fun scrape pkg =
             val comp_fndecls =  List.concat(mapfilter mk_comp_defs complist)
             val filters = mapfilter get_filter complist
             val monitors = mapfilter get_monitor complist
-            val mon_fndecls = List.concat (map decs_of_monitor monitors)
+(*            val mon_fndecls = List.concat (map decs_of_monitor monitors) *)
         in
-           (pkgName,(tydecls,
-                     annex_fndecls@comp_fndecls@mon_fndecls,
-                    filters, monitors))
+           (pkgName,(tydecls,annex_fndecls@comp_fndecls,filters, monitors))
         end
    | AList (("name", String pkgName) ::
             ("kind", String "PropertySet") ::
@@ -1182,6 +1193,7 @@ val [comp1,comp2,comp3,comp4,comp5,comp6,comp7,comp8,comp9,comp10,
      comp91,comp92,comp93,comp94,comp95,comp96,comp97,comp98,comp99,comp100,
      comp101,comp102,comp103,comp104,comp105,comp106,comp107,comp108] = complist;
 
+comp9 is attestationGate
 *)
 
 (*---------------------------------------------------------------------------*)
@@ -1317,6 +1329,7 @@ val (opkgs as
 
 val pkgNames = map name_of opkgs;
 
+val pkg = el 7 opkgs;  (* CMASI *)
 val pkg = el 13 opkgs;  (* SW *)
 
 val modlist = mapfilter scrape opkgs
@@ -1378,16 +1391,20 @@ val [comp1, comp2, comp3, comp4, comp5, comp6, comp7,comp8, comp9, comp10,
 mk_comp_defs comp1;
 *)
 
-(*---------------------------------------------------------------------------*)
+(*===========================================================================*)
 (* AST to AST                                                                *)
+(*===========================================================================*)
+
+(*---------------------------------------------------------------------------*)
+(* Lift all integer-like numbers to unbounded integers                       *)
 (*---------------------------------------------------------------------------*)
 
 fun amn_ty ty =
  let open AST
  in case ty
-     of BaseTy (IntTy _)     => BaseTy (IntTy (Int NONE))
-      | RecdTy (qid, fldtys) => RecdTy(qid, map (I##amn_ty) fldtys)
-      | ArrayTy (ty,dims)    => ArrayTy(amn_ty ty,dims)
+     of BaseTy (IntTy _)     => BaseTy  (IntTy (Int NONE))
+      | RecdTy (qid, fldtys) => RecdTy  (qid, map (I##amn_ty) fldtys)
+      | ArrayTy (ty,dims)    => ArrayTy (amn_ty ty,dims)
       | other => ty
  end
 

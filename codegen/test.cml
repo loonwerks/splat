@@ -20,6 +20,12 @@ fun first pred list =
   of [] => raise ERR "first" ""
    | h::t => if pred h then h else first pred t;
 
+fun last list =
+ case list
+  of [] => raise ERR "last" "empty list"
+   | [x] => x
+   | h::t => last t;
+
 fun quote s = String.concat ["\"",s,"\""];
 
 fun ordstring s =
@@ -135,7 +141,7 @@ val string42 = String.implode (List.map Char.chr ints42);
 
 val char0 = Char.chr 0;
 
-fun fromC s =
+fun fromCstring s =
  if s = "" then s
  else
  if String.sub s (String.size s - 1) = char0 then
@@ -143,7 +149,6 @@ fun fromC s =
  else s;
 
 end  (* structure Utils *)
-
 
 structure Contig =
 struct
@@ -519,10 +524,8 @@ fun mk_empty_lvalMap() = Map.fromList lval_compare [];
 
 fun parse env contig s =
  case parseFn env (VarName"root") contig ([],s,mk_empty_lvalMap())
-  of Some ([ptree],remaining,lvMap) => (ptree,remaining,lvMap)
-   | Some otherwise => raise Utils.ERR "parse" "expected stack of size 1"
-   | None => raise Utils.ERR "parse" ""
-;
+  of Some ([ptree],remaining,lvMap) => Some ptree
+   | otherwise => None;
 
 fun wellformed env contig s =
  case predFn env ([(VarName"root",contig)],s,mk_empty_lvalMap())
@@ -617,6 +620,10 @@ fun valFn a s =
    | Unsigned w => Utils.uvalFn s
    | otherwise => raise Utils.ERR "valFn" "unexpected input"
 
+fun mk_leaf f ptree =
+ case ptree
+  of LEAF a s => f s
+   | otherwise => raise Utils.ERR "mk_leaf" "";
 
 end  (* Contig *)
 
@@ -702,8 +709,6 @@ struct
 
      datatype TravelMode = SinglePass  | ReverseCourse  | Loop ;
 
-     datatype Address = AddressRecd (int array);
-
      datatype AbstractGeometry = AbstractGeometryRecd ;
 
      datatype KeyValuePair = KeyValuePairRecd string string;
@@ -729,7 +734,7 @@ struct
 
      datatype VehicleAction = VehicleActionRecd (int array);
 
-     datatype AddressArray = AddressArrayRecd (Address array);
+     datatype AddressArray = AddressArrayRecd (int array);
 
      datatype Polygon = PolygonRecd (Location3D array);
 
@@ -844,21 +849,25 @@ struct
 
      datatype AutomationResponse =
        AutomationResponseRecd
-          (MissionCommand array) (VehicleActionCommand array)
+          (MissionCommand array)
+          (VehicleActionCommand array)
           (KeyValuePair array);
 
      datatype LMCPObject =
-       AutomationRequest AutomationRequest |
-       OperatingRegion OperatingRegion |
-       LineSearchTask LineSearchTask |
-       AutomationResponse AutomationResponse;
+       AutomationRequest AutomationRequest
+     | OperatingRegion OperatingRegion
+     | LineSearchTask LineSearchTask
+     | AutomationResponse AutomationResponse;
 
      datatype AddressAttributedMessage =
-       AddressAttributedMessageRecd Address LMCPObject;
-     fun lcAddress_value_of recd =
+       AddressAttributedMessageRecd
+          int
+          LMCPObject;
+
+(*     fun lcAddress_value_of recd =
        case recd
          of AddressRecd v1 => v1;
-
+*)
      fun lcKeyValuePair_Key_of recd =
        case recd
          of KeyValuePairRecd v1 v2 => v1;
@@ -1992,7 +2001,6 @@ struct
 
 end (* CMASI *)
 
-
 (*---------------------------------------------------------------------------*)
 (* Message formats for CMASI types and CASEAgree predicates. There are two   *)
 (* parts to this: (a) contig types for messages and (b) maps from parse trees*)
@@ -2242,8 +2250,15 @@ fun uxasMesg mesgtyName contig = Contig.Recd [
 fun mesgOption name = uxasOption o uxasMesg name;
 
 (*---------------------------------------------------------------------------*)
-(* uxAS strings. The short version is good for random message generation.    *)
+(* Same as uxasMesg, except it doesn't check the mesgType                    *)
 (*---------------------------------------------------------------------------*)
+
+fun uxasMesg_generic contig = Contig.Recd [
+   ("seriesID",       i64),
+   ("mesgType",       u32),
+   ("seriesVersion",  u16),
+   ("mesg",           contig)
+ ];
 
 val fullString = uxasArray (Contig.Basic Contig.Char);
 
@@ -2396,6 +2411,16 @@ val doubleintervalExp = Contig.doubleintervalExp;
 (* Messages                                                                  *)
 (*---------------------------------------------------------------------------*)
 
+(*---------------------------------------------------------------------------*)
+(* fun WELL_FORMED_OPERATING_REGION(msg : CMASI::OperatingRegion.i) : bool = *)
+(*    msg.ID >= OPERATING_REGION_ID_MIN and                                  *)
+(*    msg.ID <= OPERATING_REGION_ID_MAX and                                  *)
+(*    (forall kiz in msg.KeepInAreas,                                        *)
+(*          kiz >= KEEP_IN_ZONE_ID_MIN and kiz <= KEEP_IN_ZONE_ID_MAX) and   *)
+(*    (forall koz in msg.KeepOutAreas,                                       *)
+(*          koz >= KEEP_OUT_ZONE_ID_MIN and koz <= KEEP_OUT_ZONE_ID_MAX);    *)
+(*---------------------------------------------------------------------------*)
+
 val kizoneElt =
   Contig.expBounded u64
      (Contig.ConstName "KEEP_IN_ZONE_ID_MIN",
@@ -2414,14 +2439,6 @@ val operating_region = Contig.Recd [
   ("keep_out_areas", uxasBoundedArray kozoneElt 32)
   ];
 
-val automation_request = Contig.Recd [
-  ("EntityList",        uxasBoundedArray i64 16),
-  ("TaskList",          uxasBoundedArray i64 32),
-  ("TaskRelationShips", uxasString),
-  ("OperatingRegion",   i64),
-  ("RedoAllTasks",      bool)
-  ];
-
 (*---------------------------------------------------------------------------*)
 (* fun WELL_FORMED_AUTOMATION_REQUEST(msg:CMASI::AutomationRequest.i):bool = *)
 (*  (forall e in msg.EntityList, e>=ENTITY_ID_MIN and e<=ENTITY_ID_MAX) and  *)
@@ -2429,6 +2446,14 @@ val automation_request = Contig.Recd [
 (*   msg.OperatingRegion >= OPERATING_REGION_ID_MIN and                      *)
 (*   msg.OperatingRegion <= OPERATING_REGION_ID_MAX;                         *)
 (*---------------------------------------------------------------------------*)
+
+val automation_request = Contig.Recd [
+  ("EntityList",        uxasBoundedArray i64 16),
+  ("TaskList",          uxasBoundedArray i64 32),
+  ("TaskRelationShips", uxasString),
+  ("OperatingRegion",   i64),
+  ("RedoAllTasks",      bool)
+  ];
 
 val checked_entity = Contig.Recd [
    ("entity", i64),
@@ -2442,18 +2467,13 @@ val checked_task = Contig.Recd [
       (Contig.const_intervalExp "task" ("TASK_ID_MIN","TASK_ID_MAX")))
  ];
 
-val checked_OR = Contig.Recd [
-   ("OperatingRegion", i64),
-   ("OperatingRegion-check", Contig.Assert
-      (Contig.const_intervalExp "OperatingRegion"
-             ("OPERATING_REGION_ID_MIN","OPERATING_REGION_ID_MAX")))
- ];
-
 val checked_automation_request = Contig.Recd [
   ("EntityList",        uxasBoundedArray checked_entity 16),
   ("TaskList",          uxasBoundedArray checked_task 32),
   ("TaskRelationShips", uxasString),
-  ("OperatingRegion",   checked_OR),
+  ("OperatingRegion",   i64),
+  ("check-OR",          Contig.Assert (Contig.const_intervalExp "OperatingRegion"
+                        ("OPERATING_REGION_ID_MIN","OPERATING_REGION_ID_MAX"))),
   ("RedoAllTasks",      bool)
   ];
 
@@ -2482,6 +2502,7 @@ val checked_wedge = Contig.Recd [
 val wedge = checked_wedge;
 
 
+
 val location3D = Contig.Recd [
   ("Latitude",  real64),
   ("Longitude", real64),
@@ -2508,6 +2529,12 @@ val checked_location3D = Contig.Recd [
 ];
 
 val location3D = checked_location3D;
+
+(*---------------------------------------------------------------------------*)
+(* Geofence monitor input                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val phase2_polygon = Contig.Array location3D (Contig.IntLit 2);
 
 (*---------------------------------------------------------------------------*)
 (* LineSearchTask message                                                    *)
@@ -2627,6 +2654,20 @@ val airvehicle_state = Contig.Recd [
   ("WindDirection", real32)
 ];
 
+
+(*---------------------------------------------------------------------------*)
+(* val address =                                                             *)
+(*     Contig.Recd [("value", Contig.Array u8 (Contig.IntLit 4))];           *)
+(*                                                                           *)
+(* val address_array =                                                       *)
+(*    Contig.Recd [("value", Contig.Array address (Contig.IntLit 3))];       *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val address_array =
+    Contig.Recd [("value", Contig.Array i32 (Contig.IntLit 3))];
+
+
 (*---------------------------------------------------------------------------*)
 (* Full uxAS operating region message looks like the following               *)
 (* (Eric Mercer dug this info out):                                          *)
@@ -2672,68 +2713,52 @@ fun full_mesg contig = Contig.Recd [
  ];
 
 (*---------------------------------------------------------------------------*)
-(* Parse tree construction + creation of CMASI entities                      *)
+(* Full messages for a few formats                                           *)
 (*---------------------------------------------------------------------------*)
 
-val mk_i64     = valFn (Contig.Signed 8);
-fun mk_float s = Utils.mk_float s;
-fun mk_double s = dvalFn s;
+val fullOperatingRegionMesg =
+  full_mesg (mesgOption "OPERATINGREGION" operating_region);
 
-fun mk_string ptree =
- case ptree
-  of Contig.RECD
-       [("len",_),
-        ("elts", Contig.ARRAY elts)]
-      => String.concat (List.map (mk_leaf id) elts)
-   | otherwise  => raise Utils.ERR "mk_string" "";
+val fullAutomationRequestMesg =
+  full_mesg (mesgOption "AUTOMATIONREQUEST" automation_request);
 
-fun mk_leaf f leaf =
- case leaf
-  of Contig.LEAF _ s => f s
-   | otherwise => raise Utils.ERR "mk_leaf" ""
+val fullLineSearchTaskMesg =
+  full_mesg (mesgOption "LINESEARCHTASK" linesearch_task);
 
-fun mk_bounded_array eltFn ptree =
- case ptree
-  of Contig.RECD
-       [("len",_), ("elts", Contig.ARRAY elts)] => Array.fromList (List.map eltFn elts)
-   | otherwise  => raise Utils.ERR "mk_bounded_array" "";
+val fullAutomationResponseMesg =
+  full_mesg (mesgOption "AUTOMATIONRESPONSE" automation_response);
 
-fun dest_header ptree =
- case ptree
-  of Contig.RECD
-       [("seriesID",_),
-        ("mesgType",_),
-        ("seriesVersion",_),
-        ("mesg", pt)] => pt
-   | otherwise => raise Utils.ERR "dest_header" "";
-
-fun mk_uxasOption eltFn ptree =
- case ptree
-  of Contig.RECD [("present", _), ("contents", elt)] =>
-        (case elt
-          of Contig.RECD [] => None
-           | contig  => Some(eltFn contig))
-   | otherwise => raise Utils.ERR "mk_uxasOption" "";
-
-fun mk_mesgOption eltFn = mk_uxasOption (eltFn o dest_header);
-
-fun mk_eventData ptree dataFn =
- case ptree
-  of Contig.RECD [("isEvent", _), ("contents", data)] => dataFn data
-   | otherwise => raise Utils.ERR "mk_eventData" "";
-
-fun mk_bounded_mesgOption_array eltFn ptree =
- case ptree
-  of Contig.RECD [("len",_),("elts", Contig.ARRAY elts)]
-      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
-   | otherwise  => raise Utils.ERR "mk_bounded_mesgOption_array" "";
+val fullAirVehicleStateMesg =
+  full_mesg (mesgOption "AIRVEHICLESTATE" airvehicle_state);
 
 (*---------------------------------------------------------------------------*)
-(* Enumerations                                                              *)
+(* Handle any one of our range of uxas messages                              *)
+(*---------------------------------------------------------------------------*)
+
+fun mesgKind mesgtyName =
+  Contig.Beq(Contig.Loc(Contig.VarName "mesgType"))
+             (Contig.ConstName mesgtyName);
+
+val aaMesg_choices = Contig.Union [
+  (mesgKind "OPERATINGREGION",   operating_region),
+  (mesgKind "AUTOMATIONREQUEST", automation_request),
+  (mesgKind "AUTOMATIONRESPONSE",automation_response),
+  (mesgKind "LINESEARCHTASK",    linesearch_task),
+  (mesgKind "AIRVEHICLESTATE",   airvehicle_state)
+ ];
+
+val aaMesg = full_mesg (uxasOption (uxasMesg_generic aaMesg_choices));
+
+(*---------------------------------------------------------------------------*)
+(* Parsing                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Decode various enumerated types                                           *)
 (*---------------------------------------------------------------------------*)
 
 fun decodeCommandStatusType s =
-  let val i = valFn (Contig.Enum "CommandStatusType") s
+  let val i = Contig.valFn (Contig.Enum "CommandStatusType") s
   in if i = 0 then CMASI.Pending else
      if i = 1 then CMASI.Approved else
      if i = 2 then CMASI.InProcess else
@@ -2743,87 +2768,186 @@ fun decodeCommandStatusType s =
   end;
 
 fun decodeAltitudeType s =
-  let val i = valFn (Contig.Enum "AltitudeType") s
+  let val i = Contig.valFn (Contig.Enum "AltitudeType") s
   in if i = 0 then CMASI.AGL else
      if i = 1 then CMASI.MSL
      else raise Utils.ERR "decodeAltitudeType" ""
   end;
 
 fun decodeSpeedType s =
-  let val i = valFn (Contig.Enum "SpeedType") s
+  let val i = Contig.valFn (Contig.Enum "SpeedType") s
   in if i = 0 then CMASI.Airspeed else
      if i = 1 then CMASI.Groundspeed
      else raise Utils.ERR "decodeSpeedType" ""
   end;
 
 fun decodeTurnType s =
-  let val i = valFn (Contig.Enum "TurnType") s
+  let val i = Contig.valFn (Contig.Enum "TurnType") s
   in if i = 0 then CMASI.TurnShort else
      if i = 1 then CMASI.FlyOver
      else raise Utils.ERR "decodTurnType" ""
   end;
 
+fun decodeWavelengthBand s =
+  let val i = Contig.valFn (Contig.Enum "CommandStatusType") s
+  in if i = 0 then CMASI.AllAny else
+     if i = 1 then CMASI.EO else
+     if i = 2 then CMASI.LWIR else
+     if i = 3 then CMASI.SWIR else
+     if i = 4 then CMASI.MWIR else
+     if i = 5 then CMASI.Other
+     else raise Utils.ERR "decodeCommandStatusType" ""
+  end;
+
+fun mk_bool s =
+  let val i = Contig.valFn (Contig.Unsigned 1) s
+  in if i = 0 then False else
+     if i = 1 then True
+     else raise Utils.ERR "mk_bool" "expected 0 or 1"
+  end;
+
+val mk_i8  = Contig.valFn (Contig.Signed 1);
+val mk_u8  = Contig.valFn (Contig.Unsigned 1);
+val mk_i32 = Contig.valFn (Contig.Signed 4);
+val mk_u32 = Contig.valFn (Contig.Unsigned 4);
+val mk_i64 = Contig.valFn (Contig.Signed 8);
+val mk_u64 = Contig.valFn (Contig.Unsigned 8);
+
+fun mk_float s = Utils.mk_float s;
+fun mk_double s = Utils.dvalFn s;
+
+val mk_leaf = Contig.mk_leaf;
+
+val mk_char =
+ let fun hdchar s = String.sub s 0
+ in mk_leaf hdchar
+ end;
+
+fun mk_string ptree =
+ case ptree
+  of Contig.RECD
+       [("len",_),
+        ("elts", Contig.ARRAY elts)] => String.implode (List.map mk_char elts)
+   | otherwise  => raise Utils.ERR "mk_string" "";
+
+fun mk_bounded_array eltFn ptree =
+ case ptree
+  of Contig.RECD [
+       ("len",_),
+       ("elts", Contig.ARRAY elts)] => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise Utils.ERR "mk_bounded_array" "";
+
+fun mesg_of_header ptree =
+ case ptree
+  of Contig.RECD [
+         ("seriesID",_),
+         ("mesgType",_),
+         ("seriesVersion",_),
+         ("mesg", pt)] => pt
+   | otherwise => raise Utils.ERR "mesg_of_header" "";
+
+fun mk_uxasOption eltFn ptree =
+ case ptree
+  of Contig.RECD [("present", _), ("contents", elt)] =>
+        (case elt
+          of Contig.RECD [] => None
+           | contig  => Some(eltFn contig))
+   | otherwise => raise Utils.ERR "mk_uxasOption" "";
+
+
+fun mk_mesgOption eltFn = mk_uxasOption (eltFn o mesg_of_header);
+
+fun mk_bounded_mesgOption_array eltFn ptree =
+ case ptree
+  of Contig.RECD [("len",_),("elts", Contig.ARRAY elts)]
+      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
+   | otherwise  => raise Utils.ERR "mk_bounded_mesgOption_array" "";
+
 fun mk_location3D ptree =
  case ptree
   of Contig.RECD
-       [("Latitude",  lat),
-        ("Longitude", lon),
-        ("Altitude",  alt),
-        ("AltitudeType", alt_type)]
-     => CMASI.Location3DRecd
-              (mk_leaf mk_double lat)
-              (mk_leaf mk_double lon)
-              (mk_leaf mk_float alt)
-              (mk_leaf decodeAltitudeType alt_type)
+        [("Latitude", lat),
+         ("Longitude", lon),
+         ("Altitude",  alt),
+         ("AltitudeType", alt_type)]
+     =>
+    CMASI.Location3DRecd
+         (mk_leaf mk_double lat)
+         (mk_leaf mk_double lon)
+         (mk_leaf mk_float alt)
+         (mk_leaf decodeAltitudeType alt_type)
    | otherwise => raise Utils.ERR "mk_location3D" "";
 
-fun lat_of thing =
- case thing
-  of CMASI.Location3DRecd lat lon alt alt_type => lat;
-
-fun lon_of thing =
- case thing
-  of CMASI.Location3DRecd lat lon alt alt_type => lon;
-
-fun alt_of thing =
- case thing
-  of CMASI.Location3DRecd lat lon alt alt_type => alt;
-
-fun altkind_of thing =
- case thing
-  of CMASI.Location3DRecd lat lon alt alt_type => alt_type;
-
-(*---------------------------------------------------------------------------*)
-(* Geofence monitor input                                                    *)
-(*---------------------------------------------------------------------------*)
-
-val polygon = Contig.Array location3D (Contig.IntLit 2);
+fun mk_wedge ptree =
+ case ptree
+  of Contig.RECD
+          [("AzimuthCenterline", acl),
+           ("VerticalCenterline",vcl),
+           ("AzimuthExtent",aext),
+           ("VerticalExtent",vext)]
+    => CMASI.WedgeRecd
+         (mk_leaf mk_float acl)
+         (mk_leaf mk_float vcl)
+         (mk_leaf mk_float aext)
+         (mk_leaf mk_float vext)
+   | otherwise => raise Utils.ERR "mk_wedge" "";
 
 (*---------------------------------------------------------------------------*)
 (* Decode polygon encoded with uxas encoding                                 *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_polygon ptree =
+fun mk_phase2_polygon ptree =
   case ptree
    of Contig.ARRAY recds => Array.fromList (List.map mk_location3D recds)
     | otherwise => raise Utils.ERR "mk_phase2_polygon" ""
 
+fun parse_phase2_polygon string =
+  case Contig.parse uxasEnv phase2_polygon string
+   of Some ptree => mk_phase2_polygon ptree
+    | otherwise => raise Utils.ERR "parse_phase2_polygon" ""
+
+(*---------------------------------------------------------------------------*)
+(* Decode size 3 array of ints, where an int is represented as a decimal-    *)
+(* coded, \0-terminated, sequence of chars of length 4.                      *)
+(*---------------------------------------------------------------------------*)
+
+val dec4 = Contig.Array (Contig.Basic Contig.Char) (Contig.IntLit 4);
+val trustedID_array = Contig.Array dec4 (Contig.IntLit 3);
+
+fun mk_decInt s = Int.fromString (Utils.fromCstring s);
+
+fun toZ ptree =
+ case ptree
+  of Contig.ARRAY elts =>
+        mk_decInt (String.concatWith "" (List.map (Contig.mk_leaf id) elts))
+   | otherwise => raise Utils.ERR "mk_trusted_ids" "toZ";
+
+fun mk_trusted_ids ptree =
+  case ptree
+   of Contig.ARRAY elts => Array.fromList (List.mapPartial toZ elts)
+    | otherwise => raise Utils.ERR "mk_trusted_ids" ""
+
+fun parse_trusted_ids string =
+  case Contig.parse uxasEnv trustedID_array string
+   of Some ptree => mk_trusted_ids ptree
+    | otherwise => raise Utils.ERR "parse_trusted_ids" ""
 
 (*---------------------------------------------------------------------------*)
 (* VehicleAction =                                                           *)
-(*  Contig.Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]             *)
+(*  Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]                    *)
 (*---------------------------------------------------------------------------*)
 
 fun mk_VA ptree =
  case ptree
-  of Contig.RECD [("AssociatedTaskList",
-                   Contig.RECD [("len", _),("elts",Contig.ARRAY elts)])]
+  of Contig.RECD
+       [("AssociatedTaskList",
+         Contig.RECD [("len", _),("elts",Contig.ARRAY elts)])]
        => CMASI.VehicleActionRecd
-             (Array.fromList (List.map (mk_leaf mk_i64) elts))
+           (Array.fromList (List.map (Contig.mk_leaf mk_i64) elts))
    | otherwise  => raise Utils.ERR "mk_VA" "";
 
 (*---------------------------------------------------------------------------*)
-(* VehicleActionCommand = Contig.Recd [                                      *)
+(* VehicleActionCommand = Recd [                                             *)
 (*  ("CommandID",         i64),                                              *)
 (*  ("VehicleID",         i64),                                              *)
 (*  ("VehicleActionList", uxasBoundedArray                                   *)
@@ -2840,30 +2964,14 @@ fun mk_VAC ptree =
         ("VehicleActionList", valist),
         ("Status", status)]
       => CMASI.VehicleActionCommandRecd
-             (mk_leaf mk_i64 cid)
-             (mk_leaf mk_i64 vid)
-             (mk_bounded_mesgOption_array mk_VA valist)
-             (mk_leaf decodeCommandStatusType status)
-   | otherwise  => raise Utils.ERR "mk_VAC" ""
-
-fun cid_of thing =
- case thing
-  of CMASI.VehicleActionCommandRecd a b c d => a;
-
-fun vid_of thing =
- case thing
-  of CMASI.VehicleActionCommandRecd a b c d => b;
-
-fun valist_of thing =
- case thing
-  of CMASI.VehicleActionCommandRecd a b c d => c;
-
-fun status_of thing =
- case thing
-  of CMASI.VehicleActionCommandRecd a b c d => d;
+            (mk_leaf mk_i64 cid)
+            (mk_leaf mk_i64 vid)
+            (mk_bounded_mesgOption_array mk_VA valist)
+            (mk_leaf decodeCommandStatusType status)
+   | otherwise  => raise Utils.ERR "mk_VAC" "";
 
 (*---------------------------------------------------------------------------*)
-(* Waypoint = Contig.Recd [                                                  *)
+(* Waypoint = Recd [                                                         *)
 (*  ("Location",            Location3D),                                     *)
 (*  ("Number",              i64),                                            *)
 (*  ("NextWaypoint",        i64),                                            *)
@@ -2884,64 +2992,60 @@ fun status_of thing =
 fun mk_Waypoint ptree =
   case ptree
    of Contig.RECD
-        [("Location", loc3d),
-         ("Number", n),
-         ("NextWaypoint", next_wpt),
-         ("Speed", speed),
-         ("SpeedType", speed_type),
-         ("ClimbRate",climbrate),
-         ("TurnType",turn_type),
-         ("VehicleActionList", valist),
-         ("ContingencyWaypointA",cwptA),
-         ("ContingencyWaypointB",cwptB),
-         ("AssociatedTasks",  atasks)]
-      => let val l3d = mk_location3D loc3d
-         in CMASI.WaypointRecd
-              (lat_of l3d)
-              (lon_of l3d)
-              (alt_of l3d)
-              (altkind_of l3d)
-              (mk_leaf mk_i64 n)
-              (mk_leaf mk_i64 next_wpt)
-              (mk_leaf mk_float speed)
-              (mk_leaf decodeSpeedType speed_type)
-              (mk_leaf mk_float climbrate)
-              (mk_leaf decodeTurnType turn_type)
-              (mk_bounded_mesgOption_array mk_VA valist)
-              (mk_leaf mk_i64 cwptA)
-              (mk_leaf mk_i64 cwptB)
-              (mk_bounded_array (mk_leaf mk_i64) atasks)
-         end
-      | otherwise => raise Utils.ERR "mk_Waypoint" ""
-
-(*---------------------------------------------------------------------------*)
-(*  MissionCommand = Contig.Recd [                                           *)
-(*     ("VehicleActionCommand", VehicleActionCommand),                       *)
-(*     ("WaypointList",                                                      *)
-(*        uxasBoundedArray(mesgOption "WAYPOINT" Waypoint) 1024),            *)
-(*     ("FirstWaypoint", i64)                                                *)
-(* ]                                                                         *)
-(*---------------------------------------------------------------------------*)
+         [("Location", Contig.RECD
+              [("Latitude", lat),
+               ("Longitude", lon),
+               ("Altitude", alt),
+               ("AltitudeType", alty)]),
+          ("Number", n),
+          ("NextWaypoint", next_wpt),
+          ("Speed", speed),
+          ("SpeedType", speed_type),
+          ("ClimbRate", climbrate),
+          ("TurnType",turn_type),
+          ("VehicleActionList", valist),
+          ("ContingencyWaypointA",cwptA),
+          ("ContingencyWaypointB",cwptB),
+          ("AssociatedTasks", atasks)]
+      => CMASI.WaypointRecd
+            (mk_leaf mk_double lat)
+            (mk_leaf mk_double lon)
+            (mk_leaf mk_float alt)
+            (mk_leaf decodeAltitudeType alty)
+            (mk_leaf mk_i64 n)
+            (mk_leaf mk_i64 next_wpt)
+            (mk_leaf mk_float speed)
+            (mk_leaf decodeSpeedType speed_type)
+            (mk_leaf mk_float climbrate)
+            (mk_leaf decodeTurnType turn_type)
+            (mk_bounded_mesgOption_array mk_VA valist)
+            (mk_leaf mk_i64 cwptA)
+            (mk_leaf mk_i64 cwptB)
+            (mk_bounded_array (mk_leaf mk_i64) atasks)
+      | otherwise => raise Utils.ERR "mk_Waypoint" "";
 
 fun mk_MC ptree =
   case ptree
    of Contig.RECD
-        [("VehicleActionCommand", vac),
+        [("VehicleActionCommand",
+          Contig.RECD
+              [("CommandID", cid),
+	       ("VehicleID", vid),
+               ("VehicleActionList", valist),
+               ("Status", csty)]),
          ("WaypointList", wpts),
-         ("FirstWaypoint",fst_wpt)]
-       => let val vac = mk_VAC vac
-          in CMASI.MissionCommandRecd
-                (cid_of vac)
-                (vid_of vac)
-		(valist_of vac)
-                (status_of vac)
-                (mk_bounded_mesgOption_array mk_Waypoint wpts)
-                (mk_leaf mk_i64 fst_wpt)
-          end
-    | otherwise => raise Utils.ERR "mk_mission_command" ""
+         ("FirstWaypoint",fstWpt)]
+       => CMASI.MissionCommandRecd
+             (mk_leaf mk_i64 cid)
+             (mk_leaf mk_i64 vid)
+             (mk_bounded_mesgOption_array mk_VA valist)
+             (mk_leaf decodeCommandStatusType csty)
+             (mk_bounded_mesgOption_array mk_Waypoint wpts)
+             (mk_leaf mk_i64 fstWpt)
+    | otherwise => raise Utils.ERR "mk_mission_command" "";
 
 (*---------------------------------------------------------------------------*)
-(* automation_response = Contig.Recd [                                              *)
+(* automation_response = Recd [                                              *)
 (*  ("MissionCommandList",                                                   *)
 (*      uxasBoundedArray (mesgOption "MISSIONCOMMAND" MissionCommand) 16),   *)
 (*  ("VehicleCommandList",                                                   *)
@@ -2954,66 +3058,213 @@ fun mk_MC ptree =
 fun mk_KV_pair ptree =
  case ptree
   of Contig.RECD [("key", kstr), ("value", vstr)]
-       => CMASI.KeyValuePairRecd
-             (mk_string kstr)
-             (mk_string vstr)
-   | otherwise => raise Utils.ERR "mk_KV_pair" ""
+      => CMASI.KeyValuePairRecd (mk_string kstr) (mk_string vstr)
+   | otherwise => raise Utils.ERR "mk_KV_pair" "";
+
+fun mk_operating_region ptree =
+  case ptree
+   of Contig.RECD
+       [("ID",id),
+        ("keep_in_areas",  kia),
+        ("keep_out_areas", koa)]
+       => CMASI.OperatingRegionRecd
+            (mk_leaf mk_i64 id)
+            (mk_bounded_array (mk_leaf mk_u64) kia)
+            (mk_bounded_array (mk_leaf mk_u64) koa)
+    | otherwise => raise Utils.ERR "mk_operating_region" "";
+
+fun mk_automation_request ptree =
+  case ptree
+   of Contig.RECD[
+        ("EntityList",        elist),
+        ("TaskList",          tlist),
+        ("TaskListSize",      tsize),
+        ("TaskRelationShips", trels),
+        ("OperatingRegion",   opreg),
+        ("RedoAllTasks",      redo)]
+       => CMASI.AutomationRequestRecd
+            (mk_bounded_array (mk_leaf mk_i64) elist)
+            (mk_bounded_array (mk_leaf mk_i64) tlist)
+            (mk_leaf mk_i64 tsize)
+            (mk_string trels)
+            (mk_leaf mk_i64 opreg)
+            (mk_leaf mk_bool redo)
+    | otherwise => raise Utils.ERR "mk_automation_request" "";
+
+fun mk_linesearch_task ptree =
+  case ptree
+   of Contig.RECD [
+          ("TaskID", taskID),
+          ("Label",label),
+          ("EligibleEntities", eligibles),
+          ("RevisitRate",      rvrate),
+          ("Parameters",       params),
+          ("Priority",         prio),
+          ("Required",         reqd),
+          ("DesiredWavelengthBands", bands),
+          ("DwellTime",              dwell),
+          ("GroundSampleDistance",   gsdist),
+          ("PointList",     points),
+          ("ViewAngleList", vangles),
+          ("UseInertialViewAngles", useangles)]
+       => CMASI.LineSearchTaskRecd
+             (mk_leaf mk_i64 taskID)
+             (mk_string label)
+             (mk_bounded_array (mk_leaf mk_i64) eligibles)
+             (mk_leaf mk_float rvrate)
+             (mk_bounded_mesgOption_array mk_KV_pair params)
+             (mk_leaf mk_i8 prio)
+             (mk_leaf mk_bool reqd)
+             (mk_bounded_array (mk_leaf decodeWavelengthBand) bands)
+             (mk_leaf mk_i64 dwell)
+             (mk_leaf mk_float gsdist)
+             (mk_bounded_mesgOption_array mk_location3D points)
+             (mk_bounded_mesgOption_array mk_wedge vangles)
+             (mk_leaf mk_bool useangles)
+    | otherwise => raise Utils.ERR "mk_linesearch_task" "";
+
 
 fun mk_automation_response ptree =
   case ptree
    of Contig.RECD
-        [("MissionCommandList",mclist),
-         ("VehicleCommandList",vaclist),
-         ("Info", infolist)]
+         [("MissionCommandList",mclist),
+          ("VehicleCommandList",vaclist),
+          ("Info", infolist)]
        => CMASI.AutomationResponseRecd
-             (mk_bounded_mesgOption_array mk_MC mclist)
-             (mk_bounded_mesgOption_array mk_VAC vaclist)
-             (mk_bounded_mesgOption_array mk_KV_pair infolist)
+            (mk_bounded_mesgOption_array mk_MC mclist)
+            (mk_bounded_mesgOption_array mk_VAC vaclist)
+            (mk_bounded_mesgOption_array mk_KV_pair infolist)
     | otherwise => raise Utils.ERR "mk_automation_response" ""
 
-fun aa_mesg mesgFn ptree =
+fun drop_last s =
+  if s="" then "" else String.substring s 0 (String.size s - 1);
+
+(*---------------------------------------------------------------------------*)
+(* Attribute record not defined in CMASI.aadl, so give it here               *)
+(*                                                                           *)
+(* {contentType = mk_leaf drop_last ctype,                                   *)
+(*  descriptor  = mk_leaf drop_last descriptor,                              *)
+(*  source_group = mk_leaf drop_last src_grp,                                *)
+(*  source_entity_ID = mk_leaf drop_last seID,                               *)
+(*  source_service_ID = mk_leaf drop_last ssID}                              *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+datatype attributes = AttributeRecd string string string string string;
+
+fun source_entity_ID_of attr =
+ case attr
+  of AttributeRecd contentType descriptor source_group
+                   source_entity_ID source_service_ID => source_entity_ID;
+
+fun mk_attr_recd ptree =
  case ptree
   of Contig.RECD
-        [("address",_),
-         ("attributes",_),
-         ("controlString",_),
-         ("mesgSize",_),
-         ("mesg", pt),
-         ("checksum",_)] => mesgFn pt
-   | otherwise => raise Utils.ERR "aa_mesg" "";
+        [("contentType", ctype),
+         ("descriptor", descriptor),
+         ("source_group", src_grp),
+         ("source_entity_ID", seID),
+         ("source_service_ID", ssID)]
+      => AttributeRecd
+            (mk_leaf drop_last ctype)
+            (mk_leaf drop_last descriptor)
+            (mk_leaf drop_last src_grp)
+            (mk_leaf drop_last seID)
+            (mk_leaf drop_last ssID)
+   | otherwise => raise Utils.ERR "mk_attr_recd" "";
 
-fun mk_AR_event ptree = (* strip off leading "isEvent" byte *)
- mk_eventData ptree (aa_mesg (mk_mesgOption mk_automation_response));
 
-(*---------------------------------------------------------------------------*)
-(* Required filters and monitors for Phase 2 model                           *)
-(*                                                                           *)
-(* Filters: OperatingRegion, LinesearchTask,                                 *)
-(*          AutomationRequest, AutomationResponse                            *)
-(*                                                                           *)
-(* Monitors:                                                                 *)
-(*                                                                           *)
-(*  AttGate  : AddressArray * aaMesg                                         *)
-(*             -> OperatingRegion * LinesearchTask * AutomationRequest       *)
-(*                                                                           *)
-(*  Rqt/Rsp  : AutomationRequest * AutomationResponse -> alert               *)
-(*                                                                           *)
-(*  Geofence : Polygon * Polygon * AutomationResponse                        *)
-(*             -> alert * AutomationResponse                                 *)
-(*                                                                           *)
-(* The monitors require parsers (maps to CMASI datatypes) for all their      *)
-(* inputs.
-(*---------------------------------------------------------------------------*)
+(*---------------------------------------------------------------------------
+     datatype LMCPObject
+       = AutomationRequest AutomationRequest
+       | OperatingRegion   OperatingRegion
+       | LineSearchTask    LineSearchTask
+       | AutomationResponse AutomationResponse;
+
+     datatype AddressAttributedMessage =
+       AddressAttributedMessageRecd
+          Address
+          LMCPObject;
+ *---------------------------------------------------------------------------*)
+
+datatype full_mesg =
+  FullMesgRecd string attributes string int (Contig.ptree option) int;
+
+fun mk_full_mesg ptree =
+ case ptree
+  of Contig.RECD [
+      ("address", address),
+      ("attributes", attr_recd),
+      ("controlString", ctlstring),
+      ("mesgSize", msgSize),
+      ("mesg", mesg),
+      ("checksum", csum)]
+     => FullMesgRecd
+          (mk_leaf drop_last address)
+          (mk_attr_recd attr_recd)
+          (mk_leaf id ctlstring)
+          (mk_leaf mk_u32 msgSize)
+          (mk_mesgOption id mesg)
+          (mk_leaf mk_u32 csum)
+   | otherwise => raise Utils.ERR "mk_full_mesg" ""
+;
+
+fun isPunct ch =
+   (ch = #".") orelse (ch = #",") orelse (ch = #";") orelse
+   (ch = #"$") orelse (ch = #"#") orelse (ch = #"&") orelse (ch = #"%");
+
+fun mk_AddressAttributedMessage ptree =
+ case mk_full_mesg ptree
+  of FullMesgRecd address attribute ctlstring msgSize mesgOpt csum
+  =>
+ case Int.fromString (source_entity_ID_of attribute)
+  of None => None
+   | Some i
+  =>
+ case mesgOpt
+  of None => None
+   | Some pt
+  =>
+ let val mesgName = Utils.last (String.tokens isPunct address)
+ in if mesgName = "OperatingRegion" then
+        Some(CMASI.AddressAttributedMessageRecd
+              i (CMASI.OperatingRegion (mk_operating_region pt)))
+    else
+    if mesgName = "LineSearchTask" then
+        Some(CMASI.AddressAttributedMessageRecd
+              i (CMASI.LineSearchTask (mk_linesearch_task pt)))
+    else
+    if mesgName = "AutomationRequest" then
+        Some(CMASI.AddressAttributedMessageRecd
+              i (CMASI.AutomationRequest (mk_automation_request pt)))
+    else
+    if mesgName = "AutomationResponse" then
+        Some(CMASI.AddressAttributedMessageRecd
+              i (CMASI.AutomationResponse (mk_automation_response pt)))
+    else None
+ end
+
+fun parseAA string =
+ case Contig.parse caseEnv aaMesg string
+  of None => None
+   | Some ptree => mk_AddressAttributedMessage ptree;
 
 (*
-mk_address_array -- needs a contig type
-Address = {value : u8[4]}
-AddressArray = {value : Address[3]}
+fun mesg_of_AA ptree =
+ case ptree
+  of Contig.RECD
+       [("address",_),
+           ("attributes",_),
+           ("controlString",_),
+           ("mesgSize",_),
+           ("mesg", pt),
+           ("checksum",_)] => pt
+   | otherwise => raise Utils.ERR "mesg_of_AA" "";
 
-mk_aaMesg
-mk_automation_request
-X mk_automation_response
-X mk_polygon
+fun mk_AR_event ptree : AutomationResponse option =
+ case mk_uxasOption I ptree (* strip off leading "isEvent" byte *)
+  of NONE => NONE
+   | SOME aatree => mk_mesgOption mk_automation_response (mesg_of_AA aatree);
+
 *)
-
 end (* CMASI_Mesg *)

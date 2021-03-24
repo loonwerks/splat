@@ -1,4 +1,4 @@
-structure PPfns :> PPfns = 
+structure PPfns :> PPfns =
 struct
 
 open PolyML;
@@ -18,7 +18,7 @@ val closeParen = PrettyString ")";
 val openBracket = PrettyString "[";
 val closeBracket = PrettyString "]";
 
-fun iter_pp sep brk pp list = 
+fun iter_pp sep brk pp list =
  case list
   of [] => []
    | [x] => [pp x]
@@ -33,9 +33,11 @@ fun pp_comma_list pp = gen_pp_list Comma [Space] pp;
 
 fun pp_semicolon_list pp = gen_pp_list Semicolon [Space] pp;
 
+fun pp_space_list pp = gen_pp_list (PrettyBreak(0,0)) [Space] pp;
+
 val pp_list = pp_semicolon_list;
 
-fun end_sep_list sep brk pp list = 
+fun end_sep_list sep brk pp list =
  case list
   of [] => []
    | [x] => [pp x,sep]

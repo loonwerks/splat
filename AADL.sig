@@ -21,13 +21,13 @@ sig
     = FilterDec (* (name,ports,props) *)
         of qid * (string * ty * string * string) list * (string * exp) list
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,policy,props,guars)  *)
+ datatype monitor  (*  (name,ports,latched,decs,ivars,policy,guars)  *)
     = MonitorDec of qid
                  * (string * ty * string * string) list
                  * bool
                  * tmdec list
                  * (string * ty * exp) list
-                 * ((string * exp) option * (string  * exp) list)
+                 * ((string * exp) option * (string * exp) list)
                  * (string * string * exp) list
 
  type decls =
@@ -68,5 +68,8 @@ sig
     = Event of string
     | Data of string * ty
     | EventData of string * ty;
+
+ val tydec_qid : tydec -> qid
+ val tmdec_qid : tmdec -> qid
 
 end
