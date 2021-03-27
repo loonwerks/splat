@@ -55,8 +55,6 @@ fun clear_buf buffer =
     loop 0
  end;
 
-fun buf2string buf = Word8Array.substring buf 0 (Word8Array.length buf);
-
 (*---------------------------------------------------------------------------*)
 (* strings to numbers                                                        *)
 (*---------------------------------------------------------------------------*)
@@ -632,28 +630,50 @@ end  (* Contig *)
 structure CM_Property_Set =
 struct
 
-  val lcStack_Size = 524288;
-  val lcRadioDriver_Attestation_Domain = 2;
-  val lcUARTDriver_Domain = 3;
-  val lcCASE_AttestationGate_Domain = 5;
-  val lcCASE_Filter_LST_Domain = 7;
-  val lcCASE_Filter_OR_Domain = 8;
-  val lcUxAS_Domain = 9;
-  val lcFlyZonesDatabase_Domain = 10;
-  val lcCASE_Monitor_Req_Domain = 11;
-  val lcCASE_Filter_ARes_Domain = 12;
-  val lcCASE_Monitor_Geo_Domain = 13;
-  val lcWaypointPlanManangerService_Domain = 14;
-  val lcAutomationResponse_Bit_Codec_Max_Size = 262144;
-  val lcAutomationRequest_Bit_Codec_Max_Size = 2048;
-  val lcPolygon_Bit_Codec_Max_Size = 1024;
-  val lcMissionCommand_Bit_Codec_Max_Size = 16384;
-  val lcAirVehicleState_Bit_Codec_Max_Size = 4096;
-  val lcAddress_Array_Bit_Codec_Max_Size = 96;
-  val lcOperatingRegion_Bit_Codec_Max_Size = 2048;
-  val lcLineSearchTask_Bit_Codec_Max_Size = 65536;
-  val lcAddressAttributedMessage_Bit_Codec_Max_Size = 131072;
-  val lcCASE_Attestation_Bit_Codec_Max_Size = 1024;
+     val lcStack_Size = 524288;
+
+     val lcRadioDriver_Attestation_Domain = 2;
+
+     val lcUARTDriver_Domain = 3;
+
+     val lcCASE_AttestationGate_Domain = 5;
+
+     val lcCASE_Filter_LST_Domain = 7;
+
+     val lcCASE_Filter_OR_Domain = 8;
+
+     val lcUxAS_Domain = 9;
+
+     val lcFlyZonesDatabase_Domain = 10;
+
+     val lcCASE_Monitor_Req_Domain = 11;
+
+     val lcCASE_Filter_ARes_Domain = 12;
+
+     val lcCASE_Monitor_Geo_Domain = 13;
+
+     val lcWaypointPlanManangerService_Domain = 14;
+
+     val lcAutomationResponse_Bit_Codec_Max_Size = 262144;
+
+     val lcAutomationRequest_Bit_Codec_Max_Size = 2048;
+
+     val lcPolygon_Bit_Codec_Max_Size = 1024;
+
+     val lcMissionCommand_Bit_Codec_Max_Size = 16384;
+
+     val lcAirVehicleState_Bit_Codec_Max_Size = 4096;
+
+     val lcAddress_Array_Bit_Codec_Max_Size = 96;
+
+     val lcOperatingRegion_Bit_Codec_Max_Size = 2048;
+
+     val lcLineSearchTask_Bit_Codec_Max_Size = 65536;
+
+     val lcAddressAttributedMessage_Bit_Codec_Max_Size = 131072;
+
+     val lcCASE_Attestation_Bit_Codec_Max_Size = 1024;
+
 end
 
 structure CMASI =
@@ -3248,204 +3268,3 @@ fun mk_AR_event ptree : AutomationResponse option =
 
 *)
 end (* CMASI_Mesg *)
-
-structure API =
-struct
-
-fun mkString list = String.implode (List.map Char.chr list);
-
-(*---------------------------------------------------------------------------*)
-(* Latest from Eric                                                          *)
-(*---------------------------------------------------------------------------*)
-(*
-val flyZoneDBKeepInZone = [0x40, 0x46, 0xA6, 0x73, 0x4F, 0x82, 0xF5, 0x12,
-                           0xC0, 0x5E, 0x40, 0xF2, 0xA1, 0x72, 0xAB, 0xEF,
-                           0x44, 0x7A, 0x00, 0x00,
-                           0x00, 0x00, 0x00, 0x01,
-                           0x40, 0x46, 0xAC, 0x34, 0x3B, 0x70, 0xEF, 0x56,
-                           0xC0, 0x5E, 0x3A, 0x65, 0x98, 0xE1, 0x0C, 0xF6,
-                           0x44, 0x7A, 0x00, 0x00,
-                           0x00, 0x00, 0x00, 0x01];
-
-val flyZoneDBKeepOutZone = [0x40, 0x46, 0xAA, 0xA1, 0xAD, 0x64, 0x51, 0xB9,
-                            0xC0, 0x5E, 0x3C, 0x09, 0xA2, 0x40, 0x31, 0x48,
-                            0x44, 0x7A, 0x00, 0x00,
-                            0x00, 0x00, 0x00, 0x01,
-                            0x40, 0x46, 0xAA, 0xFA, 0x0D, 0x77, 0xB7, 0xC8,
-                            0xC0, 0x5E, 0x3B, 0xCA, 0xA7, 0x58, 0x9E, 0xFE,
-                            0x44, 0x7A, 0x00, 0x00,
-                            0x00, 0x00, 0x00, 0x01];
-
-val isaacKeepInZone = [0x40, 0x46, 0xA6, 0x73, 0x7F, 0x91, 0x58, 0x22,
-                       0xC0, 0x5E, 0x40, 0xF1, 0x55, 0xC9, 0x5C, 0x81,
-                       0x44, 0x7A, 0x00, 0x00,
-                       0x00, 0x00, 0x00, 0x01,
-                       0x40, 0x46, 0xAC, 0x33, 0x4C, 0x34, 0xCA, 0x58,
-                       0xC0, 0x5E, 0x3A, 0x66, 0xB8, 0x6D, 0xFA, 0x7D,
-                       0x44, 0x7A, 0x00, 0x00,
-                       0x00, 0x00, 0x00, 0x01];
-
-val isaacKeepOutZone = [0x40, 0x46, 0xAA, 0xA1, 0xB1, 0xAD, 0xC6, 0xD5,
-                        0xC0, 0x5E, 0x3C, 0x09, 0xC2, 0xEB, 0xA6, 0x0C,
-                        0x44, 0x7A, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x01,
-                        0x40, 0x46, 0xAA, 0xFA, 0x00, 0x85, 0xEC, 0xB9,
-                        0xC0, 0x5E, 0x3B, 0xCA, 0xF3, 0x58, 0x81, 0xEB,
-                        0x44, 0x7A, 0x00, 0x00,
-                        0x00, 0x00, 0x00, 0x01];
-*)
-
-val flyZoneDBKeepInZone = mkString
-   [64, 70, 166, 115, 79, 130, 245, 18, 192, 94, 64, 242, 161, 114, 171, 239,
-    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 172, 52, 59, 112, 239, 86, 192, 94,
-    58, 101, 152, 225, 12, 246, 68, 122, 0, 0, 0, 0, 0, 1];
-
-val flyZoneDBKeepOutZone = mkString
-   [64, 70, 170, 161, 173, 100, 81, 185, 192, 94, 60, 9, 162, 64, 49, 72, 68,
-    122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 13, 119, 183, 200, 192, 94, 59,
-    202, 167, 88, 158, 254, 68, 122, 0, 0, 0, 0, 0, 1];
-
-val isaacKeepInZone = mkString
-   [64, 70, 166, 115, 127, 145, 88, 34, 192, 94, 64, 241, 85, 201, 92, 129,
-    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 172, 51, 76, 52, 202, 88, 192, 94, 58,
-    102, 184, 109, 250, 125, 68, 122, 0, 0, 0, 0, 0, 1];
-
-val isaacKeepOutZone = mkString
-  [64, 70, 170, 161, 177, 173, 198, 213, 192, 94, 60, 9, 194, 235, 166, 12,
-   68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 0, 133, 236, 185, 192, 94,
-   59, 202, 243, 88, 129, 235, 68, 122, 0, 0, 0, 0, 0, 1];
-
-val () = print "\nReading example input traces ... ";
-
-(*---------------------------------------------------------------------------*)
-(* afrl.cmasi.OperatingRegion:                                               *)
-(*---------------------------------------------------------------------------*)
-
-val operating_region_trace =
- let val istrm = TextIO.openIn "traces/ORE"
-     val string = TextIO.inputAll istrm
-     val () = TextIO.closeIn istrm
- in
-  string
- end
-
-(*---------------------------------------------------------------------------*)
-(* afrl.cmasi.LineSearchTask:                                                *)
-(*---------------------------------------------------------------------------*)
-
-val linesearch_task_trace =
- let val istrm = TextIO.openIn "traces/LSTE"
-     val string = TextIO.inputAll istrm
-     val () = TextIO.closeIn istrm
- in
-  string
- end
-
-(*---------------------------------------------------------------------------*)
-(* afrl.cmasi.AutomationRequest:                                             *)
-(*---------------------------------------------------------------------------*)
-
-val automation_request_trace =
- let val istrm = TextIO.openIn "traces/ARQTE"
-     val string = TextIO.inputAll istrm
-     val () = TextIO.closeIn istrm
- in
-  string
- end
-
-(*---------------------------------------------------------------------------*)
-(* afrl.cmasi.AutomationResponse:                                            *)
-(*---------------------------------------------------------------------------*)
-
-val automation_response_trace =
- let val istrm = TextIO.openIn "traces/ARSPE"
-     val string = TextIO.inputAll istrm
-     val () = TextIO.closeIn istrm
- in
-  string
- end
-
-(*---------------------------------------------------------------------------*)
-(* afrl.cmasi.Air_VehicleState:                                              *)
-(*---------------------------------------------------------------------------*)
-
-val air_vehicle_state_trace =
- let val istrm = TextIO.openIn "traces/AVSE"
-     val string = TextIO.inputAll istrm
-     val () = TextIO.closeIn istrm
- in
-  string
- end
-
-val () = print "Done!\n";
-
-(*---------------------------------------------------------------------------*)
-(* Buffers                                                                   *)
-(*---------------------------------------------------------------------------*)
-
- fun numBytes n = Int.div n 8;
-
- val trusted_idsBuf =
-     Word8Array.array (numBytes CM_Property_Set.lcAddress_Array_Bit_Codec_Max_Size)
-                      Utils.w8zero;
-
-   val lcOperatingRegion_inBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcLineSearchTask_inBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcAutomationRequest_inBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcOperatingRegion_outBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcOperatingRegion_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcLineSearchTask_outBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcLineSearchTask_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcAutomationRequest_outBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAutomationRequest_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   (*---------------------------------------------------------------------------*)
-   (* Faked version of following FFI call                                       *)
-   (*                                                                           *)
-   (*   #(api_get_trusted_ids) "" trusted_idsBuf                                *)
-   (*---------------------------------------------------------------------------*)
-
-   fun api_get_trusted_ids () =
-
-   fun api_get_OperatingRegion_in () =
-   fun api_get_LineSearchTask_in () =
-   fun api_get_trusted_ids () =
-   fun api_get_trusted_ids () =
-
-   fun fill_input_buffers () =
-    let val () = (Utils.clear_buf trusted_idsBuf)
-        val () = (Utils.clear_buf lcOperatingRegion_inBuf)
-        val () = (Utils.clear_buf lcLineSearchTask_inBuf)
-        val () = (Utils.clear_buf lcAutomationRequest_inBuf)
-        val () = (#(api_get_trusted_ids) "" trusted_idsBuf)
-        val () = (#(api_get_OperatingRegion_in) "" lcOperatingRegion_inBuf)
-        val () = (#(api_get_LineSearchTask_in) "" lcLineSearchTask_inBuf)
-        val () = (#(api_get_AutomationRequest_in) "" lcAutomationRequest_inBuf)
-    in
-        ((Utils.buf2string trusted_idsBuf),
-         (Utils.buf2string lcOperatingRegion_inBuf),
-         (Utils.buf2string lcLineSearchTask_inBuf),
-         (Utils.buf2string lcAutomationRequest_inBuf))
-    end;
-
-end (* API *)
