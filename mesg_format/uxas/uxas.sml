@@ -287,6 +287,18 @@ fun uxasMesg mesgtyName contig = Recd [
 fun mesgOption name = Option o uxasMesg name;
 
 (*---------------------------------------------------------------------------*)
+(* Same as uxasMesg, except it doesn't check the mesgType                    *)
+(*---------------------------------------------------------------------------*)
+
+fun uxasMesg_generic contig = Recd [
+   ("seriesID",       i64),
+   ("mesgType",       u32),
+   ("seriesVersion",  u16),
+   ("mesg",           contig)
+ ];
+
+
+(*---------------------------------------------------------------------------*)
 (* uxAS strings. The short version is good for random message generation.    *)
 (*---------------------------------------------------------------------------*)
 
@@ -304,7 +316,6 @@ val ShortString = uxasBoundedArray (Basic Char) 12;
 (* short strings, and then a randomly generated string field would be <= 12  *)
 (* in length.                                                                *)
 (*---------------------------------------------------------------------------*)
-
 
 val String = Declared "String";
 
@@ -367,16 +378,47 @@ val case_consts = [
   ("KEEP_OUT_ZONE_ID_MIN",0),
   ("KEEP_OUT_ZONE_ID_MAX",500),
   ("TASK_ID_MIN",0),
-  ("TASK_ID_MAX",500),
+  ("TASK_ID_MAX",2000),
   ("ENTITY_ID_MIN", 0),
   ("ENTITY_ID_MAX",500)
  ];
+
+(*
+   const OPERATING_REGION_ID_MIN : int = 0;
+    const OPERATING_REGION_ID_MAX : int = 500;
+    const KEEP_IN_ZONE_ID_MIN : int = 0;
+    const KEEP_IN_ZONE_ID_MAX : int = 500;
+    const KEEP_OUT_ZONE_ID_MIN : int = 0;
+    const KEEP_OUT_ZONE_ID_MAX : int = 500;
+    const TASK_ID_MIN : int = 0;
+    const TASK_ID_MAX : int = 2000;
+    const ENTITY_ID_MIN : int = 0;
+    const ENTITY_ID_MAX : int = 500;
+    const ALTITUDE_MIN : real = 0.0;
+    const ALTITUDE_MAX : real = 15000.0;
+    const LATITUDE_MIN : real = -90.0;
+    const LATITUDE_MAX : real = 90.0;
+    const LONGITUDE_MIN : real = -180.0;
+    const LONGITUDE_MAX : real = 180.0;
+    const AZIMUTH_CENTERLINE_MIN : real = -180.0;
+    const AZIMUTH_CENTERLINE_MAX : real = 180.0;
+    const VERTICAL_CENTERLINE_MIN : real = -180.0;
+    const VERTICAL_CENTERLINE_MAX : real = 180.0;
+*)
 
 val caseEnv =
  let val (consts,decls,widths,valFn,dvalFn) = uxasEnv
  in (case_consts @ consts,decls,widths,valFn,dvalFn)
  end
 ;
+
+fun genParse env (contig,mk_data) string =
+ case parseFn env (VarName"root") contig ([],string,empty_lvalMap)
+  of SOME ([ptree],_,_) => total mk_data ptree
+   | otherwise => NONE
+;
+
+fun dataParse p s = genParse caseEnv p s;
 
 (*---------------------------------------------------------------------------*)
 (* Messages                                                                  *)
@@ -608,6 +650,22 @@ val fullAutomationResponseMesg =
 val fullAirVehicleStateMesg =
   full_mesg (mesgOption "AIRVEHICLESTATE" airvehicle_state);
 
+(*---------------------------------------------------------------------------*)
+(* Handle any one of our range of uxas messages                              *)
+(*---------------------------------------------------------------------------*)
+
+fun mesgKind mesgtyName =
+    Beq(Loc(VarName "mesgType"),ConstName mesgtyName);
+
+val aaMesg_choices = Union [
+  (mesgKind "OPERATINGREGION",   operating_region),
+  (mesgKind "AUTOMATIONREQUEST", automation_request),
+  (mesgKind "AUTOMATIONRESPONSE",automation_response),
+  (mesgKind "LINESEARCHTASK",    linesearch_task),
+  (mesgKind "AIRVEHICLESTATE",   airvehicle_state)
+ ];
+
+val aaMesg = full_mesg (Option (uxasMesg_generic aaMesg_choices));
 
 (*===========================================================================*)
 (* Parsing. First define target datastructures.                              *)
@@ -675,11 +733,6 @@ type MissionCommand =
   WaypointList  : Waypoint array,
   FirstWaypoint : i64};
 
-type AutomationResponse =
-     {MissionCommandList : MissionCommand array,
-      VehicleCommandList : VehicleActionCommand array,
-      Info : KeyValuePair array}
-
 type OperatingRegion
   = {ID : int,
      keep_in_areas : int array,
@@ -691,6 +744,11 @@ type AutomationRequest =
      TaskRelationShips : string,
      OperatingRegion : int,
      RedoAllTasks : bool}
+
+type AutomationResponse =
+     {MissionCommandList : MissionCommand array,
+      VehicleCommandList : VehicleActionCommand array,
+      Info : KeyValuePair array}
 
 type LineSearchTask =
 { TaskID           : int,
@@ -714,71 +772,27 @@ datatype uxasMessage
   | LST of LineSearchTask;
 
 type attr_recd =
- {contentType : string,
-  descriptor : string,
+ {contentType  : string,
+  descriptor   : string,
   source_group : string,
-  source_entity_ID : string,
+  source_entity_ID  : string,
   source_service_ID : string}
 
 type full_mesg =
-     {address : string,
+     {address   : string,
       attribute : attr_recd,
       controlString : int,
       mesgSize : int,
-      mesg : uxasMessage,
+      mesg     : uxasMessage,
       checksum : Word32.word}
 
+type AddressAttributedMessage =
+     {id: int,
+      payload : uxasMessage};
+
 (*---------------------------------------------------------------------------*)
-(* Parsing                                                                   *)
+(* Decode various enumerated types                                           *)
 (*---------------------------------------------------------------------------*)
-
-val mk_i64     = uxas_valFn (Signed 8);
-val mk_u32     = uxas_valFn (Unsigned 4);
-fun mk_float s = Real32.fromInt 42;
-fun mk_double s = dvalFn Double s;
-
-fun mk_leaf f (LEAF(_,s)) = f s
-  | mk_leaf f otherwise = raise ERR "mk_leaf" ""
-
-fun mk_bounded_array eltFn ptree =
- case ptree
-  of RECD [("len",_),("elts", ARRAY elts)] => Array.fromList (List.map eltFn elts)
-   | otherwise  => raise ERR "mk_bounded_array" "";
-
-fun dest_header ptree =
- case ptree
-  of RECD [("seriesID",_),
-           ("mesgType",_),
-           ("seriesVersion",_),
-           ("mesg", pt)] => pt
-   | otherwise => raise ERR "dest_header" "";
-
-fun mk_uxasOption eltFn ptree =
- case ptree
-  of RECD [("present", _), ("contents", elt)] =>
-        (case elt
-          of RECD [] => NONE
-           | contig  => SOME(eltFn contig))
-   | otherwise => raise ERR "mk_uxasOption" "";
-
-fun mk_mesgOption eltFn = mk_uxasOption (eltFn o dest_header);
-
-fun mk_bounded_mesgOption_array eltFn ptree =
- case ptree
-  of RECD [("len",_),("elts", ARRAY elts)]
-      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
-   | otherwise  => raise ERR "mk_bounded_mesgOption_array" "";
-
-fun AA_mesg mesgFn ptree =
- case ptree
-  of RECD [("address",_),
-           ("attributes",_),
-           ("controlString",_),
-           ("mesgSize",_),
-           ("mesg", pt),
-           ("checksum",_)] => mesgFn pt
-   | otherwise => raise ERR "AA_mesg" "";
-
 
 fun decodeCommandStatusType s =
   let val i = uxas_valFn (Enum "CommandStatusType") s
@@ -811,6 +825,78 @@ fun decodeTurnType s =
      else raise ERR "decodTurnType" ""
   end;
 
+fun decodeWavelengthBand s =
+  let val i = uxas_valFn (Enum "CommandStatusType") s
+  in if i = 0 then AllAny else
+     if i = 1 then EO else
+     if i = 2 then LWIR else
+     if i = 3 then SWIR else
+     if i = 4 then MWIR else
+     if i = 5 then Other
+     else raise ERR "decodeCommandStatusType" ""
+  end;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_leaf f (LEAF(_,s)) = f s
+  | mk_leaf f otherwise = raise ERR "mk_leaf" ""
+
+fun mk_bool s =
+  let val i = uxas_valFn (Unsigned 1) s
+  in if i = 0 then false else
+     if i = 1 then true
+     else raise ERR "mk_bool" "expected 0 or 1"
+  end;
+
+val mk_u8      = uxas_valFn (Unsigned 1);
+val mk_i32     = uxas_valFn (Signed 4);
+val mk_i64     = uxas_valFn (Signed 8);
+val mk_u64     = uxas_valFn (Unsigned 8);
+val mk_u32     = uxas_valFn (Unsigned 4);
+fun mk_float s = Real32.fromInt 42;
+fun mk_double s = dvalFn Double s;
+
+val mk_char =
+ let fun hdchar s = String.sub(s,0)
+ in mk_leaf hdchar
+ end;
+
+fun mk_string ptree =
+ case ptree
+  of RECD [("len",_),("elts", ARRAY elts)] => String.implode (List.map mk_char elts)
+   | otherwise  => raise ERR "mk_string" "";
+
+fun mk_bounded_array eltFn ptree =
+ case ptree
+  of RECD [("len",_),("elts", ARRAY elts)] => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise ERR "mk_bounded_array" "";
+
+fun mesg_of_header ptree =
+ case ptree
+  of RECD [("seriesID",_),
+           ("mesgType",_),
+           ("seriesVersion",_),
+           ("mesg", pt)] => pt
+   | otherwise => raise ERR "mesg_of_header" "";
+
+fun mk_uxasOption eltFn ptree =
+ case ptree
+  of RECD [("present", _), ("contents", elt)] =>
+        (case elt
+          of RECD [] => NONE
+           | contig  => SOME(eltFn contig))
+   | otherwise => raise ERR "mk_uxasOption" "";
+
+fun mk_mesgOption eltFn = mk_uxasOption (eltFn o mesg_of_header);
+
+fun mk_bounded_mesgOption_array eltFn ptree =
+ case ptree
+  of RECD [("len",_),("elts", ARRAY elts)]
+      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
+   | otherwise  => raise ERR "mk_bounded_mesgOption_array" "";
+
 fun mk_location3D ptree =
  case ptree
   of RECD [("Latitude", lat),
@@ -823,6 +909,16 @@ fun mk_location3D ptree =
          AltitudeType = mk_leaf decodeAltitudeType alt_type}
    | otherwise => raise ERR "mk_location3D" "";
 
+fun mk_wedge ptree =
+ case ptree
+  of RECD [("AzimuthCenterline", acl),
+           ("VerticalCenterline",vcl),
+           ("AzimuthExtent",aext),
+           ("VerticalExtent",vext)] =>
+ {AzimuthCenterline  = mk_leaf mk_float acl,
+  VerticalCenterline = mk_leaf mk_float vcl,
+  AzimuthExtent      = mk_leaf mk_float aext,
+  VerticalExtent     = mk_leaf mk_float vext};
 
 (*---------------------------------------------------------------------------*)
 (* Geofence monitor input                                                    *)
@@ -839,11 +935,29 @@ fun mk_phase2_polygon ptree =
    of ARRAY recds => Array.fromList (map mk_location3D recds)
     | otherwise => raise ERR "mk_phase2_polygon" ""
 
-fun parse_phase2_polygon string =
-  case parseFn uxasEnv (VarName"root") PhaseII_Polygon ([],string,empty_lvalMap)
-   of NONE => raise ERR "parse_phase2_polygon" ""
-    | SOME ([ptree],remaining,theta) => mk_phase2_polygon ptree
-    | otherwise => raise ERR "parse_phase2_polygon" ""
+val parse_phase2_polygon = dataParse (PhaseII_Polygon,mk_phase2_polygon);
+
+(*---------------------------------------------------------------------------*)
+(* Decode size 3 array of ints, where an int is represented as a decimal-    *)
+(* coded, \0-terminated, sequence of chars of length 4.                      *)
+(*---------------------------------------------------------------------------*)
+
+val dec4Int = Array(Basic Char, intLit 4);
+val trustedID_array = Array(dec4Int,intLit 3);
+
+fun toZ ptree =
+ let val mk_int = Option.mapPartial Int.fromString o String.fromCString
+ in case ptree
+     of ARRAY elts => mk_int (String.concatWith "" (map (mk_leaf I) elts))
+      | otherwise => raise ERR "mk_trusted_ids" "toZ"
+ end;
+
+fun mk_trusted_ids ptree =
+  case ptree
+   of ARRAY arrays => Array.fromList (List.mapPartial toZ arrays)
+    | otherwise => raise ERR "mk_trusted_ids" ""
+
+val parse_trusted_ids = dataParse (trustedID_array,mk_trusted_ids);
 
 (*---------------------------------------------------------------------------*)
 (* VehicleAction =                                                           *)
@@ -949,20 +1063,63 @@ fun mk_MC ptree : MissionCommand =
 (* ]                                                                         *)
 (*---------------------------------------------------------------------------*)
 
-fun hdchar s = String.sub(s,0);
-
-val mk_char = mk_leaf hdchar;
-
-fun mk_string ptree =
- case ptree
-  of RECD [("len",_),("elts", ARRAY elts)] => String.implode (List.map mk_char elts)
-   | otherwise  => raise ERR "mk_string" "";
-
 fun mk_KV_pair ptree =
  case ptree
   of RECD [("key", kstr), ("value", vstr)]
        => (mk_string kstr,mk_string vstr)
    | otherwise => raise ERR "mk_KV_pair" ""
+
+fun mk_operating_region ptree : OperatingRegion =
+  case ptree
+   of RECD[("ID",id), ("keep_in_areas",  kia), ("keep_out_areas", koa)]
+       => {ID = mk_leaf mk_i64 id,
+           keep_in_areas  = mk_bounded_array (mk_leaf mk_u64) kia,
+           keep_out_areas = mk_bounded_array (mk_leaf mk_u64) koa}
+    | otherwise => raise ERR "mk_operating_region" "";
+
+fun mk_automation_request ptree : AutomationRequest =
+  case ptree
+   of RECD[("EntityList",        elist),
+           ("TaskList",          tlist),
+           ("TaskRelationShips", trels),
+           ("OperatingRegion",   opreg),
+           ("RedoAllTasks",      redo)]
+       => {EntityList = mk_bounded_array (mk_leaf mk_i64) elist,
+           TaskList   = mk_bounded_array (mk_leaf mk_i64) tlist,
+           TaskRelationShips = mk_string trels,
+           OperatingRegion   = mk_leaf mk_i64 opreg,
+           RedoAllTasks      = mk_leaf mk_bool redo}
+    | otherwise => raise ERR "mk_automation_request" "";
+
+fun mk_linesearch_task ptree : LineSearchTask =
+  case ptree
+   of RECD [("TaskID", taskID),
+            ("Label",label),
+            ("EligibleEntities", eligibles),
+            ("RevisitRate",      rvrate),
+            ("Parameters",       params),
+            ("Priority",         prio),
+            ("Required",         reqd),
+            ("DesiredWavelengthBands", bands),
+            ("DwellTime",              dwell),
+            ("GroundSampleDistance",   gsdist),
+            ("PointList",     points),
+            ("ViewAngleList", vangles),
+            ("UseInertialViewAngles", useangles)]
+       => {TaskID = mk_leaf mk_i64 taskID,
+           Label  = mk_string label,
+           EligibleEntities = mk_bounded_array (mk_leaf mk_i64) eligibles,
+           RevisitRate      = mk_leaf mk_float rvrate,
+           Parameters       = mk_bounded_mesgOption_array mk_KV_pair params,
+           Priority         = mk_leaf (Word8.fromInt o mk_u8) prio,
+           Required         = mk_leaf mk_bool reqd,
+           DesiredWavelengthBands = mk_bounded_array (mk_leaf decodeWavelengthBand) bands,
+           DwellTime             = mk_leaf mk_i64 dwell,
+           GroundSampleDistance  = mk_leaf mk_float gsdist,
+           PointList             = mk_bounded_mesgOption_array mk_location3D points,
+           ViewAngleList         = mk_bounded_mesgOption_array mk_wedge vangles,
+           UseInertialViewAngles = mk_leaf mk_bool useangles}
+    | otherwise => raise ERR "mk_linesearch_task" "";
 
 fun mk_automation_response ptree : AutomationResponse =
   case ptree
@@ -974,10 +1131,159 @@ fun mk_automation_response ptree : AutomationResponse =
            Info = mk_bounded_mesgOption_array mk_KV_pair infolist}
     | otherwise => raise ERR "mk_automation_response" ""
 
+fun drop_last s =
+ if s="" then ""
+ else String.substring(s,0,String.size s - 1);
+
+fun mk_attr_recd ptree =
+ case ptree
+  of RECD [("contentType", ctype),
+           ("descriptor", descriptor),
+           ("source_group", src_grp),
+           ("source_entity_ID", seID),
+           ("source_service_ID", ssID)]
+      => {contentType = mk_leaf drop_last ctype,
+          descriptor  = mk_leaf drop_last descriptor,
+          source_group = mk_leaf drop_last src_grp,
+          source_entity_ID = mk_leaf drop_last seID,
+          source_service_ID = mk_leaf drop_last ssID}
+   | otherwise => raise ERR "mk_attr_recd" "";
+
+fun mk_full_mesg mesgFn ptree =
+ case ptree
+  of RECD [
+      ("address", address),
+      ("attributes", attr_recd),
+      ("controlString", ctlstring),
+      ("mesgSize", msgSize),
+      ("mesg", mesg),
+      ("checksum", csum)]
+     => {address       = mk_leaf drop_last address,
+         attribute     = mk_attr_recd attr_recd,
+         controlString = mk_leaf I ctlstring,
+         mesgSize      = mk_leaf mk_u32 msgSize,
+         mesg          = mesgFn mesg,
+         checksum      = mk_leaf mk_u32 csum}
+   | otherwise => raise ERR "mk_full_mesg" ""
+;
+
+fun mk_AddressAttributedMessage ptree : AddressAttributedMessage =
+ let val {attribute, address, mesg, ...} = mk_full_mesg (mk_mesgOption I) ptree
+     val idOpt = Int.fromString (#source_entity_ID attribute)
+     val mesgName = last (String.tokens Char.isPunct address)
+ in
+ case (mesgName,idOpt,mesg)
+  of ("OperatingRegion",SOME i,SOME pt) =>
+        {id=i, payload = OR (mk_operating_region pt)}
+   | ("LineSearchTask",SOME i,SOME pt) =>
+        {id=i, payload = LST (mk_linesearch_task pt)}
+   | ("AutomationRequest",SOME i,SOME pt) =>
+        {id=i, payload = AReqt (mk_automation_request pt)}
+   | ("AutomationResponse",SOME i,SOME pt) =>
+        {id=i, payload = AResp (mk_automation_response pt)}
+   | otherwise => raise ERR "mk_AddressAtributedMessage" ""
+ end;
+
+val parseAA = dataParse (aaMesg,mk_AddressAttributedMessage);;
+
+fun mesg_of_AA ptree =
+ case ptree
+  of RECD [("address",_),
+           ("attributes",_),
+           ("controlString",_),
+           ("mesgSize",_),
+           ("mesg", pt),
+           ("checksum",_)] => pt
+   | otherwise => raise ERR "mesg_of_AA" "";
+
 fun mk_AR_event ptree : AutomationResponse option =
  case mk_uxasOption I ptree (* strip off leading "isEvent" byte *)
   of NONE => NONE
-   | SOME aatree => AA_mesg (mk_mesgOption mk_automation_response) aatree;
+   | SOME aatree => mk_mesgOption mk_automation_response (mesg_of_AA aatree);
+
+
+(*---------------------------------------------------------------------------*)
+(* Parse a message prefixed with a byte which tells if it's an event.        *)
+(* Somewhat complex information on output makes this convoluted:             *)
+(*                                                                           *)
+(*  NONE  -- no event on port (input is not of form "0x1 ...")               *)
+(*  SOME NONE -- event on port, but parse of input failed                    *)
+(*  SOME (SOME d) -- event on port, parse of input yields data d             *)
+(*                                                                           *)
+(* This could get mapped to EventData port element as                        *)
+(*                                                                           *)
+(*   SOME NONE     --> NONE                                                  *)
+(*   NONE          --> SOME (EventData NONE)                                 *)
+(*   SOME (SOME d) --> SOME (EventData (SOME d))                             *)
+(*                                                                           *)
+(* Inside the stepFn there needs to be code handling situations where inputs *)
+(* are events, but the port contents fail to parse.                          *)
+(*---------------------------------------------------------------------------*)
+
+fun eventParse pFn string =
+ case parseFn uxasEnv (VarName"root") (eventData SKIP) ([],string,empty_lvalMap)
+  of NONE => NONE
+   | SOME(_,s,_) => SOME (pFn s)
+;
+
+val eventAAparse = eventParse parseAA;
+
+(*
+use "mesg-traces.sml";
+
+predFn uxasEnv ([(VarName"root",fullOperatingRegionMesg)],
+                operating_region_string,empty_lvalMap)
+
+predFn uxasEnv ([(VarName"root",fullAutomationRequestMesg)],
+                automation_request_string,empty_lvalMap)
+
+predFn caseEnv ([(VarName"root",fullLineSearchTaskMesg)],
+                linesearch_task_string,empty_lvalMap)
+
+predFn uxasEnv ([(VarName"root",fullAutomationResponseMesg)],
+                automation_response_string,empty_lvalMap)
+
+let
+val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg automation_response_string
+in
+  mk_full_mesg (mk_mesgOption mk_automation_response) ptree
+end;
+
+val linesearch_task_event_string =
+ let val istrm = TextIO.openIn "LSTE"
+     val str = TextIO.inputAll istrm
+ in
+   TextIO.closeIn istrm;
+   str
+ end;
+
+predFn caseEnv
+    ([(VarName"root",eventData fullLineSearchTaskMesg)],
+     linesearch_task_event_string,empty_lvalMap)
+
+(*---------------------------------------------------------------------------*)
+(* Strings where lead byte is ASCII(0). Should return NONE when given to     *)
+(* eventAAparser                                                             *)
+(*---------------------------------------------------------------------------*)
+
+val sNULL = String.implode [Char.chr 0];
+val nonEvent = String.concat[sNULL, "foobar"];
+val nonEvent1 = String.concat[sNULL, operating_region_string];
+
+val NONE = eventAAparse nonEvent;
+val NONE = eventAAparse nonEvent1;
+
+val SOME(SOME{id,payload}) = eventAAparse operating_region_event_string;
+val SOME(SOME{id,payload}) = eventAAparse linesearch_task_event_string;
+val SOME(SOME{id,payload}) = eventAAparse automation_request_event_string;
+val SOME(SOME{id,payload}) = eventAAparse automation_response_event_string;
+
+val SOME NONE = eventAAparse (drop_last operating_region_event_string);
+val SOME NONE = eventAAparse (drop_last linesearch_task_event_string);
+val SOME NONE = eventAAparse (drop_last automation_request_event_string);
+val SOME NONE = eventAAparse (drop_last automation_response_event_string);
+
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Generate messages to test the parser on.                                  *)
@@ -997,7 +1303,7 @@ fun override_decl (s,c) alist =
 (*---------------------------------------------------------------------------*)
 
 val randEnv =
- let val (Consts,Decls,atomicWidth,valFn,dvalFn) = uxasEnv
+ let val (Consts,Decls,atomicWidth,valFn,dvalFn) = caseEnv
      val Decls' = override_decl ("String",ShortString) Decls
  in (Consts,Decls',atomicWidth,valFn,dvalFn,
      uxas_repFn,scanRandFn,Random.newgen())
@@ -1077,7 +1383,7 @@ end;
 
 fun aa_scanRandFn path =
  case path
-  of RecdProj(lval,"address") => "<address>$"
+  of RecdProj(lval,"address") => "afrl.cmasi.AutomationResponse$"
    | RecdProj(RecdProj(lval,"attributes"),fName) =>
       (case fName
         of "contentType"       => "<contentType>|"
@@ -1101,76 +1407,6 @@ fun gen_fullAResp () =
     (randFn aa_randEnv
         ([(VarName"root",fullAutomationResponseMesg)], empty_lvalMap, []));
 
-fun mk_attr_recd ptree =
- case ptree
-  of RECD [("contentType", ctype),
-           ("descriptor", descriptor),
-           ("source_group", src_grp),
-           ("source_entity_ID", seID),
-           ("source_service_ID", ssID)]
-      => {contentType = mk_leaf I ctype,
-          descriptor  = mk_leaf I descriptor,
-          source_group = mk_leaf I src_grp,
-          source_entity_ID = mk_leaf I seID,
-          source_service_ID = mk_leaf I ssID}
-   | otherwise => raise ERR "mk_attr_recd" "";
+val PASS(remaining,theta) = predFn caseEnv ([(VarName"root",aaMesg)],gen_fullAResp(),empty_lvalMap);
 
-fun mk_full_mesg mesgFn ptree =
- case ptree
-  of RECD [
-      ("address", address),
-      ("attributes", attr_recd),
-      ("controlString", ctlstring),
-      ("mesgSize", msgSize),
-      ("mesg", mesg),
-      ("checksum", csum)]
-     => {address = mk_leaf I address,
-         attribute = mk_attr_recd attr_recd,
-         controlString = mk_leaf I ctlstring,
-         mesgSize = mk_leaf mk_u32 msgSize,
-         mesg  = mesgFn mesg,
-         checksum = mk_leaf mk_u32 csum}
-   | otherwise => raise ERR "mk_full_mesg" ""
-;
-
-let
-val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg (gen_fullAResp())
-in
-  mk_full_mesg (mk_mesgOption mk_automation_response) ptree
-end;
-
-(*
-use "mesg-traces.sml";
-
-
-predFn uxasEnv ([(VarName"root",fullOperatingRegionMesg)],
-                operating_region_string,empty_lvalMap)
-
-predFn uxasEnv ([(VarName"root",fullAutomationRequestMesg)],
-                automation_request_string,empty_lvalMap)
-
-predFn uxasEnv ([(VarName"root",fullLineSearchTaskMesg)],
-                linesearch_task_string,empty_lvalMap)
-
-predFn uxasEnv ([(VarName"root",fullAutomationResponseMesg)],
-                automation_response_string,empty_lvalMap)
-
-let
-val (ptree,remaining,theta) = parse uxasEnv fullAutomationResponseMesg automation_response_string
-in
-  mk_full_mesg (mk_mesgOption mk_automation_response) ptree
-end;
-
-val linesearch_task_event_string =
- let val istrm = TextIO.openIn "LSTE"
-     val str = TextIO.inputAll istrm
- in
-   TextIO.closeIn istrm;
-   str
- end;
-
-predFn caseEnv
-    ([(VarName"root",eventData fullLineSearchTaskMesg)],
-     linesearch_task_event_string,empty_lvalMap)
-
-*)
+parseAA (gen_fullAResp());

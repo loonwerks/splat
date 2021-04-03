@@ -41,7 +41,8 @@ fun clear buffer =
      fun loop j = if j < len then (zero j; loop (j+1)) else ()
  in
     loop 0
- end;
+
+end;
 
 (*---------------------------------------------------------------------------*)
 (* Contiguity types for the trusted_ids input and the address-attributed     *)
@@ -165,7 +166,7 @@ fun string_to_bytes s =
 val test1 = (Some 500 = getID (string_to_bytes "A$B|C|D|500|F$G"));
 val test2 = (Some 500 = getID (string_to_bytes "A$B||D|500|F$G"));
 val test3 = (Some 500 = getID (string_to_bytes "199.0.0.1$p--q--r|foo|A!D!CD|500|FRED$GHIJ"));
-val test4 =      getID (string_to_bytes(String.concat
+val test4 = getID (string_to_bytes(String.concat
       ["<address>$<contentType>|<descriptor>|",
        "<source_group>|500|<source-service-ID>$<the-mesg>"]));
 
@@ -180,8 +181,8 @@ val _ = if test1 andalso test2 andalso test3 andalso test4 then
 fun equal a b = (a=b);
 
 (*---------------------------------------------------------------------------*)
-(* Look at a uxas AA message: if it's not got an input, return False; if it  *)
-(* does, return whether or not the input's ID is in the tid array. Also      *)
+(* Look at a uxas AA message: if it does not have an input, return False; if *)
+(* it does, return whether or not the input's ID is in the tid array. Also   *)
 (* ensure that the ID is not zero (initial state so don't send along mesgs). *)
 (*---------------------------------------------------------------------------*)
 

@@ -3,6 +3,8 @@ struct
 
 exception ERR string string;
 
+fun total f x = Some (f x) handle _ => None;
+
 fun rev_itlist f list acc =
  case list
   of [] => acc
@@ -43,6 +45,9 @@ fun take_drop n list =
   then Some(List.take list n,List.drop list n)
   else None;
 
+fun drop_last s =
+  if s="" then "" else String.substring s 0 (String.size s - 1);
+
 val w8zero = Word8.fromInt 0;
 
 val emptybuf = Word8Array.array 0 w8zero;
@@ -56,6 +61,13 @@ fun clear_buf buffer =
  end;
 
 fun buf2string buf = Word8Array.substring buf 0 (Word8Array.length buf);
+
+fun string2buf s buf =
+ if String.size s <= Word8Array.length buf then
+   Word8Array.copyVec s 0 (String.size s) buf 0
+ else
+  raise ERR "string2buf" "string too large for buffer";
+
 
 (*---------------------------------------------------------------------------*)
 (* strings to numbers                                                        *)
@@ -352,12 +364,14 @@ fun evalBexp env bexp =
       | DleA r (Loc lval) =>
          (case Map.lookup lvalMap lval
             of Some (Double,s) => Double.<= r (dvalFn s)
-             | Some other   => raise Utils.ERR "evalBexp(DleA)" "expected Double location"
+             | Some (Float,s)  => Double.<= r (Utils.mk_float s)
+             | Some other   => raise Utils.ERR "evalBexp(DleA)" "expected Float or Double location"
              | None => raise Utils.ERR "evalBexp" "DleA: lval binding failure")
       | DleB (Loc lval) r =>
          (case Map.lookup lvalMap lval
            of Some (Double,s) => Double.<= (dvalFn s) r
-            | Some other   => raise Utils.ERR "evalBexp(DleB)" "expected Double location"
+            | Some (Float,s)  => Double.<= (Utils.mk_float s) r
+            | Some other   => raise Utils.ERR "evalBexp(DleB)" "expected Float or Double location"
             | None => raise Utils.ERR "evalBexp" "DleB: lval binding failure")
       | otherwise  => raise Utils.ERR "evalBexp" "expected an lval expression in comparison"
  in
@@ -396,7 +410,9 @@ fun parseFn env path contig state =
        let val bexp' = resolveBexp widthValMap path bexp
            val tval = evalBexp (eConsts,widthValMap,valFn,dvalFn) bexp'
        in
-         if tval then Some state else None
+         if tval then Some state
+         else (print ("Failing Assert at path "^lval_to_string path^"\n");
+               None)
        end
    | Scanner scanFn =>
       (case scanFn s
@@ -481,16 +497,6 @@ fun predFn env state =
        in if evalBexp (eConsts,theta,valFn,dvalFn) bexp'
             then predFn env (t,s,theta)
             else (print ("Failing Assert at path "^lval_to_string path^"\n");
-                  let val path = RecdProj (RecdProj (VarName"root") "contents") "controlString"
-                  in case Map.lookup theta path
-                      of Some (_,str) => print ("controlString = "^Utils.ordstring str^"\n")
-                       | None => print "controlString not found"
-                  end;
-                  let val path = RecdProj (RecdProj (VarName"root") "contents") "address"
-                  in case Map.lookup theta path
-                      of Some (_,str) => print ("address = "^Utils.ordstring str^"\n")
-                       | None => print "address not found"
-                  end;
                   FAIL state)
        end
    | (path,Scanner scanFn)::t =>
@@ -590,6 +596,11 @@ fun const_intervalExp fName pair =
  in nintervalExp (varloc fName) (ConstName s1) (ConstName s2)
  end
 
+fun doubleintervalExp fName p =
+ let val (d1,d2) = p
+ in dintervalExp (varloc fName) d1 d2
+ end
+
 fun expBounded c ivl =
  let val (e1,e2) = ivl
  in Recd [
@@ -598,14 +609,14 @@ fun expBounded c ivl =
     ]
  end
 
+fun mk_bounded vFn ptree =
+ case ptree
+  of RECD (("val", thing)::t) => vFn thing
+   | otherwise => raise Utils.ERR "mk_bounded" "";
+
 fun bounded c ipair =
  let val (i1,i2) = ipair
  in expBounded c (IntLit i1,IntLit i2)
- end
-
-fun doubleintervalExp fName p =
- let val (d1,d2) = p
- in dintervalExp (varloc fName) d1 d2
  end
 
 
@@ -2018,6 +2029,44 @@ val f64 = Contig.Basic Contig.Double;
 val real32 = f32;
 val real64 = f64;
 
+fun mk_bool s =
+  let val i = Contig.valFn (Contig.Unsigned 1) s
+  in if i = 0 then False else
+     if i = 1 then True
+     else raise Utils.ERR "mk_bool" "expected 0 or 1"
+  end;
+
+val mk_i8  = Contig.valFn (Contig.Signed 1);
+val mk_u8  = Contig.valFn (Contig.Unsigned 1);
+val mk_i32 = Contig.valFn (Contig.Signed 4);
+val mk_u32 = Contig.valFn (Contig.Unsigned 4);
+val mk_i64 = Contig.valFn (Contig.Signed 8);
+val mk_u64 = Contig.valFn (Contig.Unsigned 8);
+
+fun mk_float s = Utils.mk_float s;
+fun mk_double s = Utils.dvalFn s;
+
+val mk_leaf = Contig.mk_leaf;
+
+val mk_char =
+ let fun hdchar s = String.sub s 0
+ in mk_leaf hdchar
+ end;
+
+fun mk_string ptree =
+ case ptree
+  of Contig.RECD
+       [("len",_),
+        ("elts", Contig.ARRAY elts)] => String.implode (List.map mk_char elts)
+   | otherwise  => raise Utils.ERR "mk_string" "";
+
+fun mk_bounded_array eltFn ptree =
+ case ptree
+  of Contig.RECD [
+       ("len",_),
+       ("elts", Contig.ARRAY elts)] => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise Utils.ERR "mk_bounded_array" "";
+
 
 (*---------------------------------------------------------------------------*)
 (* uxAS constants                                                            *)
@@ -2353,14 +2402,51 @@ val caseEnv =
  end
 ;
 
+fun genParse env p string =
+ case p
+  of (contig,mk_data)
+ =>
+ case Contig.parseFn env (Contig.VarName"root") contig
+                 ([],string,Contig.mk_empty_lvalMap())
+  of Some ([ptree],_,_) => Utils.total mk_data ptree
+   | otherwise => None;
+
+fun dataParse p s = genParse caseEnv p s;
+
+(*---------------------------------------------------------------------------*)
+(* Parse a message prefixed with a byte which tells if it's an event.        *)
+(* Somewhat complex information on output makes this convoluted:             *)
+(*                                                                           *)
+(*  NONE  -- no event on port (input is not of form "0x1 ...")               *)
+(*  SOME NONE -- event on port, but parse of input failed                    *)
+(*  SOME (SOME d) -- event on port, parse of input yields data d             *)
+(*                                                                           *)
+(* This could get mapped to EventData port element as                        *)
+(*                                                                           *)
+(*   SOME NONE     --> NONE                                                  *)
+(*   NONE          --> SOME (EventData NONE)                                 *)
+(*   SOME (SOME d) --> SOME (EventData (SOME d))                             *)
+(*                                                                           *)
+(* Inside the stepFn there needs to be code handling situations where inputs *)
+(* are events, but the port contents fail to parse.                          *)
+(*---------------------------------------------------------------------------*)
+
+fun eventParse pFn string =
+ case Contig.parseFn uxasEnv (Contig.VarName"root")
+             (eventData Contig.epsilon_contig)
+              ([],string,Contig.mk_empty_lvalMap())
+  of None => None
+   | Some(_,s,_) => Some (pFn s)
+;
+
 (*---------------------------------------------------------------------------*)
 (* Laboriously construct some Double constants in order to avoid             *)
 (* Double.fromString.                                                        *)
 (*---------------------------------------------------------------------------*)
 
-val ints0BE = [0, 0, 0, 0, 0, 0, 0, 0];
-val ints90BE = [64, 86, 128, 0, 0, 0, 0, 0]
-val ints180BE = [64, 102, 128, 0, 0, 0, 0, 0]
+val ints0BE     = [0, 0, 0, 0, 0, 0, 0, 0];
+val ints90BE    = [64, 86, 128, 0, 0, 0, 0, 0]
+val ints180BE   = [64, 102, 128, 0, 0, 0, 0, 0]
 val ints15000BE = [64, 205, 76, 0, 0, 0, 0, 0]
 
 val s0 = String.implode (List.map Char.chr ints0BE)
@@ -2419,6 +2505,20 @@ val operating_region = Contig.Recd [
   ("keep_out_areas", uxasBoundedArray kozoneElt 32)
   ];
 
+fun mk_operating_region ptree =
+  case ptree
+   of Contig.RECD
+       [("ID",idv),
+        ("keep_in_areas",  kia),
+        ("keep_out_areas", koa)]
+       => let val idval = Contig.mk_bounded (mk_leaf mk_i64) idv
+              val kival = mk_bounded_array (Contig.mk_bounded (mk_leaf mk_u64)) kia
+              val koval = mk_bounded_array (Contig.mk_bounded (mk_leaf mk_u64)) koa
+           in
+             CMASI.OperatingRegionRecd idval kival koval
+           end
+    | otherwise => raise Utils.ERR "mk_operating_region" "";
+
 (*---------------------------------------------------------------------------*)
 (* fun WELL_FORMED_AUTOMATION_REQUEST(msg:CMASI::AutomationRequest.i):bool = *)
 (*  (forall e in msg.EntityList, e>=ENTITY_ID_MIN and e<=ENTITY_ID_MAX) and  *)
@@ -2446,6 +2546,16 @@ val checked_task = Contig.Recd [
    ("task-check", Contig.Assert
       (Contig.const_intervalExp "task" ("TASK_ID_MIN","TASK_ID_MAX")))
  ];
+
+fun mk_checked_entity ptree =
+ case ptree
+  of Contig.RECD [("entity",e)] => mk_leaf mk_i64 e
+   | otherwise => raise Utils.ERR "mk_checked_task" "";
+
+fun mk_checked_task ptree =
+ case ptree
+  of Contig.RECD [("task",t)] => mk_leaf mk_i64 t
+   | otherwise => raise Utils.ERR "mk_checked_task" "";
 
 val checked_automation_request = Contig.Recd [
   ("EntityList",        uxasBoundedArray checked_entity 16),
@@ -2481,8 +2591,6 @@ val checked_wedge = Contig.Recd [
 
 val wedge = checked_wedge;
 
-
-
 val location3D = Contig.Recd [
   ("Latitude",  real64),
   ("Longitude", real64),
@@ -2511,12 +2619,6 @@ val checked_location3D = Contig.Recd [
 val location3D = checked_location3D;
 
 (*---------------------------------------------------------------------------*)
-(* Geofence monitor input                                                    *)
-(*---------------------------------------------------------------------------*)
-
-val phase2_polygon = Contig.Array location3D (Contig.IntLit 2);
-
-(*---------------------------------------------------------------------------*)
 (* LineSearchTask message                                                    *)
 (*---------------------------------------------------------------------------*)
 
@@ -2543,6 +2645,13 @@ val linesearch_task = Contig.Recd [
   ("ViewAngleList", uxasBoundedArray (mesgOption "WEDGE" wedge) 16),
   ("UseInertialViewAngles", bool)
 ];
+
+(*---------------------------------------------------------------------------*)
+(* Geofence monitor input                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val phase2_polygon = Contig.Array location3D (Contig.IntLit 2);
+
 
 (*---------------------------------------------------------------------------*)
 (* AutomationResponse message                                                *)
@@ -2779,44 +2888,6 @@ fun decodeWavelengthBand s =
      else raise Utils.ERR "decodeCommandStatusType" ""
   end;
 
-fun mk_bool s =
-  let val i = Contig.valFn (Contig.Unsigned 1) s
-  in if i = 0 then False else
-     if i = 1 then True
-     else raise Utils.ERR "mk_bool" "expected 0 or 1"
-  end;
-
-val mk_i8  = Contig.valFn (Contig.Signed 1);
-val mk_u8  = Contig.valFn (Contig.Unsigned 1);
-val mk_i32 = Contig.valFn (Contig.Signed 4);
-val mk_u32 = Contig.valFn (Contig.Unsigned 4);
-val mk_i64 = Contig.valFn (Contig.Signed 8);
-val mk_u64 = Contig.valFn (Contig.Unsigned 8);
-
-fun mk_float s = Utils.mk_float s;
-fun mk_double s = Utils.dvalFn s;
-
-val mk_leaf = Contig.mk_leaf;
-
-val mk_char =
- let fun hdchar s = String.sub s 0
- in mk_leaf hdchar
- end;
-
-fun mk_string ptree =
- case ptree
-  of Contig.RECD
-       [("len",_),
-        ("elts", Contig.ARRAY elts)] => String.implode (List.map mk_char elts)
-   | otherwise  => raise Utils.ERR "mk_string" "";
-
-fun mk_bounded_array eltFn ptree =
- case ptree
-  of Contig.RECD [
-       ("len",_),
-       ("elts", Contig.ARRAY elts)] => Array.fromList (List.map eltFn elts)
-   | otherwise  => raise Utils.ERR "mk_bounded_array" "";
-
 fun mesg_of_header ptree =
  case ptree
   of Contig.RECD [
@@ -3041,34 +3112,23 @@ fun mk_KV_pair ptree =
       => CMASI.KeyValuePairRecd (mk_string kstr) (mk_string vstr)
    | otherwise => raise Utils.ERR "mk_KV_pair" "";
 
-fun mk_operating_region ptree =
-  case ptree
-   of Contig.RECD
-       [("ID",id),
-        ("keep_in_areas",  kia),
-        ("keep_out_areas", koa)]
-       => CMASI.OperatingRegionRecd
-            (mk_leaf mk_i64 id)
-            (mk_bounded_array (mk_leaf mk_u64) kia)
-            (mk_bounded_array (mk_leaf mk_u64) koa)
-    | otherwise => raise Utils.ERR "mk_operating_region" "";
-
 fun mk_automation_request ptree =
   case ptree
    of Contig.RECD[
         ("EntityList",        elist),
         ("TaskList",          tlist),
-        ("TaskListSize",      tsize),
         ("TaskRelationShips", trels),
         ("OperatingRegion",   opreg),
         ("RedoAllTasks",      redo)]
-       => CMASI.AutomationRequestRecd
-            (mk_bounded_array (mk_leaf mk_i64) elist)
-            (mk_bounded_array (mk_leaf mk_i64) tlist)
-            (mk_leaf mk_i64 tsize)
-            (mk_string trels)
-            (mk_leaf mk_i64 opreg)
-            (mk_leaf mk_bool redo)
+       => let val elistV = mk_bounded_array mk_checked_entity elist
+              val tlistV = mk_bounded_array mk_checked_task tlist
+              val tlistSize = Array.length tlistV  (* wanted by CMASI data spec *)
+	      val trelsV = mk_string trels
+              val opregV = mk_leaf mk_i64 opreg
+	      val redoV = mk_leaf mk_bool redo
+          in
+           CMASI.AutomationRequestRecd elistV tlistV tlistSize trelsV opregV redoV
+          end
     | otherwise => raise Utils.ERR "mk_automation_request" "";
 
 fun mk_linesearch_task ptree =
@@ -3116,9 +3176,6 @@ fun mk_automation_response ptree =
             (mk_bounded_mesgOption_array mk_KV_pair infolist)
     | otherwise => raise Utils.ERR "mk_automation_response" ""
 
-fun drop_last s =
-  if s="" then "" else String.substring s 0 (String.size s - 1);
-
 (*---------------------------------------------------------------------------*)
 (* Attribute record not defined in CMASI.aadl, so give it here               *)
 (*                                                                           *)
@@ -3146,11 +3203,11 @@ fun mk_attr_recd ptree =
          ("source_entity_ID", seID),
          ("source_service_ID", ssID)]
       => AttributeRecd
-            (mk_leaf drop_last ctype)
-            (mk_leaf drop_last descriptor)
-            (mk_leaf drop_last src_grp)
-            (mk_leaf drop_last seID)
-            (mk_leaf drop_last ssID)
+            (mk_leaf Utils.drop_last ctype)
+            (mk_leaf Utils.drop_last descriptor)
+            (mk_leaf Utils.drop_last src_grp)
+            (mk_leaf Utils.drop_last seID)
+            (mk_leaf Utils.drop_last ssID)
    | otherwise => raise Utils.ERR "mk_attr_recd" "";
 
 
@@ -3180,7 +3237,7 @@ fun mk_full_mesg ptree =
       ("mesg", mesg),
       ("checksum", csum)]
      => FullMesgRecd
-          (mk_leaf drop_last address)
+          (mk_leaf Utils.drop_last address)
           (mk_attr_recd attr_recd)
           (mk_leaf id ctlstring)
           (mk_leaf mk_u32 msgSize)
@@ -3198,55 +3255,43 @@ fun mk_AddressAttributedMessage ptree =
   of FullMesgRecd address attribute ctlstring msgSize mesgOpt csum
   =>
  case Int.fromString (source_entity_ID_of attribute)
-  of None => None
+  of None => raise Utils.ERR "mk_AddressAttributedMessage"
+                   "no ID"
    | Some i
   =>
  case mesgOpt
-  of None => None
+  of None => raise Utils.ERR "mk_AddressAttributedMessage" "No message"
    | Some pt
   =>
  let val mesgName = Utils.last (String.tokens isPunct address)
  in if mesgName = "OperatingRegion" then
-        Some(CMASI.AddressAttributedMessageRecd
-              i (CMASI.OperatingRegion (mk_operating_region pt)))
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.OperatingRegion (mk_operating_region pt))
     else
     if mesgName = "LineSearchTask" then
-        Some(CMASI.AddressAttributedMessageRecd
-              i (CMASI.LineSearchTask (mk_linesearch_task pt)))
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.LineSearchTask (mk_linesearch_task pt))
     else
     if mesgName = "AutomationRequest" then
-        Some(CMASI.AddressAttributedMessageRecd
-              i (CMASI.AutomationRequest (mk_automation_request pt)))
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.AutomationRequest (mk_automation_request pt))
     else
     if mesgName = "AutomationResponse" then
-        Some(CMASI.AddressAttributedMessageRecd
-              i (CMASI.AutomationResponse (mk_automation_response pt)))
-    else None
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.AutomationResponse (mk_automation_response pt))
+    else raise Utils.ERR "mk_AddressAttributedMessage" "unexpected message type"
  end
 
-fun parseAA string =
- case Contig.parse caseEnv aaMesg string
-  of None => None
-   | Some ptree => mk_AddressAttributedMessage ptree;
+val parseAA = dataParse (aaMesg,mk_AddressAttributedMessage);
 
-(*
-fun mesg_of_AA ptree =
- case ptree
-  of Contig.RECD
-       [("address",_),
-        ("attributes",_),
-        ("controlString",_),
-        ("mesgSize",_),
-        ("mesg", pt),
-        ("checksum",_)] => pt
-   | otherwise => raise Utils.ERR "mesg_of_AA" "";
+val parseAAevent = eventParse parseAA;
 
-fun mk_AR_event ptree : AutomationResponse option =
- case mk_uxasOption I ptree (* strip off leading "isEvent" byte *)
-  of NONE => NONE
-   | SOME aatree => mk_mesgOption mk_automation_response (mesg_of_AA aatree);
+datatype 'a port
+   = Data 'a
+   | Event bool
+   | EventData ('a option);
 
-*)
+
 end (* CMASI_Mesg *)
 
 structure API =
@@ -3315,13 +3360,23 @@ val isaacKeepOutZone = mkString
    68, 122, 0, 0, 0, 0, 0, 1, 64, 70, 170, 250, 0, 133, 236, 185, 192, 94,
    59, 202, 243, 88, 129, 235, 68, 122, 0, 0, 0, 0, 0, 1];
 
-val () = print "\nReading example input traces ... ";
+val () = print "\nReading example input messages:\n   ";
+
+(*---------------------------------------------------------------------------*)
+(* see trusted_ids contig type.                                              *)
+(*---------------------------------------------------------------------------*)
+
+val zstr = String.str (Char.chr 0);
+
+val trusted_ids_mesg = String.concat ["400", zstr, "500", zstr, "600", zstr];
+
+val () = print "trusted_ids, ";
 
 (*---------------------------------------------------------------------------*)
 (* afrl.cmasi.OperatingRegion:                                               *)
 (*---------------------------------------------------------------------------*)
 
-val operating_region_trace =
+val operating_region_mesg_event =
  let val istrm = TextIO.openIn "traces/ORE"
      val string = TextIO.inputAll istrm
      val () = TextIO.closeIn istrm
@@ -3329,11 +3384,17 @@ val operating_region_trace =
   string
  end
 
+val operating_region_mesg = String.extract operating_region_mesg_event 1 None;
+
+val len = String.size operating_region_mesg_event;
+
+val () = print (String.concat["operating_region (", Int.toString len, " bytes), "]);
+
 (*---------------------------------------------------------------------------*)
 (* afrl.cmasi.LineSearchTask:                                                *)
 (*---------------------------------------------------------------------------*)
 
-val linesearch_task_trace =
+val linesearch_task_mesg_event =
  let val istrm = TextIO.openIn "traces/LSTE"
      val string = TextIO.inputAll istrm
      val () = TextIO.closeIn istrm
@@ -3341,11 +3402,16 @@ val linesearch_task_trace =
   string
  end
 
+val len = String.size linesearch_task_mesg_event;
+val linesearch_task_mesg = String.extract linesearch_task_mesg_event 1 None;
+
+val () = print (String.concat["linesearch_task (", Int.toString len, "),\n   "]);
+
 (*---------------------------------------------------------------------------*)
 (* afrl.cmasi.AutomationRequest:                                             *)
 (*---------------------------------------------------------------------------*)
 
-val automation_request_trace =
+val automation_request_mesg_event =
  let val istrm = TextIO.openIn "traces/ARQTE"
      val string = TextIO.inputAll istrm
      val () = TextIO.closeIn istrm
@@ -3353,11 +3419,16 @@ val automation_request_trace =
   string
  end
 
+val len = String.size automation_request_mesg_event;
+val () = print (String.concat["automation_request (", Int.toString len, "), "]);
+
+val automation_request_mesg = String.extract automation_request_mesg_event 1 None;
+
 (*---------------------------------------------------------------------------*)
 (* afrl.cmasi.AutomationResponse:                                            *)
 (*---------------------------------------------------------------------------*)
 
-val automation_response_trace =
+val automation_response_mesg_event =
  let val istrm = TextIO.openIn "traces/ARSPE"
      val string = TextIO.inputAll istrm
      val () = TextIO.closeIn istrm
@@ -3365,11 +3436,17 @@ val automation_response_trace =
   string
  end
 
+val len = String.size automation_response_mesg_event;
+val () = print (String.concat["automation_response (", Int.toString len, "), "]);
+
+val automation_response_mesg = String.extract automation_response_mesg_event 1 None;
+
+
 (*---------------------------------------------------------------------------*)
 (* afrl.cmasi.Air_VehicleState:                                              *)
 (*---------------------------------------------------------------------------*)
 
-val air_vehicle_state_trace =
+val air_vehicle_state_mesg_event =
  let val istrm = TextIO.openIn "traces/AVSE"
      val string = TextIO.inputAll istrm
      val () = TextIO.closeIn istrm
@@ -3377,75 +3454,244 @@ val air_vehicle_state_trace =
   string
  end
 
-val () = print "Done!\n";
+val len = String.size air_vehicle_state_mesg_event;
+val () = print (String.concat["air_vehicle_state (", Int.toString len, ")."]);
+
+val air_vehicle_state_mesg = String.extract air_vehicle_state_mesg_event 1 None;
+
+
+val () = print "\nDone!\n";
 
 (*---------------------------------------------------------------------------*)
 (* Buffers                                                                   *)
 (*---------------------------------------------------------------------------*)
 
- fun numBytes n = Int.div n 8;
+fun numBytes n = Int.div n 8;
 
- val trusted_idsBuf =
-     Word8Array.array (numBytes CM_Property_Set.lcAddress_Array_Bit_Codec_Max_Size)
-                      Utils.w8zero;
+val tidLen    = numBytes CM_Property_Set.lcAddress_Array_Bit_Codec_Max_Size;
+val aaMesgLen = numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size;
+val opregLen  = numBytes CM_Property_Set.lcOperatingRegion_Bit_Codec_Max_Size;
+val lstLen    = numBytes CM_Property_Set.lcLineSearchTask_Bit_Codec_Max_Size;
+val arqtLen   = numBytes CM_Property_Set.lcAutomationRequest_Bit_Codec_Max_Size;
 
-   val lcOperatingRegion_inBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size)
-          Utils.w8zero;
+  val trusted_idsBuf            = Word8Array.array tidLen Utils.w8zero;
+  val lcOperatingRegion_inBuf   = Word8Array.array aaMesgLen Utils.w8zero;
+  val lcLineSearchTask_inBuf    = Word8Array.array aaMesgLen Utils.w8zero;
+  val lcAutomationRequest_inBuf = Word8Array.array aaMesgLen Utils.w8zero;
 
-   val lcLineSearchTask_inBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size)
-          Utils.w8zero;
+  val lcOperatingRegion_outBuf  = Word8Array.array opregLen Utils.w8zero;
+  val lcLineSearchTask_outBuf   = Word8Array.array lstLen Utils.w8zero;
+  val lcAutomationRequest_outBuf = Word8Array.array arqtLen Utils.w8zero;
 
-   val lcAutomationRequest_inBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAddressAttributedMessage_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcOperatingRegion_outBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcOperatingRegion_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcLineSearchTask_outBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcLineSearchTask_Bit_Codec_Max_Size)
-          Utils.w8zero;
-
-   val lcAutomationRequest_outBuf =
-       Word8Array.array
-          (numBytes CM_Property_Set.lcAutomationRequest_Bit_Codec_Max_Size)
-          Utils.w8zero;
+val _ = print "Buffer sizes (bytes) : \n";
+val _ = print (String.concat ["  trusted ids : ", Int.toString tidLen, "\n"]);
+val _ = print (String.concat ["  operating region (in,AA) : ", Int.toString aaMesgLen, "\n"]);
+val _ = print (String.concat ["  linesearch task (in,AA) : ", Int.toString aaMesgLen, "\n"]);
+val _ = print (String.concat ["  automation request (in,AA) : ", Int.toString aaMesgLen, "\n"]);
+val _ = print (String.concat ["  operating region (out): ", Int.toString opregLen, "\n"]);
+val _ = print (String.concat ["  linesearch task (out) : ", Int.toString lstLen, "\n"]);
+val _ = print (String.concat ["  automation request (out) : ", Int.toString arqtLen, "\n\n"]);
 
    (*---------------------------------------------------------------------------*)
-   (* Faked version of following FFI call                                       *)
+   (* Faked versions of following FFI calls                                     *)
    (*                                                                           *)
    (*   #(api_get_trusted_ids) "" trusted_idsBuf                                *)
+   (*   #(api_get_OperatingRegion_in) "" lcOperatingRegion_inBuf                *)
+   (*   #(api_get_LineSearchTask_in) "" lcLineSearchTask_inBuf                  *)
+   (*   #(api_get_AutomationRequest_in) "" lcAutomationRequest_inBuf            *)
    (*---------------------------------------------------------------------------*)
 
    fun api_get_trusted_ids () =
+       Utils.string2buf trusted_ids_mesg trusted_idsBuf;
 
    fun api_get_OperatingRegion_in () =
-   fun api_get_LineSearchTask_in () =
-   fun api_get_trusted_ids () =
-   fun api_get_trusted_ids () =
+       Utils.string2buf operating_region_mesg_event lcOperatingRegion_inBuf;
 
+   fun api_get_LineSearchTask_in () =
+       Utils.string2buf linesearch_task_mesg_event lcLineSearchTask_inBuf;
+
+  fun api_get_AutomationRequest_in () =
+       Utils.string2buf automation_request_mesg_event lcAutomationRequest_inBuf;
+
+   (* Clear buffers, read ports into buffers, copy buffers to strings *)
    fun fill_input_buffers () =
-    let val () = (Utils.clear_buf trusted_idsBuf)
-        val () = (Utils.clear_buf lcOperatingRegion_inBuf)
-        val () = (Utils.clear_buf lcLineSearchTask_inBuf)
-        val () = (Utils.clear_buf lcAutomationRequest_inBuf)
-        val () = (#(api_get_trusted_ids) "" trusted_idsBuf)
-        val () = (#(api_get_OperatingRegion_in) "" lcOperatingRegion_inBuf)
-        val () = (#(api_get_LineSearchTask_in) "" lcLineSearchTask_inBuf)
-        val () = (#(api_get_AutomationRequest_in) "" lcAutomationRequest_inBuf)
+    let val () = Utils.clear_buf trusted_idsBuf
+        val () = Utils.clear_buf lcOperatingRegion_inBuf
+        val () = Utils.clear_buf lcLineSearchTask_inBuf
+        val () = Utils.clear_buf lcAutomationRequest_inBuf
+        val () = api_get_trusted_ids ()
+        val () = api_get_OperatingRegion_in ()
+        val () = api_get_LineSearchTask_in()
+        val () = api_get_AutomationRequest_in ()
     in
-        ((Utils.buf2string trusted_idsBuf),
-         (Utils.buf2string lcOperatingRegion_inBuf),
-         (Utils.buf2string lcLineSearchTask_inBuf),
-         (Utils.buf2string lcAutomationRequest_inBuf))
+        (Utils.buf2string trusted_idsBuf,
+         Utils.buf2string lcOperatingRegion_inBuf,
+         Utils.buf2string lcLineSearchTask_inBuf,
+         Utils.buf2string lcAutomationRequest_inBuf)
     end;
 
+  fun requestInputs() = print "Request inputs\n"
+  fun notifyOutputs() = print "Notify outputs\n";
+
 end (* API *)
+
+structure Test =
+struct
+
+val (tids, opreg, lst, arqt) = API.fill_input_buffers();
+
+val _ = print "input buffers filled.\n";
+
+val tids_array =
+ CMASI_Mesg.dataParse
+    (CMASI_Mesg.trustedID_array,Utils.total CMASI_Mesg.mk_trusted_ids) tids;
+
+val _ = print "parsed trusted_ids array.\n";
+
+val Some(Some recd1) = CMASI_Mesg.parseAAevent opreg;
+val Some(Some recd2) = CMASI_Mesg.parseAAevent lst;
+val Some(Some recd3) = CMASI_Mesg.parseAAevent arqt;
+val Some(Some recd4) = CMASI_Mesg.parseAAevent API.automation_response_mesg_event;;
+
+val CMASI.AddressAttributedMessageRecd
+       i (CMASI.OperatingRegion
+            (CMASI.OperatingRegionRecd idval kival koval)) = recd1;
+
+val CMASI.AddressAttributedMessageRecd i
+        (CMASI.LineSearchTask
+          (CMASI.LineSearchTaskRecd
+             v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13)) = recd2;
+
+val CMASI.AddressAttributedMessageRecd i
+      (CMASI.AutomationRequest
+        (CMASI.AutomationRequestRecd elistV tlistV tlistSize trelsV opregV redoV)) = recd3;
+
+val CMASI.AddressAttributedMessageRecd i
+      (CMASI.AutomationResponse
+        (CMASI.AutomationResponseRecd v1 v2 v3)) = recd4;
+
+
+val _ = print "parsed and deconstructed : \n";
+val _ = print "  operating region, linesearch-task, automation-request and automation-response inputs.\n";
+
+(*---------------------------------------------------------------------------*)
+(* Strings where lead byte is ASCII(0). Should return NONE when given to     *)
+(* eventAAparser                                                             *)
+(*---------------------------------------------------------------------------*)
+
+val sNULL = String.implode [Char.chr 0];
+val nonEvent = String.concat[sNULL, "foobar"];
+val nonEvent1 = String.concat[sNULL, API.operating_region_mesg];
+
+val None = CMASI_Mesg.parseAAevent nonEvent;
+val None = CMASI_Mesg.parseAAevent nonEvent1;
+
+val _ = print "correctly failed to parse non-event inputs.\n";
+
+val Some None = CMASI_Mesg.parseAAevent (Utils.drop_last API.operating_region_mesg_event);
+val Some None = CMASI_Mesg.parseAAevent (Utils.drop_last API.linesearch_task_mesg_event);
+val Some None = CMASI_Mesg.parseAAevent (Utils.drop_last API.automation_request_mesg_event);
+val Some None = CMASI_Mesg.parseAAevent (Utils.drop_last API.automation_response_mesg_event);
+
+val _ = print "correctly failed to parse event-but-bad-data inputs.\n";
+
+end
+
+(*
+
+structure Att_Gate =
+struct
+
+val theState = Ref None;
+
+fun IS_TRUSTED msgID =
+  (not((msgID = 0))
+   andalso
+   (Array.exists (fn id => (id = msgID)) trusted_ids.value));
+
+fun stepFn inports stateVars =
+ let val (trusted_ids,OperatingRegion_in,
+          LineSearchTask_in,AutomationRequest_in) = inports
+     val selection = stateVars
+     fun pre x = x
+
+     (*--------------------------*)
+     (* Compute new state values *)
+     (*--------------------------*)
+
+     val selection =
+         if !initStep then
+            let val selection =
+                  if ((event OperatingRegion_in)
+                      andalso
+                      (IS_TRUSTED OperatingRegion_in.id)) then
+                      0
+                  else
+                  if ((event LineSearchTask_in)
+                      andalso
+                      (IS_TRUSTED LineSearchTask_in.id)) then
+                      1
+                  else
+                  if ((event AutomationRequest_in)
+                      andalso
+                      (IS_TRUSTED AutomationRequest_in.id)) then
+                      2
+                  else 42
+                val () = (initStep := False)
+            in
+               selection
+            end
+         else let val selection =
+                    if ((event OperatingRegion_in)
+                        andalso
+                        (IS_TRUSTED OperatingRegion_in.id)) then
+                        0
+                    else
+                    if ((event LineSearchTask_in)
+                        andalso
+                        (IS_TRUSTED LineSearchTask_in.id)) then
+                        1
+                    else
+                    if ((event AutomationRequest_in)
+                        andalso
+                        (IS_TRUSTED AutomationRequest_in.id)) then
+                        2
+                    else 42
+              in
+                selection
+              end
+
+     (*-----------------------*)
+     (* Compute output values *)
+     (*-----------------------*)
+
+     val OperatingRegion_out =
+             if (selection = 0) then
+               Option.Some (OperatingRegion_in.payload.OperatingRegion)
+               else Option.None
+     val LineSearchTask_out =
+             if (selection = 1) then
+               Option.Some (LineSearchTask_in.payload.LineSearchTask)
+               else Option.None
+     val AutomationRequest_out =
+             if (selection = 2) then
+               Option.Some (AutomationRequest_in.payload.AutomationRequest)
+               else Option.None
+   in
+        (selection,
+         (OperatingRegion_out,LineSearchTask_out,AutomationRequest_out))
+   end;
+
+end  (* Att_Gate *)
+
+fun cycleFn () =
+   let val () = API.receiveInputs ()
+        val inputs = API.fill_input_buffers ()
+        val (stateVals,outputVals) = Att_Gate.stepFn inputs (!theState)
+        val () = API.fill_output_buffers outputVals
+        val () = (theState := stateVals)
+        val () = API.sendOutputs ()
+    in
+        ()
+    end;
+*)

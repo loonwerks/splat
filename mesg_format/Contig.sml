@@ -78,6 +78,124 @@ datatype ptree
 ;
 
 (*---------------------------------------------------------------------------*)
+(* Pretty printing                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun paren i j s1 s2 ps =
+ let open PP
+ in if i < j then
+      block CONSISTENT 0 ps
+    else
+      block INCONSISTENT (size s1)
+           (add_string s1 :: ps @ [add_string s2])
+end;
+
+fun pp_binop opr x y =
+ let open PP
+ in  paren 0 0 "(" ")"
+	[x, add_string (" "^opr), add_break(1,0), y]
+ end
+
+local open Portable PP
+in
+fun pp_lval lval =
+   case lval
+    of VarName s => add_string s
+     | RecdProj (p,s) =>
+        block INCONSISTENT 0 [pp_lval p, add_string".",add_string s]
+     | ArraySub (lval,d) =>
+        block CONSISTENT 1 [pp_lval lval, paren 0 0 "[" "]" [pp_exp d]]
+ and pp_exp exp =
+   case exp
+    of Loc lval => pp_lval lval
+     | intLit i => add_string (Int.toString i)
+     | ConstName s => add_string s
+     | Add (e1,e2) => pp_binop "+" (pp_exp e1) (pp_exp e2)
+     | Mult (e1,e2) => pp_binop "*" (pp_exp e1) (pp_exp e2)
+end
+
+
+fun pp_bexp bexp =
+ let open PP
+     fun pp_real r = add_string(Real.toString r)
+ in
+   case bexp
+    of boolLit b => add_string (Bool.toString b)
+     | BLoc lval => pp_lval lval
+     | Bnot b    => block CONSISTENT 0
+                     [add_string"not", paren 0 0 "(" ")" [pp_bexp b]]
+     | Bor(b1,b2)  => pp_binop "or" (pp_bexp b1) (pp_bexp b2)
+     | Band(b1,b2) => pp_binop "and" (pp_bexp b1) (pp_bexp b2)
+     | Beq (e1,e2) => pp_binop "="  (pp_exp e1) (pp_exp e2)
+     | Blt (e1,e2) => pp_binop "<"  (pp_exp e1) (pp_exp e2)
+     | Bgt(e1,e2)  => pp_binop ">"  (pp_exp e1) (pp_exp e2)
+     | Ble(e1,e2)  => pp_binop "<=" (pp_exp e1) (pp_exp e2)
+     | Bge(e1,e2)  => pp_binop ">=" (pp_exp e1) (pp_exp e2)
+     | DleA(r,e)   => pp_binop "<=" (pp_real r) (pp_exp e)
+     | DleB(e,r)   => pp_binop "<=" (pp_exp e) (pp_real r)
+ end;
+
+fun pp_atom atom =
+ let open PP
+ in case atom
+     of Bool => add_string "Bool"
+      | Char => add_string "Char"
+      | Float => add_string "Float"
+      | Double => add_string "Double"
+      | Signed i => add_string ("i"^Int.toString (i*8))
+      | Unsigned i => add_string ("u"^Int.toString (i*8))
+      | Enum s   => add_string ("Enum-"^s)
+      | Blob    => add_string "Raw"
+      | Scanned => add_string "Scanned"
+ end;
+
+fun is_recd (Recd _) = true
+  | is_recd otherwise = false;
+
+fun pp_contig contig =
+ let open PP
+ in
+   case contig
+    of Void => add_string "Void"
+     | Basic atom => pp_atom atom
+     | Declared s => add_string s
+     | Raw exp => block CONSISTENT 1
+            [add_string "Raw", add_string "(", pp_exp exp, add_string ")"]
+     | Assert bexp => block CONSISTENT 1
+            [add_string "Assert", add_string "(", pp_bexp bexp, add_string ")"]
+     | Scanner _ =>  add_string "<scan-fn>"
+     | Recd fields =>
+        let fun pp_field (s,c) = block CONSISTENT 0
+               [block CONSISTENT 1
+                  [add_string s, add_string " :", add_break(1,0), pp_contig c],
+                NL]
+        in
+          block CONSISTENT 1
+             ([add_string "{" ] @ map pp_field fields @ [add_string "}"])
+        end
+     | Array (c,e) => block CONSISTENT 1
+             [pp_contig c, add_string " [", pp_exp e, add_string "]"]
+     | Union choices =>
+        let fun pp_choice (bexp,c) = block CONSISTENT 0
+              [block CONSISTENT 0
+                 [add_string "(", pp_bexp bexp, add_string " -->",
+                  add_break(1,2), pp_contig c,add_string ")"], NL]
+        in
+          block CONSISTENT 2
+            [add_string "Union {", NL,
+             block CONSISTENT 0 (map pp_choice choices),
+             add_string "}"]
+        end
+ end
+
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn lval => pp_lval lval);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn exp => pp_exp exp);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn bexp => pp_bexp bexp);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn atm => pp_atom atm);
+val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
+
+
+(*---------------------------------------------------------------------------*)
 (* Environments                                                              *)
 (*---------------------------------------------------------------------------*)
 
@@ -867,124 +985,6 @@ fun delete_asserts Decls contig =
    | Array (c,e) => Array (delete_asserts Decls c, e)
    | Union bclist => Union(map (fn (b,c) => (b, delete_asserts Decls c)) bclist)
    | otherwise => contig;
-
-
-(*---------------------------------------------------------------------------*)
-(* Pretty printing                                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun paren i j s1 s2 ps =
- let open PP
- in if i < j then
-      block CONSISTENT 0 ps
-    else
-      block INCONSISTENT (size s1)
-           (add_string s1 :: ps @ [add_string s2])
-end;
-
-fun pp_binop opr x y =
- let open PP
- in  paren 0 0 "(" ")"
-	[x, add_string (" "^opr), add_break(1,0), y]
- end
-
-local open Portable PP
-in
-fun pp_lval lval =
-   case lval
-    of VarName s => add_string s
-     | RecdProj (p,s) =>
-        block INCONSISTENT 0 [pp_lval p, add_string".",add_string s]
-     | ArraySub (lval,d) =>
-        block CONSISTENT 1 [pp_lval lval, paren 0 0 "[" "]" [pp_exp d]]
- and pp_exp exp =
-   case exp
-    of Loc lval => pp_lval lval
-     | intLit i => add_string (Int.toString i)
-     | ConstName s => add_string s
-     | Add (e1,e2) => pp_binop "+" (pp_exp e1) (pp_exp e2)
-     | Mult (e1,e2) => pp_binop "*" (pp_exp e1) (pp_exp e2)
-end
-
-
-fun pp_bexp bexp =
- let open PP
-     fun pp_real r = add_string(Real.toString r)
- in
-   case bexp
-    of boolLit b => add_string (Bool.toString b)
-     | BLoc lval => pp_lval lval
-     | Bnot b    => block CONSISTENT 0
-                     [add_string"not", paren 0 0 "(" ")" [pp_bexp b]]
-     | Bor(b1,b2)  => pp_binop "or" (pp_bexp b1) (pp_bexp b2)
-     | Band(b1,b2) => pp_binop "and" (pp_bexp b1) (pp_bexp b2)
-     | Beq (e1,e2) => pp_binop "="  (pp_exp e1) (pp_exp e2)
-     | Blt (e1,e2) => pp_binop "<"  (pp_exp e1) (pp_exp e2)
-     | Bgt(e1,e2)  => pp_binop ">"  (pp_exp e1) (pp_exp e2)
-     | Ble(e1,e2)  => pp_binop "<=" (pp_exp e1) (pp_exp e2)
-     | Bge(e1,e2)  => pp_binop ">=" (pp_exp e1) (pp_exp e2)
-     | DleA(r,e)   => pp_binop "<=" (pp_real r) (pp_exp e)
-     | DleB(e,r)   => pp_binop "<=" (pp_exp e) (pp_real r)
- end;
-
-fun pp_atom atom =
- let open PP
- in case atom
-     of Bool => add_string "Bool"
-      | Char => add_string "Char"
-      | Float => add_string "Float"
-      | Double => add_string "Double"
-      | Signed i => add_string ("i"^Int.toString (i*8))
-      | Unsigned i => add_string ("u"^Int.toString (i*8))
-      | Enum s   => add_string ("Enum-"^s)
-      | Blob    => add_string "Raw"
-      | Scanned => add_string "Scanned"
- end;
-
-fun is_recd (Recd _) = true
-  | is_recd otherwise = false;
-
-fun pp_contig contig =
- let open PP
- in
-   case contig
-    of Void => add_string "Void"
-     | Basic atom => pp_atom atom
-     | Declared s => add_string s
-     | Raw exp => block CONSISTENT 1
-            [add_string "Raw", add_string "(", pp_exp exp, add_string ")"]
-     | Assert bexp => block CONSISTENT 1
-            [add_string "Assert", add_string "(", pp_bexp bexp, add_string ")"]
-     | Scanner _ =>  add_string "<scan-fn>"
-     | Recd fields =>
-        let fun pp_field (s,c) = block CONSISTENT 0
-               [block CONSISTENT 1
-                  [add_string s, add_string " :", add_break(1,0), pp_contig c],
-                NL]
-        in
-          block CONSISTENT 1
-             ([add_string "{" ] @ map pp_field fields @ [add_string "}"])
-        end
-     | Array (c,e) => block CONSISTENT 1
-             [pp_contig c, add_string " [", pp_exp e, add_string "]"]
-     | Union choices =>
-        let fun pp_choice (bexp,c) = block CONSISTENT 0
-              [block CONSISTENT 0
-                 [add_string "(", pp_bexp bexp, add_string " -->",
-                  add_break(1,2), pp_contig c,add_string ")"], NL]
-        in
-          block CONSISTENT 2
-            [add_string "Union {", NL,
-             block CONSISTENT 0 (map pp_choice choices),
-             add_string "}"]
-        end
- end
-
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn lval => pp_lval lval);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn exp => pp_exp exp);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn bexp => pp_bexp bexp);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn atm => pp_atom atm);
-val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
 
 
 

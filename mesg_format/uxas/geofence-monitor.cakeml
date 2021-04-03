@@ -702,8 +702,6 @@ fun bounded c ivl = Contig.Recd [
  ];
 
 
-fun enumList elts = List.zip (elts, Utils.upto 0 (List.length elts - 1));
-
 (*---------------------------------------------------------------------------*)
 (* Arrays in uxAS messages are preceded by a length field.                   *)
 (*---------------------------------------------------------------------------*)
@@ -808,6 +806,8 @@ val keyValuePair = Contig.Recd
 (*---------------------------------------------------------------------------*)
 (* Enumerations                                                              *)
 (*---------------------------------------------------------------------------*)
+
+fun enumList elts = List.zip (elts, Utils.upto 0 (List.length elts - 1));
 
 val altitude_type = ("AltitudeType", enumList ["AGL","MSL"]);
 val speed_type    = ("SpeedType",    enumList ["AirSpeed","GroundSpeed"]);
@@ -1432,7 +1432,7 @@ fun mk_phase2_polygon ptree =
 
 (*---------------------------------------------------------------------------*)
 (* VehicleAction =                                                           *)
-(*  Contig.Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]                    *)
+(*  Contig.Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]             *)
 (*---------------------------------------------------------------------------*)
 
 fun mk_VA ptree =
@@ -1443,7 +1443,7 @@ fun mk_VA ptree =
    | otherwise  => raise Utils.ERR "mk_VA" "";
 
 (*---------------------------------------------------------------------------*)
-(* VehicleActionCommand = Contig.Recd [                                             *)
+(* VehicleActionCommand = Contig.Recd [                                      *)
 (*  ("CommandID",         i64),                                              *)
 (*  ("VehicleID",         i64),                                              *)
 (*  ("VehicleActionList", uxasBoundedArray                                   *)
@@ -1466,7 +1466,7 @@ fun mk_VAC ptree =
    | otherwise  => raise Utils.ERR "mk_VAC" ""
 
 (*---------------------------------------------------------------------------*)
-(* Waypoint = Contig.Recd [                                                         *)
+(* Waypoint = Contig.Recd [                                                  *)
 (*  ("Location",            Location3D),                                     *)
 (*  ("Number",              i64),                                            *)
 (*  ("NextWaypoint",        i64),                                            *)
@@ -1508,7 +1508,7 @@ fun mk_Waypoint ptree =
 
 
 (*---------------------------------------------------------------------------*)
-(*  MissionCommand = Contig.Recd [                                                  *)
+(*  MissionCommand = Contig.Recd [                                           *)
 (* ("VehicleActionCommand", VehicleActionCommand),                           *)
 (* ("WaypointList",                                                          *)
 (*     uxasBoundedArray(mesgOption "WAYPOINT" Waypoint) 1024),               *)
@@ -1528,7 +1528,7 @@ fun mk_MC ptree =
     | otherwise => raise Utils.ERR "mk_mission_command" ""
 
 (*---------------------------------------------------------------------------*)
-(* automation_response = Contig.Recd [                                              *)
+(* automation_response = Contig.Recd [                                       *)
 (*  ("MissionCommandList",                                                   *)
 (*      uxasBoundedArray (mesgOption "MISSIONCOMMAND" MissionCommand) 16),   *)
 (*  ("VehicleCommandList",                                                   *)
