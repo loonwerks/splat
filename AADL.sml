@@ -2407,136 +2407,193 @@ fun dest_intLit exp =
   of ConstExp(IntLit{value,kind = AST.Int NONE}) => value
    | otherwise => raise ERR "dest_intLit" "";
 
+local
 (*---------------------------------------------------------------------------*)
-(* Read in the template file "./TEMPLATE"                                    *)
+(* Read in the template file "splat/codegen/filter-template"                 *)
 (*---------------------------------------------------------------------------*)
-
-val template_ss =
-    let val istrm = TextIO.openIn "TEMPLATE"
+val filter_template_ss =
+    let val istrm = TextIO.openIn "codegen/filter-template"
 	val string = TextIO.inputAll istrm
     in TextIO.closeIn istrm;
        Substring.full string
     end;
-
-(*---------------------------------------------------------------------------*)
-(* New file: chunk0 . port-contig-type .                                     *)
-(*           chunk1 . bufsize .                                              *)
-(*           chunk2 . callFFI-def .                                          *)
-(*           chunk3 . get-filter-in .                                        *)
-(*           chunk4 . port-contig-type .                                     *)
-(*           chunk5 . put-filter-out .                                       *)
-(*           chunk6                                                          *)
-(*---------------------------------------------------------------------------*)
-
+in
 fun locate pat ss =
  let val (chunkA, suff) = Substring.position pat ss
      val chunkB = Substring.triml (String.size pat) suff
  in (chunkA,chunkB)
  end
 
+(*---------------------------------------------------------------------------*)
+(* New file contents:                                                        *)
+(*           chunk0 . input-buf-decl .                                       *)
+(*           chunk1 . fill-inputs-decl .                                     *)
+(*           chunk2 . FFI-outputs-decl .                                     *)
+(*           chunk3 . size-origin .                                          *)
+(*           chunk4 . buf-size .                                             *)
+(*           chunk5 . inport-name .                                          *)
+(*           chunk6 . inport-name .                                          *)
+(*           chunk7 . contig-qid .                                           *)
+(*           chunk8                                                          *)
+(*---------------------------------------------------------------------------*)
 val replace  =
- let val (chunk0,suff0) = locate "<<PORT-CONTIG-TYPE>>" template_ss
-     val (chunk1,suff1) = locate "<<BUFSIZE>>" suff0
-     val (chunk2,suff2) = locate "<<CALL-FFI-DECL>>" suff1
-     val (chunk3,suff3) = locate "<<GET-FILTER-IN>>" suff2
-     val (chunk4,suff4) = locate "<<PORT-CONTIG-TYPE>>" suff3
-     val (chunk5,chunk6) = locate"<<PUT-FILTER-OUT>>" suff4
- in fn buffer_size =>
-    fn call_ffi_decl =>
-    fn get_filter_in =>
-    fn port_contig =>
-    fn put_filter_out =>
+ let val (chunk0,suff0) = locate "<<INPUT-BUF-DECL>>" filter_template_ss
+     val (chunk1,suff1) = locate "<<FILL-INPUT-BUF>>" suff0
+     val (chunk2,suff2) = locate "<<FFI-OUTPUT-CALLS>>" suff1
+     val (chunk3,suff3) = locate "<<SIZE-ORIGIN>>" suff2
+     val (chunk4,suff4) = locate "<<BUF-SIZE>>" suff3
+     val (chunk5,suff5) = locate "<<INPORT>>" suff4
+     val (chunk6,suff6) = locate "<<INPORT>>" suff5
+     val (chunk7,suff7) = locate "<<CONTIG>>" suff6
+ in fn input_buf_decl =>
+    fn fill_inputs_decl =>
+    fn ffi_outputs_decl =>
+    fn size_origin =>
+    fn bufsize =>
+    fn inport =>
+    fn contig =>
       Substring.concat
-         [chunk0, port_contig,
-          chunk1, buffer_size,
-          chunk2, call_ffi_decl,
-          chunk3, get_filter_in,
-          chunk4, port_contig,
-          chunk5, put_filter_out, chunk6]
+         [chunk0, input_buf_decl,
+          chunk1, fill_inputs_decl,
+          chunk2, ffi_outputs_decl,
+          chunk3, size_origin,
+          chunk4, bufsize,
+          chunk5, inport,
+          chunk6, inport,
+          chunk7, contig,suff7]
  end
-
-fun dest_namedTy (NamedTy p) = p
-  | dest_namedTy otherwise = raise ERR "dest_namedTy" "";
-
-fun mk_api_call s = String.concat["#(api_",s, ")"];
-
-fun mk_call (name,ty,"in",_) =
-     let val getName = "get_"^name in (getName,mk_api_call getName) end
-  | mk_call (name,ty,"out",_) = ("put_"^name,mk_api_call ("send_"^name))
-  | mk_call otherwise = raise ERR "mk_call" "";
-
-fun mk_callstring (name,api) =
-    String.concat ["  if name = ", Lib.quote name, " then ", api, " istr buf\n   else\n"]
+end;
 
 fun isIn (name,ty,"in",style) = true
   | isIn otherwise = false
 
-fun mk_ffi_callFn ports =
- case List.partition isIn ports
-  of ([inport],outports as _::_) =>
-      let val calls = List.map mk_call ports
-      in String.concat
-          ("fun callFFI name istr buf =\n"
-           :: List.map mk_callstring calls
-            @ [String.concat
-               ["  (logInfo (",
-                Lib.quote "callFFI: unknown request: ",
-                "^name);\n   raise FFI_RQT)\n"]])
-      end
-   | otherwise => raise ERR "mk_ffi_callFn"
-      "expected exactly one inport and at least one outport"
-
 fun mk_output_call (name,ty,_,_) =
- String.concat ["API.callFFI ", Lib.quote ("put_"^name)," string Utils.emptybuf"]
+    String.concat ["#(api_put_",name,") ","string Utils.emptybuf"]
 
+fun paren s = String.concat["(",s,")"];
 
-fun mk_filter_outputs ports =
- case Lib.filter (not o isIn) ports
-  of [] => raise ERR "mk_filter_outputs" "no output ports"
-   | oports => String.concatWith ";\n           " (map mk_output_call oports)
+fun mk_output_calls oports =
+ let val body =
+       (case oports
+         of [] => raise ERR "mk_output_calls" ""
+          | [port] => mk_output_call port
+          | multiple => paren(String.concatWith ";\n    "
+                               (map mk_output_call oports)))
+ in String.concat
+       ["fun output_calls string =\n   ",body,";"]
+ end
 
-val contigNameMap =
-  [("OperatingRegion",    "fullOperatingRegionMesg"),
-   ("AutomationRequest",  "fullAutomationRequestMesg"),
-   ("LineSearchTask",     "fullLineSearchTaskMesg"),
-   ("AutomationResponse", "fullAutomationResponseMesg"),
-   ("AirVehicleState",    "fullAirVehicleStateMesg")];
+val filterMap =
+[(("CASEAgree","WELL_FORMED_OPERATING_REGION"),
+  "CMASI_Contig.fullOperatingRegionMesg")
+ ,
+ (("CASEAgree","WELL_FORMED_LINE_SEARCH_TASK"),
+  "CMASI_Contig.fullLineSearchTaskMesg")
+ ,
+ (("CASEAgree","WELL_FORMED_AUTOMATION_REQUEST"),
+  "CMASI_Contig.fullAutomationRequestMesg")
+ ,
+ (("CASEAgree","WELL_FORMED_AUTOMATION_RESPONSE"),
+  "CMASI_Contig.fullAutomationResponseMesg")
+ ,
+ (("CASEAgree","WELL_FORMED_POINT"),
+  "CMASI_Contig.location3D")
+ ,
+ (("CASEAgree","WELL_FORMED_WAYPOINT"),
+  "CMASI_Contig.location3D")
+ ,
+ (("CASEAgree","WELL_FORMED_VIEWANGLE"),
+  "CMASI_Contig.wedge")
+];
 
 (* -------------------------------------------------------------------------- *)
 (* Map a filter declaration to a CakeML file. Assumes filter has only one     *)
 (* input port but could have multiple outputs.                                *)
 (* -------------------------------------------------------------------------- *)
 
+fun numBytes n = 1 + Int.div(n,8);
+
+fun classify ports =
+  case List.partition isIn ports
+   of (desired as ([inp],_::_)) => desired
+    | otherwise => raise ERR "inst_filter_template" "unexpected port structure";
+
+fun mk_inbuf_decl (pkg,cName) bytesize_string =
+ let val origin_string = (pkg^"."^cName)
+ in
+   String.concat
+     ["(*---------------------------------------------------------------------------*)\n",
+      "(* Size computed from ",origin_string, "                  *)\n",
+      "(*---------------------------------------------------------------------------*)\n\n",
+      "val input_buffer = Word8Array.array ", bytesize_string, " Utils.w8zero;"]
+ end;
+
+fun mk_fill_input_buffer portName = String.concatWith "\n"
+["(*---------------------------------------------------------------------------*)",
+ "(* Clear buffer, read port into buffer, copy buffer to string                *)",
+ "(*---------------------------------------------------------------------------*)",
+ "",
+ "fun fill_input_buffer () =",
+ "  let val () = Utils.clear_buf input_buffer",
+ "      val () = #(api_get_"^portName^") \"\" input_buffer",
+ "   in",
+ "      Utils.buf2string input_buffer",
+ "   end;"
+];
+
+(*---------------------------------------------------------------------------*)
+(* Expect prop to be of form "if event(in) and well-formed(in) then ... "    *)
+(* and we expect to pull out the qid for "well-formed"                       *)
+(*---------------------------------------------------------------------------*)
+
+fun wf_of_code_guar code_guar =
+ case code_guar
+  of Fncall(("","IfThenElse"),
+         [Binop(And,p1,Fncall(wf,args)),_,_]) => wf
+   | otherwise => raise ERR "wf_of_code_guar"
+			"unable to find well-formedness predicate";
+
 fun inst_filter_template targetDir const_alist dec =
  let open Substring
  in
  case dec
-  of FilterDec (qid, ports as _::_, props) =>
-     let val (name,ty,dir,style) = hd ports
+  of FilterDec (qid, ports as _::_, props as _::_) =>
+    (let val () = stdErr_print ("-> "^qid_string qid^"\n")
+         val ([(inportName,ty,dir,style)], outports) = classify ports
          val (pname,tyName) = dest_namedTy ty
          val sizeName = tyName^"_Bit_Codec_Max_Size"
          val bitsize_exp = assoc sizeName const_alist
          val bitsize = dest_intLit bitsize_exp
-         val byte_size = if bitsize mod 8 = 0 then
-                           1 + bitsize div 8
-                         else 2 + bitsize div 8
-         val byte_size_string = Int.toString byte_size
-         val call_ffi_decl = mk_ffi_callFn ports
-         val get_filter_in = "API.callFFI \"get_filter_in\" \"\" filterBuf"
-         val contig = assoc tyName contigNameMap
-         val put_filter_out = mk_filter_outputs ports
+         val byte_size_string = Int.toString (1 + numBytes bitsize) (* for event byte *)
+         val () = stdErr_print (String.concat
+             ["    Buffer size (bits/bytes) : ",
+              Int.toString bitsize,"/",byte_size_string,"\n"])
+         val inbufName = "input_buffer"
+         val inbuf_decl = mk_inbuf_decl (pname,sizeName) byte_size_string
+         val bufsize_origin = pname^"."^sizeName
+         val fill_input_decl = mk_fill_input_buffer inportName
+         val outFns = mk_output_calls outports
+         val wf_qid = wf_of_code_guar (snd(hd props))
+         val () = stdErr_print (String.concat
+             ["    Well-formedness predicate : ",qid_string wf_qid, "\n"])
+         val contig_qid = assoc wf_qid filterMap
+         val () = stdErr_print (String.concat
+             ["    Associated contig type : ",contig_qid, "\n\n"])
          val filter_string =
-		  replace (full byte_size_string)
-                          (full call_ffi_decl)
-                          (full get_filter_in)
-                          (full contig)
-                          (full put_filter_out)
+              replace (full inbuf_decl)
+                      (full fill_input_decl)
+                      (full outFns)
+                      (full bufsize_origin)
+                      (full byte_size_string)
+                      (full inportName)
+                      (full contig_qid)
          val fileName = String.concat [targetDir, "/", snd qid, ".cml"]
          val ostrm = TextIO.openOut fileName
      in
          TextIO.output(ostrm,filter_string);
          TextIO.closeOut ostrm
      end
+     handle e => raise wrap_exn "AADL" "inst_filter_template" e)
    | otherwise => raise ERR "inst_filter_template" "expected a FilterDec"
  end
  handle e => raise wrap_exn "inst_filter_template" "" e
@@ -2549,36 +2606,9 @@ fun export_cakeml_filters dir const_alist filterdecs =
       val names = map qid_string qids
       val _ = stdErr_print (String.concat
          ["Creating CakeML filter implementation(s) for:\n   ",
-          String.concatWith "\n   " names, "\n"])
+          String.concatWith "\n   " names, "\n\n"])
   in
      List.app (inst_filter_template dir const_alist) filterdecs
-   ; stdErr_print " ... Done.\n\n"
-  end
-
-(*---------------------------------------------------------------------------*)
-(* Instantiate monitor template with monitor-specific info                   *)
-(*---------------------------------------------------------------------------*)
-
-fun inst_monitor_template dir const_alist mondec =
-    raise ERR "inst_monitor_template" "not implemented";
-(*
-fun inst_monitor_template dir const_alist mondec =
-    let val monFnDecl = mk_monitor_stepFn mondec
-        val stepFn_cakeml = PP_CakeML.pp_mon_stepFn ~1 monFnDecl
-    raise ERR "inst_monitor_template" "not implemented";
-*)
-
-fun export_cakeml_monitors dir const_alist mondecs =
-  if null mondecs then
-     ()
-  else
-  let val qids = map mondec_qid mondecs
-      val names = map qid_string qids
-      val _ = stdErr_print (String.concat
-         ["Creating CakeML monitor implementation(s) for:\n   ",
-          String.concatWith "\n   " names, "\n"])
-  in
-     List.app (inst_monitor_template dir const_alist) mondecs
    ; stdErr_print " ... Done.\n\n"
   end
 

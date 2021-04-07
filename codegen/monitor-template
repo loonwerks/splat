@@ -1,0 +1,3434 @@
+(*---------------------------------------------------------------------------*)
+(* Structures in this file:                                                  *)
+(*                                                                           *)
+(*  Utils  = utility functions used throughout                               *)
+(*  Contig = implementation of contig types, including matcher               *)
+(*  CMASI  = data structures declared in architecture                        *)
+(*  CMASI_Contig = contig types defining CMASI messages                      *)
+(*  CMASI_Parse = parsers for CMASI types                                    *)
+(*  API     = buffer allocation and IO via FFI calls                         *)
+(*  Monitor = core monitoring "step" function                                *)
+(*  Control = connection with HAMR                                           *)
+(*---------------------------------------------------------------------------*)
+
+structure Utils =
+struct
+
+exception ERR string string;
+
+fun total f x = Some (f x) handle _ => None;
+
+fun rev_itlist f list acc =
+ case list
+  of [] => acc
+   | h::t => rev_itlist f t (f h acc);
+
+fun itlist f list b =
+ case list
+  of [] => b
+   | h::t => f h (itlist f t b);
+
+fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
+
+fun first pred list =
+ case list
+  of [] => raise ERR "first" ""
+   | h::t => if pred h then h else first pred t;
+
+fun last list =
+ case list
+  of [] => raise ERR "last" "empty list"
+   | [x] => x
+   | h::t => last t;
+
+fun quote s = String.concat ["\"",s,"\""];
+
+fun ordstring s =
+ let val slist = List.map (Int.toString o Char.ord) (String.explode s)
+ in String.concat ["[",String.concatWith "," slist,"]\n"]
+ end
+
+fun tdrop n s =
+ if n <= String.size s
+  then Some(String.substring s 0 n,String.extract s n None)
+  else None;
+
+fun take_drop n list =
+ if n <= List.length list
+  then Some(List.take list n,List.drop list n)
+  else None;
+
+fun drop_last s =
+  if s="" then "" else String.substring s 0 (String.size s - 1);
+
+val w8zero = Word8.fromInt 0;
+
+val emptybuf = Word8Array.array 0 w8zero;
+val singlebuf = Word8Array.array 1 (Word8.fromInt 0);
+
+fun clear_buf buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+fun buf2string buf = Word8Array.substring buf 0 (Word8Array.length buf);
+
+fun string2buf s buf =
+ if String.size s <= Word8Array.length buf then
+   Word8Array.copyVec s 0 (String.size s) buf 0
+ else
+  raise ERR "string2buf" "string too large for buffer";
+
+fun file2buf fileName buf =
+    let val istrm = TextIO.openIn fileName
+        val () = print(String.concat
+                     ["Taking input from file : ",fileName,".\n"])
+        val s = TextIO.inputAll istrm
+        val () = TextIO.closeIn istrm
+    in
+       string2buf s buf
+    end
+
+(*---------------------------------------------------------------------------*)
+(* strings to numbers                                                        *)
+(*---------------------------------------------------------------------------*)
+
+(* Unsigned *)
+
+fun uvalFn s =   (* MSB *)
+ let val len = String.size s
+     fun loop i acc =
+       if i < len then
+          loop (i+1) (acc * 256 + Char.ord(String.sub s i))
+       else acc
+ in loop 0 0
+ end;
+
+(* Twos complement integers *)
+
+fun n2i n w =
+ let val top = exp 2 (w * 8)
+ in if n < (top div 2) then n else Int.~(top - n)
+ end
+
+fun ivalFn s = n2i (uvalFn s) (String.size s);
+
+(* Doubles and floats *)
+
+fun char2byte c = Word8.fromInt(Char.ord c);
+
+fun dvalFn s =
+ if String.size s = 8 then
+   let val b1 = char2byte(String.sub s 0)
+       val b2 = char2byte(String.sub s 1)
+       val b3 = char2byte(String.sub s 2)
+       val b4 = char2byte(String.sub s 3)
+       val b5 = char2byte(String.sub s 4)
+       val b6 = char2byte(String.sub s 5)
+       val b7 = char2byte(String.sub s 6)
+       val b8 = char2byte(String.sub s 7)
+   in
+     Word64.concatAll b8 b7 b6 b5 b4 b3 b2 b1
+   end
+ else raise ERR "dvalFn" "expected 8 bytes";
+
+
+(*---------------------------------------------------------------------------*)
+(* Debug stuff for dvalFn
+  fun checkLen n s =
+    if String.size s <> n then print "\n!checkLen ERROR!\n\n" else ()
+
+  val rstring = Double.toString r
+  val () = checkLen 8 s
+  val () = print ("dvalFn("^s^") = "^rstring^"\n")
+
+*)
+(*---------------------------------------------------------------------------*)
+
+(*--------------------------------------------------------------------------*)
+(* Map a 4-byte sequence into a double, by using FFI                        *)
+(*--------------------------------------------------------------------------*)
+
+val float2double_buffer = Word8Array.array 8 (Word8.fromInt 0);
+
+fun mk_float s =
+ let val () = clear_buf float2double_buffer
+     val () = #(float2double) s float2double_buffer
+ in dvalFn (Word8Array.substring float2double_buffer 0 8)
+ end
+
+(*
+if fname = "float2double" then
+     (if String.size istr = 4 then
+         Word8Array.copyVec string42 0 8 obuf 0
+      else raise FFI_CALL "float_to_double: expected 4 bytes exactly")
+ else
+val float2double_buffer = Word8Array.array 8 (Word8.fromInt 0);
+val ints42 = [64, 69, 0, 0, 0, 0, 0, 0];
+val string42 = String.implode (List.map Char.chr ints42);
+*)
+
+
+(*---------------------------------------------------------------------------*)
+(* Map from C-style \0-terminated string to ML style string                  *)
+(*---------------------------------------------------------------------------*)
+
+val char0 = Char.chr 0;
+
+fun fromCstring s =
+ if s = "" then s
+ else
+ if String.sub s (String.size s - 1) = char0 then
+   String.substring s 0 (String.size s - 1)
+ else s;
+
+end  (* structure Utils *)
+
+structure Contig =
+struct
+
+datatype lval
+  = VarName string
+  | RecdProj lval string
+  | ArraySub lval exp
+and exp
+  = Loc lval
+  | IntLit int
+  | ConstName string
+  | Add exp exp
+  | Mult exp exp
+;
+
+datatype bexp
+  = BoolLit bool
+  | BLoc lval
+  | Bnot bexp
+  | Bor  bexp bexp
+  | Band bexp bexp
+  | Beq  exp exp
+  | Blt  exp exp
+  | Bgt  exp exp
+  | Ble  exp exp
+  | Bge  exp exp
+  | DleA Double.double exp
+  | DleB exp Double.double
+;
+
+datatype atom
+  = Bool
+  | Char
+  | Float
+  | Double
+  | Signed int
+  | Unsigned int
+  | Enum string
+  | Blob
+  | Scanned;
+
+datatype contig
+  = Void
+  | Basic atom
+  | Declared string
+  | Raw exp
+  | Assert bexp
+  | Scanner (string -> (string * string) option)
+  | Recd ((string * contig) list)
+  | Array contig exp
+  | Union ((bexp * contig) list)
+
+datatype ptree
+  = LEAF atom string
+  | RECD ((string * ptree) list)
+  | ARRAY (ptree list)
+;
+
+datatype ('a,'b) verdict = PASS 'a | FAIL 'b;
+
+fun lval_to_string lval =
+ case lval
+  of VarName s => s
+   | RecdProj lval s => lval_to_string lval^"."^s
+   | ArraySub lval (IntLit i) => lval_to_string lval^"["^Int.toString i^"]"
+
+(*---------------------------------------------------------------------------*)
+(* Support for lval-map                                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun lval_compare x y =
+ case (x,y)
+  of (VarName s1, VarName s2) => String.compare s1 s2
+   | (VarName _, _) => Less
+   | (RecdProj a b, VarName _) => Greater
+   | (RecdProj e1 s1,RecdProj e2 s2) =>
+       (case lval_compare e1 e2
+         of Equal => String.compare s1 s2
+	  | other => other)
+   | (RecdProj a b,_) => Less
+   | (ArraySub a b, ArraySub c d) =>
+       (case lval_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (ArraySub a b, _) => Greater
+and
+ exp_compare x y =
+ case (x,y)
+  of (Loc lv1, Loc lv2) => lval_compare lv1 lv2
+   | (Loc lv1, _) => Less
+   | (IntLit _, Loc _) => Greater
+   | (IntLit i, IntLit j) => Int.compare i j
+   | (IntLit i, other) => Less
+   | (ConstName _, Loc _) => Greater
+   | (ConstName _, IntLit _) => Greater
+   | (ConstName s1, ConstName s2) => String.compare s1 s2
+   | (ConstName s, _) => Less
+   | (Add a b, Mult c d) => Less
+   | (Add a b, Add c d) =>
+       (case exp_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (Add a b, _) => Greater
+   | (Mult a b, Mult c d) =>
+       (case exp_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (Mult a b, _) => Greater
+;
+
+fun mk_empty_lvalMap() = Map.fromList lval_compare [];
+
+fun lval_append p lval =
+ case lval
+  of VarName s => RecdProj p s
+   | RecdProj q s => RecdProj (lval_append p q) s
+   | ArraySub q dim => ArraySub (lval_append p q) dim
+;
+
+fun path_prefixes lval =
+ case lval
+  of VarName _ => [lval]
+   | RecdProj p s => lval :: path_prefixes p
+   | ArraySub (VarName _) d => [lval]
+   | ArraySub (RecdProj p s) dim => lval :: path_prefixes p
+   | ArraySub arr dim => lval :: path_prefixes arr
+;
+
+fun resolve_lval lvalMap path lval =
+ let val prefixes = path_prefixes path
+     val prospects = List.map (flip lval_append lval) prefixes @ [lval]
+ in Utils.first (fn p => Option.isSome (Map.lookup lvalMap p)) prospects
+ end
+ handle _ => raise Utils.ERR "resolve_lval" "unsuccessful"
+;
+
+fun resolveExp lvalMap p exp =
+ case exp
+  of Loc lval   => Loc(resolve_lval lvalMap p lval)
+   | Add  e1 e2 => Add(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | Mult e1 e2 => Mult(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | otherwise  => exp
+
+fun resolveBexp lvalMap p bexp =
+ case bexp
+  of BoolLit _  => bexp
+   | BLoc lval  => BLoc(resolve_lval lvalMap p lval)
+   | Bnot b     => Bnot(resolveBexp lvalMap p b)
+   | Bor b1 b2  => Bor(resolveBexp lvalMap p b1) (resolveBexp lvalMap p b2)
+   | Band b1 b2 => Band(resolveBexp lvalMap p b1) (resolveBexp lvalMap p b2)
+   | Beq e1 e2  => Beq(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | Blt e1 e2  => Blt(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | Bgt e1 e2  => Bgt(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | Ble e1 e2  => Ble(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | Bge e1 e2  => Bge(resolveExp lvalMap p e1) (resolveExp lvalMap p e2)
+   | DleA r e   => DleA r (resolveExp lvalMap p e)
+   | DleB e r   => DleB (resolveExp lvalMap p e) r
+;
+
+fun evalExp env =
+ let val (envDelta,lvalMap,valFn) = env
+   fun evalE exp =
+    case exp
+     of Loc lval =>
+          (case Map.lookup lvalMap lval
+            of Some p => valFn (fst p) (snd p)
+             | None => raise Utils.ERR "evalExp" "Lval binding failure")
+      | IntLit i => i
+      | ConstName s =>
+          (case Alist.lookup envDelta s
+            of Some i => i
+             | None => raise Utils.ERR "evalExp"
+                 ("unable to find value for constant named "^Utils.quote s))
+      | Add e1 e2 => evalE e1 + evalE e2
+      | Mult e1 e2 => evalE e1 * evalE e2
+ in
+   evalE
+ end
+;
+
+fun evalBexp env bexp =
+ let val (envDelta,lvalMap,valFn,dvalFn) = env
+    val evalE = evalExp (envDelta,lvalMap,valFn)
+    fun evalB bexp =
+    case bexp
+     of BoolLit b => b
+      | BLoc lval =>
+         (case Map.lookup lvalMap lval
+           of Some (Bool,s) => if valFn Bool s = 0 then False else True
+            | Some other => raise Utils.ERR "evalBexp" "expected Bool location"
+            | None => raise Utils.ERR "evalBexp" "Lval binding failure")
+      | Bnot b     => not (evalB b)
+      | Bor  b1 b2 => (evalB b1 orelse evalB b2)
+      | Band b1 b2 => (evalB b1 andalso evalB b2)
+      | Beq e1 e2 => (evalE e1 = evalE e2)
+      | Blt e1 e2 => (evalE e1 < evalE e2)
+      | Bgt e1 e2 => (evalE e1 > evalE e2)
+      | Ble e1 e2 => (evalE e1 <= evalE e2)
+      | Bge e1 e2 => (evalE e1 >= evalE e2)
+      | DleA r (Loc lval) =>
+         (case Map.lookup lvalMap lval
+            of Some (Double,s) => Double.<= r (dvalFn s)
+             | Some (Float,s)  => Double.<= r (Utils.mk_float s)
+             | Some other   => raise Utils.ERR "evalBexp(DleA)" "expected Float or Double location"
+             | None => raise Utils.ERR "evalBexp" "DleA: lval binding failure")
+      | DleB (Loc lval) r =>
+         (case Map.lookup lvalMap lval
+           of Some (Double,s) => Double.<= (dvalFn s) r
+            | Some (Float,s)  => Double.<= (Utils.mk_float s) r
+            | Some other   => raise Utils.ERR "evalBexp(DleB)" "expected Float or Double location"
+            | None => raise Utils.ERR "evalBexp" "DleB: lval binding failure")
+      | otherwise  => raise Utils.ERR "evalBexp" "expected an lval expression in comparison"
+ in
+  evalB bexp
+ end;
+
+
+fun predFn env state =
+ let val (worklist,s,theta) = state
+     val (eConsts,eDecls,atomicWidths,valFn,dvalFn) = env
+ in
+ case worklist
+  of [] => PASS (s,theta)
+   | (path,Void)::t => FAIL state
+   | (path,Basic a)::t =>
+       (case Utils.tdrop (atomicWidths a) s
+         of None => FAIL state
+          | Some (segment,rst) =>
+              predFn env (t,rst,Map.insert theta path (a,segment)))
+   | (path,Declared name)::t =>
+       (case Alist.lookup eDecls name
+         of None => FAIL state
+          | Some contig' => predFn env ((path,contig')::t,s,theta))
+   | (path,Raw exp)::t =>
+       let val exp' = resolveExp theta path exp
+           val width = evalExp (eConsts,theta,valFn) exp'
+       in case Utils.tdrop width s
+           of None => FAIL state
+            | Some (segment,rst) =>
+              predFn env (t,rst,Map.insert theta path (Blob,segment))
+       end
+   | (path,Assert bexp)::t =>
+       let val bexp' = resolveBexp theta path bexp
+       in if evalBexp (eConsts,theta,valFn,dvalFn) bexp'
+            then predFn env (t,s,theta)
+            else (print ("Failing Assert at path "^lval_to_string path^"\n");
+                  FAIL state)
+       end
+   | (path,Scanner scanFn)::t =>
+      (case scanFn s
+        of None => FAIL state
+         | Some(segment,rst) =>
+           predFn env (t,rst, Map.insert theta path (Scanned,segment)))
+   | (path,Recd fields)::t =>
+       let fun fieldFn pair =
+            let val (fName,c) = pair in (RecdProj path fName,c) end
+       in predFn env (List.map fieldFn fields @ t,s,theta)
+       end
+   | (path,Array c exp)::t =>
+       let val exp' = resolveExp theta path exp
+           val dim = evalExp (eConsts,theta,valFn) exp'
+           fun indexFn i = (ArraySub path (IntLit i),c)
+       in predFn env (List.map indexFn (Utils.upto 0 (dim - 1)) @ t,s,theta)
+       end
+   | (path,Union choices)::t =>
+       let fun choiceFn pair =
+             let val (bexp,c) = pair
+                 val bexp' = resolveBexp theta path bexp
+             in evalBexp (eConsts,theta,valFn,dvalFn) bexp'
+             end
+       in case List.filter choiceFn choices
+           of [(_,c)] => predFn env ((path,c)::t,s,theta)
+            | otherwise => FAIL state
+       end
+ end
+;
+
+fun wellformed env contig s =
+ case predFn env ([(VarName"root",contig)],s,mk_empty_lvalMap())
+  of PASS _ => True
+   | FAIL _ => False;
+
+fun parseFn env path contig state =
+ let val (eConsts,eDecls,atomicWidths,valFn,dvalFn) = env
+     val (stk,s,widthValMap) = state
+ in
+ case contig
+  of Void => None
+   | Basic a =>
+       let val awidth = atomicWidths a
+       in case Utils.tdrop awidth s
+         of None => None
+          | Some (segment,rst) =>
+             Some(LEAF a segment::stk,rst,
+                  Map.insert widthValMap path (a,segment))
+       end
+   | Declared name =>
+      (case Alist.lookup eDecls name
+        of None => None
+         | Some contig' => parseFn env path contig' state)
+   | Raw exp =>
+       let val exp' = resolveExp widthValMap path exp
+           val width = evalExp (eConsts,widthValMap,valFn) exp'
+       in
+         case Utils.tdrop width s
+         of None => None
+          | Some (segment,rst) =>
+              Some(LEAF Blob segment::stk,rst,
+                   Map.insert widthValMap path (Blob,segment))
+       end
+   | Assert bexp =>
+       let val bexp' = resolveBexp widthValMap path bexp
+           val tval = evalBexp (eConsts,widthValMap,valFn,dvalFn) bexp'
+       in
+         if tval then Some state
+         else (print ("Failing Assert at path "^lval_to_string path^"\n");
+               None)
+       end
+   | Scanner scanFn =>
+      (case scanFn s
+        of None => raise Utils.ERR "parseFn" "Scanner failed"
+         | Some(segment,rst) =>
+              Some(LEAF Scanned segment::stk,rst,
+                   Map.insert widthValMap path (Scanned,segment)))
+   | Recd fields =>
+       let fun fieldFn fld stOpt =
+             (case stOpt
+               of None => None
+                | Some st =>
+              case fld
+               of (fName,c) => parseFn env (RecdProj path fName) c st)
+          fun is_assert atm =
+             (case atm
+               of Assert _ => True
+                | otherwise => False)
+          val fields' = List.filter (not o is_assert o snd) fields
+       in case Utils.rev_itlist fieldFn fields (Some state)
+           of None => None
+            | Some (stk',s',widthValMap') =>
+          case Utils.take_drop (List.length fields') stk'
+           of None => None
+            | Some(elts,stk'') =>
+               Some(RECD (List.zip (List.map fst fields', List.rev elts))::stk'',
+                    s', widthValMap')
+       end
+   | Array c exp =>
+       let val exp' = resolveExp widthValMap path exp
+           val dim = evalExp (eConsts,widthValMap,valFn) exp'
+           fun indexFn i stOpt =
+	     (case stOpt
+               of None => None
+                | Some state => parseFn env (ArraySub path (IntLit i)) c state)
+       in case Utils.rev_itlist indexFn (Utils.upto 0 (dim - 1)) (Some state)
+           of None => None
+            | Some (stk',s',widthValMap') =>
+          case Utils.take_drop dim stk'
+           of None => None
+            | Some(elts,stk'')
+          => Some(ARRAY (List.rev elts)::stk'', s', widthValMap')
+       end
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             let val bexp' = resolveBexp widthValMap path bexp
+             in evalBexp (eConsts,widthValMap,valFn,dvalFn) bexp'
+             end
+       in case List.filter choiceFn choices
+           of [(_,c)] => parseFn env path c state
+            | otherwise => raise Utils.ERR "parseFn" "Union: expected exactly one successful choice"
+       end
+ end
+;
+
+fun parse env contig s =
+ case parseFn env (VarName"root") contig ([],s,mk_empty_lvalMap())
+  of Some ([ptree],remaining,lvMap) => Some ptree
+   | otherwise => None;
+
+fun add_enum_decl pair env =
+ let val (s,bindings) = pair
+     val (eConsts,eDecls,atomicWidths,valFn,dvalFn) = env
+     fun stick pair = let val (name,i) = pair in (s^"'"^name,i) end
+     val bindings' = List.map stick bindings
+ in
+   (bindings' @ eConsts,
+    (s,Basic(Enum s)):: eDecls,
+    atomicWidths,valFn,dvalFn)
+ end
+
+fun add_contig_decl pair env =
+ let val (eConsts,eDecls,aW,vFn,dvFn) = env
+ in (eConsts,pair::eDecls,aW,vFn,dvFn)
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Support for the Scanner constructor. The end delimiter is left on the     *)
+(* string.                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun scanTo delim string =
+ let val top = String.size string
+     fun seek j =
+       if j >= top then None else
+       if String.sub string j = delim then Some j
+       else seek (j+1)
+ in
+   case seek 0
+    of None => None
+     | Some n => Utils.tdrop (n+1) string
+ end;
+
+val scanCstring = scanTo (Char.chr 0);
+
+val epsilon_contig = Recd [];
+
+fun varloc s = Loc(VarName s);
+
+(*---------------------------------------------------------------------------*)
+(* Intervals                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun nintervalExp e1 e2 e3 = Band (Ble e2 e1) (Ble e1 e3);
+fun dintervalExp d1 d2 d3 = Band (DleA d2 d1) (DleB d1 d3);
+
+fun intervalExp fName pair =
+ let val (i,j) = pair
+ in nintervalExp (varloc fName) (IntLit i) (IntLit j)
+ end
+
+fun const_intervalExp fName pair =
+ let val (s1,s2) = pair
+ in nintervalExp (varloc fName) (ConstName s1) (ConstName s2)
+ end
+
+fun doubleintervalExp fName p =
+ let val (d1,d2) = p
+ in dintervalExp (varloc fName) d1 d2
+ end
+
+fun expBounded c ivl =
+ let val (e1,e2) = ivl
+ in Recd [
+      ("val", c),
+      ("check-val", Assert (nintervalExp (varloc "val") e1 e2))
+    ]
+ end
+
+fun mk_bounded vFn ptree =
+ case ptree
+  of RECD (("val", thing)::t) => vFn thing
+   | otherwise => raise Utils.ERR "mk_bounded" "";
+
+fun bounded c ipair =
+ let val (i1,i2) = ipair
+ in expBounded c (IntLit i1,IntLit i2)
+ end
+
+
+(*---------------------------------------------------------------------------*)
+(* Map numeric leaf elements to actual numbers                               *)
+(*---------------------------------------------------------------------------*)
+
+fun valFn a s =
+ case a
+  of Bool => Utils.uvalFn s
+   | Char => Utils.uvalFn s
+   | Enum e => Utils.uvalFn s
+   | Signed w => Utils.ivalFn s
+   | Unsigned w => Utils.uvalFn s
+   | otherwise => raise Utils.ERR "valFn" "unexpected input"
+
+fun mk_leaf f ptree =
+ case ptree
+  of LEAF a s => f s
+   | otherwise => raise Utils.ERR "mk_leaf" "";
+
+end  (* Contig *)
+
+structure CMASI =
+struct
+
+     datatype AltitudeType = AGL  | MSL ;
+
+     datatype NavigationMode =
+       Waypoint  |
+       Loiter  |
+       FlightDirector  |
+       TargetTrack  |
+       FollowLeader  |
+       LostComm ;
+
+     datatype SpeedType = Airspeed  | Groundspeed ;
+
+     datatype TurnType = TurnShort  | FlyOver ;
+
+     datatype ZoneAvoidanceType =
+       Physical  | Regulatory  | Acoustic  | Threat  | Visual ;
+
+     datatype ServiceStatusType = Information  | Warning  | Error ;
+
+     datatype LoiterType =
+       VehicleDefault  | Circular  | Racetrack  | FigureEight  | Hover ;
+
+     datatype CommandStatusType =
+       Pending  | Approved  | InProcess  | Executed  | Cancelled ;
+
+     datatype WavelengthBand =
+       AllAny  | EO  | LWIR  | SWIR  | MWIR  | Other ;
+
+     datatype TravelMode = SinglePass  | ReverseCourse  | Loop ;
+
+     datatype AbstractGeometry = AbstractGeometryRecd ;
+
+     datatype KeyValuePair = KeyValuePairRecd string string;
+
+     datatype Location3D =
+       Location3DRecd Double.double Double.double Double.double AltitudeType;
+
+     datatype AutomationRequest =
+       AutomationRequestRecd (int array) (int array) int string int bool;
+
+     datatype FlightProfile =
+       FlightProfileRecd
+          string Double.double Double.double Double.double Double.double
+          Double.double;
+
+     datatype OperatingRegion =
+       OperatingRegionRecd int (int array) (int array);
+
+     datatype RemoveTasks = RemoveTasksRecd (int array);
+
+     datatype Wedge =
+       WedgeRecd Double.double Double.double Double.double Double.double;
+
+     datatype VehicleAction = VehicleActionRecd (int array);
+
+     datatype AddressArray = AddressArrayRecd (int array);
+
+     datatype Polygon = PolygonRecd (Location3D array);
+
+     datatype PayloadConfiguration =
+       PayloadConfigurationRecd int string (KeyValuePair array);
+
+     datatype PayloadState = PayloadStateRecd int (KeyValuePair array);
+
+     datatype AbstractZone =
+       AbstractZoneRecd
+          int Double.double AltitudeType Double.double AltitudeType
+          (int array) int int Double.double string AbstractGeometry;
+
+     datatype ServiceStatus =
+       ServiceStatusRecd Double.double (KeyValuePair array) ServiceStatusType;
+
+     datatype Task =
+       TaskRecd
+          int string (int array) Double.double (KeyValuePair array) int bool;
+
+     datatype PayloadAction = PayloadActionRecd (int array) int;
+
+     datatype VehicleActionCommand =
+       VehicleActionCommandRecd
+          int int (VehicleAction array) CommandStatusType;
+
+     datatype Waypoint =
+       WaypointRecd
+          Double.double Double.double Double.double AltitudeType int int
+          Double.double SpeedType Double.double TurnType
+          (VehicleAction array) int int (int array);
+
+     datatype GimbalConfiguration =
+       GimbalConfigurationRecd
+          int string (KeyValuePair array) Double.double Double.double bool
+          Double.double Double.double bool Double.double Double.double bool
+          Double.double Double.double Double.double;
+
+     datatype EntityState =
+       EntityStateRecd
+          int Double.double Double.double Double.double Double.double
+          Double.double Double.double Double.double Double.double
+          Double.double Double.double Double.double Double.double
+          Double.double Double.double Location3D Double.double Double.double
+          (PayloadState array) int int NavigationMode (int array) int
+          (KeyValuePair array);
+
+     datatype EntityConfiguration =
+       EntityConfigurationRecd
+          int string string string Double.double Double.double AltitudeType
+          (PayloadConfiguration array) (KeyValuePair array);
+
+     datatype PathWaypoint =
+       PathWaypointRecd
+          Double.double Double.double Double.double AltitudeType int int
+          Double.double SpeedType Double.double TurnType
+          (VehicleAction array) int int (int array) int;
+
+     datatype KeepInZone =
+       KeepInZoneRecd
+          int Double.double AltitudeType Double.double AltitudeType
+          (int array) int int Double.double string AbstractGeometry;
+
+     datatype KeepOutZone =
+       KeepOutZoneRecd
+          int Double.double AltitudeType Double.double AltitudeType
+          (int array) int int Double.double string AbstractGeometry
+          ZoneAvoidanceType;
+
+     datatype SearchTask =
+       SearchTaskRecd
+          int string (int array) Double.double (KeyValuePair array) int bool
+          (WavelengthBand array) int Double.double;
+
+     datatype GimbalStareAction =
+       GimbalStareActionRecd (int array) int Location3D int;
+
+     type WaypointArray = (Waypoint array);
+
+     datatype AirVehicleConfiguration =
+       AirVehicleConfigurationRecd
+          int string string string Double.double Double.double AltitudeType
+          (PayloadConfiguration array) (KeyValuePair array) Double.double
+          Double.double FlightProfile (FlightProfile array)
+          (LoiterType array) (TurnType array) Double.double AltitudeType
+          Double.double AltitudeType;
+
+     datatype AirVehicleState =
+       AirVehicleStateRecd
+          int Double.double Double.double Double.double Double.double
+          Double.double Double.double Double.double Double.double
+          Double.double Double.double Double.double Double.double
+          Double.double Double.double Location3D Double.double Double.double
+          (PayloadState array) int int NavigationMode (int array) int
+          (KeyValuePair array) Double.double Double.double Double.double
+          Double.double;
+
+     datatype FollowPathCommand =
+       FollowPathCommandRecd
+          int int (VehicleAction array) CommandStatusType int
+          (PathWaypoint array) int int TravelMode;
+
+     datatype LineSearchTask =
+       LineSearchTaskRecd
+          int string (int array) Double.double (KeyValuePair array) int bool
+          (WavelengthBand array) int Double.double (Location3D array)
+          (Wedge array) bool;
+
+     datatype MissionCommand =
+       MissionCommandRecd
+          int int (VehicleAction array) CommandStatusType WaypointArray int;
+
+     datatype AutomationResponse =
+       AutomationResponseRecd
+          (MissionCommand array)
+          (VehicleActionCommand array)
+          (KeyValuePair array);
+
+     datatype LMCPObject =
+       AutomationRequest AutomationRequest
+     | OperatingRegion OperatingRegion
+     | LineSearchTask LineSearchTask
+     | AutomationResponse AutomationResponse;
+
+     datatype AddressAttributedMessage =
+       AddressAttributedMessageRecd
+          int
+          LMCPObject;
+
+(*     fun lcAddress_value_of recd =
+       case recd
+         of AddressRecd v1 => v1;
+*)
+     fun lcKeyValuePair_Key_of recd =
+       case recd
+         of KeyValuePairRecd v1 v2 => v1;
+
+     fun lcKeyValuePair_Value_of recd =
+       case recd
+         of KeyValuePairRecd v1 v2 => v2;
+
+     fun lcLocation3D_Latitude_of recd =
+       case recd
+         of Location3DRecd v1 v2 v3 v4 => v1;
+
+     fun lcLocation3D_Longitude_of recd =
+       case recd
+         of Location3DRecd v1 v2 v3 v4 => v2;
+
+     fun lcLocation3D_Altitude_of recd =
+       case recd
+         of Location3DRecd v1 v2 v3 v4 => v3;
+
+     fun lcLocation3D_AltitudeType_of recd =
+       case recd
+         of Location3DRecd v1 v2 v3 v4 => v4;
+
+     fun lcAutomationRequest_EntityList_of recd =
+       case recd
+         of AutomationRequestRecd v1 v2 v3 v4 v5 v6 => v1;
+
+     fun lcAutomationRequest_TaskList_of recd =
+       case recd
+         of AutomationRequestRecd v1 v2 v3 v4 v5 v6 => v2;
+
+     fun lcAutomationRequest_TaskListSize_of recd =
+       case recd
+         of AutomationRequestRecd v1 v2 v3 v4 v5 v6 => v3;
+
+     fun lcAutomationRequest_TaskRelationships_of recd =
+       case recd
+         of AutomationRequestRecd v1 v2 v3 v4 v5 v6 => v4;
+
+     fun lcAutomationRequest_OperatingRegion_of recd =
+       case recd
+         of AutomationRequestRecd v1 v2 v3 v4 v5 v6 => v5;
+
+     fun lcAutomationRequest_RedoAllTasks_of recd =
+       case recd
+         of AutomationRequestRecd v1 v2 v3 v4 v5 v6 => v6;
+
+     fun lcFlightProfile_Name_of recd =
+       case recd
+         of FlightProfileRecd v1 v2 v3 v4 v5 v6 => v1;
+
+     fun lcFlightProfile_Airspeed_of recd =
+       case recd
+         of FlightProfileRecd v1 v2 v3 v4 v5 v6 => v2;
+
+     fun lcFlightProfile_PitchAngle_of recd =
+       case recd
+         of FlightProfileRecd v1 v2 v3 v4 v5 v6 => v3;
+
+     fun lcFlightProfile_VerticalSpeed_of recd =
+       case recd
+         of FlightProfileRecd v1 v2 v3 v4 v5 v6 => v4;
+
+     fun lcFlightProfile_MaxBankAngle_of recd =
+       case recd
+         of FlightProfileRecd v1 v2 v3 v4 v5 v6 => v5;
+
+     fun lcFlightProfile_EnergyRate_of recd =
+       case recd
+         of FlightProfileRecd v1 v2 v3 v4 v5 v6 => v6;
+
+     fun lcOperatingRegion_ID_of recd =
+       case recd
+         of OperatingRegionRecd v1 v2 v3 => v1;
+
+     fun lcOperatingRegion_KeepInAreas_of recd =
+       case recd
+         of OperatingRegionRecd v1 v2 v3 => v2;
+
+     fun lcOperatingRegion_KeepOutAreas_of recd =
+       case recd
+         of OperatingRegionRecd v1 v2 v3 => v3;
+
+     fun lcRemoveTasks_TaskList_of recd =
+       case recd
+         of RemoveTasksRecd v1 => v1;
+
+     fun lcWedge_AzimuthCenterline_of recd =
+       case recd
+         of WedgeRecd v1 v2 v3 v4 => v1;
+
+     fun lcWedge_VerticalCenterline_of recd =
+       case recd
+         of WedgeRecd v1 v2 v3 v4 => v2;
+
+     fun lcWedge_AzimuthExtent_of recd =
+       case recd
+         of WedgeRecd v1 v2 v3 v4 => v3;
+
+     fun lcWedge_VerticalExtent_of recd =
+       case recd
+         of WedgeRecd v1 v2 v3 v4 => v4;
+
+     fun lcVehicleAction_AssociatedTaskList_of recd =
+       case recd
+         of VehicleActionRecd v1 => v1;
+
+     fun lcAddressArray_value_of recd =
+       case recd
+         of AddressArrayRecd v1 => v1;
+
+     fun lcPolygon_BoundaryPointsList_of recd =
+       case recd
+         of PolygonRecd v1 => v1;
+
+     fun lcPayloadConfiguration_PayloadID_of recd =
+       case recd
+         of PayloadConfigurationRecd v1 v2 v3 => v1;
+
+     fun lcPayloadConfiguration_PayloadKind_of recd =
+       case recd
+         of PayloadConfigurationRecd v1 v2 v3 => v2;
+
+     fun lcPayloadConfiguration_Parameters_of recd =
+       case recd
+         of PayloadConfigurationRecd v1 v2 v3 => v3;
+
+     fun lcPayloadState_PayloadID_of recd =
+       case recd
+         of PayloadStateRecd v1 v2 => v1;
+
+     fun lcPayloadState_Parameters_of recd =
+       case recd
+         of PayloadStateRecd v1 v2 => v2;
+
+     fun lcAbstractZone_ZoneID_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v1;
+
+     fun lcAbstractZone_MinAltitude_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v2;
+
+     fun lcAbstractZone_MinAltitudeType_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v3;
+
+     fun lcAbstractZone_MaxAltitude_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v4;
+
+     fun lcAbstractZone_MaxAltitudeType_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v5;
+
+     fun lcAbstractZone_AffectedAircraft_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v6;
+
+     fun lcAbstractZone_StartTime_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v7;
+
+     fun lcAbstractZone_EndTime_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v8;
+
+     fun lcAbstractZone_Padding_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v9;
+
+     fun lcAbstractZone_Label_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v10;
+
+     fun lcAbstractZone_Boundary_of recd =
+       case recd
+         of AbstractZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v11;
+
+     fun lcServiceStatus_PercentComplete_of recd =
+       case recd
+         of ServiceStatusRecd v1 v2 v3 => v1;
+
+     fun lcServiceStatus_Info_of recd =
+       case recd
+         of ServiceStatusRecd v1 v2 v3 => v2;
+
+     fun lcServiceStatus_StatusType_of recd =
+       case recd
+         of ServiceStatusRecd v1 v2 v3 => v3;
+
+     fun lcTask_TaskID_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v1;
+
+     fun lcTask_Label_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v2;
+
+     fun lcTask_EligibleEntities_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v3;
+
+     fun lcTask_RevisitRate_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v4;
+
+     fun lcTask_Parameters_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v5;
+
+     fun lcTask_Priority_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v6;
+
+     fun lcTask_Required_of recd =
+       case recd
+         of TaskRecd v1 v2 v3 v4 v5 v6 v7 => v7;
+
+     fun lcPayloadAction_AssociatedTaskList_of recd =
+       case recd
+         of PayloadActionRecd v1 v2 => v1;
+
+     fun lcPayloadAction_PayloadID_of recd =
+       case recd
+         of PayloadActionRecd v1 v2 => v2;
+
+     fun lcVehicleActionCommand_CommandID_of recd =
+       case recd
+         of VehicleActionCommandRecd v1 v2 v3 v4 => v1;
+
+     fun lcVehicleActionCommand_VehicleID_of recd =
+       case recd
+         of VehicleActionCommandRecd v1 v2 v3 v4 => v2;
+
+     fun lcVehicleActionCommand_VehicleActionList_of recd =
+       case recd
+         of VehicleActionCommandRecd v1 v2 v3 v4 => v3;
+
+     fun lcVehicleActionCommand_Status_of recd =
+       case recd
+         of VehicleActionCommandRecd v1 v2 v3 v4 => v4;
+
+     fun lcWaypoint_Latitude_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v1;
+
+     fun lcWaypoint_Longitude_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v2;
+
+     fun lcWaypoint_Altitude_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v3;
+
+     fun lcWaypoint_AltitudeType_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v4;
+
+     fun lcWaypoint_Number_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v5;
+
+     fun lcWaypoint_NextWaypoint_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v6;
+
+     fun lcWaypoint_Speed_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v7;
+
+     fun lcWaypoint_SpeedType_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v8;
+
+     fun lcWaypoint_ClimbRate_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v9;
+
+     fun lcWaypoint_TurnType_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v10;
+
+     fun lcWaypoint_VehicleActionList_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v11;
+
+     fun lcWaypoint_ContingencyWaypointA_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v12;
+
+     fun lcWaypoint_ContingencyWaypointB_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v13;
+
+     fun lcWaypoint_AssociatedTasks_of recd =
+       case recd
+         of WaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14 => v14;
+
+     fun lcGimbalConfiguration_PayloadID_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v1;
+
+     fun lcGimbalConfiguration_PayloadKind_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v2;
+
+     fun lcGimbalConfiguration_Parameters_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v3;
+
+     fun lcGimbalConfiguration_MinAzimuth_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v4;
+
+     fun lcGimbalConfiguration_MaxAzimuth_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v5;
+
+     fun lcGimbalConfiguration_IsAzimuthClamped_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v6;
+
+     fun lcGimbalConfiguration_MinElevation_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v7;
+
+     fun lcGimbalConfiguration_MaxElevation_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v8;
+
+     fun lcGimbalConfiguration_IsElevationClamped_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v9;
+
+     fun lcGimbalConfiguration_MinRotation_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v10;
+
+     fun lcGimbalConfiguration_MaxRotation_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v11;
+
+     fun lcGimbalConfiguration_IsRotationClamped_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v12;
+
+     fun lcGimbalConfiguration_MaxAzimuthSlewRate_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v13;
+
+     fun lcGimbalConfiguration_MaxElevationSlewRate_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v14;
+
+     fun lcGimbalConfiguration_MaxRotationRate_of recd =
+       case recd
+         of GimbalConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12
+       v13 v14 v15 => v15;
+
+     fun lcEntityState_ID_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v1;
+
+     fun lcEntityState_u_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v2;
+
+     fun lcEntityState_v_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v3;
+
+     fun lcEntityState_w_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v4;
+
+     fun lcEntityState_udot_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v5;
+
+     fun lcEntityState_vdot_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v6;
+
+     fun lcEntityState_wdot_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v7;
+
+     fun lcEntityState_Heading_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v8;
+
+     fun lcEntityState_Pitch_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v9;
+
+     fun lcEntityState_Roll_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v10;
+
+     fun lcEntityState_p_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v11;
+
+     fun lcEntityState_q_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v12;
+
+     fun lcEntityState_r_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v13;
+
+     fun lcEntityState_Course_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v14;
+
+     fun lcEntityState_Groundspeed_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v15;
+
+     fun lcEntityState_Location_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v16;
+
+     fun lcEntityState_EnergyAvailable_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v17;
+
+     fun lcEntityState_ActualEnergyRate_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v18;
+
+     fun lcEntityState_PayloadStateList_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v19;
+
+     fun lcEntityState_CurrentWaypoint_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v20;
+
+     fun lcEntityState_CurrentCommand_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v21;
+
+     fun lcEntityState_FIXMEMode_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v22;
+
+     fun lcEntityState_AssociatedTasks_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v23;
+
+     fun lcEntityState_Time_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v24;
+
+     fun lcEntityState_Info_of recd =
+       case recd
+         of EntityStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 => v25;
+
+     fun lcEntityConfiguration_ID_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v1;
+
+     fun lcEntityConfiguration_Affiliation_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v2;
+
+     fun lcEntityConfiguration_EntityType_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v3;
+
+     fun lcEntityConfiguration_Label_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v4;
+
+     fun lcEntityConfiguration_NominalSpeed_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v5;
+
+     fun lcEntityConfiguration_NominalAltitude_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v6;
+
+     fun lcEntityConfiguration_NominalAltitudeType_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v7;
+
+     fun lcEntityConfiguration_PayloadConfigurationList_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v8;
+
+     fun lcEntityConfiguration_Info_of recd =
+       case recd
+         of EntityConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v9;
+
+     fun lcPathWaypoint_Latitude_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v1;
+
+     fun lcPathWaypoint_Longitude_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v2;
+
+     fun lcPathWaypoint_Altitude_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v3;
+
+     fun lcPathWaypoint_AltitudeType_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v4;
+
+     fun lcPathWaypoint_Number_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v5;
+
+     fun lcPathWaypoint_NextWaypoint_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v6;
+
+     fun lcPathWaypoint_Speed_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v7;
+
+     fun lcPathWaypoint_SpeedType_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v8;
+
+     fun lcPathWaypoint_ClimbRate_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v9;
+
+     fun lcPathWaypoint_TurnType_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v10;
+
+     fun lcPathWaypoint_VehicleActionList_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v11;
+
+     fun lcPathWaypoint_ContingencyWaypointA_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v12;
+
+     fun lcPathWaypoint_ContingencyWaypointB_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v13;
+
+     fun lcPathWaypoint_AssociatedTasks_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v14;
+
+     fun lcPathWaypoint_PauseTime_of recd =
+       case recd
+         of PathWaypointRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 v14
+       v15 => v15;
+
+     fun lcKeepInZone_ZoneID_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v1;
+
+     fun lcKeepInZone_MinAltitude_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v2;
+
+     fun lcKeepInZone_MinAltitudeType_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v3;
+
+     fun lcKeepInZone_MaxAltitude_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v4;
+
+     fun lcKeepInZone_MaxAltitudeType_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v5;
+
+     fun lcKeepInZone_AffectedAircraft_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v6;
+
+     fun lcKeepInZone_StartTime_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v7;
+
+     fun lcKeepInZone_EndTime_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v8;
+
+     fun lcKeepInZone_Padding_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v9;
+
+     fun lcKeepInZone_Label_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v10;
+
+     fun lcKeepInZone_Boundary_of recd =
+       case recd
+         of KeepInZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 => v11;
+
+     fun lcKeepOutZone_ZoneID_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v1;
+
+     fun lcKeepOutZone_MinAltitude_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v2;
+
+     fun lcKeepOutZone_MinAltitudeType_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v3;
+
+     fun lcKeepOutZone_MaxAltitude_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v4;
+
+     fun lcKeepOutZone_MaxAltitudeType_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v5;
+
+     fun lcKeepOutZone_AffectedAircraft_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v6;
+
+     fun lcKeepOutZone_StartTime_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v7;
+
+     fun lcKeepOutZone_EndTime_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v8;
+
+     fun lcKeepOutZone_Padding_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v9;
+
+     fun lcKeepOutZone_Label_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v10;
+
+     fun lcKeepOutZone_Boundary_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v11;
+
+     fun lcKeepOutZone_ZoneType_of recd =
+       case recd
+         of KeepOutZoneRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 => v12;
+
+     fun lcSearchTask_TaskID_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v1;
+
+     fun lcSearchTask_Label_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v2;
+
+     fun lcSearchTask_EligibleEntities_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v3;
+
+     fun lcSearchTask_RevisitRate_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v4;
+
+     fun lcSearchTask_Parameters_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v5;
+
+     fun lcSearchTask_Priority_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v6;
+
+     fun lcSearchTask_Required_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v7;
+
+     fun lcSearchTask_DesiredWavelengthBands_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v8;
+
+     fun lcSearchTask_DwellTime_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v9;
+
+     fun lcSearchTask_GroundSampleDistance_of recd =
+       case recd
+         of SearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 => v10;
+
+     fun lcGimbalStareAction_AssociatedTaskList_of recd =
+       case recd
+         of GimbalStareActionRecd v1 v2 v3 v4 => v1;
+
+     fun lcGimbalStareAction_PayloadID_of recd =
+       case recd
+         of GimbalStareActionRecd v1 v2 v3 v4 => v2;
+
+     fun lcGimbalStareAction_Starepoint_of recd =
+       case recd
+         of GimbalStareActionRecd v1 v2 v3 v4 => v3;
+
+     fun lcGimbalStareAction_Duration_of recd =
+       case recd
+         of GimbalStareActionRecd v1 v2 v3 v4 => v4;
+
+     fun lcAirVehicleConfiguration_ID_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v1;
+
+     fun lcAirVehicleConfiguration_Affiliation_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v2;
+
+     fun lcAirVehicleConfiguration_EntityType_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v3;
+
+     fun lcAirVehicleConfiguration_Label_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v4;
+
+     fun lcAirVehicleConfiguration_NominalSpeed_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v5;
+
+     fun lcAirVehicleConfiguration_NominalAltitude_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v6;
+
+     fun lcAirVehicleConfiguration_NominalAltitudeType_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v7;
+
+     fun lcAirVehicleConfiguration_PayloadConfigurationList_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v8;
+
+     fun lcAirVehicleConfiguration_Info_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v9;
+
+     fun lcAirVehicleConfiguration_MinimumSpeed_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v10;
+
+     fun lcAirVehicleConfiguration_MaximumSpeed_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v11;
+
+     fun lcAirVehicleConfiguration_NominalFlightProfile_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v12;
+
+     fun lcAirVehicleConfiguration_AlternateFlightProfiles_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v13;
+
+     fun lcAirVehicleConfiguration_AvailableLoiterTypes_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v14;
+
+     fun lcAirVehicleConfiguration_AvailableTurnTypes_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v15;
+
+     fun lcAirVehicleConfiguration_MinimumAltitude_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v16;
+
+     fun lcAirVehicleConfiguration_MinAltitudeType_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v17;
+
+     fun lcAirVehicleConfiguration_MaximumAltitude_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v18;
+
+     fun lcAirVehicleConfiguration_MaxAltitudeType_of recd =
+       case recd
+         of AirVehicleConfigurationRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11
+       v12 v13 v14 v15 v16 v17 v18 v19 => v19;
+
+     fun lcAirVehicleState_ID_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v1;
+
+     fun lcAirVehicleState_u_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v2;
+
+     fun lcAirVehicleState_v_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v3;
+
+     fun lcAirVehicleState_w_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v4;
+
+     fun lcAirVehicleState_udot_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v5;
+
+     fun lcAirVehicleState_vdot_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v6;
+
+     fun lcAirVehicleState_wdot_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v7;
+
+     fun lcAirVehicleState_Heading_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v8;
+
+     fun lcAirVehicleState_Pitch_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v9;
+
+     fun lcAirVehicleState_Roll_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v10;
+
+     fun lcAirVehicleState_p_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v11;
+
+     fun lcAirVehicleState_q_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v12;
+
+     fun lcAirVehicleState_r_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v13;
+
+     fun lcAirVehicleState_Course_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v14;
+
+     fun lcAirVehicleState_Groundspeed_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v15;
+
+     fun lcAirVehicleState_Location_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v16;
+
+     fun lcAirVehicleState_EnergyAvailable_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v17;
+
+     fun lcAirVehicleState_ActualEnergyRate_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v18;
+
+     fun lcAirVehicleState_PayloadStateList_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v19;
+
+     fun lcAirVehicleState_CurrentWaypoint_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v20;
+
+     fun lcAirVehicleState_CurrentCommand_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v21;
+
+     fun lcAirVehicleState_FIXMEMode_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v22;
+
+     fun lcAirVehicleState_AssociatedTasks_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v23;
+
+     fun lcAirVehicleState_Time_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v24;
+
+     fun lcAirVehicleState_Info_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v25;
+
+     fun lcAirVehicleState_Airspeed_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v26;
+
+     fun lcAirVehicleState_VerticalSpeed_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v27;
+
+     fun lcAirVehicleState_WindSpeed_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v28;
+
+     fun lcAirVehicleState_WindDirection_of recd =
+       case recd
+         of AirVehicleStateRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13
+       v14 v15 v16 v17 v18 v19 v20 v21 v22 v23 v24 v25 v26 v27 v28 v29 => v29;
+
+     fun lcFollowPathCommand_CommandID_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v1;
+
+     fun lcFollowPathCommand_VehicleID_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v2;
+
+     fun lcFollowPathCommand_VehicleActionList_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v3;
+
+     fun lcFollowPathCommand_Status_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v4;
+
+     fun lcFollowPathCommand_FirstWaypoint_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v5;
+
+     fun lcFollowPathCommand_WaypointList_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v6;
+
+     fun lcFollowPathCommand_StartTime_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v7;
+
+     fun lcFollowPathCommand_StopTime_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v8;
+
+     fun lcFollowPathCommand_RepeatMode_of recd =
+       case recd
+         of FollowPathCommandRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 => v9;
+
+     fun lcLineSearchTask_TaskID_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v1;
+
+     fun lcLineSearchTask_Label_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v2;
+
+     fun lcLineSearchTask_EligibleEntities_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v3;
+
+     fun lcLineSearchTask_RevisitRate_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v4;
+
+     fun lcLineSearchTask_Parameters_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v5;
+
+     fun lcLineSearchTask_Priority_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v6;
+
+     fun lcLineSearchTask_Required_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v7;
+
+     fun lcLineSearchTask_DesiredWavelengthBands_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v8;
+
+     fun lcLineSearchTask_DwellTime_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v9;
+
+     fun lcLineSearchTask_GroundSampleDistance_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v10;
+
+     fun lcLineSearchTask_PointList_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v11;
+
+     fun lcLineSearchTask_ViewAngleList_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v12;
+
+     fun lcLineSearchTask_UseInertialViewAngles_of recd =
+       case recd
+         of LineSearchTaskRecd v1 v2 v3 v4 v5 v6 v7 v8 v9 v10 v11 v12 v13 => v13;
+
+     fun lcMissionCommand_CommandID_of recd =
+       case recd
+         of MissionCommandRecd v1 v2 v3 v4 v5 v6 => v1;
+
+     fun lcMissionCommand_VehicleID_of recd =
+       case recd
+         of MissionCommandRecd v1 v2 v3 v4 v5 v6 => v2;
+
+     fun lcMissionCommand_VehicleActionList_of recd =
+       case recd
+         of MissionCommandRecd v1 v2 v3 v4 v5 v6 => v3;
+
+     fun lcMissionCommand_Status_of recd =
+       case recd
+         of MissionCommandRecd v1 v2 v3 v4 v5 v6 => v4;
+
+     fun lcMissionCommand_WaypointList_of recd =
+       case recd
+         of MissionCommandRecd v1 v2 v3 v4 v5 v6 => v5;
+
+     fun lcMissionCommand_FirstWaypoint_of recd =
+       case recd
+         of MissionCommandRecd v1 v2 v3 v4 v5 v6 => v6;
+
+     fun lcAutomationResponse_MissionCommandList_of recd =
+       case recd
+         of AutomationResponseRecd v1 v2 v3 => v1;
+
+     fun lcAutomationResponse_VehicleCommandList_of recd =
+       case recd
+         of AutomationResponseRecd v1 v2 v3 => v2;
+
+     fun lcAutomationResponse_Info_of recd =
+       case recd
+         of AutomationResponseRecd v1 v2 v3 => v3;
+
+     fun lcAddressAttributedMessage_id_of recd =
+       case recd
+         of AddressAttributedMessageRecd v1 v2 => v1;
+
+     fun lcAddressAttributedMessage_payload_of recd =
+       case recd
+         of AddressAttributedMessageRecd v1 v2 => v2;
+
+end (* CMASI *)
+
+(*---------------------------------------------------------------------------*)
+(* Message formats for CMASI types and CASEAgree predicates. There are two   *)
+(* parts to this: (a) contig types for messages and (b) maps from parse trees*)
+(* to CMASI types. Latter not included for filters.                          *)
+(*---------------------------------------------------------------------------*)
+
+structure CMASI_Contig =
+struct
+
+val dvalFn = Utils.dvalFn;
+val valFn = Contig.valFn;
+
+fun atomic_widths atm =
+ case atm
+  of Contig.Bool       => 1
+   | Contig.Char       => 1
+   | Contig.Signed i   => i
+   | Contig.Unsigned i => i
+   | Contig.Float      => 4
+   | Contig.Double     => 8
+   | Contig.Enum _     => 4
+   | otherwise => raise Utils.ERR "atomic_widths" "Raw/Scanner do not have a fixed width"
+;
+
+val bool = Contig.Basic(Contig.Bool);
+val u8  = Contig.Basic(Contig.Unsigned 1);
+val u16 = Contig.Basic(Contig.Unsigned 2);
+val u32 = Contig.Basic(Contig.Unsigned 4);
+val u64 = Contig.Basic(Contig.Unsigned 8);
+val i16 = Contig.Basic(Contig.Signed 2);
+val i32 = Contig.Basic(Contig.Signed 4);
+val i64 = Contig.Basic(Contig.Signed 8);
+val f32 = Contig.Basic Contig.Float;
+val f64 = Contig.Basic Contig.Double;
+val real32 = f32;
+val real64 = f64;
+
+(*---------------------------------------------------------------------------*)
+(* uxAS constants                                                            *)
+(*---------------------------------------------------------------------------*)
+
+val uxasCMASISeriesID = 4849604199710720000;
+val uxasCMASISeriesVersion = 3;
+
+(*---------------------------------------------------------------------------*)
+(* uxAS message types                                                        *)
+(*---------------------------------------------------------------------------*)
+
+val uxasABSTRACTGEOMETRY = 1
+val uxasKEYVALUEPAIR = 2
+val uxasLOCATION3D = 3
+val uxasPAYLOADACTION = 4
+val uxasPAYLOADCONFIGURATION = 5
+val uxasPAYLOADSTATE = 6
+val uxasVEHICLEACTION = 7
+val uxasTASK = 8
+val uxasSEARCHTASK = 9
+val uxasABSTRACTZONE = 10
+val uxasENTITYCONFIGURATION = 11
+val uxasFLIGHTPROFILE = 12
+val uxasAIRVEHICLECONFIGURATION = 13
+val uxasENTITYSTATE = 14
+val uxasAIRVEHICLESTATE = 15
+val uxasWEDGE = 16
+val uxasAREASEARCHTASK = 17
+val uxasCAMERAACTION = 18
+val uxasCAMERACONFIGURATION = 19
+val uxasGIMBALLEDPAYLOADSTATE = 20
+val uxasCAMERASTATE = 21
+val uxasCIRCLE = 22
+val uxasGIMBALANGLEACTION = 23
+val uxasGIMBALCONFIGURATION = 24
+val uxasGIMBALSCANACTION = 25
+val uxasGIMBALSTAREACTION = 26
+val uxasGIMBALSTATE = 27
+val uxasGOTOWAYPOINTACTION = 28
+val uxasKEEPINZONE = 29
+val uxasKEEPOUTZONE = 30
+val uxasLINESEARCHTASK = 31
+val uxasNAVIGATIONACTION = 32
+val uxasLOITERACTION = 33
+val uxasLOITERTASK = 34
+val uxasWAYPOINT = 35
+val uxasMISSIONCOMMAND = 36
+val uxasMUSTFLYTASK = 37
+val uxasOPERATORSIGNAL = 38
+val uxasOPERATINGREGION = 39
+val uxasAUTOMATIONREQUEST = 40
+val uxasPOINTSEARCHTASK = 41
+val uxasPOLYGON = 42
+val uxasRECTANGLE = 43
+val uxasREMOVETASKS = 44
+val uxasSERVICESTATUS = 45
+val uxasSESSIONSTATUS = 46
+val uxasVEHICLEACTIONCOMMAND = 47
+val uxasVIDEOSTREAMACTION = 48
+val uxasVIDEOSTREAMCONFIGURATION = 49
+val uxasVIDEOSTREAMSTATE = 50
+val uxasAUTOMATIONRESPONSE = 51
+val uxasREMOVEZONES = 52
+val uxasREMOVEENTITIES = 53
+val uxasFLIGHTDIRECTORACTION = 54
+val uxasWEATHERREPORT = 55
+val uxasFOLLOWPATHCOMMAND = 56
+val uxasPATHWAYPOINT = 57
+val uxasSTOPMOVEMENTACTION = 58
+val uxasWAYPOINTTRANSFER = 59
+val uxasPAYLOADSTOWACTION = 60
+;
+
+val uxas_constants_map =
+[("CMASISeriesID",uxasCMASISeriesID),
+ ("CMASISeriesVersion",uxasCMASISeriesVersion),
+ ("ABSTRACTGEOMETRY",uxasABSTRACTGEOMETRY),
+ ("KEYVALUEPAIR",uxasKEYVALUEPAIR),
+ ("LOCATION3D",uxasLOCATION3D),
+ ("PAYLOADACTION",uxasPAYLOADACTION),
+ ("PAYLOADCONFIGURATION",uxasPAYLOADCONFIGURATION),
+ ("PAYLOADSTATE",uxasPAYLOADSTATE),
+ ("VEHICLEACTION",uxasVEHICLEACTION),
+ ("TASK",uxasTASK),
+ ("SEARCHTASK",uxasSEARCHTASK),
+ ("ABSTRACTZONE",uxasABSTRACTZONE),
+ ("ENTITYCONFIGURATION",uxasENTITYCONFIGURATION),
+ ("FLIGHTPROFILE",uxasFLIGHTPROFILE),
+ ("AIRVEHICLECONFIGURATION",uxasAIRVEHICLECONFIGURATION),
+ ("ENTITYSTATE",uxasENTITYSTATE),
+ ("AIRVEHICLESTATE",uxasAIRVEHICLESTATE),
+ ("WEDGE",uxasWEDGE),
+ ("AREASEARCHTASK",uxasAREASEARCHTASK),
+ ("CAMERAACTION",uxasCAMERAACTION),
+ ("CAMERACONFIGURATION",uxasCAMERACONFIGURATION),
+ ("GIMBALLEDPAYLOADSTATE",uxasGIMBALLEDPAYLOADSTATE),
+ ("CAMERASTATE",uxasCAMERASTATE),
+ ("CIRCLE",uxasCIRCLE),
+ ("GIMBALANGLEACTION",uxasGIMBALANGLEACTION),
+ ("GIMBALCONFIGURATION",uxasGIMBALCONFIGURATION),
+ ("GIMBALSCANACTION",uxasGIMBALSCANACTION),
+ ("GIMBALSTAREACTION",uxasGIMBALSTAREACTION),
+ ("GIMBALSTATE",uxasGIMBALSTATE),
+ ("GOTOWAYPOINTACTION",uxasGOTOWAYPOINTACTION),
+ ("KEEPINZONE",uxasKEEPINZONE),
+ ("KEEPOUTZONE",uxasKEEPOUTZONE),
+ ("LINESEARCHTASK",uxasLINESEARCHTASK),
+ ("NAVIGATIONACTION",uxasNAVIGATIONACTION),
+ ("LOITERACTION",uxasLOITERACTION),
+ ("LOITERTASK",uxasLOITERTASK),
+ ("WAYPOINT",uxasWAYPOINT),
+ ("MISSIONCOMMAND",uxasMISSIONCOMMAND),
+ ("MUSTFLYTASK",uxasMUSTFLYTASK),
+ ("OPERATORSIGNAL",uxasOPERATORSIGNAL),
+ ("OPERATINGREGION",uxasOPERATINGREGION),
+ ("AUTOMATIONREQUEST",uxasAUTOMATIONREQUEST),
+ ("POINTSEARCHTASK",uxasPOINTSEARCHTASK),
+ ("POLYGON",uxasPOLYGON),
+ ("RECTANGLE",uxasRECTANGLE),
+ ("REMOVETASKS",uxasREMOVETASKS),
+ ("SERVICESTATUS",uxasSERVICESTATUS),
+ ("SESSIONSTATUS",uxasSESSIONSTATUS),
+ ("VEHICLEACTIONCOMMAND",uxasVEHICLEACTIONCOMMAND),
+ ("VIDEOSTREAMACTION",uxasVIDEOSTREAMACTION),
+ ("VIDEOSTREAMCONFIGURATION",uxasVIDEOSTREAMCONFIGURATION),
+ ("VIDEOSTREAMSTATE",uxasVIDEOSTREAMSTATE),
+ ("AUTOMATIONRESPONSE",uxasAUTOMATIONRESPONSE),
+ ("REMOVEZONES",uxasREMOVEZONES),
+ ("REMOVEENTITIES",uxasREMOVEENTITIES),
+ ("FLIGHTDIRECTORACTION",uxasFLIGHTDIRECTORACTION),
+ ("WEATHERREPORT",uxasWEATHERREPORT),
+ ("FOLLOWPATHCOMMAND",uxasFOLLOWPATHCOMMAND),
+ ("PATHWAYPOINT",uxasPATHWAYPOINT),
+ ("STOPMOVEMENTACTION",uxasSTOPMOVEMENTACTION),
+ ("WAYPOINTTRANSFER",uxasWAYPOINTTRANSFER),
+ ("PAYLOADSTOWACTION",uxasPAYLOADSTOWACTION)
+];
+
+val bounded = Contig.bounded;
+
+(*---------------------------------------------------------------------------*)
+(* Arrays in uxAS messages are preceded by a length field.                   *)
+(*---------------------------------------------------------------------------*)
+
+fun uxasArray contig = Contig.Recd [
+  ("len", u16),
+  ("elts", Contig.Array contig (Contig.Loc (Contig.VarName"len")))
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* Enforce a given bound on array size                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun uxasBoundedArray contig bound = Contig.Recd [
+  ("len", u16),
+  ("len-check", Contig.Assert
+                  (Contig.Ble (Contig.Loc(Contig.VarName "len"))
+                              (Contig.IntLit bound))),
+  ("elts", Contig.Array contig (Contig.Loc (Contig.VarName"len")))
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* Option type                                                               *)
+(*---------------------------------------------------------------------------*)
+
+fun uxasOption contig = Contig.Recd
+ [("present", bool),
+  ("contents", Contig.Union [
+     (Contig.BLoc (Contig.VarName "present"), contig),
+     (Contig.Bnot(Contig.BLoc (Contig.VarName "present")),
+      Contig.epsilon_contig)
+     ])
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* An AADL event data port message has a byte prefixed, which = "True" if    *)
+(* an event has indeed happened. This pattern tends to get used in filters   *)
+(* where isEvent is conjoined with the predicate on the message contents.    *)
+(* If isEvent is false, the contents aren't examined by predFn.              *)
+(*---------------------------------------------------------------------------*)
+
+fun eventData contig = Contig.Recd
+  [("isEvent", Contig.Basic Contig.Bool),
+   ("check-isEvent", Contig.Assert (Contig.BLoc (Contig.VarName "isEvent"))),
+   ("contents", contig)
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* Wrapper for a contig, with message type specified. Notice that we only    *)
+(* check the message type. A more stringent check would also check the       *)
+(* seriesID and seriesVersion, as follows.                                   *)
+(*                                                                           *)
+(*  ("check-mesg-numbers", Assert                                            *)
+(*   (Band(Beq(Loc(VarName "seriesID"),ConstName "CMASISeriesID"),           *)
+(*    Band(Beq(Loc(VarName "mesgType"),ConstName mesgtyName),                *)
+(*         Beq(Loc(VarName "seriesVersion"),ConstName "CMASISeriesVersion")) *)
+(*---------------------------------------------------------------------------*)
+
+fun uxasMesg mesgtyName contig = Contig.Recd [
+   ("seriesID", i64),
+   ("mesgType", u32),
+   ("check-mesg-type",
+    Contig.Assert (Contig.Beq (Contig.Loc(Contig.VarName "mesgType"))
+                  (Contig.ConstName mesgtyName))),
+   ("seriesVersion", u16),
+   ("mesg",  contig)
+ ];
+
+fun mesgOption name = uxasOption o uxasMesg name;
+
+(*---------------------------------------------------------------------------*)
+(* Same as uxasMesg, except it doesn't check the mesgType                    *)
+(*---------------------------------------------------------------------------*)
+
+fun uxasMesg_generic contig = Contig.Recd [
+   ("seriesID",       i64),
+   ("mesgType",       u32),
+   ("seriesVersion",  u16),
+   ("mesg",           contig)
+ ];
+
+val fullString = uxasArray (Contig.Basic Contig.Char);
+
+val shortString = uxasBoundedArray (Contig.Basic Contig.Char) 26;
+
+(*---------------------------------------------------------------------------*)
+(* The following gives a layer of indirection: by changing the "String"      *)
+(* binding in the Decls part of the environment, all mentions of String will *)
+(* resolve to the new binding. An example of where this is useful is in mesg *)
+(* generation, where a random fullString would in general be so big that it  *)
+(* would be clumsy to deal with. In that case, we can change the binding of  *)
+(* String in Decls to ShortString and then all String mentions will be to    *)
+(* short strings, and then a randomly generated string field would be <= 26  *)
+(* in length.                                                                *)
+(*---------------------------------------------------------------------------*)
+
+val uxasString = Contig.Declared "String";
+
+(*---------------------------------------------------------------------------*)
+(* pairs of varying-length strings                                           *)
+(*---------------------------------------------------------------------------*)
+
+val keyValuePair = Contig.Recd
+    [("key",   uxasString),
+     ("value", uxasString)
+  ];
+
+(*---------------------------------------------------------------------------*)
+(* Enumerations                                                              *)
+(*---------------------------------------------------------------------------*)
+
+fun enumList elts = List.zip (elts, Utils.upto 0 (List.length elts - 1));
+
+val altitude_type = ("AltitudeType", enumList ["AGL","MSL"]);
+val speed_type    = ("SpeedType",    enumList ["AirSpeed","GroundSpeed"]);
+val turn_type     = ("TurnType",     enumList ["TurnShort", "FlyOver"]);
+
+val wavelength_band =
+ ("WavelengthBand", enumList ["AllAny","EO","LWIR","SWIR","MWIR","Other"]);
+
+val navigation_mode =
+ ("NavigationMode",
+  enumList ["Waypoint", "Loiter", "FlightDirector",
+            "TargetTrack", "FollowLeader", "LostComm"]);
+
+val command_status_type =
+ ("CommandStatusType",
+  enumList ["Pending", "Approved", "InProcess", "Executed", "Cancelled"]);
+
+val uxasAltitudeType   = Contig.Declared "AltitudeType"
+val uxasWavelengthBand = Contig.Declared "WavelengthBand"
+val uxasNavigationMode = Contig.Declared "NavigationMode"
+val uxasSpeedType      = Contig.Declared "SpeedType"
+val uxasTurnType       = Contig.Declared "TurnType"
+val uxasCommandStatusType = Contig.Declared "CommandStatusType";
+
+(*---------------------------------------------------------------------------*)
+(* Basic uxAS environment plus enumerations.                                 *)
+(*---------------------------------------------------------------------------*)
+
+val uxasEnv =
+ let val init = (uxas_constants_map,
+                 [("String",fullString),("KeyValuePair", keyValuePair)],
+                 atomic_widths,Contig.valFn,Utils.dvalFn)
+ in Utils.itlist Contig.add_enum_decl
+         [altitude_type, wavelength_band, navigation_mode,
+          speed_type, turn_type, command_status_type]
+         init
+ end
+;
+
+(* CASE Phase II model constants
+	-- Message constants
+	const OPERATING_REGION_ID_MIN : int = 0;
+	const OPERATING_REGION_ID_MAX : int = 500;
+	const KEEP_IN_ZONE_ID_MIN : int = 0;
+	const KEEP_IN_ZONE_ID_MAX : int = 500;
+	const KEEP_OUT_ZONE_ID_MIN : int = 0;
+	const KEEP_OUT_ZONE_ID_MAX : int = 500;
+	const TASK_ID_MIN : int = 0;
+	const TASK_ID_MAX : int = 500;
+	const ENTITY_ID_MIN : int = 0;
+	const ENTITY_ID_MAX : int = 500;
+	const ALTITUDE_MIN : real = 0.0;
+	const ALTITUDE_MAX : real = 15000.0;
+	const LATITUDE_MIN : real = -90.0;
+	const LATITUDE_MAX : real = 90.0;
+	const LONGITUDE_MIN : real = -180.0;
+	const LONGITUDE_MAX : real = -180.0;
+	const AZIMUTH_CENTERLINE_MIN : real = -180.0;
+	const AZIMUTH_CENTERLINE_MAX : real = 180.0;
+	const VERTICAL_CENTERLINE_MIN : real = -180.0;
+	const VERTICAL_CENTERLINE_MAX : real = 180.0;
+*)
+
+val case_consts = [
+  ("OPERATING_REGION_ID_MIN", 0),
+  ("OPERATING_REGION_ID_MAX", 500),
+  ("KEEP_IN_ZONE_ID_MIN", 0),
+  ("KEEP_IN_ZONE_ID_MAX", 500),
+  ("KEEP_OUT_ZONE_ID_MIN",0),
+  ("KEEP_OUT_ZONE_ID_MAX",500),
+  ("TASK_ID_MIN",0),
+  ("TASK_ID_MAX",2000),
+  ("ENTITY_ID_MIN", 0),
+  ("ENTITY_ID_MAX",500)
+ ];
+
+val caseEnv =
+ let val (consts,decls,widths,valFn,dvalFn) = uxasEnv
+ in (case_consts @ consts,decls,widths,valFn,dvalFn)
+ end
+;
+
+
+(*---------------------------------------------------------------------------*)
+(* Laboriously construct some Double constants in order to avoid             *)
+(* Double.fromString.                                                        *)
+(*---------------------------------------------------------------------------*)
+
+val ints0BE     = [0, 0, 0, 0, 0, 0, 0, 0];
+val ints90BE    = [64, 86, 128, 0, 0, 0, 0, 0]
+val ints180BE   = [64, 102, 128, 0, 0, 0, 0, 0]
+val ints15000BE = [64, 205, 76, 0, 0, 0, 0, 0]
+
+val s0 = String.implode (List.map Char.chr ints0BE)
+val s90 = String.implode (List.map Char.chr ints90BE)
+val s180 = String.implode (List.map Char.chr ints180BE)
+val s15K = String.implode (List.map Char.chr ints15000BE)
+
+val double_zero = dvalFn s0
+val pos90 = dvalFn s90
+val pos180 = dvalFn s180;
+val pos15K = dvalFn s15K;
+
+val neg90 = Double.~(pos90)
+val neg180 = Double.~(pos180);
+
+val constAZIMUTH_CENTERLINE_MIN = neg180;
+val constAZIMUTH_CENTERLINE_MAX = pos180;
+val constVERTICAL_CENTERLINE_MIN = neg180;
+val constVERTICAL_CENTERLINE_MAX = pos180;
+
+fun assert x = Contig.Assert x;
+fun band x y  = Contig.Band x y;
+val varloc = Contig.varloc;
+val expBounded = Contig.expBounded;
+val doubleintervalExp = Contig.doubleintervalExp;
+
+(*---------------------------------------------------------------------------*)
+(* Messages                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Size 3 array of ints, where an int is represented as a decimal- coded,    *)
+(* \0-terminated, sequence of chars of length 4.                             *)
+(*---------------------------------------------------------------------------*)
+
+val dec4 = Contig.Array (Contig.Basic Contig.Char) (Contig.IntLit 4);
+
+val trustedID_array = Contig.Array dec4 (Contig.IntLit 3);
+
+(*---------------------------------------------------------------------------*)
+(* fun WELL_FORMED_OPERATING_REGION(msg : CMASI::OperatingRegion.i) : bool = *)
+(*    msg.ID >= OPERATING_REGION_ID_MIN and                                  *)
+(*    msg.ID <= OPERATING_REGION_ID_MAX and                                  *)
+(*    (forall kiz in msg.KeepInAreas,                                        *)
+(*          kiz >= KEEP_IN_ZONE_ID_MIN and kiz <= KEEP_IN_ZONE_ID_MAX) and   *)
+(*    (forall koz in msg.KeepOutAreas,                                       *)
+(*          koz >= KEEP_OUT_ZONE_ID_MIN and koz <= KEEP_OUT_ZONE_ID_MAX);    *)
+(*---------------------------------------------------------------------------*)
+
+val kizoneElt =
+  Contig.expBounded u64
+     (Contig.ConstName "KEEP_IN_ZONE_ID_MIN",
+      Contig.ConstName "KEEP_IN_ZONE_ID_MAX");
+
+val kozoneElt =
+  Contig.expBounded u64
+     (Contig.ConstName"KEEP_OUT_ZONE_ID_MIN",
+      Contig.ConstName"KEEP_OUT_ZONE_ID_MAX");
+
+val operating_region = Contig.Recd [
+  ("ID", Contig.expBounded i64
+             (Contig.ConstName"OPERATING_REGION_ID_MIN",
+              Contig.ConstName"OPERATING_REGION_ID_MAX")),
+  ("keep_in_areas",  uxasBoundedArray kizoneElt 32),
+  ("keep_out_areas", uxasBoundedArray kozoneElt 32)
+  ];
+
+(*---------------------------------------------------------------------------*)
+(* fun WELL_FORMED_AUTOMATION_REQUEST(msg:CMASI::AutomationRequest.i):bool = *)
+(*  (forall e in msg.EntityList, e>=ENTITY_ID_MIN and e<=ENTITY_ID_MAX) and  *)
+(*  (forall t in msg.TaskList, t >= TASK_ID_MIN and t <= TASK_ID_MAX) and    *)
+(*   msg.OperatingRegion >= OPERATING_REGION_ID_MIN and                      *)
+(*   msg.OperatingRegion <= OPERATING_REGION_ID_MAX;                         *)
+(*---------------------------------------------------------------------------*)
+
+val automation_request = Contig.Recd [
+  ("EntityList",        uxasBoundedArray i64 16),
+  ("TaskList",          uxasBoundedArray i64 32),
+  ("TaskRelationShips", uxasString),
+  ("OperatingRegion",   i64),
+  ("RedoAllTasks",      bool)
+  ];
+
+val checked_entity = Contig.Recd [
+   ("entity", i64),
+   ("entity-check", Contig.Assert
+      (Contig.const_intervalExp "entity" ("ENTITY_ID_MIN","ENTITY_ID_MAX")))
+ ];
+
+val checked_task = Contig.Recd [
+   ("task", i64),
+   ("task-check", Contig.Assert
+      (Contig.const_intervalExp "task" ("TASK_ID_MIN","TASK_ID_MAX")))
+ ];
+
+val checked_automation_request = Contig.Recd [
+  ("EntityList",        uxasBoundedArray checked_entity 16),
+  ("TaskList",          uxasBoundedArray checked_task 32),
+  ("TaskRelationShips", uxasString),
+  ("OperatingRegion",   i64),
+  ("check-OR",          Contig.Assert (Contig.const_intervalExp "OperatingRegion"
+                        ("OPERATING_REGION_ID_MIN","OPERATING_REGION_ID_MAX"))),
+  ("RedoAllTasks",      bool)
+  ];
+
+val automation_request = checked_automation_request;
+
+val wedge = Contig.Recd [
+  ("AzimuthCenterline",  real32),
+  ("VerticalCenterline", real32),
+  ("AzimuthExtent",      real32),
+  ("VerticalExtent",     real32)
+ ];
+
+val checked_wedge = Contig.Recd [
+  ("AzimuthCenterline",  real32),
+  ("AzimuthCenterline-check", Contig.Assert
+       (Contig.doubleintervalExp "AzimuthCenterline"
+         (constAZIMUTH_CENTERLINE_MIN,constAZIMUTH_CENTERLINE_MAX))),
+  ("VerticalCenterline", real32),
+  ("VerticalCenterline-check", Contig.Assert
+       (Contig.doubleintervalExp "VerticalCenterline"
+         (constVERTICAL_CENTERLINE_MIN,constVERTICAL_CENTERLINE_MAX))),
+  ("AzimuthExtent",      real32),
+  ("VerticalExtent",     real32)
+ ];
+
+val wedge = checked_wedge;
+
+val location3D = Contig.Recd [
+  ("Latitude",  real64),
+  ("Longitude", real64),
+  ("Altitude",  real32),
+  ("AltitudeType", uxasAltitudeType)
+];
+
+val checked_location3D = Contig.Recd [
+  ("Latitude",  real64),
+  ("Lat-check", assert (
+    band(Contig.DleA neg90 (varloc"Latitude"))
+        (Contig.DleB (varloc "Latitude") pos90))),
+  ("Longitude", real64),
+  ("Lon-check", assert (
+    band(Contig.DleA neg180 (varloc"Longitude"))
+        (Contig.DleB (varloc"Longitude") pos180))),
+  ("Altitude",  real32),
+  ("Altitude-check", assert (
+    band(Contig.DleA double_zero (varloc"Altitude"))
+        (Contig.DleB (varloc"Altitude") pos15K))),
+  ("AltitudeType", uxasAltitudeType),
+  ("AltitudeType-check", assert (
+    Contig.Ble (varloc"AltitudeType") (Contig.IntLit 1)))
+];
+
+val location3D = checked_location3D;
+
+(*---------------------------------------------------------------------------*)
+(* LineSearchTask message                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val linesearch_task = Contig.Recd [
+  (* Task *)
+  ("TaskID",           i64),
+  ("TaskID-check",     Contig.Assert
+                          (Contig.const_intervalExp "TaskID"
+                                       ("TASK_ID_MIN","TASK_ID_MAX"))),
+  ("Label",            uxasString),
+  ("EligibleEntities", uxasBoundedArray i64 32),
+  ("RevisitRate",      real32),
+  ("Parameters",       uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8),
+  ("Priority",         u8),
+  ("Required",         bool),
+
+  (* SearchTask *)
+  ("DesiredWavelengthBands", uxasBoundedArray uxasWavelengthBand 8),
+  ("DwellTime",              i64),
+  ("GroundSampleDistance",   real32),
+
+  (* LineSearchTask *)
+  ("PointList",     uxasBoundedArray (mesgOption "LOCATION3D" location3D) 1024),
+  ("ViewAngleList", uxasBoundedArray (mesgOption "WEDGE" wedge) 16),
+  ("UseInertialViewAngles", bool)
+];
+
+(*---------------------------------------------------------------------------*)
+(* Polygons are an input to the geofence monitor                             *)
+(*---------------------------------------------------------------------------*)
+
+val polygon = Contig.Array location3D (Contig.IntLit 2);
+
+(*---------------------------------------------------------------------------*)
+(* AutomationResponse message                                                *)
+(*---------------------------------------------------------------------------*)
+
+val vehicleAction = Contig.Recd [
+  ("AssociatedTaskList", uxasBoundedArray i64 8)
+];
+
+val vehicleActionCommand = Contig.Recd [
+  ("CommandID",         i64),
+  ("VehicleID",         i64),
+  ("VehicleActionList", uxasBoundedArray (mesgOption "VEHICLEACTION" vehicleAction) 8),
+  ("Status",            uxasCommandStatusType),
+  ("check-status",      assert (Contig.Ble(varloc"Status") (Contig.IntLit 4)))
+ ];
+
+val waypoint = Contig.Recd [
+  ("Location",            location3D),  (* Q: mesgOption this? A: Nope: extension base *)
+  ("Number",              i64),
+  ("NextWaypoint",        i64),
+  ("Speed",               real32),
+  ("SpeedType",           uxasSpeedType),
+  ("check-speed-type",    assert (Contig.Ble(varloc"SpeedType") (Contig.IntLit 1))),
+  ("ClimbRate",           real32),
+  ("TurnType",            uxasTurnType),
+  ("check-turn-type",     assert (Contig.Ble(varloc"TurnType") (Contig.IntLit 1))),
+  ("VehicleActionList",   uxasBoundedArray (mesgOption "VEHICLEACTION" vehicleAction) 8),
+  ("ContingencyWaypointA",i64),
+  ("ContingencyWaypointB",i64),
+  ("AssociatedTasks",     uxasBoundedArray i64 8)
+ ];
+
+val missionCommand = Contig.Recd [
+ ("VehicleActionCommand", vehicleActionCommand), (* Q: mesgOption this? Nope: extension base *)
+ ("WaypointList",         uxasBoundedArray (mesgOption "WAYPOINT" waypoint) 1024),
+ ("FirstWaypoint",        i64)
+];
+
+val automation_response = Contig.Recd [
+ ("MissionCommandList", uxasBoundedArray (mesgOption "MISSIONCOMMAND" missionCommand) 16),
+ ("VehicleCommandList", uxasBoundedArray (mesgOption "VEHICLEACTIONCOMMAND" vehicleActionCommand) 64),
+ ("Info",               uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8)
+];
+
+(*---------------------------------------------------------------------------*)
+(* AirVehicleState message                                                   *)
+(*---------------------------------------------------------------------------*)
+
+val payloadState = Contig.Recd [
+ ("PayloadID",  i64),
+ ("Parameters", uxasBoundedArray (mesgOption "KEYVALUEPAIR" keyValuePair) 8)
+];
+
+val entityState = Contig.Recd [
+  ("ID",     i64),
+  ("u",      real32),
+  ("v",      real32),
+  ("w",      real32),
+  ("udot",   real32),
+  ("vdot",   real32),
+  ("wdot",   real32),
+  ("Heading",real32),
+  ("Pitch",  real32),
+  ("Roll",   real32),
+  ("p",      real32),
+  ("q",      real32),
+  ("r",      real32),
+  ("Course", real32),
+  ("Groundspeed",      real32),
+  ("Location",         mesgOption "LOCATION3D" location3D),
+  ("EnergyAvailable",  real32),
+  ("ActualEnergyRate", real32),
+  ("PayloadStateList", uxasBoundedArray(mesgOption "PAYLOADSTATE" payloadState) 8),
+  ("CurrentWaypoint",  i64),
+  ("CurrentCommand",   i64),
+  ("Mode",             uxasNavigationMode),
+  ("AssociatedTasks",  uxasBoundedArray i64 8),
+  ("Time",             i64),
+  ("Info", uxasBoundedArray(mesgOption "KEYVALUEPAIR" keyValuePair) 32)
+];
+
+
+val airvehicle_state = Contig.Recd [
+  ("EntityState",   entityState),
+  ("Airspeed",      real32),
+  ("VerticalSpeed", real32),
+  ("WindSpeed",     real32),
+  ("WindDirection", real32)
+];
+
+
+(*---------------------------------------------------------------------------*)
+(* val address =                                                             *)
+(*     Contig.Recd [("value", Contig.Array u8 (Contig.IntLit 4))];           *)
+(*                                                                           *)
+(* val address_array =                                                       *)
+(*    Contig.Recd [("value", Contig.Array address (Contig.IntLit 3))];       *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val address_array =
+    Contig.Recd [("value", Contig.Array i32 (Contig.IntLit 3))];
+
+
+(*---------------------------------------------------------------------------*)
+(* Full uxAS operating region message looks like the following               *)
+(* (Eric Mercer dug this info out):                                          *)
+(*                                                                           *)
+(*  <address> $ <attributes> $ <mesg>                                        *)
+(*                                                                           *)
+(* where                                                                     *)
+(*                                                                           *)
+(*  <address> is e.g. uxas.project.isolate.IntruderAlert,                    *)
+(*                    uxas.roadmonitor,  etc.                                *)
+(*                                                                           *)
+(*  <attributes> = <contentType>       ;; string of non "|" chars            *)
+(*               | <descriptor>        ;; ditto                              *)
+(*               | <source-group>      ;; ditto                              *)
+(*               | <source-entity-ID>  ;; ditto                              *)
+(*               | <source-service-ID> ;; ditto                              *)
+(*                                                                           *)
+(* (The vertical bars are included in the message text.)                     *)
+(*                                                                           *)
+(* Using some regexp-like notation, this is                                  *)
+(*                                                                           *)
+(*  (.* "$") (.* "|"){4} (.* "$") <mesg-object>                              *)
+(*                                                                           *)
+(* The mesg field is a mesgOption as above                                   *)
+(*---------------------------------------------------------------------------*)
+
+val attributes = Contig.Recd [
+ ("contentType",       Contig.Scanner (Contig.scanTo #"|")),
+ ("descriptor",        Contig.Scanner (Contig.scanTo #"|")),
+ ("source_group",      Contig.Scanner (Contig.scanTo #"|")),
+ ("source_entity_ID",  Contig.Scanner (Contig.scanTo #"|")),
+ ("source_service_ID", Contig.Scanner (Contig.scanTo #"$"))
+ ];
+
+fun full_mesg contig = Contig.Recd [
+  ("address",      Contig.Scanner (Contig.scanTo #"$")),
+  ("attributes",   attributes),
+  ("controlString",i32),  (* = 0x4c4d4350 = valFn "LMCP" *)
+  ("check",        assert (Contig.Beq(varloc"controlString") (Contig.IntLit 1280131920))),
+  ("mesgSize",     u32),
+  ("mesg",         contig),
+  ("checksum",     u32)
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* Full messages for a few formats                                           *)
+(*---------------------------------------------------------------------------*)
+
+val fullOperatingRegionMesg =
+  full_mesg (mesgOption "OPERATINGREGION" operating_region);
+
+val fullAutomationRequestMesg =
+  full_mesg (mesgOption "AUTOMATIONREQUEST" automation_request);
+
+val fullLineSearchTaskMesg =
+  full_mesg (mesgOption "LINESEARCHTASK" linesearch_task);
+
+val fullAutomationResponseMesg =
+  full_mesg (mesgOption "AUTOMATIONRESPONSE" automation_response);
+
+val fullAirVehicleStateMesg =
+  full_mesg (mesgOption "AIRVEHICLESTATE" airvehicle_state);
+
+(*---------------------------------------------------------------------------*)
+(* Handle any one of our range of uxas messages                              *)
+(*---------------------------------------------------------------------------*)
+
+fun mesgKind mesgtyName =
+  Contig.Beq(Contig.Loc(Contig.VarName "mesgType"))
+             (Contig.ConstName mesgtyName);
+
+val aaMesg_choices = Contig.Union [
+  (mesgKind "OPERATINGREGION",   operating_region),
+  (mesgKind "AUTOMATIONREQUEST", automation_request),
+  (mesgKind "AUTOMATIONRESPONSE",automation_response),
+  (mesgKind "LINESEARCHTASK",    linesearch_task),
+  (mesgKind "AIRVEHICLESTATE",   airvehicle_state)
+ ];
+
+val aaMesg = full_mesg (uxasOption (uxasMesg_generic aaMesg_choices));
+
+end (* CMASI_Contig *)
+
+(*---------------------------------------------------------------------------*)
+(* Parsing                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+structure CMASI_Parse =
+struct
+
+fun mk_bool s =
+  let val i = Contig.valFn (Contig.Unsigned 1) s
+  in if i = 0 then False else
+     if i = 1 then True
+     else raise Utils.ERR "mk_bool" "expected 0 or 1"
+  end;
+
+val mk_i8  = Contig.valFn (Contig.Signed 1);
+val mk_u8  = Contig.valFn (Contig.Unsigned 1);
+val mk_i32 = Contig.valFn (Contig.Signed 4);
+val mk_u32 = Contig.valFn (Contig.Unsigned 4);
+val mk_i64 = Contig.valFn (Contig.Signed 8);
+val mk_u64 = Contig.valFn (Contig.Unsigned 8);
+
+fun mk_float s = Utils.mk_float s;
+fun mk_double s = Utils.dvalFn s;
+
+val mk_leaf = Contig.mk_leaf;
+
+val mk_char =
+ let fun hdchar s = String.sub s 0
+ in mk_leaf hdchar
+ end;
+
+fun mk_string ptree =
+ case ptree
+  of Contig.RECD
+       [("len",_),
+        ("elts", Contig.ARRAY elts)] => String.implode (List.map mk_char elts)
+   | otherwise  => raise Utils.ERR "mk_string" "";
+
+fun mk_bounded_array eltFn ptree =
+ case ptree
+  of Contig.RECD [
+       ("len",_),
+       ("elts", Contig.ARRAY elts)] => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise Utils.ERR "mk_bounded_array" "";
+
+(*---------------------------------------------------------------------------*)
+(* Takes a contig and a decoder and combines them into a parser.             *)
+(*---------------------------------------------------------------------------*)
+
+fun genParse env p string =
+ case p
+  of (contig,mk_data)
+ =>
+ case Contig.parseFn env (Contig.VarName"root") contig
+                 ([],string,Contig.mk_empty_lvalMap())
+  of Some ([ptree],_,_) => Utils.total mk_data ptree
+   | otherwise => None;
+
+val caseEnv = CMASI_Contig.caseEnv;
+val eventData = CMASI_Contig.eventData;
+
+fun dataParse p s = genParse caseEnv p s;
+
+(*---------------------------------------------------------------------------*)
+(* Parse a message prefixed with a byte which tells if it's an event.        *)
+(* Somewhat complex information on output makes this convoluted:             *)
+(*                                                                           *)
+(*  None          -- no event on port (input is not of form "0x1 ...")       *)
+(*  Some None     -- event on port, but parse of input failed                *)
+(*  Some (Some d) -- event on port, parse of input yields data d             *)
+(*                                                                           *)
+(* This could get mapped to EventData port element as                        *)
+(*                                                                           *)
+(*   Some None     --> None                                                  *)
+(*   None          --> Some (EventData None)                                 *)
+(*   Some (Some d) --> Some (EventData (Some d))                             *)
+(*                                                                           *)
+(* Inside the stepFn there needs to be code handling situations where inputs *)
+(* are events, but the port contents fail to parse.                          *)
+(*---------------------------------------------------------------------------*)
+
+fun eventParse pFn string =
+ case Contig.parseFn caseEnv (Contig.VarName"root")
+             (eventData Contig.epsilon_contig)
+              ([],string,Contig.mk_empty_lvalMap())
+  of None => None
+   | Some(_,s,_) => Some (pFn s)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Decode various enumerated types                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun decodeCommandStatusType s =
+  let val i = Contig.valFn (Contig.Enum "CommandStatusType") s
+  in if i = 0 then CMASI.Pending else
+     if i = 1 then CMASI.Approved else
+     if i = 2 then CMASI.InProcess else
+     if i = 3 then CMASI.Executed else
+     if i = 4 then CMASI.Cancelled
+     else raise Utils.ERR "decodeCommandStatusType" ""
+  end;
+
+fun decodeAltitudeType s =
+  let val i = Contig.valFn (Contig.Enum "AltitudeType") s
+  in if i = 0 then CMASI.AGL else
+     if i = 1 then CMASI.MSL
+     else raise Utils.ERR "decodeAltitudeType" ""
+  end;
+
+fun decodeSpeedType s =
+  let val i = Contig.valFn (Contig.Enum "SpeedType") s
+  in if i = 0 then CMASI.Airspeed else
+     if i = 1 then CMASI.Groundspeed
+     else raise Utils.ERR "decodeSpeedType" ""
+  end;
+
+fun decodeTurnType s =
+  let val i = Contig.valFn (Contig.Enum "TurnType") s
+  in if i = 0 then CMASI.TurnShort else
+     if i = 1 then CMASI.FlyOver
+     else raise Utils.ERR "decodTurnType" ""
+  end;
+
+fun decodeWavelengthBand s =
+  let val i = Contig.valFn (Contig.Enum "CommandStatusType") s
+  in if i = 0 then CMASI.AllAny else
+     if i = 1 then CMASI.EO else
+     if i = 2 then CMASI.LWIR else
+     if i = 3 then CMASI.SWIR else
+     if i = 4 then CMASI.MWIR else
+     if i = 5 then CMASI.Other
+     else raise Utils.ERR "decodeCommandStatusType" ""
+  end;
+
+fun mesg_of_header ptree =
+ case ptree
+  of Contig.RECD [
+         ("seriesID",_),
+         ("mesgType",_),
+         ("seriesVersion",_),
+         ("mesg", pt)] => pt
+   | otherwise => raise Utils.ERR "mesg_of_header" "";
+
+fun mk_uxasOption eltFn ptree =
+ case ptree
+  of Contig.RECD [("present", _), ("contents", elt)] =>
+        (case elt
+          of Contig.RECD [] => None
+           | contig  => Some(eltFn contig))
+   | otherwise => raise Utils.ERR "mk_uxasOption" "";
+
+
+fun mk_mesgOption eltFn = mk_uxasOption (eltFn o mesg_of_header);
+
+fun mk_bounded_mesgOption_array eltFn ptree =
+ case ptree
+  of Contig.RECD [("len",_),("elts", Contig.ARRAY elts)]
+      => Array.fromList (List.mapPartial (mk_mesgOption eltFn) elts)
+   | otherwise  => raise Utils.ERR "mk_bounded_mesgOption_array" "";
+
+fun mk_location3D ptree =
+ case ptree
+  of Contig.RECD
+        [("Latitude", lat),
+         ("Longitude", lon),
+         ("Altitude",  alt),
+         ("AltitudeType", alt_type)]
+     =>
+    CMASI.Location3DRecd
+         (mk_leaf mk_double lat)
+         (mk_leaf mk_double lon)
+         (mk_leaf mk_float alt)
+         (mk_leaf decodeAltitudeType alt_type)
+   | otherwise => raise Utils.ERR "mk_location3D" "";
+
+fun mk_wedge ptree =
+ case ptree
+  of Contig.RECD
+          [("AzimuthCenterline", acl),
+           ("VerticalCenterline",vcl),
+           ("AzimuthExtent",aext),
+           ("VerticalExtent",vext)]
+    => CMASI.WedgeRecd
+         (mk_leaf mk_float acl)
+         (mk_leaf mk_float vcl)
+         (mk_leaf mk_float aext)
+         (mk_leaf mk_float vext)
+   | otherwise => raise Utils.ERR "mk_wedge" "";
+
+(*---------------------------------------------------------------------------*)
+(* Decode polygon                                                            *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_polygon ptree =
+  case ptree
+   of Contig.ARRAY recds => Array.fromList (List.map mk_location3D recds)
+    | otherwise => raise Utils.ERR "mk_polygon" ""
+
+(*---------------------------------------------------------------------------*)
+(* Decode array of trusted IDs. An input to Att_Gate                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_decInt s = Int.fromString (Utils.fromCstring s);
+
+fun toZ ptree =
+ case ptree
+  of Contig.ARRAY elts =>
+        mk_decInt (String.concatWith "" (List.map (Contig.mk_leaf id) elts))
+   | otherwise => raise Utils.ERR "mk_trusted_ids" "toZ";
+
+fun mk_trusted_ids ptree =
+  case ptree
+   of Contig.ARRAY elts => Array.fromList (List.mapPartial toZ elts)
+    | otherwise => raise Utils.ERR "mk_trusted_ids" ""
+
+(*---------------------------------------------------------------------------*)
+(* VehicleAction =                                                           *)
+(*  Recd [("AssociatedTaskList", uxasBoundedArray i64 8)]                    *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_VA ptree =
+ case ptree
+  of Contig.RECD
+       [("AssociatedTaskList",
+         Contig.RECD [("len", _),("elts",Contig.ARRAY elts)])]
+       => CMASI.VehicleActionRecd
+           (Array.fromList (List.map (Contig.mk_leaf mk_i64) elts))
+   | otherwise  => raise Utils.ERR "mk_VA" "";
+
+(*---------------------------------------------------------------------------*)
+(* VehicleActionCommand = Recd [                                             *)
+(*  ("CommandID",         i64),                                              *)
+(*  ("VehicleID",         i64),                                              *)
+(*  ("VehicleActionList", uxasBoundedArray                                   *)
+(*                            (mesgOption "VEHICLEACTION" VehicleAction) 8), *)
+(*  ("Status",            CommandStatusType)                                 *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_VAC ptree =
+ case ptree
+  of Contig.RECD
+       [("CommandID",cid),
+        ("VehicleID", vid),
+        ("VehicleActionList", valist),
+        ("Status", status)]
+      => CMASI.VehicleActionCommandRecd
+            (mk_leaf mk_i64 cid)
+            (mk_leaf mk_i64 vid)
+            (mk_bounded_mesgOption_array mk_VA valist)
+            (mk_leaf decodeCommandStatusType status)
+   | otherwise  => raise Utils.ERR "mk_VAC" "";
+
+(*---------------------------------------------------------------------------*)
+(* Waypoint = Recd [                                                         *)
+(*  ("Location",            Location3D),                                     *)
+(*  ("Number",              i64),                                            *)
+(*  ("NextWaypoint",        i64),                                            *)
+(*  ("Speed",               real32),                                         *)
+(*  ("SpeedType",           SpeedType),                                      *)
+(*  ("check-speed-type",    Assert (Ble(Loc(VarName"SpeedType"),intLit 1))), *)
+(*  ("ClimbRate",           real32),                                         *)
+(*  ("TurnType",            TurnType),                                       *)
+(*  ("check-turn-type",     Assert (Ble(Loc(VarName"TurnType"),intLit 1))),  *)
+(*  ("VehicleActionList",   uxasBoundedArray                                 *)
+(*                             (mesgOption "VEHICLEACTION" VehicleAction) 8),*)
+(*  ("ContingencyWaypointA",i64),                                            *)
+(*  ("ContingencyWaypointB",i64),                                            *)
+(*  ("AssociatedTasks",     uxasBoundedArray i64 8)                          *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_Waypoint ptree =
+  case ptree
+   of Contig.RECD
+         [("Location", Contig.RECD
+              [("Latitude", lat),
+               ("Longitude", lon),
+               ("Altitude", alt),
+               ("AltitudeType", alty)]),
+          ("Number", n),
+          ("NextWaypoint", next_wpt),
+          ("Speed", speed),
+          ("SpeedType", speed_type),
+          ("ClimbRate", climbrate),
+          ("TurnType",turn_type),
+          ("VehicleActionList", valist),
+          ("ContingencyWaypointA",cwptA),
+          ("ContingencyWaypointB",cwptB),
+          ("AssociatedTasks", atasks)]
+      => CMASI.WaypointRecd
+            (mk_leaf mk_double lat)
+            (mk_leaf mk_double lon)
+            (mk_leaf mk_float alt)
+            (mk_leaf decodeAltitudeType alty)
+            (mk_leaf mk_i64 n)
+            (mk_leaf mk_i64 next_wpt)
+            (mk_leaf mk_float speed)
+            (mk_leaf decodeSpeedType speed_type)
+            (mk_leaf mk_float climbrate)
+            (mk_leaf decodeTurnType turn_type)
+            (mk_bounded_mesgOption_array mk_VA valist)
+            (mk_leaf mk_i64 cwptA)
+            (mk_leaf mk_i64 cwptB)
+            (mk_bounded_array (mk_leaf mk_i64) atasks)
+      | otherwise => raise Utils.ERR "mk_Waypoint" "";
+
+fun mk_MC ptree =
+  case ptree
+   of Contig.RECD
+        [("VehicleActionCommand",
+          Contig.RECD
+              [("CommandID", cid),
+	       ("VehicleID", vid),
+               ("VehicleActionList", valist),
+               ("Status", csty)]),
+         ("WaypointList", wpts),
+         ("FirstWaypoint",fstWpt)]
+       => CMASI.MissionCommandRecd
+             (mk_leaf mk_i64 cid)
+             (mk_leaf mk_i64 vid)
+             (mk_bounded_mesgOption_array mk_VA valist)
+             (mk_leaf decodeCommandStatusType csty)
+             (mk_bounded_mesgOption_array mk_Waypoint wpts)
+             (mk_leaf mk_i64 fstWpt)
+    | otherwise => raise Utils.ERR "mk_mission_command" "";
+
+fun mk_KV_pair ptree =
+ case ptree
+  of Contig.RECD [("key", kstr), ("value", vstr)]
+      => CMASI.KeyValuePairRecd (mk_string kstr) (mk_string vstr)
+   | otherwise => raise Utils.ERR "mk_KV_pair" "";
+
+fun mk_operating_region ptree =
+  case ptree
+   of Contig.RECD
+       [("ID",idv),
+        ("keep_in_areas",  kia),
+        ("keep_out_areas", koa)]
+       => let val idval = Contig.mk_bounded (mk_leaf mk_i64) idv
+              val kival = mk_bounded_array (Contig.mk_bounded (mk_leaf mk_u64)) kia
+              val koval = mk_bounded_array (Contig.mk_bounded (mk_leaf mk_u64)) koa
+           in
+             CMASI.OperatingRegionRecd idval kival koval
+           end
+    | otherwise => raise Utils.ERR "mk_operating_region" "";
+
+fun mk_checked_entity ptree =
+ case ptree
+  of Contig.RECD [("entity",e)] => mk_leaf mk_i64 e
+   | otherwise => raise Utils.ERR "mk_checked_task" "";
+
+fun mk_checked_task ptree =
+ case ptree
+  of Contig.RECD [("task",t)] => mk_leaf mk_i64 t
+   | otherwise => raise Utils.ERR "mk_checked_task" "";
+
+fun mk_automation_request ptree =
+  case ptree
+   of Contig.RECD[
+        ("EntityList",        elist),
+        ("TaskList",          tlist),
+        ("TaskRelationShips", trels),
+        ("OperatingRegion",   opreg),
+        ("RedoAllTasks",      redo)]
+       => let val elistV = mk_bounded_array mk_checked_entity elist
+              val tlistV = mk_bounded_array mk_checked_task tlist
+              val tlistSize = Array.length tlistV  (* wanted by CMASI data spec *)
+	      val trelsV = mk_string trels
+              val opregV = mk_leaf mk_i64 opreg
+	      val redoV = mk_leaf mk_bool redo
+          in
+           CMASI.AutomationRequestRecd elistV tlistV tlistSize trelsV opregV redoV
+          end
+    | otherwise => raise Utils.ERR "mk_automation_request" "";
+
+fun mk_linesearch_task ptree =
+  case ptree
+   of Contig.RECD [
+          ("TaskID", taskID),
+          ("Label",label),
+          ("EligibleEntities", eligibles),
+          ("RevisitRate",      rvrate),
+          ("Parameters",       params),
+          ("Priority",         prio),
+          ("Required",         reqd),
+          ("DesiredWavelengthBands", bands),
+          ("DwellTime",              dwell),
+          ("GroundSampleDistance",   gsdist),
+          ("PointList",     points),
+          ("ViewAngleList", vangles),
+          ("UseInertialViewAngles", useangles)]
+       => CMASI.LineSearchTaskRecd
+             (mk_leaf mk_i64 taskID)
+             (mk_string label)
+             (mk_bounded_array (mk_leaf mk_i64) eligibles)
+             (mk_leaf mk_float rvrate)
+             (mk_bounded_mesgOption_array mk_KV_pair params)
+             (mk_leaf mk_i8 prio)
+             (mk_leaf mk_bool reqd)
+             (mk_bounded_array (mk_leaf decodeWavelengthBand) bands)
+             (mk_leaf mk_i64 dwell)
+             (mk_leaf mk_float gsdist)
+             (mk_bounded_mesgOption_array mk_location3D points)
+             (mk_bounded_mesgOption_array mk_wedge vangles)
+             (mk_leaf mk_bool useangles)
+    | otherwise => raise Utils.ERR "mk_linesearch_task" "";
+
+
+(*---------------------------------------------------------------------------*)
+(* automation_response = Recd [                                              *)
+(*  ("MissionCommandList",                                                   *)
+(*      uxasBoundedArray (mesgOption "MISSIONCOMMAND" MissionCommand) 16),   *)
+(*  ("VehicleCommandList",                                                   *)
+(*      uxasBoundedArray                                                     *)
+(*           (mesgOption "VEHICLEACTIONCOMMAND" VehicleActionCommand) 64),   *)
+(*  ("Info", uxasBoundedArray (mesgOption "KEYVALUEPAIR" KeyValuePair) 8)    *)
+(* ]                                                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_automation_response ptree =
+  case ptree
+   of Contig.RECD
+         [("MissionCommandList",mclist),
+          ("VehicleCommandList",vaclist),
+          ("Info", infolist)]
+       => CMASI.AutomationResponseRecd
+            (mk_bounded_mesgOption_array mk_MC mclist)
+            (mk_bounded_mesgOption_array mk_VAC vaclist)
+            (mk_bounded_mesgOption_array mk_KV_pair infolist)
+    | otherwise => raise Utils.ERR "mk_automation_response" ""
+
+(*---------------------------------------------------------------------------*)
+(* Attribute record not defined in CMASI.aadl, so give it here               *)
+(*                                                                           *)
+(* {contentType = mk_leaf drop_last ctype,                                   *)
+(*  descriptor  = mk_leaf drop_last descriptor,                              *)
+(*  source_group = mk_leaf drop_last src_grp,                                *)
+(*  source_entity_ID = mk_leaf drop_last seID,                               *)
+(*  source_service_ID = mk_leaf drop_last ssID}                              *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+datatype attributes = AttributeRecd string string string string string;
+
+fun source_entity_ID_of attr =
+ case attr
+  of AttributeRecd contentType descriptor source_group
+                   source_entity_ID source_service_ID => source_entity_ID;
+
+fun mk_attr_recd ptree =
+ case ptree
+  of Contig.RECD
+        [("contentType", ctype),
+         ("descriptor", descriptor),
+         ("source_group", src_grp),
+         ("source_entity_ID", seID),
+         ("source_service_ID", ssID)]
+      => AttributeRecd
+            (mk_leaf Utils.drop_last ctype)
+            (mk_leaf Utils.drop_last descriptor)
+            (mk_leaf Utils.drop_last src_grp)
+            (mk_leaf Utils.drop_last seID)
+            (mk_leaf Utils.drop_last ssID)
+   | otherwise => raise Utils.ERR "mk_attr_recd" "";
+
+
+(*---------------------------------------------------------------------------
+     datatype LMCPObject
+       = AutomationRequest AutomationRequest
+       | OperatingRegion   OperatingRegion
+       | LineSearchTask    LineSearchTask
+       | AutomationResponse AutomationResponse;
+
+     datatype AddressAttributedMessage =
+       AddressAttributedMessageRecd
+          Address
+          LMCPObject;
+ *---------------------------------------------------------------------------*)
+
+datatype full_mesg =
+  FullMesgRecd string attributes string int (Contig.ptree option) int;
+
+fun mk_full_mesg ptree =
+ case ptree
+  of Contig.RECD [
+      ("address", address),
+      ("attributes", attr_recd),
+      ("controlString", ctlstring),
+      ("mesgSize", msgSize),
+      ("mesg", mesg),
+      ("checksum", csum)]
+     => FullMesgRecd
+          (mk_leaf Utils.drop_last address)
+          (mk_attr_recd attr_recd)
+          (mk_leaf id ctlstring)
+          (mk_leaf mk_u32 msgSize)
+          (mk_mesgOption id mesg)
+          (mk_leaf mk_u32 csum)
+   | otherwise => raise Utils.ERR "mk_full_mesg" ""
+;
+
+fun isPunct ch =
+   (ch = #".") orelse (ch = #",") orelse (ch = #";") orelse
+   (ch = #"$") orelse (ch = #"#") orelse (ch = #"&") orelse (ch = #"%");
+
+fun mk_AddressAttributedMessage ptree =
+ case mk_full_mesg ptree
+  of FullMesgRecd address attribute ctlstring msgSize mesgOpt csum
+  =>
+ case Int.fromString (source_entity_ID_of attribute)
+  of None => raise Utils.ERR "mk_AddressAttributedMessage"
+                   "no ID"
+   | Some i
+  =>
+ case mesgOpt
+  of None => raise Utils.ERR "mk_AddressAttributedMessage" "No message"
+   | Some pt
+  =>
+ let val mesgName = Utils.last (String.tokens isPunct address)
+ in if mesgName = "OperatingRegion" then
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.OperatingRegion (mk_operating_region pt))
+    else
+    if mesgName = "LineSearchTask" then
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.LineSearchTask (mk_linesearch_task pt))
+    else
+    if mesgName = "AutomationRequest" then
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.AutomationRequest (mk_automation_request pt))
+    else
+    if mesgName = "AutomationResponse" then
+        CMASI.AddressAttributedMessageRecd
+              i (CMASI.AutomationResponse (mk_automation_response pt))
+    else raise Utils.ERR "mk_AddressAttributedMessage" "unexpected message type"
+ end
+
+val parse_trusted_ids =
+    dataParse (CMASI_Contig.trustedID_array,mk_trusted_ids);
+
+val parse_polygon =
+    dataParse(CMASI_Contig.polygon,mk_polygon);
+
+val parseARQT =
+    dataParse (CMASI_Contig.automation_request, mk_automation_request);
+
+val parseARSP =
+    dataParse (CMASI_Contig.automation_response,mk_automation_response);
+
+val parseAA =
+    dataParse (CMASI_Contig.aaMesg,mk_AddressAttributedMessage);
+
+val parseAAevent   = eventParse parseAA;
+val parseARQTevent = eventParse parseARQT;
+val parseARSPevent = eventParse parseARSP;
+
+end (* CMASI_Parse *)
+
+(*---------------------------------------------------------------------------*)
+(* Actual API to be used with HAMR                                           *)
+(*---------------------------------------------------------------------------*)
+(*
+structure API =
+struct
+
+<<INPUT-BUF-DECLS>>
+
+<<FILL-INPUT-BUFS>>
+
+<<FFI-OUTPUT-CALLS>>
+
+fun logInfo s = #(api_logInfo) s Utils.emptybuf;
+
+end
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Mocked-up version of API                                                  *)
+(*---------------------------------------------------------------------------*)
+
+structure API =
+struct
+
+<<INPUT-BUF-DECLS>>
+
+
+(*---------------------------------------------------------------------------*)
+(* Grab filter input from file.                                              *)
+(*---------------------------------------------------------------------------*)
+
+fun api_get_<<INPORT>> emptyString buf =
+ case CommandLine.arguments()
+  of [fileName] => Utils.file2buf fileName buf
+   | otherwise =>
+     (TextIO.print_err"Expected a filename"; raise Utils.ERR "" "");
+
+(*---------------------------------------------------------------------------*)
+(* Clear buffer, read file into buffer, copy buffer to string. As stub code, *)
+(* it's an elaborate no-op, but enables easy testing. Note that              *)
+(* api_get_filter_in is assumed to raise an exception when the input is too  *)
+(* large for the buffer.                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun fill_input_buffer () =
+  let val () = Utils.clear_buf input_buffer
+      val () = api_get_<<INPORT>> "" input_buffer
+   in
+      Utils.buf2string input_buffer
+   end;
+
+(*---------------------------------------------------------------------------*)
+(*    #(api_put_filter_out) string Utils.emptybuf                            *)
+(*---------------------------------------------------------------------------*)
+
+fun output_calls string = TextIO.output TextIO.stdOut string;
+
+(*---------------------------------------------------------------------------*)
+(*    #(api_logInfo) s Utils.emptybuf;                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun logInfo s = TextIO.output TextIO.stdErr s;
+
+end
+
+structure Monitor =
+struct
+
+val theContig = CMASI_Contig.eventData <<CONTIG>>;
+
+fun stepFn () =
+ let val s = API.fill_input_buffer () handle Utils.ERR s1 s2 =>
+             (API.logInfo (String.concat
+                ["Monitor rejects message: writing input to buffer failed. ", s1,": ",s2,"\n"]);
+              raise Utils.ERR "" "")
+     val verdict = Contig.wellformed CMASI_Contig.caseEnv theContig s
+ in
+  if verdict then
+      API.output_calls (String.extract s 1 None)
+    else
+       API.logInfo "Monitor rejects message."
+ end
+
+end
+
+(* One-shot test with stubs *)
+
+val _ = Monitor.stepFn();
+
+(*---------------------------------------------------------------------------*)
+(*  Actual setup and invocation                                              *)
+(*---------------------------------------------------------------------------*)
+(*
+structure Control =
+struct
+
+fun pacer_emit() =
+    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+fun pacer_wait() =
+    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
+
+fun loop () =
+  if pacer_wait() then
+    ( receiveInput();
+      Monitor.stepFn();
+      sendOutput();
+      pacer_emit();
+      loop()
+    )
+  else
+    loop();
+
+fun start () = (pacer_emit(); loop());
+
+end;
+
+val _ = Control.start();
+*)
+*)

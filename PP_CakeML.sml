@@ -989,135 +989,160 @@ fun pp_monitor depth mondec =
   end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs1
  end
 
-(*
-structure API =
-struct
-
-val operating_regionAASizeBytes = 256;  (* Set in architecture *)
-
-val filterBuffer =
-  Word8Array.array operating_regionAASizeBytes Utils.w8zero;
-
+local
 (*---------------------------------------------------------------------------*)
-(* When called, HAMR has filled the input buffers. Now we copy them into our *)
-(* local buffers and turn the local buffers into strings.                    *)
+(* Read in the template file "splat/codegen/monitor-template"                *)
 (*---------------------------------------------------------------------------*)
-
-fun read_filter_in() =
-  let val () = Utils.clear_buf filterBuffer
-      val () = #(api_get_filter_in) "" filterBuffer
-  in
-     Utils.buf2string filterBuffer
-  end;
-
-(*---------------------------------------------------------------------------*)
-(* Strip off leading event byte before sending along                         *)
-(*---------------------------------------------------------------------------*)
-
-fun write_filter_out string =
-  let val string' = Word8Array.substring
-                       filterBuffer 1 (Word8Array.length filterBuffer - 1)
-  in
-     #(api_send_filter_out) string' Utils.emptybuf
-  end
-
-end
-
-structure OR_Filter =
-struct
-
-fun filter_step () =
- let val string = read_filter_in()
- in
-    if Contig.wellformed UXAS.caseEnv
-            (UXAS.eventData UXAS.fullOperatingRegionMesg) string
-    then push_output string
-    else print"Filter rejects message.\n"
+val filter_template_ss =
+    let val istrm = TextIO.openIn "codegen/monitor-template"
+	val string = TextIO.inputAll istrm
+    in TextIO.closeIn istrm;
+       Substring.full string
+    end;
+in
+fun locate pat ss =
+ let val (chunkA, suff) = Substring.position pat ss
+     val chunkB = Substring.triml (String.size pat) suff
+ in (chunkA,chunkB)
  end
 
-end (* OR_Filter *)
-
-
-structure Control =
-struct
-
-  fun pacer_emit() =
-      (#(sb_pacer_notification_emit) "" Utils.singlebuf;
-       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
-
-  fun pacer_wait() =
-      (#(sb_pacer_notification_wait) "" Utils.singlebuf;
-       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
-
-  (* Signal HAMR to do communication *)
-
-  fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
-  fun sendOutput()   = #(api_sendOutput)   "" Utils.emptybuf;
-
-  fun loop () =
-    if pacer_wait() then (
-      receiveInput();
-      OR_Filter.filter_step();
-      sendOutput();
-      pacer_emit();
-      loop()
-    )
-    else
-      loop();
-
-  fun start () = ( pacer_emit() ; loop() );
-
+(*---------------------------------------------------------------------------*)
+(* New file contents:                                                        *)
+(*           chunk0 . input-buf-decls .                                       *)
+(*           chunk1 . fill-inputs-decl .                                     *)
+(*           chunk2 . FFI-outputs-decl .                                     *)
+(*           chunk3 . size-origin .                                          *)
+(*           chunk4 . buf-size .                                             *)
+(*           chunk5 . inport-name .                                          *)
+(*           chunk6 . inport-name .                                          *)
+(*           chunk7 . contig-qid .                                           *)
+(*           chunk8                                                          *)
+(*---------------------------------------------------------------------------*)
+val replace  =
+ let val (chunk0,suff0) = locate "<<INPUT-BUF-DECLS>>" filter_template_ss
+     val (chunk1,suff1) = locate "<<FILL-INPUT-BUFS>>" suff0
+     val (chunk2,suff2) = locate "<<FFI-OUTPUT-CALLS>>" suff1
+     val (chunk3,suff3) = locate "<<INPUT-BUF-DECLS>>" suff2
+     val (chunk4,suff4) = locate "<<FILL-INPUT-BUFS>>" suff3
+     val (chunk5,suff5) = locate "<<INPORT>>" suff4
+     val (chunk6,suff6) = locate "<<INPORT>>" suff5
+     val (chunk7,suff7) = locate "<<CONTIG>>" suff6
+ in fn input_buf_decl =>
+    fn fill_inputs_decl =>
+    fn ffi_outputs_decl =>
+    fn size_origin =>
+    fn bufsize =>
+    fn inport =>
+    fn contig =>
+      Substring.concat
+         [chunk0, input_buf_decl,
+          chunk1, fill_inputs_decl,
+          chunk2, ffi_outputs_decl,
+          chunk3, size_origin,
+          chunk4, bufsize,
+          chunk5, inport,
+          chunk6, inport,
+          chunk7, contig,suff7]
+ end
 end;
 
-val _ = Control.start();
-*)
+fun numBytes n = 1 + Int.div(n,8);
 
-(*
-structure Control =
-struct
+fun isIn (name,ty,"in",style) = true
+  | isIn otherwise = false
 
-  fun pacer_emit() =
-      (#(sb_pacer_notification_emit) "" Utils.singlebuf;
-       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+fun mk_inbuf_decl const_alist (pname,ty,d,style) =
+ let val (pkg,tyName) = dest_namedTy ty
+     val sizeName = tyName^"_Bit_Codec_Max_Size"
+     val bitsize_exp = assoc sizeName const_alist
+     val bitsize = dest_intLit bitsize_exp
+     val byte_size_string = Int.toString (1 + numBytes bitsize) (* for event byte *)
+     val () = stdErr_print (String.concat
+                ["    Buffer size (bits/bytes) : ",
+                 Int.toString bitsize,"/",byte_size_string,"\n"])
+     val inbufName = pname^"_buffer"
+ in
+   (inbufName,
+    String.concat
+     ["(*---------------------------------------------------------------------------*)\n",
+      "(* Size computed from ",sizeName, "                  *)\n",
+      "(*---------------------------------------------------------------------------*)\n\n",
+      "val ",inbufName," = Word8Array.array ", byte_size_string, " Utils.w8zero;"])
+ end;
 
-  fun pacer_wait() =
-      (#(sb_pacer_notification_wait) "" Utils.singlebuf;
-       Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+fun mk_fill_inbufs portNames inbufNames =
+ let val clearStrings =
+         map (fn bname => ("val () = Utils.clear_buf "^bname)) inbufNames
+     val fillStrings =
+         map2 (fn pn => fn bn =>
+                ("val () = #(api_get_"^pn^") \"\" "^bn))
+             portNames inbufNames
+     val cpStrings =
+         map (fn bname => ("Utils.buf2string "^bname)) inbufNames
+ in
+ String.concatWith "\n"
+["(*---------------------------------------------------------------------------*)",
+ "(* Clear buffers, read ports into buffers, copy buffers to strings           *)",
+ "(*---------------------------------------------------------------------------*)",
+ "",
+ "fun fill_input_buffers () =",
+ "  let "^String.concatWith "\n      " clearStrings,
+ "      "^concatWith "\n      " fillStrings,
+ "   in",
+ "      ("^concatWith ",\n       " cpStrings^")",
+ "   end;"
+]
+end;
 
-  (* Signal HAMR to do communication on input/output *)
-  fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
-  fun sendOutput()   = #(api_sendOutput)   "" Utils.emptybuf;
+fun mk_output_call (name,ty,_,_) =
+    String.concat ["#(api_put_",name,") ","string Utils.emptybuf"]
 
-  fun fill_output_buffers (oVal1,...,oValk) =
-    let val () = if isNone oVal1 then
-                   ()
-                 else
-                   #(api_send_OperatingRegion_out)
-                     (Option.valOf oVal1) Utils.emptyBuf
-         ...
-     in () end
+fun paren s = String.concat["(",s,")"];
 
-   fun cycleFn () =
-    if pacer_wait() then
-       let val () = receiveInput()
-           val inputs = fill_input_buffers()
-           val (stateVars',outputs) = stepFn inputs (!stateVars)
-           val () = fill_output_buffers outputs
-           val () = sendOutput()
-           stateVars := stateVars'
-       in
-          pacer_emit() ; cycleFn()
-       end
-    else
-      cycleFn();
+fun mk_output_calls oports =
+ let val body =
+       (case oports
+         of [] => raise ERR "mk_output_calls" ""
+          | [port] => mk_output_call port
+          | multiple => paren(String.concatWith ";\n    "
+                               (map mk_output_call oports)))
+ in String.concat
+       ["fun output_calls string =\n   ",body,";"]
+ end
 
-  fun start () = ( pacer_emit() ; cycleFn() );
+(*---------------------------------------------------------------------------*)
+(* Instantiate monitor template with monitor-specific info                   *)
+(*---------------------------------------------------------------------------*)
 
-end (* Control structure *)
+fun inst_monitor_template dir const_alist mondec =
+ let open Substring
+ in
+ case mondec
+  of MonitorDec (qid,ports,latched,decs,ivardecs,policy,guars) =>
+     let val () = stdErr_print ("-> "^qid_string qid^"\n")
+         val (inports, outports) = Lib.partition isIn ports
+         val inportNames = map #1 inports
+         val inbuf_decls = map (mk_inbuf_decl const_alist) inports
+         val inbufNames = map fst inbuf_decls
+         val inbuf_decl_string = String.concatWith "\n\n" (map snd inbuf_decls)^"\n"
+         val fill_inputs_decl = mk_fill_inbufs inportNames inbufNames
+         val outFns = mk_output_calls outports
+   | otherwise => raise ERR "inst_monitor_template" "expected a MonitorDec"
+ end
 
-val _ = Control.start();
-
-*)
+fun export_cakeml_monitors dir const_alist mondecs =
+  if null mondecs then
+     ()
+  else
+  let val qids = map mondec_qid mondecs
+      val names = map qid_string qids
+      val _ = stdErr_print (String.concat
+         ["Creating CakeML monitor implementation(s) for:\n   ",
+          String.concatWith "\n   " names, "\n"])
+  in
+     List.app (inst_monitor_template dir const_alist) mondecs
+   ; stdErr_print " ... Done.\n\n"
+  end
 
 (*---------------------------------------------------------------------------*)
 (* Add in projection functions, and tranform expressions with field          *)
