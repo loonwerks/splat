@@ -11,7 +11,7 @@
 \Copyright{Konrad Slind} %TODO mandatory, please use full first names. LIPIcs license is "CC-BY";  http://creativecommons.org/licenses/by/3.0/
 \ccsdesc[100]{\textcolor{red}{Replace ccsdesc macro with valid one}} %TODO mandatory: Please choose ACM 2012 classifications from https://dl.acm.org/ccs/ccs_flat.cfm
 \keywords{Logic, verification, formal language theory, message format languages} %TODO mandatory; please add comma-separated list of keywords
-%\acknowledgements{I want to thank \dots}%optional
+\acknowledgements{This research was developed with funding from the Defense Advanced Research Projects Agency (DARPA). The views, opinions and/or findings expressed are those of the author and should not be interpreted as representing the official views or policies of the Department of Defense or the U.S. Government.}
 
 %\nolinenumbers %uncomment to disable line numbering
 
@@ -98,25 +98,22 @@ well-formedness conditions on complex message formats for an
 autonomous unmanned avionics system.
 \end{abstract}
 
-%% \section{Disclaimer}
-
-%% This paper describes work in progress and it is only provided for
-%% friends to give feedback on. It might have mistakes and is not for
-%% further distribution without my permission.
 
 \section{Introduction}\label{sec:intro}
 
 Serialized data, for example network messages, is an important
-component in many computer systems.  As a result, innumerable
-libraries and tools have been created that use high level
-specifications as a basis for automating the creation, validation, and
-decoding of such data.\footnote{We will use \emph{message} to stand in
-  for any such format.} Usually, these high level specifications
-describe the format of a message in terms of how the elements (fields)
-of the message are packed side-by-side to make the full message. When
-the size of each field is known in advance, there are really no
-conceptual difficulties. However, messages can be more complicated
-than that.
+component in many computer systems.
+\footnote{DISTRIBUTION STATEMENT A. Approved for public
+release.}
+As a result, innumerable libraries and tools have been created that
+use high level specifications as a basis for automating the creation,
+validation, and decoding of such data.\footnote{We will use
+  \emph{message} to stand in for any such format.} Usually, these high
+level specifications describe the format of a message in terms of how
+the elements (fields) of the message are packed side-by-side to make
+the full message. When the size of each field is known in advance,
+there are really no conceptual difficulties. However, messages can be
+more complicated than that.
 
 The main source of difficulty is \emph{self-describing} messages:
 those where information embedded in fields of the message determines
@@ -534,7 +531,7 @@ given structure and calculates assignments
 (substitutions).\footnote{Thus the notion of matching discussed here
   is in the tradition of term rewriting \cite{baader:nipkow}, the main
   difference being that our substitutions are applied to
-  $\mathit{lvar}$s rather than variables.} Giving some evocative types
+  $\mathit{lval}$s rather than variables.} Giving some evocative types
 helps make the difference clear:
 
 \begin{align*}
@@ -1317,6 +1314,11 @@ self-describing formats. Contiguity types integrate common structuring
 mechanisms from programming languages, such as arrays, records, and
 lists while keeping the foundation in sets of strings, which seems
 appropriate for message specifications.
+
+\section*{Acknowledgements}
+
+Discussions with Robby, Luke Ryon, Dave Greve, David Hardin, Magnus
+Myreen, and Michael Norrish have greatly improved this work.
 
 %% Bibliographyb
 \bibliography{biblio}
