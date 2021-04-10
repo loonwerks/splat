@@ -1,0 +1,59 @@
+Basic example of CakeML and its FFI interface.
+-----------------------------------------------
+
+This directory has the following files:
+
+   $ ls
+   basis_ffi.c  cake.lib  cake.S  Makefile  README  test.cml
+
+  cake.lib    - documentation for the library functions available in CakeML
+  cake.S      - CakeML compiler (assembly)
+  Makefile    - builds executables
+  basis_ffi.c - C implementations of foreign functions
+  test.cml    - simple example, just calls the "cos" function from the C math library
+
+To build an executable:
+
+  $ make
+  cc    -c -o cake.o cake.S
+  cc    -c -o basis_ffi.o basis_ffi.c
+  cc  cake.o basis_ffi.o  -lm -o cake
+  ./cake  <test.cml >test.cake.S
+  cc  test.cake.S basis_ffi.o  -lm -o test.cake
+  rm test.cake.S
+
+For our example file---test.cml---The executable is the file test.cake. To run it:
+
+  $ ./test.cake
+  Input (radians) : 0.0021816597222222219865
+  Cos   (radians) : 0.99999762018137217101
+
+
+Discussion.
+-----------
+
+  The C implementation of the desired function has to handle
+essentially two arguments: a string that holds the arguments, and a
+byte buffer to store the results.
+
+   void ffiradcos(unsigned char *input, long ilen,
+                  unsigned char *output, long olen) {
+     assert (8 == ilen);  /* check input size */
+
+     double arg = *((double*)input); /* cast input to a double */
+     double result = cos(arg);       /* run cos on input */
+     /* copy result to output buffer */
+     memcpy(output, (unsigned char*) &result, sizeof(double));
+   }
+
+This code shows that the C function will be geting its input in flat
+byte arrays, and will have to do some combination of parsing and
+casting to map the input into the types desired by the actual call
+being made.
+
+In a complementary fashion on the CakeML side, an FFI call has the form
+
+  #(fn-name) string buf
+
+where the string holds the flattened arguments to the call, and buf is
+a byte array that holds the result of the FFI.

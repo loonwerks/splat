@@ -62,7 +62,6 @@ sig
                     * ((string * string) * thm) list (* monitors *)
 
  val export_cakeml_filters : string -> (string * exp) list -> filter list -> unit
- val export_cakeml_monitors : string -> (string * exp) list -> monitor list -> unit
 
  datatype port
     = Event of string

@@ -2464,6 +2464,9 @@ val replace  =
  end
 end;
 
+fun dest_namedTy (NamedTy qid) = qid
+  | dest_namedTy other = raise ERR "dest_namedTy" "";
+
 fun isIn (name,ty,"in",style) = true
   | isIn otherwise = false
 

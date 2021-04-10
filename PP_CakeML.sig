@@ -14,4 +14,5 @@ sig
     val pp_monitor : int -> AADL.monitor -> pretty
     val pp_pkg     : int -> AADL.pkg -> pretty
 
+   val export_cakeml_monitors : string -> (string * exp) list -> AADL.monitor list -> unit
 end

@@ -985,9 +985,43 @@ fun pp_monitor depth mondec =
      val infiller_dec = mk_fillFn (filter is_inport dataports)
      val stateVars_dec = mk_stateVardecs (length ivardecs)
      val decs1 = iobufdecs @ [infiller_dec,stateVars_dec] @ decs @ [stepFn,cycleFn]
+     val decs2 = stateVars_dec :: (decs @ [stepFn])
  in
-  end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs1
+  end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
  end
+(*---------------------------------------------------------------------------*)
+(* Add in projection functions, and tranform expressions with field          *)
+(* projections.                                                              *)
+(*---------------------------------------------------------------------------*)
+
+fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
+ let open PolyML
+     val projFns = mk_recd_projns types
+     val consts' = projFns @ consts
+ in if depth = 0 then PrettyString "<decl>"
+   else
+    PrettyBlock(2,true,[],
+        [PrettyString ("structure "^pkgName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts', Line_Break,
+         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors, Line_Break,
+         PrettyString "end"
+        ])
+ end
+
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn ty => pp_ty i "<pkg>" ty);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_exp i "<pkg>" e);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tydec => pp_tydec i "<pkg>" tydec);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tmdec => pp_tmdec i "<pkg>" tmdec);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_monitor i mon);
+val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
+
+
+(*---------------------------------------------------------------------------*)
+(* Instantiate monitor template                                              *)
+(*---------------------------------------------------------------------------*)
 
 local
 (*---------------------------------------------------------------------------*)
@@ -1087,9 +1121,9 @@ fun mk_fill_inbufs portNames inbufNames =
  "",
  "fun fill_input_buffers () =",
  "  let "^String.concatWith "\n      " clearStrings,
- "      "^concatWith "\n      " fillStrings,
+ "      "^String.concatWith "\n      " fillStrings,
  "   in",
- "      ("^concatWith ",\n       " cpStrings^")",
+ "      ("^String.concatWith ",\n       " cpStrings^")",
  "   end;"
 ]
 end;
@@ -1114,6 +1148,7 @@ fun mk_output_calls oports =
 (* Instantiate monitor template with monitor-specific info                   *)
 (*---------------------------------------------------------------------------*)
 
+(*
 fun inst_monitor_template dir const_alist mondec =
  let open Substring
  in
@@ -1126,6 +1161,7 @@ fun inst_monitor_template dir const_alist mondec =
          val inbufNames = map fst inbuf_decls
          val inbuf_decl_string = String.concatWith "\n\n" (map snd inbuf_decls)^"\n"
          val fill_inputs_decl = mk_fill_inbufs inportNames inbufNames
+
          val outFns = mk_output_calls outports
    | otherwise => raise ERR "inst_monitor_template" "expected a MonitorDec"
  end
@@ -1143,34 +1179,6 @@ fun export_cakeml_monitors dir const_alist mondecs =
      List.app (inst_monitor_template dir const_alist) mondecs
    ; stdErr_print " ... Done.\n\n"
   end
-
-(*---------------------------------------------------------------------------*)
-(* Add in projection functions, and tranform expressions with field          *)
-(* projections.                                                              *)
-(*---------------------------------------------------------------------------*)
-
-fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
- let open PolyML
-     val projFns = mk_recd_projns types
-     val consts' = projFns @ consts
- in if depth = 0 then PrettyString "<decl>"
-   else
-    PrettyBlock(2,true,[],
-        [PrettyString ("structure "^pkgName^" = "), Line_Break,
-         PrettyString "struct", Line_Break_2,
-         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts', Line_Break,
-         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors, Line_Break,
-         PrettyString "end"
-        ])
- end
-
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn ty => pp_ty i "<pkg>" ty);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_exp i "<pkg>" e);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tydec => pp_tydec i "<pkg>" tydec);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tmdec => pp_tmdec i "<pkg>" tmdec);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_monitor i mon);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
+*)
 
 end (* PP_CakeML *)

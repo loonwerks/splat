@@ -1,0 +1,58 @@
+(*---------------------------------------------------------------------------*)
+(* Boilerplate                                                               *)
+(*---------------------------------------------------------------------------*)
+
+val byte0 = Word8.fromInt 0;
+val mask = Word64.fromInt 255;
+
+fun byteAt w n =
+  Word8.fromInt(Word64.toInt (Word64.andb (Word64.>> w (n*8)) mask));
+
+fun string_of_double (w:Word64.word) =
+ let val buf = Word8Array.array 8 byte0
+     fun write n x = Word8Array.update buf n x
+ in
+    write 0 (byteAt w 0)
+  ; write 1 (byteAt w 1)
+  ; write 2 (byteAt w 2)
+  ; write 3 (byteAt w 3)
+  ; write 4 (byteAt w 4)
+  ; write 5 (byteAt w 5)
+  ; write 6 (byteAt w 6)
+  ; write 7 (byteAt w 7)
+  ; Word8Array.substring buf 0 8
+ end;
+
+fun double_of_buf buf =
+ let fun elt n = Word8Array.sub buf n
+ in  Word64.concatAll
+       (elt 0) (elt 1) (elt 2) (elt 3) (elt 4) (elt 5) (elt 6) (elt 7)
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Take cos via FFI: map double to a word8 array, then to a string, then     *)
+(* call radcos via the FFI, then map the result back to a double.            *)
+(*---------------------------------------------------------------------------*)
+
+fun ffi_radcos d =
+ let val resBuf = Word8Array.array 8 byte0
+     val drep = string_of_double d
+     val () = #(radcos) drep resBuf
+  in
+     double_of_buf resBuf
+  end
+
+(*---------------------------------------------------------------------------*)
+(* Testing                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+val piConst   = Double.fromString "3.14159";
+val oneEighty = Double.fromString "180.0";
+
+fun toRadian f = Double./ (Double.* f piConst) oneEighty;
+
+val d = toRadian (Double.fromString "0.125");
+val dr = ffi_radcos d;
+
+val _ = print ("Input (radians) : "^Double.toString d^"\n");
+val _ = print ("Cos   (radians) : "^Double.toString dr^"\n");
