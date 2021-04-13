@@ -8,7 +8,7 @@ val mask = Word64.fromInt 255;
 fun byteAt w n =
   Word8.fromInt(Word64.toInt (Word64.andb (Word64.>> w (n*8)) mask));
 
-fun string_of_double (w:Word64.word) =
+fun pack_double (w:Word64.word) =
  let val buf = Word8Array.array 8 byte0
      fun write n x = Word8Array.update buf n x
  in
@@ -23,7 +23,7 @@ fun string_of_double (w:Word64.word) =
   ; Word8Array.substring buf 0 8
  end;
 
-fun double_of_buf buf =
+fun unpack_double buf =
  let fun elt n = Word8Array.sub buf n
  in  Word64.concatAll
        (elt 0) (elt 1) (elt 2) (elt 3) (elt 4) (elt 5) (elt 6) (elt 7)
@@ -36,10 +36,10 @@ fun double_of_buf buf =
 
 fun ffi_radcos d =
  let val resBuf = Word8Array.array 8 byte0
-     val drep = string_of_double d
+     val drep = pack_double d
      val () = #(radcos) drep resBuf
   in
-     double_of_buf resBuf
+     unpack_double resBuf
   end
 
 (*---------------------------------------------------------------------------*)
@@ -56,3 +56,63 @@ val dr = ffi_radcos d;
 
 val _ = print ("Input (radians) : "^Double.toString d^"\n");
 val _ = print ("Cos   (radians) : "^Double.toString dr^"\n");
+
+(*---------------------------------------------------------------------------*)
+(* Multiple arguments                                                        *)
+(*---------------------------------------------------------------------------*)
+
+fun pack_double_pair w1 w2 =
+ let val buf = Word8Array.array 16 byte0
+     fun write n x = Word8Array.update buf n x
+ in
+    write 0 (byteAt w1 0)
+  ; write 1 (byteAt w1 1)
+  ; write 2 (byteAt w1 2)
+  ; write 3 (byteAt w1 3)
+  ; write 4 (byteAt w1 4)
+  ; write 5 (byteAt w1 5)
+  ; write 6 (byteAt w1 6)
+  ; write 7 (byteAt w1 7)
+
+  ; write 8  (byteAt w2 0)
+  ; write 9  (byteAt w2 1)
+  ; write 10 (byteAt w2 2)
+  ; write 11 (byteAt w2 3)
+  ; write 12 (byteAt w2 4)
+  ; write 13 (byteAt w2 5)
+  ; write 14 (byteAt w2 6)
+  ; write 15 (byteAt w2 7)
+
+  ; Word8Array.substring buf 0 16
+ end;
+
+fun unpack_double_pair buf =
+ let fun elt n = Word8Array.sub buf n
+ in  (Word64.concatAll
+       (elt 0) (elt 1) (elt 2) (elt 3) (elt 4) (elt 5) (elt 6) (elt 7),
+      Word64.concatAll
+       (elt 8) (elt 9) (elt 10) (elt 11) (elt 12) (elt 13) (elt 14) (elt 15)
+     )
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Take cos and sine via FFI: map double d1 and d2 to a packed word8 array,  *)
+(* then to a string, then call rad_cos_sine via the FFI, then map the        *)
+(* results back to a pair of doubles.                                        *)
+(*---------------------------------------------------------------------------*)
+
+fun ffi_rad_cos_sine d1 d2 =
+ let val resBuf = Word8Array.array 16 byte0
+     val drep = pack_double_pair d1 d2
+     val () = #(rad_cos_sine) drep resBuf
+  in
+     unpack_double_pair resBuf
+  end
+
+val d1 = toRadian (Double.fromString "0.125");
+val d2 = toRadian (Double.fromString "0.333");
+val (dr1,dr2) = ffi_rad_cos_sine d1 d2;
+
+val _ = print ("Input (radians) : "^Double.toString d1^", "^Double.toString d2^"\n");
+val _ = print ("Cos             : "^Double.toString dr1^"\n");
+val _ = print ("Sine            : "^Double.toString dr2^"\n");

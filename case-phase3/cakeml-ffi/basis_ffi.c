@@ -274,3 +274,24 @@ void ffiradcos(unsigned char *input, long ilen,
   /*  printf("FFI: arg : %f   cos: %f \n", arg, result); */
   memcpy(output, (unsigned char*) &result, sizeof(double));
 }
+
+void ffirad_cos_sine
+       (unsigned char *input, long ilen,
+        unsigned char *output, long olen) {
+
+  assert (16 == ilen);
+  long dlen = sizeof (double);
+
+  double arg1,arg2,res1,res2;
+
+  memcpy(&arg1, input, dlen);
+  memcpy(&arg2, input + dlen, dlen);
+
+  res1 = cos(arg1);
+  res2 = sin(arg2);
+
+  printf("FFI: arg1 : %f   cos: %f \n     arg2 : %f   sin: %f \n", arg1, res1, arg2, res2);
+
+  memcpy(output,        (unsigned char*) &res1, dlen);
+  memcpy(output + dlen, (unsigned char*) &res2, dlen);
+}
