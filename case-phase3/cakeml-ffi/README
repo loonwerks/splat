@@ -10,7 +10,9 @@ This directory has the following files:
   cake.S      - CakeML compiler (assembly)
   Makefile    - builds executables
   basis_ffi.c - C implementations of foreign functions
-  test.cml    - simple example, just calls the "cos" function from the C math library
+  test.cml    - simple examples, first just calls the "cos" function from the C math library,
+                second takes two args, and calls cos on the first, sin on the second,
+		returns a pair of results.
 
 To build an executable:
 
@@ -25,16 +27,51 @@ To build an executable:
 For our example file---test.cml---The executable is the file test.cake. To run it:
 
   $ ./test.cake
+  Test 1.
   Input (radians) : 0.0021816597222222219865
-  Cos   (radians) : 0.99999762018137217101
+  Cos             : 0.99999762018137217101
+
+  Test 2.
+  Input1 (radians) : 0.0021816597222222219865
+  Cos              : 0.99999762018137217101
+
+  Input2           : 17.026719668888887327
+  Sine             : -0.96840572036184568994
 
 
 Discussion.
 -----------
 
-  The C implementation of the desired function has to handle
-essentially two arguments: a string that holds the arguments, and a
-byte buffer to store the results.
+ On the CakeML side, an FFI call has the form
+
+  #(fn-name) string buf
+
+where the string holds the flattened arguments to the call, and buf is
+a byte array that holds the result of the FFI.
+
+The C implementation of the desired function has to handle
+four arguments:
+
+   a. a string that holds the inputs for the FFI call
+   b. an integer giving the length of the string
+   c. a byte buffer to store the results
+   d. an integer giving the length of the byte buffer.
+
+ For a CakeML FFI invocation
+
+   #(foo) string buf
+
+the corresponding C implementation in basis_ffi.c has the general form
+
+   void ffifoo (unsigned char *input, long ilen,
+                unsigned char *output, long olen) { <body> }
+
+
+Inside <body> there has to be some boilerplate code that unpacks the
+input string into C values; then the actual computation happens,
+yielding results; then the results are packed into the output
+buffer. Following is the first example in test.cml, which takes the
+"cos" of a single double value.
 
    void ffiradcos(unsigned char *input, long ilen,
                   unsigned char *output, long olen) {
@@ -46,14 +83,5 @@ byte buffer to store the results.
      memcpy(output, (unsigned char*) &result, sizeof(double));
    }
 
-This code shows that the C function will be geting its input in flat
-byte arrays, and will have to do some combination of parsing and
-casting to map the input into the types desired by the actual call
-being made.
-
-In a complementary fashion on the CakeML side, an FFI call has the form
-
-  #(fn-name) string buf
-
-where the string holds the flattened arguments to the call, and buf is
-a byte array that holds the result of the FFI.
+A later example in test.cml shows how mutiple arguments are packed and
+unpacked.
