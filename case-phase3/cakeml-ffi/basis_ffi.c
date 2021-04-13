@@ -290,7 +290,9 @@ void ffirad_cos_sine
   res1 = cos(arg1);
   res2 = sin(arg2);
 
-  printf("FFI: arg1 : %f   cos: %f \n     arg2 : %f   sin: %f \n", arg1, res1, arg2, res2);
+  /*
+   printf("FFI: arg1 : %f   cos: %f \n     arg2 : %f   sin: %f \n", arg1, res1, arg2, res2);
+  */
 
   memcpy(output,        (unsigned char*) &res1, dlen);
   memcpy(output + dlen, (unsigned char*) &res2, dlen);

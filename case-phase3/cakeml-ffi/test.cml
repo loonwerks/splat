@@ -54,8 +54,10 @@ fun toRadian f = Double./ (Double.* f piConst) oneEighty;
 val d = toRadian (Double.fromString "0.125");
 val dr = ffi_radcos d;
 
+val _ = print "Test 1.\n"
 val _ = print ("Input (radians) : "^Double.toString d^"\n");
-val _ = print ("Cos   (radians) : "^Double.toString dr^"\n");
+val _ = print ("Cos             : "^Double.toString dr^"\n\n");
+
 
 (*---------------------------------------------------------------------------*)
 (* Multiple arguments                                                        *)
@@ -110,9 +112,12 @@ fun ffi_rad_cos_sine d1 d2 =
   end
 
 val d1 = toRadian (Double.fromString "0.125");
-val d2 = toRadian (Double.fromString "0.333");
+val d2 = toRadian (Double.fromString "975.56");
+
 val (dr1,dr2) = ffi_rad_cos_sine d1 d2;
 
-val _ = print ("Input (radians) : "^Double.toString d1^", "^Double.toString d2^"\n");
-val _ = print ("Cos             : "^Double.toString dr1^"\n");
-val _ = print ("Sine            : "^Double.toString dr2^"\n");
+val _ = print "Test 2.\n"
+val _ = print ("Input1 (radians) : "^Double.toString d1^"\n");
+val _ = print ("Cos              : "^Double.toString dr1^"\n\n");
+val _ = print ("Input2           : "^Double.toString d2^"\n");
+val _ = print ("Sine             : "^Double.toString dr2^"\n");
