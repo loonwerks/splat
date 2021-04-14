@@ -1,0 +1,148 @@
+use "../mesg_format/Contig.sig";
+use "../mesg_format/Contig.sml";
+use "take_bits.sml";
+open Contig;
+
+
+fun varloc s = Loc (VarName s);
+
+(*---------------------------------------------------------------------------*)
+(* Combination of tt_bits gives track status.                                *)
+(*---------------------------------------------------------------------------*)
+
+val miscIndicators = Recd [
+  ("tt_bit0",    Raw (intLit 1)),
+  ("tt_bit1",    Raw (intLit 1)),
+  ("reportKind", Raw (intLit 1)),
+  ("airborne",   Raw (intLit 1))
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* 28 bytes in length. Interpretations of fields:                            *)
+(*                                                                           *)
+(*   messageId - 8 bits, unsigned, expected to be 20                         *)
+(*   status    - 4 bits, unsigned, [0..1] used                               *)
+(*   addrType  - 4 bits, unsigned, [0..5] used                               *)
+(*   address   - 3 bytes, UNSURE
+(*   lat       - 24 bits, UNSURE, signed, but representation not spelled out *)
+(*   lon       - 24 bits, UNSURE, signed, but representation not spelled out *)
+(*   alt       - 12 bits, unsigned. To get value: valOf(bits) *25 - 1000     *)
+(*   miscInd   - , miscIndicators                                            *)
+(*   nic       - 4 bits, essentially an enum of 12 elts (0-11)               *)
+(*   nacp      - 4 bits, essentially an enum of 12 elts (0-11)               *)
+(*   horizV    - 12 bits, unsigned, range [0..4093]. >= 4094 => 0xFFE        *)
+(*   vertV     - 12 bits, signed, some special cases                         *)
+(*   heading   - 8 bits, UNSURE "angular weighted value"                     *)
+(*   emitter   - 8 bits, unsigned, range [0..39],                            *)
+(*   callSgn   - 64 bits: 8 chars drawn from [A-Z," ",0-9]                   *)
+(*   prio      - 4 bits, unsigned, [0-6] used                                *)
+(*   spare     - 4 bits, unused.                                             *)
+(*---------------------------------------------------------------------------*)
+
+val traffic_report = Recd [
+  ("messageID", Raw(intLit 8)),
+  ("check-traffic-report", Assert (Beq(varloc"messageID", intLit 20))),
+  ("status",  Raw(intLit 4)),
+  ("addrType",Raw(intLit 4)),
+  ("address", Raw (intLit (8 * 3))),
+  ("lat",     Raw (intLit (8 * 3))),
+  ("lon",     Raw (intLit (8 * 3))),
+  ("alt",     Raw (intLit (4 * 3))),
+  ("miscInd", miscIndicators),
+  ("nic",     Raw (intLit 4)),
+  ("nacp",    Raw (intLit 4)),
+  ("horizV",  Raw (intLit (4 * 3))),
+  ("vertV",   Raw (intLit (4 * 3))),
+  ("heading", Raw (intLit (4 * 2))),
+  ("emitter", Raw (intLit (4 * 2))),
+  ("callSgn", Raw (intLit (8 * 8))),
+  ("prio",    Raw (intLit 4)),
+  ("spare",   Raw (intLit 4))
+ ];
+
+fun trChunks A =
+ let val N = w8array_to_ii A
+     val (messageID,N) = take_bits 8 N
+     val (status,N)    = take_bits 4 N
+     val (addrType,N)  = take_bits 4 N
+     val (address,N)   = take_bits 24 N
+     val (lat,N)       = take_bits 24 N
+     val (lon,N)       = take_bits 24 N
+     val (alt,N)       = take_bits 12 N
+     val (miscInd,N)   = take_bits 4 N
+     val (nic,N)       = take_bits 4 N
+     val (nacp,N)      = take_bits 4 N
+     val (horizV,N)    = take_bits 12 N
+     val (vertV,N)     = take_bits 12 N
+     val (heading,N)   = take_bits 8 N
+     val (emitter,N)   = take_bits 8 N
+     val (callSgn,N)   = take_bits 64 N
+     val (prio,N)      = take_bits 4 N
+     val (spare,N)     = take_bits 4 N
+ in
+  [("messageID", messageID),
+   ("status",    status),
+   ("addrType",  addrType),
+   ("address",   address),
+   ("lat",       lat),
+   ("lon",       lon),
+   ("alt",       alt),
+   ("miscInd",   miscInd),
+   ("nic",       nic),
+   ("nacp",      nacp),
+   ("horizV",    horizV),
+   ("vertV",     vertV),
+   ("heading",   heading),
+   ("emitter",   emitter),
+   ("callSgn",   callSgn),
+   ("prio",      prio),
+   ("spare",     spare)
+  ]
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Example                                                                   *)
+(*---------------------------------------------------------------------------*)
+(*
+    1 - Message ID 0x14
+    2 - st 0x00
+    3 - aa 0xAB
+    4 - aa 0x45
+    5 - aa 0x49
+    6 - ll 0x1F
+    7 - ll 0xEF
+    8 - ll 0x15
+    9 - nn 0xA8
+    10 - nn 0x89
+    11 - nn 0x78
+    12 - dd 0x0F
+    13 - dm 0x09
+    14 - ia 0xA9
+    15 - hh 0x07
+    16 - hv 0xB0
+    17 - vv 0x01
+    18 - tt 0x20
+    19 - ee 0x01
+    20 - cc 0x4E
+    21 - cc 0x38
+    22 - cc 0x32
+    23 - cc 0x35
+    24 - cc 0x56
+    25 - cc 0x20
+    26 - cc 0x20
+    27 - cc 0x20
+    28 - px 0x00
+*)
+
+val list =
+ [0x14, 0x00, 0xAB, 0x45, 0x49, 0x1F, 0xEF, 0x15, 0xA8,
+  0x89, 0x78, 0x0F, 0x09, 0xA9, 0x07, 0xB0, 0x01, 0x20,
+  0x01, 0x4E, 0x38, 0x32, 0x35, 0x56, 0x20, 0x20, 0x20, 0x00];
+
+val w8list = map Word8.fromInt list;
+val A = Word8Array.fromList w8list;
+val N = w8array_to_ii A;
+
+val recd = trChunks A;
+val L1 = assoc "lat" recd;
+val L2 = assoc "lon" recd;
