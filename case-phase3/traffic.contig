@@ -1,10 +1,43 @@
 use "../mesg_format/Contig.sig";
 use "../mesg_format/Contig.sml";
-use "take_bits.sml";
 open Contig;
 
+use "take_bits.sml";
 
 fun varloc s = Loc (VarName s);
+
+(*---------------------------------------------------------------------------*)
+(* Traffic report datastructure                                              *)
+(*---------------------------------------------------------------------------*)
+
+type miscIndicators =
+  {tt_bit0 : bool,
+   tt_bit1 : bool,
+   reportKind : bool,
+   airborne : bool};
+
+type traffic_report =
+   {messageID : int,
+    status : int,
+    addrType : int,
+    address : int,
+    lat : real,
+    lon : real,
+    alt : int,
+    miscInd : miscIndicators,
+    nic : int,
+    nacp : int,
+    horizV : int,
+    vertV : int,
+    heading : int,
+    emitter : int,
+    callSign : string,
+    prio : int
+  };
+
+(*===========================================================================*)
+(* Contiguity types for message buffer parsing                               *)
+(*===========================================================================*)
 
 (*---------------------------------------------------------------------------*)
 (* Combination of tt_bits gives track status.                                *)
@@ -18,23 +51,24 @@ val miscIndicators = Recd [
  ];
 
 (*---------------------------------------------------------------------------*)
-(* 28 bytes in length. Interpretations of fields:                            *)
+(* 28 bytes in length. Interpretations of fields given below in field        *)
+(* constructors.                                                             *)
 (*                                                                           *)
 (*   messageId - 8 bits, unsigned, expected to be 20                         *)
 (*   status    - 4 bits, unsigned, [0..1] used                               *)
 (*   addrType  - 4 bits, unsigned, [0..5] used                               *)
-(*   address   - 3 bytes, UNSURE
-(*   lat       - 24 bits, UNSURE, signed, but representation not spelled out *)
-(*   lon       - 24 bits, UNSURE, signed, but representation not spelled out *)
-(*   alt       - 12 bits, unsigned. To get value: valOf(bits) *25 - 1000     *)
-(*   miscInd   - , miscIndicators                                            *)
+(*   address   - 3 bytes,                                                    *)
+(*   lat       - 24 bits, signed real                                        *)
+(*   lon       - 24 bits, signed real                                        *)
+(*   alt       - 12 bits, unsigned.                                          *)
+(*   miscInd   - miscIndicators                                              *)
 (*   nic       - 4 bits, essentially an enum of 12 elts (0-11)               *)
 (*   nacp      - 4 bits, essentially an enum of 12 elts (0-11)               *)
 (*   horizV    - 12 bits, unsigned, range [0..4093]. >= 4094 => 0xFFE        *)
 (*   vertV     - 12 bits, signed, some special cases                         *)
-(*   heading   - 8 bits, UNSURE "angular weighted value"                     *)
+(*   heading   - 8 bits, angular weighted value                              *)
 (*   emitter   - 8 bits, unsigned, range [0..39],                            *)
-(*   callSgn   - 64 bits: 8 chars drawn from [A-Z," ",0-9]                   *)
+(*   callSign  - 64 bits: 8 chars drawn from [A-Z," ",0-9]                   *)
 (*   prio      - 4 bits, unsigned, [0-6] used                                *)
 (*   spare     - 4 bits, unused.                                             *)
 (*---------------------------------------------------------------------------*)
@@ -55,30 +89,36 @@ val traffic_report = Recd [
   ("vertV",   Raw (intLit (4 * 3))),
   ("heading", Raw (intLit (4 * 2))),
   ("emitter", Raw (intLit (4 * 2))),
-  ("callSgn", Raw (intLit (8 * 8))),
+  ("callSign", Raw (intLit (8 * 8))),
   ("prio",    Raw (intLit 4)),
   ("spare",   Raw (intLit 4))
  ];
 
+(*---------------------------------------------------------------------------*)
+(* Message is taken into pieces with bits_of                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun slicer A width i = (bits_of A i width, i+width)
+
 fun trChunks A =
- let val N = w8array_to_ii A
-     val (messageID,N) = take_bits 8 N
-     val (status,N)    = take_bits 4 N
-     val (addrType,N)  = take_bits 4 N
-     val (address,N)   = take_bits 24 N
-     val (lat,N)       = take_bits 24 N
-     val (lon,N)       = take_bits 24 N
-     val (alt,N)       = take_bits 12 N
-     val (miscInd,N)   = take_bits 4 N
-     val (nic,N)       = take_bits 4 N
-     val (nacp,N)      = take_bits 4 N
-     val (horizV,N)    = take_bits 12 N
-     val (vertV,N)     = take_bits 12 N
-     val (heading,N)   = take_bits 8 N
-     val (emitter,N)   = take_bits 8 N
-     val (callSgn,N)   = take_bits 64 N
-     val (prio,N)      = take_bits 4 N
-     val (spare,N)     = take_bits 4 N
+ let val slice = slicer A
+     val (messageID,i) = slice 8 0
+     val (status,i)    = slice 4 i
+     val (addrType,i)  = slice 4 i
+     val (address,i)   = slice 24 i
+     val (lat,i)       = slice 24 i
+     val (lon,i)       = slice 24 i
+     val (alt,i)       = slice 12 i
+     val (miscInd,i)   = slice 4 i
+     val (nic,i)       = slice 4 i
+     val (nacp,i)      = slice 4 i
+     val (horizV,i)    = slice 12 i
+     val (vertV,i)     = slice 12 i
+     val (heading,i)   = slice 8 i
+     val (emitter,i)   = slice 8 i
+     val (callSign,i)  = slice 64 i
+     val (prio,i)      = slice 4 i
+     val (spare,i)     = slice 4 i
  in
   [("messageID", messageID),
    ("status",    status),
@@ -94,11 +134,85 @@ fun trChunks A =
    ("vertV",     vertV),
    ("heading",   heading),
    ("emitter",   emitter),
-   ("callSgn",   callSgn),
+   ("callSign",  callSign),
    ("prio",      prio),
    ("spare",     spare)
   ]
  end
+
+
+(*---------------------------------------------------------------------------*)
+(* Construct traffic report fields                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_messageID blist = unsigned blist;
+fun mk_status blist   = unsigned blist;
+fun mk_addrType blist = unsigned blist;
+fun mk_address blist  = unsigned blist;
+
+local
+  open Real
+  val ii_real = Real.fromInt o IntInf.toInt
+  val twoE23 = IntInf.pow(ii_2,23)
+  val factor = 180.0 / ii_real twoE23
+in
+fun mk_lat blist = factor * Real.fromInt (twos_comp blist);
+fun mk_lon blist = factor * Real.fromInt (twos_comp blist);
+end;
+
+fun mk_alt blist  = unsigned blist * 25 - 1000;
+
+fun mk_miscInd blist =
+  case blist
+   of [tt0,tt1,rptK,aborn] =>
+        {tt_bit0 = boolVal tt0,
+         tt_bit1 = boolVal tt1,
+         reportKind = boolVal rptK,
+         airborne = boolVal aborn}
+   | otherwise => raise ERR "mk_miscInd" "";
+
+fun mk_nic blist   = unsigned  blist;
+fun mk_nacp blist  = unsigned  blist;
+fun mk_horizV blist = unsigned blist
+fun mk_vertV blist = twos_comp blist * 64;
+
+local
+  open Real
+  val factor = 360.0 / 256.0
+in
+fun mk_heading blist = factor * Real.fromInt (unsigned blist);
+end
+
+fun mk_emitter blist = unsigned blist;
+fun mk_callSign blist= stringVal blist;
+fun mk_prio blist = unsigned blist;
+
+(*---------------------------------------------------------------------------*)
+(* Make a traffic report with appropriate integer and real values.           *)
+(*---------------------------------------------------------------------------*)
+
+fun parse_traffic_report A =
+ let val chunks = trChunks A
+     fun elt s = assoc s chunks
+ in
+ {messageID = mk_messageID (elt "messageID"),
+  status   = mk_status (elt "status"),
+  addrType = mk_addrType (elt "addrType"),
+  address  = mk_address (elt "address"),
+  lat      = mk_lat (elt "lat"),
+  lon      = mk_lon (elt "lon"),
+  alt      = mk_alt (elt "alt"),
+  miscInd  = mk_miscInd (elt "miscInd"),
+  nic      = mk_nic (elt "nic"),
+  nacp     = mk_nacp (elt "nacp"),
+  horizV   = mk_horizV (elt "horizV"),
+  vertV    = mk_vertV (elt "vertV"),
+  heading  = mk_heading (elt "heading"),
+  emitter  = mk_emitter (elt "emitter"),
+  callSign = mk_callSign (elt "callSign"),
+  prio     = mk_prio (elt "prio")
+ }
+ end;
 
 (*---------------------------------------------------------------------------*)
 (* Example                                                                   *)
@@ -141,8 +255,5 @@ val list =
 
 val w8list = map Word8.fromInt list;
 val A = Word8Array.fromList w8list;
-val N = w8array_to_ii A;
 
-val recd = trChunks A;
-val L1 = assoc "lat" recd;
-val L2 = assoc "lon" recd;
+val report = parse_traffic_report A;

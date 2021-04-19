@@ -1,96 +1,122 @@
 val ERR = mk_HOL_ERR "take_bits";
 
+fun assert b s = if b then () else raise ERR s "assertion failure";
+
+fun take_drop n list =
+    SOME(List.take(list, n),List.drop(list, n)) handle _ => NONE;
+
+fun divmod i n = (Int.div(i,n), Int.mod(i,n));
+
+val pow2 = Array.fromList [1,2,4,8,16,32,64,128,256];
+
+fun twoExp n = Array.sub(pow2,n);
+
+fun grab_bits n N =  (* should use dnc *)
+ if n <= 0 then []
+ else
+ let val (i1,b1) = divmod N 2
+  in if n = 1 then [b1]
+ else let val (i2,b2) = divmod i1 2
+  in if n = 2 then [b2,b1]
+ else let val (i3,b3) = divmod i2 2
+  in if n = 3 then [b3,b2,b1]
+ else let val (i4,b4) = divmod i3 2
+  in if n = 4 then [b4,b3,b2,b1]
+ else let val (i5,b5) = divmod i4 2
+  in if n = 5 then [b5,b4,b3,b2,b1]
+ else let val (i6,b6) = divmod i5 2
+  in if n = 6 then [b6,b5,b4,b3,b2,b1]
+ else let val (i7,b7) = divmod i6 2
+  in if n = 7 then [b7,b6,b5,b4,b3,b2,b1]
+ else [i7,b7,b6,b5,b4,b3,b2,b1]
+ end end end end end end end;
+
+fun bytes2bits nlist = List.concat (List.map (grab_bits 8) nlist);
+
+fun byteInterval A i j =
+   if i <= j then
+      Word8Array.sub(A,i)::byteInterval A (i+1) j
+   else [];
+
 (*---------------------------------------------------------------------------*)
-(* Break number up into a base-k representation. Big-endian.                 *)
+(* Chop interval in bits [i..i+width] from byte                              *)
 (*---------------------------------------------------------------------------*)
 
-fun wordNlistBE k ii =
- let fun accFn ii acc =
-  if ii < k then
-       ii::acc
-  else let val (d,m) = IntInf.divMod(ii,k)
-       in accFn d (m::acc)
-       end
- in accFn ii []
+fun byteSegment byte i width =
+ let val _ = assert (i + width <= 8) "byteSegment"
+     val shift = Word.fromInt (8 - (i + width))
+     val byte' = Word8.>>(byte, shift)
+     val N = Int.mod(Word8.toInt byte',twoExp width)
+ in grab_bits width N
  end;
 
 (*---------------------------------------------------------------------------*)
-(* Little-endian version.                                                    *)
+(* Extract bits [lo..lo+width-1] from A. Bit endianess = BE.                 *)
 (*---------------------------------------------------------------------------*)
 
-fun wordNlist k ii = List.rev(wordNlistBE k ii);
+fun bits_of A lo width =
+ let val len = Word8Array.length A
+     val (loIndex,i) = divmod lo 8
+     val (hiIndex,j) = divmod (lo + width) 8
+     val _ = assert (0 <= lo andalso lo + width <= len * 8) "bits_of"
+     val lbyte = Word8Array.sub(A,loIndex)
+ in
+  if width + i <= 8 then
+     byteSegment lbyte i width
+  else
+  let val lbits = byteSegment lbyte i (8 - i)
+      val (cbytes,rbyte) = front_last (byteInterval A (loIndex+1) hiIndex)
+      val cbits = bytes2bits (List.map Word8.toInt cbytes)
+      val shift = Word.fromInt (8 - j)
+      val rbyte' = Word8.>>(rbyte, shift)
+      val rbits = grab_bits j (Word8.toInt rbyte')
+  in
+    lbits @ cbits @ rbits
+  end
+ end;
+
+
+(*---------------------------------------------------------------------------*)
+(* Map from bit lists to N                                                   *)
+(*---------------------------------------------------------------------------*)
 
 val ii_0 = IntInf.fromInt 0;
 val ii_2 = IntInf.fromInt 2;
 val ii_256 = IntInf.fromInt 256;
 
-val bits_of = wordNlist ii_2;
-val bytes_of = wordNlist ii_256;
-
-fun ii_byte ii = Word8.fromInt(IntInf.toInt ii);
-fun byte_ii byte = IntInf.fromInt(Word8.toInt byte);
-
-(*---------------------------------------------------------------------------*)
-(* Map a LE byte array B = [b0,b1,...,b(n-1)] to N = b0 + 256 * (b1 + ...)   *)
-(*---------------------------------------------------------------------------*)
-
-fun w8array_to_ii bytes =
-  let open IntInf
-      fun step (byte,ii) = byte_ii byte + ii_256 * ii
-  in Word8Array.foldr step ii_0 bytes
-  end
-
-fun ii_to_w8array ii = Word8Array.fromList (List.map ii_byte (bytes_of ii));
-
-(*---------------------------------------------------------------------------*)
-(* Take n bits off an ii. Return a pair (bits,N') where N' is the remaining  *)
-(* number and bits is the big-endian list of bits.                           *)
-(*---------------------------------------------------------------------------*)
-
-fun ncopies x n = if n<1 then [] else x::ncopies x (n-1);
-
-fun zeroPadR n bits = bits @ ncopies ii_0 (n - length bits);
-
-fun take_bits nbits N =
- let val (d,m) = IntInf.divMod(N, IntInf.pow(ii_2,nbits))
- in (zeroPadR nbits (bits_of m), d)
+fun bitsValBE blist =
+ let open IntInf
+ in rev_itlist (fn bit => fn acc => IntInf.fromInt(bit) + ii_2 * acc) blist 0
  end;
 
-(*---------------------------------------------------------------------------*)
-(* Tests                                                                     *)
-(*---------------------------------------------------------------------------*)
+fun unsigned blist = IntInf.toInt(bitsValBE blist)
 
-fun string_to_w8array s =
-  Word8Array.fromList
-      (List.map Byte.charToByte (String.explode s));
-
-fun w8array_to_string A = Byte.bytesToString (Word8Array.vector A);
-
-val N = w8array_to_ii (string_to_w8array "100");
-val s = w8array_to_string(ii_to_w8array N);
-
-val N = w8array_to_ii
-        (string_to_w8array "rumblefishrumblefishrumblefishrumblefishrumblefish");
-val s = w8array_to_string(ii_to_w8array N);
-
-(*---------------------------------------------------------------------------*)
-(* Map a LE list L = [b0,b1,...,b(n-1)] to N = b0 + 256 * (b1 + ...)         *)
-(*---------------------------------------------------------------------------*)
-
-fun bitsVal blist = itlist (fn bit => fn acc => bit + ii_2 * acc) blist 0;
+fun twos_comp blist =
+ let val U = IntInf.pow(ii_2, length blist)
+     val halfU = IntInf.div(U,ii_2)
+     val n = IntInf.fromInt(unsigned blist)
+  in
+    IntInf.toInt(if IntInf.<(n,halfU) then n else IntInf.-(n,U))
+ end;
 
 fun chunkBy n list =
  let fun chunk list =
-      if length list = n then [list]
+      if length list <= n then [list]
       else let val (c,rst) = Option.valOf (take_drop n list)
            in c::chunk rst
            end
- in if n < 1 orelse null list orelse
-       length list mod n <> 0 then
+ in if n < 1 orelse null list then
          raise ERR "chunkBy" "malformed input"
     else chunk list
  end;
 
-fun bytesVal blist =
-  List.map bitsVal (chunkBy 8 blist)
+fun bytesValBE blist =
+  List.map bitsValBE (chunkBy 8 blist)
   handle e => raise wrap_exn "take_bits" "bytesVal" e;
+
+fun stringVal blist =
+  String.implode (List.map (Char.chr o IntInf.toInt) (bytesValBE blist));
+
+fun boolVal 0 = false
+  | boolVal 1 = true
+  | boolVal otherwise = raise ERR "boolVal" "";
