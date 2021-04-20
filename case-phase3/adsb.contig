@@ -1,0 +1,168 @@
+use "BitFns.sml";
+use "BitContig.sml";
+
+open BitContig;
+
+(*===========================================================================*)
+(* Contiguity types for message buffer parsing                               *)
+(*===========================================================================*)
+
+(* -------------------------------------------------------------------------- *)
+(* Some basic contig types.                                                   *)
+(* -------------------------------------------------------------------------- *)
+
+val bool = Basic Bool;
+val bit  = Basic(Unsigned 1);
+val u4   = Basic(Unsigned 4);
+val u8   = Basic(Unsigned 8);
+val char = Basic(Unsigned 8);
+val u12  = Basic(Unsigned 12);
+val u16  = Basic(Unsigned 16);
+val u24  = Basic(Unsigned 24);
+val i12  = Basic(Signed 12);
+val i24  = Basic(Signed 24);
+
+(*---------------------------------------------------------------------------*)
+(* Miscellaneous Indicators (part of traffic report). Combination of tt_bits *)
+(* gives track status.                                                       *)
+(*---------------------------------------------------------------------------*)
+
+val misc_indicators = Recd [
+  ("tt_bit0",    bool),
+  ("tt_bit1",    bool),
+  ("reportKind", bool),
+  ("airborne",   bool)
+ ];
+
+val miscIndicators = Declared "misc_indicators";
+
+(*---------------------------------------------------------------------------*)
+(* 28 bytes in length. Interpretations of fields given below in field        *)
+(* constructors.                                                             *)
+(*                                                                           *)
+(*   messageId - 8 bits, unsigned, expected to be 20 (or 10 when Ownship)    *)
+(*   status    - 4 bits, unsigned, [0..1] used                               *)
+(*   addrType  - 4 bits, unsigned, [0..5] used                               *)
+(*   address   - 3 bytes,                                                    *)
+(*   lat       - 24 bits, signed real                                        *)
+(*   lon       - 24 bits, signed real                                        *)
+(*   alt       - 12 bits, unsigned.                                          *)
+(*   miscInd   - miscIndicators                                              *)
+(*   nic       - 4 bits, essentially an enum of 12 elts (0-11)               *)
+(*   nacp      - 4 bits, essentially an enum of 12 elts (0-11)               *)
+(*   horizV    - 12 bits, unsigned, range [0..4093]. >= 4094 => 0xFFE        *)
+(*   vertV     - 12 bits, signed, some special cases                         *)
+(*   heading   - 8 bits, angular weighted value                              *)
+(*   emitter   - 8 bits, unsigned, range [0..39],                            *)
+(*   callSign  - 64 bits: 8 chars drawn from [A-Z," ",0-9]                   *)
+(*   prio      - 4 bits, unsigned, [0-6] used                                *)
+(*   spare     - 4 bits, unused.                                             *)
+(*---------------------------------------------------------------------------*)
+
+val traffic_report = Recd [
+  ("messageID", u8),
+  ("status",    u4),
+  ("addrType",  u4),
+  ("address",   u24),
+  ("lat",       i24),
+  ("lon",       i24),
+  ("alt",       u12),
+  ("miscInd",   miscIndicators),
+  ("nic",       u4),
+  ("nacp",      u4),
+  ("horizV",    u12),
+  ("vertV",     i12),
+  ("heading",   u8),
+  ("emitter",   u8),
+  ("callSign",  Array (char,intLit 8)),
+  ("prio",      u4),
+  ("spare",     u4)
+];
+
+val traffic_report = Declared "traffic_report";
+
+(*---------------------------------------------------------------------------*)
+(* Heartbeat Message. Following is from GDL-90 doc, and probably differs     *)
+(* from ADSB_Types.aadl in some ways. Must get back with Ben to finalize.    *)
+(* The message is 7 bytes long.                                              *)
+(*                                                                           *)
+(*  Byte 1: "Message ID" 10dec = Heartbeat                                   *)
+(*  Byte 2 (Status Byte 1)                                                   *)
+(*    Bit 7: GPS Pos Valid                                                   *)
+(*    Bit 6: Maint Req'd                                                     *)
+(*    Bit 5: IDENT                                                           *)
+(*    Bit 4: Addr Type                                                       *)
+(*    Bit 3: GPS Batt Low                                                    *)
+(*    Bit 2: RATCS                                                           *)
+(*    Bit 1: reserved                                                        *)
+(*    Bit 0: UAT Initialized                                                 *)
+(*                                                                           *)
+(*  Byte 3 (Status Byte 2)                                                   *)
+(*    Bit 7: Time Stamp (MS bit)                                             *)
+(*    Bit 6: CSA Requested                                                   *)
+(*    Bit 5: CSA Not Available                                               *)
+(*    Bit 4: reserved                                                        *)
+(*    Bit 3: reserved                                                        *)
+(*    Bit 2: reserved                                                        *)
+(*    Bit 1: reserved                                                        *)
+(*    Bit 0: UTC OK                                                          *)
+(*                                                                           *)
+(*  Bytes 4 and 5 (Time Stamp Seconds since 0000Z) bits 15-0 (LS byte first) *)
+(*  Byte 6 aand 7 Message Counts                                             *)
+(*---------------------------------------------------------------------------*)
+
+val heartbeat = Recd [
+   ("messageID", u8),
+   ("status_byte_1",
+      Recd [
+       ("GPS-Pos-Valid", bit),
+       ("Maint-Reqd", bit),
+       ("IDENT", bit),
+       ("Addr-Type",bit),
+       ("GPS-Batt-Low",bit),
+       ("RATCS",bit),
+       ("reserved", bit),
+       ("UAT-Initialized",bit)]),
+   ("status_byte_2",
+      Recd [
+       ("Time-Stamp-MS-bit", bit),
+       ("CSA-Requested", bit),
+       ("CSA-Not-Avail", bit),
+       ("reserved", Raw(intLit 4)),
+       ("UTC-OK",bit)]),
+   ("Time-Stamp", u16),
+   ("Message-Counts", u16)];
+
+val heartbeat = Declared "heartbeat";
+
+val adsb_messages = Recd[
+  ("Heartbeat", heartbeat),
+  ("Traffic", Array (traffic_report, intLit 150)),
+  ("Ownship", traffic_report)];
+
+val adsb_messages = Declared "adsb_messages";
+
+val target_identity = Recd [
+  ("spare", Raw(intLit 4)),
+  ("Address", u4),
+  ("ParticipantAddress", u24)
+ ];
+
+val target_identity = Declared "target_identity";
+
+val monitor_report = Recd [
+  ("messageID", u8),
+  ("monitorID", u8),
+  ("spare", Raw(intLit 16)),
+  ("SuspectTraffic", Array(target_identity, intLit 150))
+ ];
+
+val monitor_report = Declared "monitor_report";
+
+val adsb_decls =
+ [("Misc-Indicators", misc_indicators),
+  ("traffic_report", traffic_report),
+  ("heartbeat", heartbeat),
+  ("adsb_messages",adsb_message),
+  ("target_identity",target_identity),
+  ("monitor_report",monitor_report)];

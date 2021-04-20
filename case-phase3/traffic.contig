@@ -1,53 +1,79 @@
-use "../mesg_format/Contig.sig";
-use "../mesg_format/Contig.sml";
-open Contig;
+use "BitFns.sml";
+use "BitContig.sml";
 
-use "take_bits.sml";
-
-fun varloc s = Loc (VarName s);
-
-(*---------------------------------------------------------------------------*)
-(* Traffic report datastructure                                              *)
-(*---------------------------------------------------------------------------*)
-
-type miscIndicators =
-  {tt_bit0 : bool,
-   tt_bit1 : bool,
-   reportKind : bool,
-   airborne : bool};
-
-type traffic_report =
-   {messageID : int,
-    status : int,
-    addrType : int,
-    address : int,
-    lat : real,
-    lon : real,
-    alt : int,
-    miscInd : miscIndicators,
-    nic : int,
-    nacp : int,
-    horizV : int,
-    vertV : int,
-    heading : int,
-    emitter : int,
-    callSign : string,
-    prio : int
-  };
+open BitFns BitContig;
 
 (*===========================================================================*)
 (* Contiguity types for message buffer parsing                               *)
 (*===========================================================================*)
+
+fun varloc s = Loc (VarName s);
+
+(* -------------------------------------------------------------------------- *)
+(* Some basic contig types.                                                   *)
+(* -------------------------------------------------------------------------- *)
+
+val bool = Basic Bool;
+val bit  = Basic(Unsigned 1);
+val u4   = Basic(Unsigned 4);
+val u8   = Basic(Unsigned 8);
+val char = Basic(Unsigned 8);
+val u12  = Basic(Unsigned 12);
+val u16  = Basic(Unsigned 16);
+val u24  = Basic(Unsigned 24);
+val i12  = Basic(Signed 12);
+val i24  = Basic(Signed 24);
+
+(* -------------------------------------------------------------------------- *)
+(* Widths for basic items,  in bits.                                          *)
+(* -------------------------------------------------------------------------- *)
+
+fun phase3_atom_width atm =
+ case atm
+  of Bool       => 1
+   | Signed i   => i
+   | Unsigned i => i
+   | other      => raise ERR "atom_width" "unknown width of Raw"
+
+
+(*---------------------------------------------------------------------------*)
+(* Valuation functions                                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun dvalFn atm bits = raise ERR "dvalFn" "undefined";
+
+fun valFn atm bits =
+ case atm
+  of Signed i => SOME (BitFns.twos_comp bits)
+   | otherwise => SOME (BitFns.unsigned bits);
+
+val theEnv = ([],[],phase3_atom_width,valFn,dvalFn)
+
+(*---------------------------------------------------------------------------*)
+(* Takes a contig and a decoder and combines them into a parser.             *)
+(*---------------------------------------------------------------------------*)
+
+fun genParse env p A =
+ case p
+  of (contig,mk_data)
+ =>
+ case parseFn env A (VarName"root") contig
+                 ([],0,empty_lvalMap)
+  of SOME ([ptree],_,_) => total mk_data ptree
+   | otherwise => NONE;
+
+fun adsbParse p A = genParse theEnv p A;
+
 
 (*---------------------------------------------------------------------------*)
 (* Combination of tt_bits gives track status.                                *)
 (*---------------------------------------------------------------------------*)
 
 val miscIndicators = Recd [
-  ("tt_bit0",    Raw (intLit 1)),
-  ("tt_bit1",    Raw (intLit 1)),
-  ("reportKind", Raw (intLit 1)),
-  ("airborne",   Raw (intLit 1))
+  ("tt_bit0",    bool),
+  ("tt_bit1",    bool),
+  ("reportKind", bool),
+  ("airborne",   bool)
  ];
 
 (*---------------------------------------------------------------------------*)
@@ -74,145 +100,24 @@ val miscIndicators = Recd [
 (*---------------------------------------------------------------------------*)
 
 val traffic_report = Recd [
-  ("messageID", Raw(intLit 8)),
-  ("check-traffic-report", Assert (Beq(varloc"messageID", intLit 20))),
-  ("status",  Raw(intLit 4)),
-  ("addrType",Raw(intLit 4)),
-  ("address", Raw (intLit (8 * 3))),
-  ("lat",     Raw (intLit (8 * 3))),
-  ("lon",     Raw (intLit (8 * 3))),
-  ("alt",     Raw (intLit (4 * 3))),
-  ("miscInd", miscIndicators),
-  ("nic",     Raw (intLit 4)),
-  ("nacp",    Raw (intLit 4)),
-  ("horizV",  Raw (intLit (4 * 3))),
-  ("vertV",   Raw (intLit (4 * 3))),
-  ("heading", Raw (intLit (4 * 2))),
-  ("emitter", Raw (intLit (4 * 2))),
-  ("callSign", Raw (intLit (8 * 8))),
-  ("prio",    Raw (intLit 4)),
-  ("spare",   Raw (intLit 4))
- ];
-
-(*---------------------------------------------------------------------------*)
-(* Message is taken into pieces with bits_of                                 *)
-(*---------------------------------------------------------------------------*)
-
-fun slicer A width i = (bits_of A i width, i+width)
-
-fun trChunks A =
- let val slice = slicer A
-     val (messageID,i) = slice 8 0
-     val (status,i)    = slice 4 i
-     val (addrType,i)  = slice 4 i
-     val (address,i)   = slice 24 i
-     val (lat,i)       = slice 24 i
-     val (lon,i)       = slice 24 i
-     val (alt,i)       = slice 12 i
-     val (miscInd,i)   = slice 4 i
-     val (nic,i)       = slice 4 i
-     val (nacp,i)      = slice 4 i
-     val (horizV,i)    = slice 12 i
-     val (vertV,i)     = slice 12 i
-     val (heading,i)   = slice 8 i
-     val (emitter,i)   = slice 8 i
-     val (callSign,i)  = slice 64 i
-     val (prio,i)      = slice 4 i
-     val (spare,i)     = slice 4 i
- in
-  [("messageID", messageID),
-   ("status",    status),
-   ("addrType",  addrType),
-   ("address",   address),
-   ("lat",       lat),
-   ("lon",       lon),
-   ("alt",       alt),
-   ("miscInd",   miscInd),
-   ("nic",       nic),
-   ("nacp",      nacp),
-   ("horizV",    horizV),
-   ("vertV",     vertV),
-   ("heading",   heading),
-   ("emitter",   emitter),
-   ("callSign",  callSign),
-   ("prio",      prio),
-   ("spare",     spare)
-  ]
- end
-
-
-(*---------------------------------------------------------------------------*)
-(* Construct traffic report fields                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun mk_messageID blist = unsigned blist;
-fun mk_status blist   = unsigned blist;
-fun mk_addrType blist = unsigned blist;
-fun mk_address blist  = unsigned blist;
-
-local
-  open Real
-  val ii_real = Real.fromInt o IntInf.toInt
-  val twoE23 = IntInf.pow(ii_2,23)
-  val factor = 180.0 / ii_real twoE23
-in
-fun mk_lat blist = factor * Real.fromInt (twos_comp blist);
-fun mk_lon blist = factor * Real.fromInt (twos_comp blist);
-end;
-
-fun mk_alt blist  = unsigned blist * 25 - 1000;
-
-fun mk_miscInd blist =
-  case blist
-   of [tt0,tt1,rptK,aborn] =>
-        {tt_bit0 = boolVal tt0,
-         tt_bit1 = boolVal tt1,
-         reportKind = boolVal rptK,
-         airborne = boolVal aborn}
-   | otherwise => raise ERR "mk_miscInd" "";
-
-fun mk_nic blist   = unsigned  blist;
-fun mk_nacp blist  = unsigned  blist;
-fun mk_horizV blist = unsigned blist
-fun mk_vertV blist = twos_comp blist * 64;
-
-local
-  open Real
-  val factor = 360.0 / 256.0
-in
-fun mk_heading blist = factor * Real.fromInt (unsigned blist);
-end
-
-fun mk_emitter blist = unsigned blist;
-fun mk_callSign blist= stringVal blist;
-fun mk_prio blist = unsigned blist;
-
-(*---------------------------------------------------------------------------*)
-(* Make a traffic report with appropriate integer and real values.           *)
-(*---------------------------------------------------------------------------*)
-
-fun parse_traffic_report A =
- let val chunks = trChunks A
-     fun elt s = assoc s chunks
- in
- {messageID = mk_messageID (elt "messageID"),
-  status   = mk_status (elt "status"),
-  addrType = mk_addrType (elt "addrType"),
-  address  = mk_address (elt "address"),
-  lat      = mk_lat (elt "lat"),
-  lon      = mk_lon (elt "lon"),
-  alt      = mk_alt (elt "alt"),
-  miscInd  = mk_miscInd (elt "miscInd"),
-  nic      = mk_nic (elt "nic"),
-  nacp     = mk_nacp (elt "nacp"),
-  horizV   = mk_horizV (elt "horizV"),
-  vertV    = mk_vertV (elt "vertV"),
-  heading  = mk_heading (elt "heading"),
-  emitter  = mk_emitter (elt "emitter"),
-  callSign = mk_callSign (elt "callSign"),
-  prio     = mk_prio (elt "prio")
- }
- end;
+  ("messageID", u8),
+  ("status",    u4),
+  ("addrType",  u4),
+  ("address",   u24),
+  ("lat",       i24),
+  ("lon",       i24),
+  ("alt",       u12),
+  ("miscInd",   miscIndicators),
+  ("nic",       u4),
+  ("nacp",      u4),
+  ("horizV",    u12),
+  ("vertV",     i12),
+  ("heading",   u8),
+  ("emitter",   u8),
+  ("callSign",  Array (char,intLit 8)),
+  ("prio",      u4),
+  ("spare",     u4)
+];
 
 (*---------------------------------------------------------------------------*)
 (* Example                                                                   *)
@@ -256,4 +161,177 @@ val list =
 val w8list = map Word8.fromInt list;
 val A = Word8Array.fromList w8list;
 
-val report = parse_traffic_report A;
+val PASS (pos,theta) = debug theEnv traffic_report A;
+fun spill theta = Redblackmap.listItems theta;
+
+(*---------------------------------------------------------------------------*)
+(* Traffic report data structure                                             *)
+(*---------------------------------------------------------------------------*)
+
+type miscIndicators =
+  {tt_bit0    : bool,
+   tt_bit1    : bool,
+   reportKind : bool,
+   airborne   : bool};
+
+type traffic_report =
+   {messageID : int,
+    status    : int,
+    addrType  : int,
+    address   : int,
+    lat       : real,
+    lon       : real,
+    alt       : int,
+    miscInd   : miscIndicators,
+    nic       : int,
+    nacp      : int,
+    horizV    : int,
+    vertV     : int,
+    heading   : int,
+    emitter   : int,
+    callSign  : string,
+    prio      : int
+  };
+
+(*---------------------------------------------------------------------------*)
+(* Construct traffic report fields                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun leaf_bits (LEAF (a, blist)) = blist;
+fun mk_int (LEAF (a, blist)) = Option.valOf (valFn a blist);
+
+fun mk_string ptree =
+ case ptree
+  of ARRAY elts => String.implode (List.map (Char.chr o mk_int) elts)
+   | otherwise  => raise ERR "mk_string" "";
+
+fun mk_miscInd ptree =
+ case ptree
+  of RECD [("tt_bit0", tt0),("tt_bit1", tt1),
+           ("reportKind", rpt),("airborne", abn)]
+     =>
+       {tt_bit0    = boolVal (mk_int tt0),
+        tt_bit1    = boolVal (mk_int tt1),
+        reportKind = boolVal (mk_int rpt),
+        airborne   = boolVal (mk_int abn)}
+   | otherwise => raise ERR "mk_miscInd" "";
+
+fun mult_by_factor factor i = Real.*(factor, Real.fromInt i);
+
+val twoE23 = IntInf.toInt(IntInf.pow(ii_2,23));
+
+(*---------------------------------------------------------------------------*)
+(* Make a traffic report record.                                             *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_traffic_report ptree =
+ case ptree
+  of RECD [
+      ("messageID", messageID),
+      ("status", status),
+      ("addrType", addrType),
+      ("address",address),
+      ("lat", lat),
+      ("lon", lon),
+      ("alt", alt),
+      ("miscInd", miscInd),
+      ("nic", nic),
+      ("nacp", nacp),
+      ("horizV",horizV),
+      ("vertV", vertV),
+      ("heading", heading),
+      ("emitter", emitter),
+      ("callSign", callSign),
+      ("prio", prio),
+      ("spare", spare)]
+    =>
+     {messageID = mk_int messageID,
+      status    = mk_int status,
+      addrType  = mk_int addrType,
+      address   = mk_int address,
+      lat       = mult_by_factor (180.0 / Real.fromInt twoE23) (mk_int lat),
+      lon       = mult_by_factor (180.0 / Real.fromInt twoE23) (mk_int lon),
+      alt       = mk_int alt * 25 - 1000,
+      miscInd   = mk_miscInd miscInd,
+      nic       = mk_int nic,
+      nacp      = mk_int nacp,
+      horizV    = mk_int horizV,
+      vertV     = mk_int vertV * 64,
+      heading   = mult_by_factor (360.0 / 256.0) (mk_int heading),
+      emitter   = mk_int emitter,
+      callSign  = mk_string callSign,
+      prio      = mk_int prio}
+  | otherwise => raise ERR "mk_traffic_report" ""
+
+val report = adsbParse (traffic_report,mk_traffic_report) A;
+
+
+(*---------------------------------------------------------------------------*)
+(* Heartbeat Message                                                         *)
+(*---------------------------------------------------------------------------*)
+(*
+1 Message ID 1 010 = Heartbeat
+
+2 Status Byte 1
+   Bit 7: GPS Pos Valid
+   Bit 6: Maint Req'd
+   Bit 5: IDENT
+   Bit 4: Addr Type
+   Bit 3: GPS Batt Low
+   Bit 2: RATCS
+   Bit 1: reserved
+   Bit 0: UAT Initialized
+
+3 Status Byte 2
+   Bit 7: Time Stamp            (MS bit)
+   Bit 6: CSA Requested
+   Bit 5: CSA Not Available
+   Bit 4: reserved
+   Bit 3: reserved
+   Bit 2: reserved
+   Bit 1: reserved
+   Bit 0: UTC OK
+
+4-5 Time Stamp 2 Seconds since 0000Z, bits 15-0 (LS byte first)
+6-7 Message Counts
+*)
+
+val heartbeat = Recd [
+   ("messageID", u8),
+   ("status_byte_1",
+      Recd [
+       ("GPS-Pos-Valid", bit),
+       ("Maint-Reqd", bit),
+       ("IDENT", bit),
+       ("Addr-Type",bit),
+       ("GPS-Batt-Low",bit),
+       ("RATCS",bit),
+       ("reserved", bit),
+       ("UAT-Initialized",bit)]),
+   ("status_byte_2",
+      Recd [
+       ("Time-Stamp-MS-bit", bit),
+       ("CSA-Requested", bit),
+       ("CSA-Not-Avail", bit),
+       ("reserved", Raw(intLit 4)),
+       ("UTC-OK",bit)]),
+   ("Time-Stamp", u16),
+   ("Message-Counts", u16)];
+
+val adsb_messages = Recd[
+  ("Heartbeat", heartbeat),
+  ("Traffic", Array (traffic_report, intLit 150)),
+  ("Ownship", traffic_report)]
+
+val target_identity = Recd [
+  ("spare", Raw(intLit 4)),
+  ("Address", u4),
+  ("ParticipantAddress", u24)
+ ];
+
+val monitor_report = Recd [
+  ("messageID", u8),
+  ("monitorID", u8),
+  ("spare", Raw(intLit 16)),
+  ("SuspectTraffic", Array(target_identity, intLit 150))
+ ];
