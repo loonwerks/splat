@@ -1,0 +1,266 @@
+
+----------------------- REVIEW 1 ---------------------
+SUBMISSION: 51
+TITLE: Specifying Message Formats with Contiguity Types
+AUTHORS: Konrad Slind
+
+----------- Overall evaluation ----------- SCORE: -1 (weak reject)
+----- TEXT: Parsing binary data formats is a venerable topic, with
+plenty of attention in formal methods and programming languages.  This
+paper presents a tasteful HOL4 library for generating parsers and
+recognizers from a deeply embedded language of formats, called
+contiguity types.  The library has been used to implement a message
+format for a military platform.
+
+On the one hand, this sounds like a handy HOL4 library that is useful
+to let the community know about.  I like the simplicity of the
+datatype of format descriptions, with its accompanying predictability
+of implementation.
+
+On the other hand, it is hard to get a sense for advantages over prior
+approaches.  You cite several past projects that can handle all of
+your examples (with machine proof checking), as far as I can tell.
+Apparently they only focus on "encode/decode proofs," in contrast to
+emphasis on filters and "checking semantic properties" in the present
+work.  However, those past projects *do* check validity conditions
+while parsing, so I don't understand how they emphasized semantic
+properties any less.  Also, this paper neither includes an evaluation
+on performance benefits from using filters over decoders that may
+signal errors (though we certainly intuitively expect a nontrivial
+advantage), nor makes the case that implementation and proof of
+filters pose new challenges over the same for decoders, nor gives us
+any details of how filters are handled in this library.
+
+Continguity types look very close to being a subset of PADS languages
+defined by Kathleen Fisher and collaborators starting about 20 years
+ago.  Perhaps it is a literal subset relationship, but in any case
+there should be a clearer characterization of novelty early in the
+paper.  By now, all these ideas seem standard in the community.
+Researchers should get credit for promulgating ideas that come to seem
+obvious, but I worry that promulgation has already happened here.
+
+On the proof side, it is hard to see what surprises there would be for
+ITP experts, after reading Figure 1 and maybe a one-paragraph summary
+of recommended type signatures for key functions like decoding.  The
+details (especially restricting ourselves to the features from Figure
+1) seem close to the point of making a fair assignment in a class that
+introduces ITP to students, which is a point in favor of the design,
+but only if it is showing off novel choices, which I'm not convinced
+of.
+
+There is one fundamental limitation of continguity types that is not
+acknowlegdged explicitly: it provides minimal separation between
+high-level representations and binary formats.  For instance, perhaps
+there are multiple ways to represent the same data.  With contiguity
+types, they must necessarily be decoded to different values.  Related
+work shows how to use simple descriptions of format ambiguity and
+connect to preexisting datatypes.
+
+Contiguity types also seem to require representation details like
+checksums to be preserved literally as fields in decoded values, while
+also not allowing validity rules for checksums to be encoded in types
+(with the expression language spelled out here).  I expect programmers
+would usually prefer to think in terms of high-level representations
+that omit encoding details like checksums.
+
+I don't understand why separation of L-values and R-values is called
+out as an insight.  At best, this seems to be a decision for
+simplifying the decoder/proof, not defining the language.  The
+language definition, as reported in the paper, apparently includes no
+position where L-values are legal but R-values aren't!
+
+The start of Section 2.2 seems to be relying on a distinction between
+types and sets that I'm not sure is standard.  Contiguity types could
+certainly be considered as dependent/refinement types, in my opinion,
+according to standard intuitions for those terms.
+
+Definition 2 implies a subtle restriction on base types: their
+bitstring representations are total, meaning no bitstring of the
+chosen length is invalid.  That makes sense for the specific examples
+shown here but may not make sense in reasonable generalizations.
+
+Definition 4 seems to be a little too simplified, for instance
+ignoring the role of the substitution-so-far in evaluating Boolean
+guards.
+
+Compared to past related work, it stands out to have a soundness
+theorem but no completeness theorem for matching.
+
+"List" is a good example of a slippery slope toward baking in overly
+specific encoding conventions.  Section 5 is pretty nonchalant about
+introducing recursive definitions of continguity types.  Are there any
+well-formedness conditions?  Can programmers add new types like "List"
+without editing your core library?
+
+- Footnote 2 has unbalanced quotes.
+
+- Line 277 has an extra word in "to generate parse trees to in order".
+
+- Line 290 similarly: "belongs in to"
+
+- Confusing section structure: Section 4 introduces generalizations,
+  and then apparently each of the next few sections goes into more
+  detail on one generalization.  I would expect them therefore to be
+  *sub*sections of Section 4.
+
+- Line 461 has "Eeach" and is missing a word in "along other fields".
+
+
+
+----------------------- REVIEW 2 ---------------------
+SUBMISSION: 51
+TITLE: Specifying Message Formats with Contiguity Types
+AUTHORS: Konrad Slind
+
+----------- Overall evaluation -----------
+SCORE: 1 (weak accept)
+----- TEXT:
+
+The paper introduces contiguity types, describes their syntax,
+semantic, as well as a correctness of a matching algorithm. Contiguity
+types provide a specification of how data is laid out side-by-side in
+a message. Elements of contiguity types are stings (serialized
+messages) of the right length as specified by the type, which can
+further be converted to expressions where each string constituting the
+message is converted to an expression of the corresponding type
+mentioned in the contiguity type. Contiguity types include records,
+variable-length arrays, and unions. One key aspects of variable length
+arrays is that the length of the array can be described by an
+expression that refers to other fields.
+
+This is an interesting paper that introduces a useful concept for
+handling messages. The concepts presented in the paper appear to have
+been formalized in HOL4 (a link is provided at the bottom of page 4,
+in footnote 4). Pointers to the formalization throughout the paper
+would be useful to see how the different concepts discussed in the
+paper are formalized. The paper is overall well-written, and contains
+many useful examples. Let me point out a few aspects that could be
+clarified.
+
+The introduction refers to libraries and tools for dealing with
+serialized data, but no citations are provided. Could you cite the
+prominent ones?
+
+-- When introducing figure 1, you might consider mentioning that f_1,
+-- ..., f_n are field names. Regarding these field names, you might want
+-- to use the same metavariables throughout the paper: you've used 'f' in
+-- figure 1, 'name' at the bottom of page 2, and 'fieldname' in figure 2.
+
+-- In definition 2, evalExp and evalBexp take 2 arguments, while they are
+-- defined on page 4 as functions of 1 argument, with 4 "implicit"
+-- arguments. The implicit argument \theta is provided in definition 2,
+-- but what about the other ones? These appear to be constants throughout
+-- the paper. Could you clarify this?
+
+-- Section 3 mentions a number of topics, namely decoding, filtering,
+-- serialization, test generation, and learning. However, only decoding
+-- seems to be covered in the paper (in section 3.1). What is the reason
+-- for that?
+
+-- The sentence line 193 seems to indicate that contiguity types are ASTs
+-- since match takes an AST. What is the relation between contiguity
+-- types and ASTs?
+
+-- Theorem 5 is not stated as a theorem.  What is the actual theorem
+-- proved?  That the matcher terminates?
+
+-- Definition 6 is not provided in full in the paper. The formalization
+-- is mentioned, but without a link to that precise definition. Could you
+-- add the definition in the paper or at least a pointer to the correct
+-- definition in the HOL4 file (I suppose this is referring to
+-- substFn_def)?
+
+-- In example 9, why do assignments contain tags, while the definition
+-- above does not? Are they critical for anything?
+
+-- When introducing figure 3, could you also explain what valFn is?
+
+-- Why is section 5, not under section 4?  Why is section 5.1 under section 5?
+
+-- In definition 10, why is \theta not passed down to the sub-language?
+
+Would it be possible to implement List such that a list only has 2
+tags: one at the beginning and one at the end?
+
+-- Why does example 14 make use of recursive records instead of the List type directly?
+
+Why use different formats for your record types in section 6
+(sometimes with curly braces, sometimes not)?
+
+Why not show the definition of PayloadStateList?
+
+How did you instantiate the match algorithm to support LMCP messages (end of section 6)?
+
+Section 6 provides an interesting use case of contiguity
+types. However, in light of the related framework described in section
+8, it would have been useful to explain why those couldn't have been
+used to handle the messages described in section 6, or why contiguity
+types made it easier.
+
+-- Typos:
+-- Line 222, \tau_1 should be \tau_2.
+-- Line 226, root and \tau are swapped.
+-- Line 277: to should be too
+-- Line 461: Eeach
+
+
+
+----------------------- REVIEW 3 ---------------------
+SUBMISSION: 51
+TITLE: Specifying Message Formats with Contiguity Types
+AUTHORS: Konrad Slind
+
+----------- Overall evaluation -----------
+SCORE: 2 (accept)
+----- TEXT:
+
+This paper introduces the concept of Contiguity Types as a formalism
+to specify message formats. These types provide an intermediate
+abstraction between data structures used in programming languages and
+concrete string representation at the network layer. Contiguity types
+support base machine types, ordered records, conditional unions, and type
+assertions among other features that enable complex message format
+representations. The semantics is defined in terms of a formal
+language that generates string words satisfying well-formed conditions
+implicit in the types. A provably correct matching algorithm is
+presented that given a contiguity type and an input string either
+fails, if the input string is not in the language generated by the
+contiguity type, or returns a substitution for the left-hand side
+values of the type. Finally, the paper illustrates the use of
+contiguity types with example specifications of message formats used
+in an unmanned aircraft system.
+
+The paper is well-written and provides several examples that
+illustrate the main features of the proposed formalism. The paper balances
+well the theoretical contribution, e.g., the definition of syntax and
+semantics, and the practical one, e.g., the matching algorithm and the
+application of the formalism to a relevant problem. The style is
+colloquial at times, e.g.,
+-- * Line 44:  "aren't"
+-- * Line 139: "We now confess to misleading the reader ..."
+-- * Line 234: "won't"
+-- * Line 338: "can't"
+but that is probably intentional rather than sloppy.
+
+Related work could be improved. From the practical side, there are
+other proposals from higher level approaches, e.g., xml, JSON, YAML,
+Protobuf, etc., that focus on interoperability between programming
+languages to lower level approaches that focus on network
+interoperability, e.g., MAVLink (very popular in the UAS
+domain). Contiguity types seem to be a good compromise sitting in the
+middle of these approaches.  Furthermore, contiguity types are very
+reminiscent of dependent records with predicate sub-typing used, for
+example, in PVS. A major difference is that record types are ordered
+in contiguity types. Consider the following reference of a related grammar
+language that exploits PVS features and has a similar application:
+
+-- P. Mundkur, L. Briesemeister, N. Shankar, P. Anantharaman, S. Ali,
+-- Z. Lucas, S. Smith, Research Report: The Parsley Data Format
+-- Definition Language, 2020 Symposium on Security and Privacy Workshops
+-- (SPW)
+
+-- Another related reference is Qianchuan Ye and Benjamin
+-- Delaware. 2019. A Verified ProtocolBuffer Compiler. In Proceedings of
+-- the 8th ACM SIGPLAN International Conference on Certified Programs and
+-- Proofs (CPP ’19), January 14–15, 2019, Cascais, Portugal.ACM, New
+-- York, NY, USA, 12 pages.https://doi.org/10.1145/3293880.3294105
