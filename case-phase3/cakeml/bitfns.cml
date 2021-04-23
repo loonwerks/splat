@@ -1,0 +1,136 @@
+structure BitFns =
+struct
+
+exception ERR string string;
+
+fun assert b s = if b then () else raise ERR s "assertion failure";
+
+fun take_drop n list =
+ if n <= List.length list
+  then Some(List.take list n,List.drop list n)
+  else None;
+
+fun front_last list =
+ let val _ = assert (not (List.null list)) "front_last: null input list"
+     fun flacc l acc =
+      case l
+       of [x] => (List.rev acc,x)
+        | h::t => flacc t (h::acc)
+ in flacc list []
+ end
+
+fun divmod i n = (Int.div i n, Int.mod i n);
+
+fun rev_itlist f list acc =
+ case list
+  of [] => acc
+   | h::t => rev_itlist f t (f h acc);
+
+fun itlist f list b =
+ case list
+  of [] => b
+   | h::t => f h (itlist f t b);
+
+fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
+
+fun pow b k =
+ let fun powAcc k acc = if k <= 0 then acc else powAcc (k-1) (acc * b)
+ in powAcc k 1
+ end
+
+local
+   val pow2Arr = Array.fromList (List.map (pow 2) (upto 0 512));
+in
+fun twoExp n = Array.sub pow2Arr n handle _ => pow 2 n
+end;
+
+fun grab_bits n byteN =  (* should use dnc *)
+ if n <= 0 then []
+ else
+ let val (i1,b1) = divmod byteN 2
+  in if n = 1 then [b1]
+ else let val (i2,b2) = divmod i1 2
+  in if n = 2 then [b2,b1]
+ else let val (i3,b3) = divmod i2 2
+  in if n = 3 then [b3,b2,b1]
+ else let val (i4,b4) = divmod i3 2
+  in if n = 4 then [b4,b3,b2,b1]
+ else let val (i5,b5) = divmod i4 2
+  in if n = 5 then [b5,b4,b3,b2,b1]
+ else let val (i6,b6) = divmod i5 2
+  in if n = 6 then [b6,b5,b4,b3,b2,b1]
+ else let val (i7,b7) = divmod i6 2
+  in if n = 7 then [b7,b6,b5,b4,b3,b2,b1]
+ else [i7,b7,b6,b5,b4,b3,b2,b1]
+ end end end end end end end;
+
+fun bytes2bits nlist = List.concat (List.map (grab_bits 8) nlist);
+
+fun byteInterval byteA i j =
+   if i <= j then
+      Word8Array.sub byteA i::byteInterval byteA (i+1) j
+   else [];
+
+(*---------------------------------------------------------------------------*)
+(* Chop interval in bits [i..i+width] from byte                              *)
+(*---------------------------------------------------------------------------*)
+
+fun byteSegment byte i width =
+ let val _ = assert (i + width <= 8) "byteSegment"
+     val shift = 8 - (i + width)
+     val byte' = Word8.>> byte shift
+     val num = Int.mod (Word8.toInt byte') (twoExp width)
+ in grab_bits width num
+ end;
+
+
+(*---------------------------------------------------------------------------*)
+(* Extract bits [lo..lo+width-1] from A. Bit endianess = BE.                 *)
+(*---------------------------------------------------------------------------*)
+
+fun bits_of byteA lo width =
+ let val len = Word8Array.length byteA
+     val (loIndex,i) = divmod lo 8
+     val (hiIndex,j) = divmod (lo + width) 8
+     val _ = assert (0 <= lo andalso 0 < width
+                     andalso lo + width <= len * 8) "bits_of"
+     val lbyte = Word8Array.sub byteA loIndex
+ in
+  if width + i <= 8 then
+     byteSegment lbyte i width
+  else
+  let val lbits = byteSegment lbyte i (8 - i)
+      val (cbytes,rbyte) = front_last (byteInterval byteA (loIndex+1) hiIndex)
+      val cbits = bytes2bits (List.map Word8.toInt cbytes)
+      val rbyte' = Word8.>> rbyte (8 - j)
+      val rbits = grab_bits j (Word8.toInt rbyte')
+  in
+    lbits @ cbits @ rbits
+  end
+ end;
+
+fun total_bits_of byteA lo width =
+ Some (bits_of byteA lo width) handle _ => None;
+
+(*---------------------------------------------------------------------------*)
+(* Map from bit lists to N                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun bitsValBE blist = rev_itlist (fn bit => fn acc => bit + 2 * acc) blist 0;
+
+val unsigned = bitsValBE;
+
+fun twos_comp blist =
+ let val sup = twoExp (List.length blist)
+     val half = Int.div sup 2
+     val n = unsigned blist
+  in
+    if n < half then n else n - sup
+ end;
+
+fun boolVal n =
+  if n = 0 then False else
+  if n = 1 then True
+  else raise ERR "boolVal" "";
+
+end

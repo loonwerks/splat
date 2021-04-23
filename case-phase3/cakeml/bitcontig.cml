@@ -1,0 +1,773 @@
+structure Utils =
+struct
+
+exception ERR string string;
+
+fun total f x = Some (f x) handle _ => None;
+
+fun assert b s = if b then () else raise ERR s "assertion failure";
+
+fun first pred list =
+ case list
+  of [] => raise ERR "first" ""
+   | h::t => if pred h then h else first pred t;
+
+fun quote s = String.concat ["\"",s,"\""];
+
+fun take_drop n list =
+ if n <= List.length list
+  then Some(List.take list n,List.drop list n)
+  else None;
+
+fun front_last list =
+ let val _ = assert (not (List.null list)) "front_last: null input list"
+     fun flacc l acc =
+      case l
+       of [x] => (List.rev acc,x)
+        | h::t => flacc t (h::acc)
+ in flacc list []
+ end
+
+fun divmod i n = (Int.div i n, Int.mod i n);
+
+fun rev_itlist f list acc =
+ case list
+  of [] => acc
+   | h::t => rev_itlist f t (f h acc);
+
+fun itlist f list b =
+ case list
+  of [] => b
+   | h::t => f h (itlist f t b);
+
+fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
+
+fun firstOpt f list =
+ case list
+  of [] => None
+   | h::t =>
+ case f h
+  of None => firstOpt f t
+   | Some x => Some h;
+
+fun concatOpts optlist =
+    Some(List.concat(List.map Option.valOf optlist)) handle _ => None;
+
+fun pow b k =
+ let fun powAcc k acc = if k <= 0 then acc else powAcc (k-1) (acc * b)
+ in powAcc k 1
+ end
+
+local
+   val pow2Arr = Array.fromList (List.map (pow 2) (upto 0 512));
+in
+fun twoExp n = Array.sub pow2Arr n handle _ => pow 2 n
+end;
+
+val w8zero = Word8.fromInt 0;
+
+val emptybuf = Word8Array.array 0 w8zero;
+val singlebuf = Word8Array.array 1 (Word8.fromInt 0);
+
+fun clear_buf buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+fun buf2string buf = Word8Array.substring buf 0 (Word8Array.length buf);
+
+fun string2buf s buf =
+ if String.size s <= Word8Array.length buf then
+   Word8Array.copyVec s 0 (String.size s) buf 0
+ else
+   raise ERR "string2buf" "string too big for buffer";
+
+fun file2buf fileName buf =
+    let val istrm = TextIO.openIn fileName
+        val () = print(String.concat
+                     ["Taking input from file : ",fileName,".\n"])
+        val s = TextIO.inputAll istrm
+        val () = TextIO.closeIn istrm
+    in
+       string2buf s buf
+    end
+end
+
+structure BitFns =
+struct
+
+val assert = Utils.assert;
+val divmod = Utils.divmod;
+val twoExp = Utils.twoExp;
+
+fun grab_bits n byteN =  (* should use dnc *)
+ if n <= 0 then []
+ else
+ let val (i1,b1) = divmod byteN 2
+  in if n = 1 then [b1]
+ else let val (i2,b2) = divmod i1 2
+  in if n = 2 then [b2,b1]
+ else let val (i3,b3) = divmod i2 2
+  in if n = 3 then [b3,b2,b1]
+ else let val (i4,b4) = divmod i3 2
+  in if n = 4 then [b4,b3,b2,b1]
+ else let val (i5,b5) = divmod i4 2
+  in if n = 5 then [b5,b4,b3,b2,b1]
+ else let val (i6,b6) = divmod i5 2
+  in if n = 6 then [b6,b5,b4,b3,b2,b1]
+ else let val (i7,b7) = divmod i6 2
+  in if n = 7 then [b7,b6,b5,b4,b3,b2,b1]
+ else [i7,b7,b6,b5,b4,b3,b2,b1]
+ end end end end end end end;
+
+fun bytes2bits nlist = List.concat (List.map (grab_bits 8) nlist);
+
+fun byteInterval byteA i j =
+   if i <= j then
+      Word8Array.sub byteA i::byteInterval byteA (i+1) j
+   else [];
+
+(*---------------------------------------------------------------------------*)
+(* Chop interval in bits [i..i+width] from byte                              *)
+(*---------------------------------------------------------------------------*)
+
+fun byteSegment byte i width =
+ let val _ = assert (i + width <= 8) "byteSegment"
+     val shift = 8 - (i + width)
+     val byte' = Word8.>> byte shift
+     val num = Int.mod (Word8.toInt byte') (twoExp width)
+ in grab_bits width num
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Extract bits [lo..lo+width-1] from A. Bit endianess = BE.                 *)
+(*---------------------------------------------------------------------------*)
+
+fun bits_of byteA lo width =
+ let val len = Word8Array.length byteA
+     val (loIndex,i) = divmod lo 8
+     val (hiIndex,j) = divmod (lo + width) 8
+     val _ = assert (0 <= lo andalso 0 < width
+                     andalso lo + width <= len * 8) "bits_of"
+     val lbyte = Word8Array.sub byteA loIndex
+ in
+  if width + i <= 8 then
+     byteSegment lbyte i width
+  else
+  let val lbits = byteSegment lbyte i (8 - i)
+      val (cbytes,rbyte) = Utils.front_last (byteInterval byteA (loIndex+1) hiIndex)
+      val cbits = bytes2bits (List.map Word8.toInt cbytes)
+      val rbyte' = Word8.>> rbyte (8 - j)
+      val rbits = grab_bits j (Word8.toInt rbyte')
+  in
+    lbits @ cbits @ rbits
+  end
+ end;
+
+fun total_bits_of byteA lo width =
+ Some (bits_of byteA lo width) handle _ => None;
+
+(*---------------------------------------------------------------------------*)
+(* Map from bit lists to N                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun bitsValBE blist =
+    Utils.rev_itlist (fn bit => fn acc => bit + 2 * acc) blist 0;
+
+val unsigned = bitsValBE;
+
+fun twos_comp blist =
+ let val sup = twoExp (List.length blist)
+     val half = Int.div sup 2
+     val n = unsigned blist
+  in
+    if n < half then n else n - sup
+ end;
+
+fun boolVal n =
+  if n = 0 then False else
+  if n = 1 then True
+  else raise Utils.ERR "BitFns" "boolVal";
+
+end
+
+structure BitContig =
+struct
+
+datatype lval
+  = VarName string
+  | RecdProj lval string
+  | ArraySub lval exp
+and exp
+  = Loc lval
+  | IntLit int
+  | ConstName string
+  | Add exp exp
+  | Mult exp exp
+;
+
+datatype bexp
+  = BoolLit bool
+  | BLoc lval
+  | Bnot bexp
+  | Bor  bexp bexp
+  | Band bexp bexp
+  | Beq  exp exp
+  | Blt  exp exp
+  | Bgt  exp exp
+  | Ble  exp exp
+  | Bge  exp exp
+  | DleA Double.double exp
+  | DleB exp Double.double
+;
+
+datatype atom
+  = Bool
+  | Signed int
+  | Unsigned int
+  | Blob;
+
+
+datatype contig
+  = Void
+  | Basic atom
+  | Declared string
+  | Raw exp
+  | Assert bexp
+  | Recd ((string * contig) list)
+  | Array contig exp
+  | Union ((bexp * contig) list)
+
+datatype ptree
+  = LEAF atom string
+  | RECD ((string * ptree) list)
+  | ARRAY (ptree list)
+;
+
+datatype ('a,'b) verdict = PASS 'a | FAIL 'b;
+
+fun lval_to_string lval =
+ case lval
+  of VarName s => s
+   | RecdProj lval s => lval_to_string lval^"."^s
+   | ArraySub lval (IntLit i) => lval_to_string lval^"["^Int.toString i^"]"
+
+(*---------------------------------------------------------------------------*)
+(* Support for lval-map                                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun lval_compare x y =
+ case (x,y)
+  of (VarName s1, VarName s2) => String.compare s1 s2
+   | (VarName _, _) => Less
+   | (RecdProj a b, VarName _) => Greater
+   | (RecdProj e1 s1,RecdProj e2 s2) =>
+       (case lval_compare e1 e2
+         of Equal => String.compare s1 s2
+	  | other => other)
+   | (RecdProj a b,_) => Less
+   | (ArraySub a b, ArraySub c d) =>
+       (case lval_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (ArraySub a b, _) => Greater
+and
+ exp_compare x y =
+ case (x,y)
+  of (Loc lv1, Loc lv2) => lval_compare lv1 lv2
+   | (Loc lv1, _) => Less
+   | (IntLit _, Loc _) => Greater
+   | (IntLit i, IntLit j) => Int.compare i j
+   | (IntLit i, other) => Less
+   | (ConstName _, Loc _) => Greater
+   | (ConstName _, IntLit _) => Greater
+   | (ConstName s1, ConstName s2) => String.compare s1 s2
+   | (ConstName s, _) => Less
+   | (Add a b, Mult c d) => Less
+   | (Add a b, Add c d) =>
+       (case exp_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (Add a b, _) => Greater
+   | (Mult a b, Mult c d) =>
+       (case exp_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (Mult a b, _) => Greater
+;
+
+fun unopFn f g e = Option.map f (g e);
+
+fun binopFn f g e1 e2 =
+  case (g e1, g e2)
+   of (Some v1, Some v2) => Some (f v1 v2)
+    | otherwise => None;
+
+fun evalExp env bytes =
+ let val (envDelta,lvalMap,valFn) = env
+     fun locVal (a,(i,width)) =
+         Option.mapPartial (valFn a)
+           (BitFns.total_bits_of bytes i width)
+   fun evalE exp =
+    case exp
+     of Loc lval => Option.mapPartial locVal (Map.lookup lvalMap lval)
+      | IntLit i => Some i
+      | ConstName s =>
+          (case Alist.lookup envDelta s
+            of Some i => i
+             | None => None)
+      | Add e1 e2  => binopFn Int.+ evalE e1 e2
+      | Mult e1 e2 => binopFn Int.* evalE e1 e2
+ in
+   evalE
+ end
+;
+
+fun equal x y = (x = y);
+fun orOp x y = (x orelse y);
+fun andOp x y = (x andalso y);
+
+fun evalBexp env bytes =
+ let val (envDelta,lvalMap,valFn,dvalFn) = env
+     val evalE = evalExp (envDelta,lvalMap,valFn) bytes
+     fun blocVal tuple =
+       case tuple
+        of (Bool,(i,width)) =>
+             Option.map BitFns.boolVal
+              (Option.mapPartial (valFn Bool)
+                (BitFns.total_bits_of bytes i width))
+         | otherwise => None
+   fun evalB bexp =
+    case bexp
+     of BoolLit b => Some b
+      | BLoc lval => Option.mapPartial blocVal (Map.lookup lvalMap lval)
+      | Bnot b     => Option.map not (evalB b)
+      | Bor  b1 b2 => binopFn orOp evalB b1 b2
+      | Band b1 b2 => binopFn andOp evalB b1 b2
+      | Beq e1 e2  => binopFn equal evalE e1 e2
+      | Blt e1 e2  => binopFn Int.< evalE e1 e2
+      | Bgt e1 e2  => binopFn Int.> evalE e1 e2
+      | Ble e1 e2  => binopFn Int.<= evalE e1 e2
+      | Bge e1 e2  => binopFn Int.>= evalE e1 e2
+      | otherwise  => None
+ in
+  evalB
+ end;
+
+fun lval_append p lval =
+ case lval
+  of VarName s => RecdProj p s
+   | RecdProj q s => RecdProj (lval_append p q) s
+   | ArraySub q dim => ArraySub (lval_append p q) dim
+;
+
+fun path_prefixes lval =
+ case lval
+  of VarName _ => [lval]
+   | RecdProj p s => lval :: path_prefixes p
+   | ArraySub (VarName _) d => [lval]
+   | ArraySub (RecdProj p s) dim => lval :: path_prefixes p
+   | ArraySub arr dim => lval :: path_prefixes arr
+;
+
+fun resolve_lval lvalMap path lval =
+ let val prefixes = path_prefixes path
+     val prospects = List.map (flip lval_append lval) prefixes @ [lval]
+ in Utils.firstOpt (Map.lookup lvalMap) prospects
+ end
+
+fun mk_Loc x = Loc x;
+fun mk_Add x y = Add x y;
+fun mk_Mult x y = Mult x y;
+
+fun resolveExp lvalMap p exp =
+ case exp
+  of Loc lval   => unopFn mk_Loc (resolve_lval lvalMap p) lval
+   | Add  e1 e2 => binopFn mk_Add (resolveExp lvalMap p) e1 e2
+   | Mult e1 e2 => binopFn mk_Mult (resolveExp lvalMap p) e1 e2
+   | otherwise  => Some exp
+
+
+fun mk_BLoc x = BLoc x
+fun mk_Bnot x = Bnot x
+fun mk_Bor x y = Bor x y
+fun mk_Band x y = Band x y
+fun mk_Beq x y = Beq x y
+fun mk_Blt x y = Blt x y
+fun mk_Bgt x y = Bgt x y
+fun mk_Ble x y = Ble x y
+fun mk_Bge x y = Bge x y
+fun mk_dleA r1 r2 = DleA r1 r2;
+fun mk_dleB r1 r2 = DleB r1 r2;
+
+fun resolveBexp lvalMap p bexp =
+ case bexp
+  of BoolLit _  => Some bexp
+   | BLoc lval  => unopFn mk_BLoc (resolve_lval lvalMap p) lval
+   | Bnot b     => unopFn mk_Bnot(resolveBexp lvalMap p) b
+   | Bor b1 b2  => binopFn mk_Bor(resolveBexp lvalMap p) b1 b2
+   | Band b1 b2 => binopFn mk_Band(resolveBexp lvalMap p) b1 b2
+   | Beq e1 e2  => binopFn mk_Beq(resolveExp lvalMap p) e1 e2
+   | Blt e1 e2  => binopFn mk_Blt(resolveExp lvalMap p) e1 e2
+   | Bgt e1 e2  => binopFn mk_Bgt(resolveExp lvalMap p) e1 e2
+   | Ble e1 e2  => binopFn mk_Ble(resolveExp lvalMap p) e1 e2
+   | Bge e1 e2  => binopFn mk_Bge(resolveExp lvalMap p) e1 e2
+   | DleA r e   => unopFn (mk_dleA r) (resolveExp lvalMap p) e
+   | DleB e r   => unopFn (fn x => mk_dleB x r) (resolveExp lvalMap p) e
+;
+
+
+(*---------------------------------------------------------------------------*)
+(* substFn is given an assignment for a contig and applies it to the contig, *)
+(* yielding a string of bits.                                                *)
+(*---------------------------------------------------------------------------*)
+
+fun substFn env byteArr theta path contig =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = env
+     fun thetaFn lval =
+         (case Map.lookup theta lval
+           of None => None
+            | Some (a,(i,width)) => BitFns.total_bits_of byteArr i width)
+ in
+  case contig
+   of Void     => None
+    | Basic _  => thetaFn path
+    | Raw _    => thetaFn path
+    | Assert b =>
+       (case resolveBexp theta path b
+         of None => None
+          | Some b' =>
+        case evalBexp (consts,theta,valFn,dvalFn) byteArr b'
+         of Some true => Some []
+          | otherwise => None)
+(*
+    | Declared name => substFn env byteArr theta path (Alist.lookup name decls)
+    | otherwise => None
+    | Recd fields =>
+       let fun fieldFn (fName,c) = substFn env byteArr theta (RecdProj path fName) c
+       in Utils.concatOpts (List.map fieldFn fields)
+       end
+    | Array (c,exp) =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp' =>
+        let val dim = Option.valOf (evalExp (consts,theta,valFn) byteArr exp')
+            fun indexFn i = substFn env byteArr theta (ArraySub path (intLit i)) c
+        in concatOpts (List.map indexFn (Utils.upto 0 (dim - 1)))
+        end)
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+               (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of Some [(_,c)] => substFn env byteArr theta path c
+            | otherwise => None
+       end
+*)
+ end
+;
+
+fun fieldFn path (fName,c) = (RecdProj pathfName, c)
+fun indexFn path c i = (ArraySub path (intLit i),c)
+
+(*
+fun matchFn env byteArr (state as (worklist,pos,theta)) =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = env
+     val Asize = Word8Array.length byteArr * 8
+ in
+ case worklist
+  of [] => Some (pos,theta)
+   | (_,Void)::_ => None
+   | (path,Basic a)::t =>
+     let val width = atomWidth a
+     in if Asize < pos + width then
+          None
+        else
+          matchFn env byteArr (t,pos + width,
+              Redblackmap.insert(theta,path,(a,(pos,width))))
+     end
+   | (path,Declared name)::t => matchFn env byteArr ((path,assoc name decls)::t,pos,theta)
+   | (path,Raw exp)::t =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp' =>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => None
+          | Some width =>
+        if Asize < pos + width then
+           None
+        else
+         matchFn env byteArr (t,pos + width,
+                      Redblackmap.insert(theta,path,(Blob,(pos,width)))))
+   | (path,Assert bexp)::t =>
+       (case resolveBexp theta path bexp
+        of None => None
+         | Some bexp' =>
+        case evalBexp (consts,theta,valFn,dvalFn) byteArr bexp'
+         of None => None
+          | Some false => None
+          | Some true => matchFn env byteArr (t,pos,theta))
+   | (path,Recd fields)::t => matchFn env byteArr (map (fieldFn path) fields @ t,pos,theta)
+   | (path,Array (c,exp))::t =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp'=>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => None
+          | Some dim =>
+        matchFn env byteArr (map (indexFn path c) (upto 0 (dim - 1)) @ t,pos,theta))
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+                (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+                (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of Some[(_,c)] => matchFn env byteArr ((path,c)::t,pos,theta)
+            | otherwise => None
+       end
+ end
+;
+
+fun match env contig byteArr = matchFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap);
+
+(*
+fun check_match env contig byteArr =
+ case match env contig byteArr
+  of None => raise ERR "check_match" "no match"
+  |  Some(pos,theta) =>
+      case substFn env byteArr theta (VarName"root") contig
+       of Some bits => (s1^s2 = s)
+       |  None => raise ERR "check_match" "substFn failed"
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Version of matchFn that checks assertions, acting as a predicate on       *)
+(* messages.                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun predFn env byteArr (state as (worklist,pos,theta)) =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = env
+     val Asize = Word8Array.length byteArr * 8
+ in
+ case worklist
+  of [] => PASS (pos,theta)
+   | (path,Void)::t => FAIL state
+   | (path,Basic a)::t =>
+     let val width = atomWidth a
+     in if Asize < pos + width then
+          FAIL state
+        else
+          predFn env byteArr (t,pos + width,
+              Redblackmap.insert(theta,path,(a,(pos,width))))
+     end
+   | (path,Declared name)::t => predFn env byteArr ((path,assoc name decls)::t,pos,theta)
+   | (path,Raw exp)::t =>
+       (case resolveExp theta path exp
+         of None => FAIL state
+          | Some exp' =>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => FAIL state
+          | Some width =>
+        if Asize < pos + width then
+           FAIL state
+        else
+          predFn env byteArr (t,pos + width,
+                      Redblackmap.insert(theta,path,(Blob,(pos,width)))))
+   | (path,Assert bexp)::t =>
+       (case resolveBexp theta path bexp
+        of None => FAIL state
+         | Some bexp' =>
+        case evalBexp (consts,theta,valFn,dvalFn) byteArr bexp'
+         of Some true => predFn env byteArr (t,pos,theta)
+          | otherwise => FAIL state)
+   | (path,Recd fields)::t => predFn env byteArr (map (fieldFn path) fields @ t,pos,theta)
+   | (path,Array (c,exp))::t =>
+      (case resolveExp theta path exp
+        of None => FAIL state
+         | Some exp'=>
+       case evalExp (consts,theta,valFn) byteArr exp'
+        of None => FAIL state
+         | Some dim => predFn env byteArr (map (indexFn path c) (upto 0 (dim - 1)) @ t,pos,theta))
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+               (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of Some[(_,c)] => predFn env byteArr ((path,c)::t,pos,theta)
+            | otherwise => FAIL state
+       end
+ end
+;
+
+fun debug env contig byteArr = predFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap);
+
+fun wellformed env contig byteArr =
+ case predFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap)
+  of PASS _ => true
+   | FAIL _ => false;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing into the ptree type. It provides record and array structure, but  *)
+(* leaves leaf elements uninterpreted.                                       *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Environments:                                                             *)
+(*                                                                           *)
+(*   consts : maps constant names to integers                                *)
+(*   decls  : maps names to previously declared contigs                      *)
+(*   atomWidth : gives width info for basic types                            *)
+(*   valFn  : function for computing an integer value                        *)
+(*            stored at the designated location in the string.               *)
+(*   dvalFn : function for computing a double value                          *)
+(*            stored at the designated location in the string.               *)
+(*                                                                           *)
+(* parseFn operates on a state tuple (stk,s,lvmap)                           *)
+(*                                                                           *)
+(*  stk  : ptree list         ;;; parser stack                               *)
+(*  s    : string             ;;; remainder of string                        *)
+(* lvmap : (lval |-> string)  ;;; previously seen values, accessed by path   *)
+(*                                                                           *)
+(* which is wrapped in the error monad.                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun parseFn env byteArr path contig state =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = env
+     val (stk,pos,theta) = state
+     val Asize = Word8Array.length byteArr * 8
+ in
+ case contig
+  of Void => None
+   | Basic a =>
+       let val width = atomWidth a
+       in if Asize < pos + width then
+          None
+          else
+           Some(LEAF(a,BitFns.bits_of byteArr pos width)::stk,
+                pos+width,
+                Redblackmap.insert(theta,path,(a,(pos,width))))
+       end
+   | Declared name => parseFn env byteArr path (assoc name decls) state
+   | Raw exp =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp' =>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => None
+          | Some width =>
+        if Asize < pos + width then
+           None
+        else
+         Some (LEAF(Blob,BitFns.bits_of byteArr pos width)::stk,
+               pos + width,
+               Redblackmap.insert(theta,path,(Blob,(pos,width)))))
+   | Assert bexp =>
+       (case resolveBexp theta path bexp
+         of None => None
+	  | Some  bexp' =>
+         case evalBexp (consts,theta,valFn,dvalFn) byteArr bexp'
+          of None => None
+           | Some tval =>
+         if tval then Some state
+         else (print "Assertion failure"; None))
+   | Recd fields =>
+       let fun fieldFn fld None = None
+             | fieldFn (fName,c) (Some st) = parseFn env byteArr (RecdProj(path,fName)) c st
+          fun is_assert (s,Assert _) = true
+            | is_assert other = false
+          val fields' = filter (not o is_assert) fields
+       in case rev_itlist fieldFn fields (Some state)
+           of None => None
+            | Some (stk',pos',theta') =>
+               case BitFns.take_drop (length fields') stk'
+                of None => None
+                 | Some(elts,stk'') =>
+                     Some(RECD (zip (map fst fields') (rev elts))::stk'',
+                          pos', theta')
+       end
+   | Array (c,exp) =>
+       let fun indexFn i None = None
+             | indexFn i (Some state) = parseFn env byteArr (ArraySub(path,intLit i)) c state
+       in case resolveExp theta path exp
+           of None => None
+	    | Some exp' =>
+          case evalExp (consts,theta,valFn) byteArr exp'
+           of None => None
+            | Some dim =>
+          case rev_itlist indexFn (upto 0 (dim - 1)) (Some state)
+           of None => None
+            | Some (stk',pos',theta') =>
+          case BitFns.take_drop dim stk'
+           of None => None
+            | Some(elts,stk'') => Some(ARRAY (rev elts)::stk'', pos', theta')
+       end
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+               (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of Some[(_,c)] => parseFn env byteArr path c state
+            | otherwise => raise ERR "parseFn" "Union: expected exactly one successful choice"
+       end
+ end
+;
+
+fun parse env contig byteArr =
+ case parseFn env byteArr (VarName"root") contig ([],0,empty_lvalMap)
+  of Some ([ptree],pos,theta) => (ptree,pos,theta)
+   | Some otherwise => raise ERR "parse" "expected stack of size 1"
+   | None => raise ERR "parse" ""
+;
+
+
+(* -------------------------------------------------------------------------- *)
+(* Needs fixing so that decls have Asserts deleted. Maybe.                    *)
+(*                                                                            *)
+(*                                                                            *)
+(* -------------------------------------------------------------------------- *)
+
+fun delete_asserts decls contig =
+ case contig
+  of Declared s => delete_asserts decls (assoc s decls)
+   | Assert _ => SKIP
+   | Recd fields =>
+      let fun is_empty (s,Recd[]) = true
+            | is_empty otherwise = false
+          fun is_assert (s,Assert _) = true
+            | is_assert other = false
+          fun predUnion P1 P2 x = P1 x orelse P2 x
+          fun fieldFn (s,c) = (s, delete_asserts decls c)
+      in Recd (filter (not o predUnion is_empty is_assert)
+                      (map fieldFn fields))
+      end
+   | Array (c,e) => Array (delete_asserts decls c, e)
+   | Union bclist => Union(map (fn (b,c) => (b, delete_asserts decls c)) bclist)
+   | otherwise => contig;
+
+fun add_contig_decl env (s,d) =
+ let val (consts,decls,aW,vFn,dvFn) = env
+ in (consts,(s,d)::decls,aW,vFn,dvFn)
+ end
+
+(* -------------------------------------------------------------------------- *)
+(* Add enum contig to environment: the enum is a Basic thingy, and the        *)
+(* constants (with associated numeric values) get added to the consts.        *)
+(* -------------------------------------------------------------------------- *)
+(*
+fun add_enum_decl E (s,bindings) =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = E
+     val enum = Basic(Enum s)
+     val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
+ in
+   (bindings' @ consts, (s,enum)::decls, atomWidth,valFn,dvalFn)
+ end
+*)
+
+*)
+end
