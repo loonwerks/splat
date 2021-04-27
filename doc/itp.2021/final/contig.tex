@@ -1,5 +1,4 @@
 \documentclass[a4paper,UKenglish,cleveref, autoref, thm-restate]{lipics-v2021}
-%\documentclass[svgnames]{llncs}
 
 \bibliographystyle{plainurl}% the mandatory bibstyle
 
@@ -11,9 +10,20 @@
 \Copyright{Konrad Slind}
 \ccsdesc[500]{Theory of computation~Logic and verification}
 \keywords{Logic, verification, formal language theory, message format languages}
-\acknowledgements{This research was developed with funding from the Defense Advanced Research Projects Agency (DARPA). The views, opinions and/or findings expressed are those of the author and should not be interpreted as representing the official views or policies of the Department of Defense or the U.S. Government.}
+\acknowledgements{This research was developed with funding from the
+  Defense Advanced Research Projects Agency (DARPA). The views,
+  opinions and/or findings expressed are those of the author and
+  should not be interpreted as representing the official views or
+  policies of the Department of Defense or the
+  U.S. Government. Discussions with Robby, Luke Ryon, Dave Greve,
+  David Hardin, Magnus Myreen, and Michael Norrish have greatly
+  improved this work.}
 
-%\nolinenumbers %uncomment to disable line numbering
+% Artifact URL
+\supplement{HOL4 formalization may be found at:}
+\supplementdetails{Model} {https://github.com/loonwerks/splat/blob/monitors/contig/abscontigScript.sml}
+
+\nolinenumbers %uncomment to disable line numbering
 
 %\hideLIPIcs  %uncomment to remove references to LIPIcs series (logo, DOI, ...), e.g. when preparing a pre-final version to be uploaded to arXiv or another public repository
 
@@ -31,22 +41,17 @@
 %% \ArticleNo{23}
 %% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-
-\newcommand{\ie}{\textit{i.e.}}
-\newcommand{\eg}{\textit{e.g.}}
-\newcommand{\etal}{\textit{et al.}}
-\newcommand{\etc}{\textit{etc.}}
-\newcommand{\adhoc}{\textit{ad hoc}}
-
-%\usepackage{xspace}
-%\usepackage{microtype}
-
 % Packages and abbreviations used by Konrad
 \usepackage{latexsym}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{amsbsy}
 
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\etc}{\textit{etc.}}
+\newcommand{\adhoc}{\textit{ad hoc}}
 \newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
 \newcommand{\imp}{\Rightarrow}
 \newcommand{\lval}{\ensuremath{\mathit{lval}}}
@@ -56,16 +61,6 @@
 \newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
 \newcommand{\SubstTheta}[2]{\ensuremath{\theta\;{#1}\; {#2}}}
 \newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
-
-% Latex trickery for infix div operator, from stackexchange
-
-\makeatletter
-\newcommand*{\bdiv}{%
-  \nonscript\mskip-\medmuskip\mkern5mu%
-  \mathbin{\operator@font div}\penalty900\mkern5mu%
-  \nonscript\mskip-\medmuskip
-}
-\makeatother
 
 \EventEditors{Liron Cohen and Cezary Kaliszyk}
 \EventNoEds{2}
@@ -79,24 +74,10 @@
 \SeriesVolume{193}
 \ArticleNo{27}
 
-% For the diagrams, pinched from the Data61 report
-
-%% \usepackage{graphicx}
-%% \usepackage{tikz}
-%% \usetikzlibrary{positioning}
-%% \usetikzlibrary{arrows}
-%% \usetikzlibrary{shapes.multipart}
-
 \begin{document}
 
 \maketitle
 
-
-%% Title information
-%% \title{Specifying Message Formats with \\ Contiguity Types  \\ (PRELIMINARY DRAFT)}
-%% \author{Konrad Slind}
-%% \institute{Trusted Systems Group \\ Collins Aerospace}
-%% \maketitle
 
 \begin{abstract}
 We introduce \emph{Contiguity Types}, a formalism for network message
@@ -192,7 +173,7 @@ interchangeably.}
  \tau & = & \mathit{base} \\
       & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
       & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
-      & \mid & \konst{Alt}\; \mathit{bexp}\; \tau_1 \; \tau_2
+      & \mid & \konst{Alt}\; \mathit{bexp}\; \tau \; \tau
 \end{array}
 \]
 \caption{Contiguity types}
@@ -220,10 +201,8 @@ developed subsequently, for example by Dennis Ritchie in
 C \cite{dmr-lvals}.
 
 Before getting into formal details, we discuss a few examples.  We
-will use familiar notation:\footnote{Our current toolset for
-  \konst{contig}s supports the syntax on output but we have yet to
-  implement a parser.} records are lists of $\mathit{filedname} : \tau$
-elements enclosed by braces; an array field
+will use familiar notation: records are lists of $\mathit{filedname} :
+\tau$ elements enclosed by braces; an array field
 $\konst{Array}\;c\;\mathit{dim}$ is written $c\, [\mathit{dim}]$; and
 $\konst{Alt}\;b\;\tau_1\;\tau_2$ is written
 `$\itelse{b}{\tau_1}{\tau_2}$'. `Cascaded' \konst{Alt}s may be written
@@ -399,9 +378,7 @@ $\theta(\lval)$ is defined: an \lval{} being looked-up may not be in the
 map $\theta$. Failure in evaluation is modelled by the \konst{option}
 type, and must be handled in the semantics and the matching
 algorithm. However error handling is omitted in the presentation since
-it hampers readability. See the HOL4 formalization\footnote{
-\texttt{https://github.com/loonwerks/splat/blob/monitors/contig/abscontigScript.sml}}
-for full details.
+it hampers readability. See the HOL4 formalization for full details.
 \end{remark}
 
 \subsection{Semantics}
@@ -613,7 +590,7 @@ We examine the cases in turn:
 \end{align*}
 
 \item The first element of the worklist is an \konst{Alt}. If $b$ evaluates to \konst{true},
-  $\tau_1$ is pushed on to the worklist; if it evaluates to \konst{false}, $\tau_1$ is pushed.
+  $\tau_1$ is pushed on to the worklist; if it evaluates to \konst{false}, $\tau_2$ is pushed.
   Otherwise, fail.
 %
 \begin{align*}
@@ -647,12 +624,12 @@ nice version of the Hercules-Hydra problem \cite{dershowitz:manna}.)
 \end{theorem}
 
 
-\begin{definition}[Applying substitution to a contig]
+\begin{definition}[Substitution application]
 
-Correctness depends on an operation of applying the substitution
-$\theta$ to a contiguity type $\tau$ in order to reconstruct the
-original string.
-
+Correctness depends on an operation $\SubstTheta{\mathit{lval}}{\tau}$
+applying substitution $\theta$ to contiguity type $\tau$, starting
+at $\mathit{lval}$, in order to reconstruct the original string.
+%
 \[
 \SubstTheta{\mathit{lval}}{\tau} =
 \mathtt{case}\; \tau\
@@ -661,7 +638,7 @@ original string.
  \mathit{base} \Rightarrow \theta(\mathit{lval})
 \\
  \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \Rightarrow
-   \SubstTheta{\mathit{lval}}{\tau_1} \cdot \ldots \cdot \SubstTheta{\mathit{lval}}{\tau_n}
+   \SubstTheta{(\mathit{lval}.f_1)}{\tau_1} \cdot \ldots \cdot \SubstTheta{(\mathit{lval}.f_n)}{\tau_n}
 \\
  \konst{Array}\; \tau_1 \; \mathit{exp} \Rightarrow \\
   \hspace*{5mm}
@@ -842,10 +819,9 @@ Section \ref{list-type}).
 
 \subsection{\konst{Void} and in-message assertions}\label{assert}
 
-Boolean expressions are used to choose between alternatives in the
-\konst{Alt} constructor.  This, plus \konst{Void}, can be exploited to
-create in-message assertions. A construct
-$\konst{Assert}\;\mathit{bexp}$ can be defined as follows:
+The \konst{Alt} constructor combined with \konst{Void} supports an
+\emph{in-message assertion} feature. The contiguity type
+$\konst{Assert}\;\mathit{bexp}$ is defined as follows:
 
 \begin{definition}[\konst{Assert}]
 
@@ -856,7 +832,7 @@ $\konst{Assert}\;\mathit{bexp}$ can be defined as follows:
 
 \end{definition}
 
-The meaning of contiguity type $\konst{Assert}\;b$ is obtained by simplification.
+\noindent The meaning of $\konst{Assert}\;b$ is obtained by simplification:
 %
 \[
 \LangTheta{\konst{Assert}\; \mathit{bexp}} =
@@ -869,7 +845,6 @@ $\konst{evalBexp}\;\theta\;\mathit{bexp}$ is false, and otherwise
 continuing on without advancing in the input.
 
 \begin{example}[$A^n B^n C^n$]
-
 It is well known that $L = A^n B^n C^n$ is not a context-free
 language. We can use \konst{Assert} to specify a language that is
 \emph{nearly} $L$ with the following contiguity type:
@@ -1135,32 +1110,32 @@ AirVehicleState =
    }
 \end{verbatim}
 }
-\noindent where an \konst{EntityState} is quite a complex contiguity type:
+\noindent where an \konst{EntityState} is quite an elaborate type:
 {\small
 \begin{verbatim}
    { ID : i64
-     u : float
-     v : float
-     w : float
+     u  : float
+     v  : float
+     w  : float
      udot : float
      vdot : float
      wdot : float
      Heading : float
-     Pitch : float
-     Roll : float
+     Pitch   : float
+     Roll    : float
      p : float,  q : float, r : float
      Course : float
-     Groundspeed float
+     Groundspeed : float
      Location : mesgOption "LOCATION3D" location3D
      EnergyAvailable : float
      ActualEnergyRate : float
      PayloadStateList
         : uxasBoundedArray (mesgOption "PAYLOADSTATE" payloadState) 8
      CurrentWaypoint : i64
-     CurrentCommand :  i64
-     Mode uxasNavigationMode,
+     CurrentCommand  : i64
+     Mode : uxasNavigationMode
      AssociatedTasks : uxasBoundedArray i64 8
-     Time : i64,
+     Time : i64
      Info : uxasBoundedArray(mesgOption "KEYVALUEPAIR" keyValuePair) 32
    }
 \end{verbatim}
@@ -1255,7 +1230,7 @@ should be replaced by
 
 For example, a large \konst{Array} form can lead to a large number of
 L-values being stored in $\theta$; if none are ever accessed later,
-\eg, if the array is some image date, it can be preferable to simply
+\eg, if the array is some image data, it can be preferable to simply
 declare a \konst{Raw} block. Thus a 2D array can be blocked out in the
 following manner:
 
@@ -1355,25 +1330,23 @@ semantic properties on data. A recent language in this vein is Parsely
 subtyping of PVS to provide a combination of PEG parsing and attribute
 grammars aimed at parsing complex language formats.
 
-All of these efforts seem to obtain the semantics of the data
-description formalism by translation into features of the underlying
-logic. In contrast, contiguity types use only very basic concepts and
-are a standalone formalism, not dependent on any particular feature of
-the host logic. This means that contiguity type matchers, parsers, and
-extensions can be directly implemented in any convenient programming
-language.  Contiguity types also provide a kind of dependency, without
-leveraging the type system of the theorem prover. We suspect that
-working at the representation level, and using L-values, allows one to
-get some of the benefits of type dependency. Another distinguishing
-aspect of our work is that our emphasis on filters means that we are
-primarily interested in the enforcement of semantic properties on
-message contents rather than encode/decode properties. In future work
-we expect to be able to leverage this in high performance filter
-implementations.
+Many of these efforts obtain the semantics of the data description
+formalism by translation into features provided by a powerful host
+logic. In contrast, contiguity types use only very basic---and easily
+implemented---concepts. This means that contiguity type matchers,
+parsers, and extensions can be directly implemented in any convenient
+programming language.  Contiguity types also provide a kind of
+dependency, without leveraging the type system of the theorem
+prover. We suspect that working at the representation level, and using
+L-values, allows one to get some of the benefits of type
+dependency. Another distinguishing aspect of our work is that our
+emphasis on filters means that we are primarily interested in the
+enforcement of semantic properties on message contents rather than
+encode/decode properties. In future work we expect to be able to
+leverage this in high performance filter implementations.
 
 
-%Other papers to
-%reference \cite{verified:protocolbuffer}.
+%Other papers toreference \cite{verified:protocolbuffer}.
 
 \section{Conclusion}
 
@@ -1387,75 +1360,7 @@ mechanisms from programming languages, such as arrays, records, and
 lists while keeping the foundation in sets of strings, which seems
 appropriate for message specifications.
 
-\section*{Acknowledgements}
-
-Discussions with Robby, Luke Ryon, Dave Greve, David Hardin, Magnus
-Myreen, and Michael Norrish have greatly improved this work.
-
-%% Bibliographyb
-%\bibliography{biblio}
+%% Bibliography
 \bibliography{contig}
 
 \end{document}
-
-
-%% \begin{example}
-%% \konst{contig}s support enumerations. An \emph{enumeration} declaration
-%% introduces a new base contiguity type, and also adds the specified
-%% elements to the $\Delta$ map associating constant names to numbers.
-%% Suppose that enumerations are allowed to have up to 256 elements,
-%% allowing any enumerated element to fit in one byte. The following
-%% enumeration is taken from the uxAS project \cite{}:
-%% \begin{verbatim}
-%%   NavigationMode
-%%     = Waypoint | Loiter | FlightDirector
-%%     | TargetTrack | FollowLeader | LostComm
-%% \end{verbatim}
-
-%% A field expecting a \verb+NavigationMode+ element will be 1 byte wide,
-%% and thus there are 250 byte patterns that should not be allowed in the
-%% field. Thus, the \konst{contig}
-
-%% \begin{verbatim}
-%%   { A : NavigationMode }
-%% \end{verbatim}
-
-%% should be replaced by
-
-%% \begin{verbatim}
-%%   { A : NavigationMode
-%%     A-range : Assert (A <= 5)
-%%   }
-%% \end{verbatim}
-
-%% \noindent in order to specify an on-the-fly check. A pass automatically
-%% inserting such checks into a \konst{contig} would be straightforward to
-%% implement.
-
-%% \end{example}
-
-
-%% \noindent The following work remains to be done to implement filters
-%% properly.
-
-%% \begin{itemize}
-
-%% \item The assertion language must be expressive in order to be useful,
-%%   and must be extensible with user-defined functions and
-%%   well-formedness assertions. In the context of the CASE project, the
-%%   AADL/AGREE/SPLAT toolchain does provide the needed expressiveness,
-%%   but there is work to do in order to port the $\tau$ type and the
-%%   associated algorithms to that context. In particular, $\mathit{exp}$
-%%   only features one kind of numbers, but well-formedness
-%%   specifications will require a wide range of signed and unsigned
-%%   integers, plus floating point.
-
-%% \item Assertions on arrays require some thought as how best to specify
-%%   universal and existential predicates on arrays.
-
-%% \item There is a choice as to whether processing should fail as soon
-%%   as one assertion fails vs. going all the way through and keeping
-%%   track of all the failures for a final report. This is very similar
-%%   to the issues surrounding parser error messages in compilers.
-
-%% \end{itemize}
