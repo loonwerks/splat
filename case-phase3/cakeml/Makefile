@@ -39,6 +39,8 @@ all: cake$(SUFF) $(CML_PROGS)
 
 # Linking the CakeML compiler
 
+LDLIBS += -lm
+
 cake$(SUFF): cake.o basis_ffi.o
 	$(CC) $(LDFLAGS) $< basis_ffi.o $(LOADLIBES) $(LDLIBS) -o $@
 

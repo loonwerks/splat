@@ -1,0 +1,134 @@
+structure Test =
+struct
+
+fun fromList ints =
+ let val buf = Word8Array.array (List.length ints) Utils.w8zero
+ in
+  Utils.string2buf (String.implode (List.map Char.chr ints)) buf;
+  buf
+ end
+
+fun fromByteList w8list =
+ let val buf = Word8Array.array (List.length w8list) Utils.w8zero
+ in List.mapi (Word8Array.update buf) w8list;
+    buf
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Test Traffic Report                                                       *)
+(*---------------------------------------------------------------------------*)
+(*
+val original_list =   (* SML int literal syntax *)
+ [0x14, 0x00, 0xAB, 0x45, 0x49, 0x1F, 0xEF, 0x15, 0xA8,
+  0x89, 0x78, 0x0F, 0x09, 0xA9, 0x07, 0xB0, 0x01, 0x20,
+  0x01, 0x4E, 0x38, 0x32, 0x35, 0x56, 0x20, 0x20, 0x20, 0x00];
+*)
+
+val gdl90list =  (* from gdl-90 documentation *)
+   [20, 0, 171, 69, 73, 31, 239, 21, 168, 137, 120, 15, 9, 169, 7, 176, 1,
+    32, 1, 78, 56, 50, 53, 86, 32, 32, 32, 0];
+
+val fdl_list = gdl90list @ [42];
+
+val trafficArr = fromList fdl_list;
+
+val trafficParse =
+  Adsb_Parse.adsbParse
+    (Adsb_Contig.traffic_report,
+     Adsb_Parse.mk_traffic_report);
+
+val _ =
+case trafficParse trafficArr
+ of None => print "failed to parse traffic report.\n"
+  | Some thing => Adsb_Types.print_traffic_report thing
+;
+
+(*---------------------------------------------------------------------------*)
+(* Ownship message                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val ownshiplist =  (* from gdl-90 documentation *)
+   [10, 0, 171, 69, 73, 31, 239, 21, 168, 137, 120, 15, 9, 169, 7, 176, 1,
+    32, 1, 78, 56, 50, 53, 86, 32, 32, 32, 0];
+
+val ownship_fdl_list = ownshiplist @ [42];
+
+val ownshipArr = fromList ownship_fdl_list;
+
+val _ =
+case trafficParse ownshipArr
+ of None => print "failed to parse ownship report.\n"
+  | Some thing => Adsb_Types.print_traffic_report thing
+;
+
+(*---------------------------------------------------------------------------*)
+(* Test Heartbeat                                                            *)
+(*---------------------------------------------------------------------------*)
+
+(* Note that 34,55 = 0x22,0x37 = 4 uplinks and 567 basic-and-long receptions *)
+
+val heartbeat_list = [0, 42, 42, 120, 171, 34, 55];
+val heartbeatArr = fromList heartbeat_list;
+
+val heartbeatParse =
+  Adsb_Parse.adsbParse
+     (Adsb_Contig.heartbeat,
+      Adsb_Parse.mk_heartbeat);
+
+val _ =
+ case heartbeatParse heartbeatArr
+  of None => print "failed to parse heartbeat message.\n"
+   | Some thing => Adsb_Types.print_heartbeat thing;
+
+(*---------------------------------------------------------------------------*)
+(* Test adsb_messages                                                        *)
+(*---------------------------------------------------------------------------*)
+
+fun copies x n = if n <= 0 then [] else x::copies x (n-1);
+
+val adsb_messages_list =
+  heartbeat_list
+  @ List.concat (copies fdl_list 150)
+  @ ownship_fdl_list;
+
+val adsb_messagesArr = fromList adsb_messages_list;
+
+val adsb_messageParse =
+  Adsb_Parse.adsbParse
+     (Adsb_Contig.adsb_messages,
+      Adsb_Parse.mk_adsb_messages);
+
+val _ =
+ case adsb_messageParse adsb_messagesArr
+  of None => print "failed to parse heartbeat message.\n"
+   | Some thing => Adsb_Types.print_adsb_messages thing;
+
+(*---------------------------------------------------------------------------*)
+(* Test encode/decode of target_identity                                     *)
+(*---------------------------------------------------------------------------*)
+
+val tidenclist = Adsb_Types.enc_tid_nums 12 65544;
+val tidencArr = fromByteList tidenclist;
+
+val (ptree,n,theta) =
+  BitContig.parse Adsb_Parse.theEnv Adsb_Contig.target_identity tidencArr;
+
+val printI = Adsb_Types.printI;
+val mk_int = Adsb_Parse.mk_int;
+
+val _ =
+ case ptree
+ of BitContig.RECD
+     [("spare", thing),
+      ("Address", addr),
+      ("ParticipantAddress", paddr)] =>
+   (print "Target identity.\n";
+    printI "  Address: " (mk_int addr);
+    printI "  Participant Address: " (mk_int paddr);
+    print "End Target identity.\n");
+
+(*---------------------------------------------------------------------------*)
+(* Test encode/decode of monitor_output                                      *)
+(*---------------------------------------------------------------------------*)
+
+end (* Test *)

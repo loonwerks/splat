@@ -122,6 +122,14 @@ fun i2d i =
   Double.fromString (s' ^ ".0")
  end
 
+fun array_existsI pred arr =
+ let val len = Array.length arr
+ in if len = 0 then False
+    else List.exists pred (upto 0 (len - 1))
+ end
+
+val w8char = Char.chr o Word8.toInt;
+
 end (* Utils *)
 
 structure BitFns =
@@ -944,6 +952,7 @@ val monitor_report = BitContig.Recd [
   ("SuspectTraffic", BitContig.Array target_identity (BitContig.IntLit 150))
  ];
 
+(*
 val adsb_decls =
  [("Misc-Indicators", misc_indicators),
   ("traffic_report", traffic_report),
@@ -951,20 +960,37 @@ val adsb_decls =
   ("adsb_messages",adsb_messages),
   ("target_identity",target_identity),
   ("monitor_report",monitor_report)];
+*)
 
-end
+end (* Adsb_Contig *)
 
 structure Adsb_Types =
 struct
 
+fun printB s b = print (s^Bool.toString b^"\n");
+fun printI s i = print (s^Int.toString i^"\n");
+fun printR s d = print (s^Double.toString d^"\n");
+fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
+
+
 datatype miscIndicators = MiscIndicators_Recd bool bool bool bool;
+
+datatype targetID = TargetID_Recd int int;
+
+fun addr_of tid =
+ case tid
+  of TargetID_Recd addr paddr => addr;
+
+fun partAddr_of tid =
+ case tid
+  of TargetID_Recd addr paddr => paddr;
+
 
 datatype traffic_report =
  Traffic_report_Recd
    int
    int
-   int
-   int
+   targetID
    Double.double
    Double.double
    int
@@ -980,10 +1006,14 @@ datatype traffic_report =
    int
 ;
 
-fun printB s b = print (s^Bool.toString b^"\n");
-fun printI s i = print (s^Int.toString i^"\n");
-fun printR s d = print (s^Double.toString d^"\n");
-fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
+fun print_targetID tid =
+ case tid
+  of TargetID_Recd i1 i2 =>
+    (print  "  Target ID.\n";
+     printI "    address : " i1;
+     printI "    participantAddress : " i2
+    )
+;
 
 fun print_misc mi =
  case mi
@@ -999,14 +1029,13 @@ fun print_misc mi =
 fun print_traffic_report rpt =
  case rpt
   of Traffic_report_Recd
-     messageID status addrType address lat lon alt
+     messageID status targetID lat lon alt
      misc nic nacp horizV vertV heading emitter callSign
      prio fdl =>
       (print "Traffic Report message.\n";
        printI "  messageID: " messageID ;
        printI "  status:    " status ;
-       printI "  addrType:  " addrType ;
-       printI "  address:   " address ;
+       print_targetID targetID;
        printR "  lat:       " lat;
        printR "  lon:       " lon;
        printI "  alt:       " alt;
@@ -1022,6 +1051,17 @@ fun print_traffic_report rpt =
        printI "  TR-info:   " fdl;
        print "End Traffic Report.\n\n"
      );
+
+(*---------------------------------------------------------------------------*)
+(* Traffic report projections                                                *)
+(*---------------------------------------------------------------------------*)
+
+fun targetID_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => targetID;
 
 datatype status_byte_1 = Status_byte_1_Recd bool bool bool bool bool bool bool;
 datatype status_byte_2 = Status_byte_2_Recd bool bool bool bool;
@@ -1074,6 +1114,7 @@ datatype adsb_messages =
     (traffic_report array)
     traffic_report;
 
+
 fun print_adsb_messages mesgs =
  case mesgs
   of Adsb_messages_Recd hb trA own =>
@@ -1084,7 +1125,17 @@ fun print_adsb_messages mesgs =
        print "End ADSB Messages.\n\n"
      );
 
-datatype target_identity = Target_Identity_Recd int int;
+fun heartbeat_of mesgs =
+ case mesgs
+  of Adsb_messages_Recd hb trA own => hb;
+
+fun traffic_of mesgs =
+ case mesgs
+  of Adsb_messages_Recd hb trA own => trA;
+
+fun ownship_of mesgs =
+ case mesgs
+  of Adsb_messages_Recd hb trA own => own;
 
 fun enc_tid_nums i j =
  let val (d,r1) = Utils.divmod j 256
@@ -1094,28 +1145,27 @@ fun enc_tid_nums i j =
    List.map Word8.fromInt [i,r3,r2,r1]
   end;
 
-fun encode_target_identity ti =
+fun encode_targetID ti = (* word8 list *)
  case ti
-  of Target_Identity_Recd i j => enc_tid_nums i j;
+  of TargetID_Recd i j => enc_tid_nums i j;
 
-
-datatype monitor_report = Monitor_report_Recd int int (target_identity array);
+datatype monitor_report = Monitor_Report_Recd int int (targetID array);
 
 fun array_toList f arr =
  Array.foldr (fn x => fn list => f x :: list) [] arr;
 
 fun encode_monrept mesgID monID tidArray =
  let val spare = 0
-     val tidBytes = array_toList encode_target_identity tidArray
+     val tidBytes = array_toList encode_targetID tidArray
  in
    List.map Word8.fromInt [mesgID, monID, spare, spare]
    @
    List.concat tidBytes
   end;
 
-fun encode_monitor_report mrpt =
+fun encode_monitor_report mrpt = (* word8 list *)
  case mrpt
-  of Monitor_report_Recd mesgID monID tidArray =>
+  of Monitor_Report_Recd mesgID monID tidArray =>
         encode_monrept mesgID monID tidArray;
 
 end (* Adsb_Types *)
@@ -1149,6 +1199,57 @@ fun dvalFn atm bits = raise Utils.ERR "dvalFn" "undefined";
 val theEnv = ([],[],phase3_atom_width,valFn,dvalFn)
 
 (*---------------------------------------------------------------------------*)
+(* Takes a contig and a decoder and combines them into a parser.             *)
+(*---------------------------------------------------------------------------*)
+
+fun genParse env p byteArr i =
+ let val (contig,mk_data) = p
+ in
+ case BitContig.parseFn
+        env byteArr (BitContig.VarName"root") contig
+        ([],i,BitContig.empty_lvalMap())
+  of Some ([ptree],_,_) =>
+     (print "genParse: generated ptree\n"; Utils.total mk_data ptree)
+   | otherwise => None
+ end;
+
+fun adsbParse p byteArr = genParse theEnv p byteArr 0;
+
+(*---------------------------------------------------------------------------*)
+(* Parse a message prefixed with a byte which tells if it's an event.        *)
+(* Somewhat complex information on output makes this convoluted:             *)
+(*                                                                           *)
+(*  None          -- no event on port (input is not of form "0x1 ...")       *)
+(*  Some None     -- event on port, but parse of input failed                *)
+(*  Some (Some d) -- event on port, parse of input yields data d             *)
+(*                                                                           *)
+(* This could get mapped to EventData port element as                        *)
+(*                                                                           *)
+(*   Some None     --> None                                                  *)
+(*   None          --> Some (EventData None)                                 *)
+(*   Some (Some d) --> Some (EventData (Some d))                             *)
+(*                                                                           *)
+(* Inside the stepFn there needs to be code handling situations where inputs *)
+(* are events, but the port contents fail to parse.                          *)
+(*---------------------------------------------------------------------------*)
+
+fun is_event byteA =
+  0 < Word8Array.length byteA andalso
+  Word8Array.sub byteA 0 = Word8.fromInt 1;
+
+fun eventParse p byteA =
+ if not(is_event byteA) then
+    None
+ else
+  let val (contig,mk_data) = p
+  in case BitContig.parseFn
+            theEnv byteA (BitContig.VarName"root") contig
+              ([],1,BitContig.empty_lvalMap())
+      of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
+       | otherwise => Some None
+  end;
+
+(*---------------------------------------------------------------------------*)
 (* Interpretation support                                                    *)
 (*---------------------------------------------------------------------------*)
 
@@ -1175,23 +1276,6 @@ fun mk_array eltFn ptree =
    | otherwise  => raise Utils.ERR "mk_array" "";
 
 (*---------------------------------------------------------------------------*)
-(* Takes a contig and a decoder and combines them into a parser.             *)
-(*---------------------------------------------------------------------------*)
-
-fun genParse env p byteArr =
- let val (contig,mk_data) = p
- in
- case BitContig.parseFn
-        env byteArr (BitContig.VarName"root") contig
-        ([],0,BitContig.empty_lvalMap())
-  of Some ([ptree],_,_) =>
-     (print "genParse: generated ptree\n"; Utils.total mk_data ptree)
-   | otherwise => None
- end;
-
-fun adsbParse p byteArr = genParse theEnv p byteArr;
-
-(*---------------------------------------------------------------------------*)
 (* Construct traffic report fields                                           *)
 (*---------------------------------------------------------------------------*)
 
@@ -1207,6 +1291,7 @@ fun mk_miscInd ptree =
        (mk_bool tt0) (mk_bool tt1) (mk_bool rpt) (mk_bool abn)
   | otherwise => raise Utils.ERR "mk_miscInd" "";
 
+fun mk_targetID i1 i2 = Adsb_Types.TargetID_Recd i1 i2;
 
 fun mult_by_factor factor i = Double.* factor (Utils.i2d i);
 
@@ -1239,8 +1324,7 @@ fun mk_traffic_report ptree =
      Adsb_Types.Traffic_report_Recd
        (mk_int messageID)
        (mk_int status)
-       (mk_int addrType)
-       (mk_int address)
+       (mk_targetID (mk_int addrType) (mk_int address))
        (mult_by_factor factor1 (mk_int lat))
        (mult_by_factor factor1 (mk_int lon))
        (mk_int alt * 25 - 1000)
@@ -1316,132 +1400,209 @@ fun mk_adsb_messages ptree =
 
 end (* Adsb_Parse *)
 
-fun fromList ints =
- let val buf = Word8Array.array (List.length ints) Utils.w8zero
- in
-  Utils.string2buf (String.implode (List.map Char.chr ints)) buf;
-  buf
- end
-
-fun fromByteList w8list =
- let val buf = Word8Array.array (List.length w8list) Utils.w8zero
- in List.mapi (Word8Array.update buf) w8list;
-    buf
- end
-
 (*---------------------------------------------------------------------------*)
-(* Test Traffic Report                                                       *)
+(* Deployment API                                                            *)
 (*---------------------------------------------------------------------------*)
+
 (*
-val original_list =   (* SML int literal syntax *)
- [0x14, 0x00, 0xAB, 0x45, 0x49, 0x1F, 0xEF, 0x15, 0xA8,
-  0x89, 0x78, 0x0F, 0x09, 0xA9, 0x07, 0xB0, 0x01, 0x20,
-  0x01, 0x4E, 0x38, 0x32, 0x35, 0x56, 0x20, 0x20, 0x20, 0x00];
+structure API =
+struct
+
+val input_buffer = Word8Array.array 4386 Utils.w8zero;
+
+(*---------------------------------------------------------------------------*)
+(* Clear buffer, read port into buffer, copy buffer to string                *)
+(*---------------------------------------------------------------------------*)
+fun fill_input_buffer () =
+  let val () = Utils.clear_buf input_buffer
+      val () = #(api_get_filter_in) "" input_buffer
+   in
+      Utils.buf2string in_buf
+   end;
+
+fun output_calls string =
+   #(api_put_filter_out) string Utils.emptybuf;
+
+fun logInfo s = #(api_logInfo) s Utils.emptybuf;
+
+end
 *)
 
-val gdl90list =  (* from gdl-90 documentation *)
-   [20, 0, 171, 69, 73, 31, 239, 21, 168, 137, 120, 15, 9, 169, 7, 176, 1,
-    32, 1, 78, 56, 50, 53, 86, 32, 32, 32, 0];
-
-val fdl_list = gdl90list @ [42];
-
-val trafficArr = fromList fdl_list;
-
-val trafficParse =
-  Adsb_Parse.adsbParse
-    (Adsb_Contig.traffic_report,
-     Adsb_Parse.mk_traffic_report);
-
-val _ =
-case trafficParse trafficArr
- of None => print "failed to parse traffic report.\n"
-  | Some thing => Adsb_Types.print_traffic_report thing
-;
-
 (*---------------------------------------------------------------------------*)
-(* Ownship message                                                           *)
+(* Mocked-up version of API                                                  *)
 (*---------------------------------------------------------------------------*)
 
-val ownshiplist =  (* from gdl-90 documentation *)
-   [10, 0, 171, 69, 73, 31, 239, 21, 168, 137, 120, 15, 9, 169, 7, 176, 1,
-    32, 1, 78, 56, 50, 53, 86, 32, 32, 32, 0];
+structure API =
+struct
 
-val ownship_fdl_list = ownshiplist @ [42];
-
-val ownshipArr = fromList ownship_fdl_list;
-
-val _ =
-case trafficParse ownshipArr
- of None => print "failed to parse ownship report.\n"
-  | Some thing => Adsb_Types.print_traffic_report thing
-;
+val input_buffer = Word8Array.array 4386 Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
-(* Test Heartbeat                                                            *)
+(*    #(api_logInfo) s Utils.emptybuf;                                       *)
 (*---------------------------------------------------------------------------*)
 
-(* Note that 34,55 = 0x22,0x37 = 4 uplinks and 567 basic-and-long receptions *)
-
-val heartbeat_list = [0, 42, 42, 120, 171, 34, 55];
-val heartbeatArr = fromList heartbeat_list;
-
-val heartbeatParse =
-  Adsb_Parse.adsbParse
-     (Adsb_Contig.heartbeat,
-      Adsb_Parse.mk_heartbeat);
-
-val _ =
- case heartbeatParse heartbeatArr
-  of None => print "failed to parse heartbeat message.\n"
-   | Some thing => Adsb_Types.print_heartbeat thing;
+fun logInfo s = TextIO.output TextIO.stdErr s;
 
 (*---------------------------------------------------------------------------*)
-(* Test adsb_messages                                                        *)
+(* Grab filter input from file.                                              *)
 (*---------------------------------------------------------------------------*)
 
-fun copies x n = if n <= 0 then [] else x::copies x (n-1);
-
-val adsb_messages_list =
-  heartbeat_list
-  @ List.concat (copies fdl_list 150)
-  @ ownship_fdl_list;
-
-val adsb_messagesArr = fromList adsb_messages_list;
-
-val adsb_messageParse =
-  Adsb_Parse.adsbParse
-     (Adsb_Contig.adsb_messages,
-      Adsb_Parse.mk_adsb_messages);
-
-val _ =
- case adsb_messageParse adsb_messagesArr
-  of None => print "failed to parse heartbeat message.\n"
-   | Some thing => Adsb_Types.print_adsb_messages thing;
+fun api_get_filter_in emptyString buf =
+ case CommandLine.arguments()
+  of [fileName] => Utils.file2buf fileName buf
+   | otherwise =>
+     (TextIO.print_err"Expected a filename"; raise Utils.ERR "" "");
 
 (*---------------------------------------------------------------------------*)
-(* Test encode/decode of target_identity                                     *)
+(* Clear buffer, read file into buffer, copy buffer to string. As stub code, *)
+(* it's an elaborate no-op, but enables easy testing. Note that              *)
+(* api_get_filter_in is assumed to raise an exception when the input is too  *)
+(* large for the buffer.                                                     *)
 (*---------------------------------------------------------------------------*)
 
-val tidenclist = Adsb_Types.enc_tid_nums 12 65544;
-val tidencArr = fromByteList tidenclist;
-
-val (ptree,n,theta) =
-  BitContig.parse Adsb_Parse.theEnv Adsb_Contig.target_identity tidencArr;
-
-val printI = Adsb_Types.printI;
-val mk_int = Adsb_Parse.mk_int;
-
-val _ =
- case ptree
- of BitContig.RECD
-     [("spare", thing),
-      ("Address", addr),
-      ("ParticipantAddress", paddr)] =>
-   (print "Target identity.\n";
-    printI "  Address: " (mk_int addr);
-    printI "  Participant Address: " (mk_int paddr);
-    print "End Target identity.\n");
+fun fill_input_buffer () =
+  let val () = Utils.clear_buf input_buffer
+      val () = api_get_filter_in "" input_buffer
+   in ()
+   end
+   handle _ =>
+    (logInfo "Monitor failure: unable to fill input buffer.";
+     raise Utils.ERR "fill_input_buffer" ""
+    );
 
 (*---------------------------------------------------------------------------*)
-(* Test encode/decode of monitor_output                                      *)
+(*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
 (*---------------------------------------------------------------------------*)
+
+fun put_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
+
+end (* API *)
+
+
+structure Monitor =
+struct
+
+val addr_of = Adsb_Types.addr_of;
+val partAddr_of = Adsb_Types.partAddr_of;
+val targetID_of = Adsb_Types.targetID_of;
+val ownship_of = Adsb_Types.ownship_of;
+val traffic_of = Adsb_Types.traffic_of;
+
+val theState = Ref ();
+
+val is_latched = False;
+
+val lcDISTINCT = Adsb_Types.TargetID_Recd 0 0;
+
+fun get_TARGET_ID traffic index = targetID_of (Array.sub traffic index);
+
+fun is_DUPLICATE_ID traffic1 traffic2 =
+  (targetID_of traffic1 = targetID_of traffic2)
+ andalso
+  not (targetID_of traffic1 = lcDISTINCT);
+
+fun is_DUPLICATE_OWNSHIP msg index =
+  is_DUPLICATE_ID
+     (ownship_of msg)
+     (Array.sub (traffic_of msg) index);
+
+fun is_DUPLICATE_TRAFFIC msg index =
+ Utils.array_existsI
+   (fn dup_index =>
+      not(dup_index = index)
+      andalso
+      is_DUPLICATE_ID
+        (Array.sub (traffic_of msg) index)
+        (Array.sub (traffic_of msg) dup_index))
+   (traffic_of msg);
+
+(*---------------------------------------------------------------------------*)
+(* 100 = standard Monitor ID,                                                *)
+(*   2 = identifier for the duplicates monitor                               *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_monitor_report suspects = Adsb_Types.Monitor_Report_Recd 100 2 suspects;
+
+fun lcUPDATE_SUSPECT_IDS msg =
+ mk_monitor_report
+   (Array.tabulate
+    (Array.length (traffic_of msg))
+    (fn i =>
+      if is_DUPLICATE_TRAFFIC msg i orelse is_DUPLICATE_OWNSHIP msg i then
+          get_TARGET_ID (traffic_of msg) i
+      else lcDISTINCT));
+
+fun lcDUPLICATE_IN_REPORT msg =
+ Utils.array_existsI
+  (fn index =>
+    is_DUPLICATE_TRAFFIC msg index orelse is_DUPLICATE_OWNSHIP msg index)
+  (traffic_of msg);
+
+
+(* ---------------------------------------------------------------------------*)
+(* One thread invocation                                                      *)
+(* ---------------------------------------------------------------------------*)
+
+fun parseInput () =
+  Adsb_Parse.eventParse
+        (Adsb_Contig.adsb_messages, Adsb_Parse.mk_adsb_messages)
+        API.input_buffer;
+
+fun stepFn () =
+ let val () = API.fill_input_buffer ()
+ in
+ case parseInput()
+  of None =>  ()  (* Not an event *)
+   | Some None =>  API.logInfo "Monitor failure: unable to parse input event"
+   | Some (Some msg) =>
+      if lcDUPLICATE_IN_REPORT msg then
+        let val susRpt = lcUPDATE_SUSPECT_IDS msg
+            val susBytes = Adsb_Types.encode_monitor_report susRpt
+            val susString = String.implode (List.map Utils.w8char susBytes)
+        in API.put_Suspect_Traffic_Out susString
+        end
+      else ()
+ end
+
+
+end (* Monitor *)
+
+(* One-shot test
+val _ = Monitor.stepFn();
+*)
+
+(*---------------------------------------------------------------------------*)
+(*  Actual setup and invocation                                              *)
+(*---------------------------------------------------------------------------*)
+(*
+structure Control =
+struct
+
+fun pacer_emit() =
+    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+fun pacer_wait() =
+    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
+
+fun loop () =
+  if pacer_wait() then
+    ( receiveInput();
+      Monitor.stepFn();
+      sendOutput();
+      pacer_emit();
+      loop()
+    )
+  else
+    loop();
+
+fun start () = (pacer_emit(); loop());
+
+end (* Control *)
+
+val _ = Control.start();
+*)
