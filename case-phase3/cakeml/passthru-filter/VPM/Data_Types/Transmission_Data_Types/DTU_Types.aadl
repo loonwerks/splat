@@ -1,0 +1,33 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package DTU_Types
+public
+	
+	with Base_Types;
+	with Data_Model;
+	with HAMR;
+	
+	data Request_Message
+		properties
+            Data_Model::Data_Representation => Array;
+            Data_Model::Base_Type => (classifier (Base_Types::Unsigned_8));
+            Data_Model::Dimension => (2048);
+	end Request_Message;
+	
+	data implementation Request_Message.impl
+		properties
+			HAMR::Bit_Codec_Max_Size => 2048 Bytes;
+	end Request_Message.impl;
+	
+	data Response_Message
+		properties
+			Data_Model::Data_Representation => Array;
+            Data_Model::Base_Type => (classifier (Base_Types::Unsigned_8));
+            Data_Model::Dimension => (2048);
+	end Response_Message;	
+	
+	data implementation Response_Message.impl
+		properties
+			HAMR::Bit_Codec_Max_Size => 2048 Bytes;
+	end Response_Message.impl;
+	
+end DTU_Types;

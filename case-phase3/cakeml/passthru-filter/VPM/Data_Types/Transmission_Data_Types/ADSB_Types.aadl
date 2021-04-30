@@ -1,0 +1,498 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package ADSB_Types
+public
+	
+	with Data_Model;
+	with Base_Types;
+	with Common_Types;
+	with HAMR;
+	
+	data MessageID_Type extends Base_Types::Unsigned_8
+		--In order to provision for future inclusion of a data link address field, the Message ID is
+		--represented by the 7 least-significant bits of the byte immediately following the initial Flag byte.
+		--In equipment that complies with this version of this interface document, the most significant bit
+		--of the Message ID will always be ZERO, so that the Message ID can be treated as an 8-bit value
+		--with a range of 0-127 (decimal). Any messages that have a Message ID outside of this range
+		--should be discarded.	
+	end MessageID_Type;
+	
+	data HeartBeatStatus1_Type extends Base_Types::Unsigned_8
+		-- Bit 0 = UAT intialized.  1 = GDL 90 is initialized
+		-- Bit 1 = Reserved
+		-- Bit 2 = RATCS		    1 = ATC Service talkback
+		-- Bit 3 = GPS Batt Low     1 = GPS Battery low voltage
+		-- Bit 4 = Addr Type        1 = Address Type talkback
+		-- Bit 5 = IDENT            1 = IDENT talkback
+		-- Bit 6 = Maint Req'd      1 = GDL 90 Maintenance Req'd
+		-- Bit 7 = GPS Pos Valid    1 = Position is available for ADS-B Tx
+	end HeartBeatStatus1_Type;
+	
+	data HeartBeatStatus2_Type extends Base_Types::Unsigned_8
+		-- Bit 0 = UTC OK  			1 = GDL 90 is initialized
+		-- Bit 1 = Reserved
+		-- Bit 2 = Reserved		   
+		-- Bit 3 = Reserved    
+		-- Bit 4 = Reserved       
+		-- Bit 5 = CSA Not Available        1 = CSA not available at this time
+		-- Bit 6 = CSE Requested     		1 = CSA has been requested
+		-- Bit 7 = TimeStamp (MS bit)  	  	1 = Seconds since 0000Z, bit 16
+	end HeartBeatStatus2_Type;
+	
+	data TimeStamp_Message_Type extends Base_Types::Unsigned_16
+		-- The Heartbeat message includes the current time-of-day in whole seconds elapsed since UTC
+		-- midnight (0000Z). This requires a 17-bit data field. The most significant bit (bit 16) is in Status
+		-- Byte 2 bit 7. The remaining 16 bits are conveyed least significant byte first, using the two Time
+		-- Stamp bytes.
+	end TimeStamp_Message_Type;
+	
+	data MessageCount_Type extends Base_Types::Unsigned_16
+		-- Two bytes are used to report the number of UAT messages received by the GDL 90 during the
+		-- previous second. The count fields are formatted as follows:
+		
+		-- a) Uplink receptions: Bits 7..3 of the first Message Count byte contain the count of Uplink
+		-- Messages received. Bit 7 is the most significant bit.
+		
+		-- b) Reserved: Bit 2 of the first Message Count byte is reserved, and is set to ZERO.
+		
+		-- c) Basic and Long receptions: The total number of Basic and Long messages together is
+		-- contained in a 10-bit field. The two most significant bits are in Bit 1..0 of the first Message
+		-- Count byte, and the eight least significant bits are contained in the second Message Count
+		-- byte. The counter value will hold at the maximum value if the number of received messages
+		-- exceeds 1,023.
+		
+		-- These counters represent all of the UAT messages that have been successfully received and
+		-- validated, regardless of whether they result in an output report on the GDL 90 interfaces.
+		
+		-- Example:
+		-- If 4 Uplink messages and a total of 567 Basic and Long messages were received in the previous second, the
+		-- Heartbeat message Byte 6 value will be 0x22, and the Byte 7 value will be 0x37.
+	end MessageCount_Type;
+	
+	-- Output at the beginning of each UTC second.
+	data HeartBeat_Message
+		properties
+			Data_Model::Data_Representation => Struct;
+			Data_Size => 7 Bytes;
+	end HeartBeat_Message;
+	
+	data implementation HeartBeat_Message.impl
+		subcomponents
+			MessageID: data MessageID_Type;							     -- 1 byte.  Set to decimal value of '0' for a HeartBeat
+			HeartBeatStatus1: data HeartBeatStatus1_Type;				 -- 1 byte
+			HeartBeatStatus2: data HeartBeatStatus2_Type;				 -- 1 byte
+			TimeStamp: data TimeStamp_Message_Type;                      -- 2 bytes
+			MessageCount: data MessageCount_Type;                        -- 2 bytes
+	end HeartBeat_Message.impl;
+	
+	-- 's' field
+	data TrafficAlertStatus_Type extends Base_Types::Integer
+		properties
+		 Data_Model::Number_Representation => Unsigned;
+		 Data_Size => 4 bits;
+		 Data_Model::Integer_Range => 0 .. 1;
+ 		 Data_Model::Enumerators => ("TRAFFIC_ALERT_STATUS_NO_ALERT", 		-- = '0'
+ 		 							 "TRAFFIC_ALERT_STATUS_TRAFFIC_ALERT",  -- = '1'
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_2", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_3",		-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_4",	    -- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_5", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_6", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_7", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_8", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_9", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_10",	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_11", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_12", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_13", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_14", 	-- Not currently used
+ 		 							 "TRAFFIC_ALERT_STATUS_RESERVED_15"  	-- Not currently used
+ 		 							 );	
+	end TrafficAlertStatus_Type;
+	
+	-- 't' field
+	data Address_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 4 bits;
+			Data_Model::Integer_Range => 0 .. 5;
+			Data_Model::Enumerators => ("ADDRESS_TYPE_ADS_B_WITH_ICAO_ADDRESS",   		-- = '0'
+ 		 							 "ADDRESS_TYPE_ADS_B_WITH_SELF_ASSIGNED_ADDRESS", 	-- = '1'
+ 		 							 "ADDRESS_TYPE_TISB_WITH_ICAO_ADDRESS", 			-- = '2'
+ 		 							 "ADDRESS_TYPE_TISB_WITH_TRACK_FILE_ID",			-- = '3'
+ 		 							 "ADDRESS_TYPE_SURFACE_VEHICLE", 					-- = '4'
+ 		 							 "ADDRESS_TYPE_GROUND_STATION_BEACON", 				-- = '5'
+ 		 							 "ADDRESS_TYPE_RESERVED_6",  						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_7",	 						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_8",							-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_9",							-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_10", 						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_11", 						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_12", 						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_13", 						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_14", 						-- Not currently used
+ 		 							 "ADDRESS_TYPE_RESERVED_15"  						-- Not currently used
+ 		 							 );	
+	end Address_Type;
+	
+	-- 'aaaaaa' field
+	data ParticipantAddress_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Model::Integer_Range => 0 .. 16777215;
+			Data_Size => 3 Bytes;
+	end ParticipantAddress_Type;
+	
+	-- Combines the Address_Type and ParticipantAddress_Type
+	data TargetIdentity_Type
+		properties
+			Data_Model::Data_Representation => Struct;
+			Data_Size => 28 bits;
+	end TargetIdentity_Type;
+	
+	data implementation TargetIdentity_Type.impl
+		subcomponents
+			Address: data Address_Type;							
+			ParticipantAddress: data ParticipantAddress_Type;   
+	end TargetIdentity_Type.impl;
+	
+	-- 'llllll' field
+	data latitude_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Signed;
+			Data_Size => 3 Bytes;
+			Data_Model::Integer_Range => -8388608 .. 8388607;
+			Data_Model::Representation => ("Resolution = 1 / 2^23 semicircles");
+			Data_Model::Measurement_Unit => "Semicircles";
+			-- Example:
+			-- 00.000 N degrees		 	  = 0x00 00 00
+			-- 00.000 + LSB N degrees	  = 0x00 00 01
+			-- 00.000 - LSB S degrees	  = 0xFF FF FF
+			-- 90.000 N degrees			  = 0x40 00 00
+	end latitude_Type;
+	
+	-- 'nnnnnn' field
+	data longitude_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Signed;
+			Data_Size => 3 Bytes;
+			Data_Model::Integer_Range => -8388608 .. 8388607;
+			Data_Model::Representation => ("Resolution = 1 / 2^23 semicircles");
+			Data_Model::Measurement_Unit => "Semicircles";
+			-- Example:
+			-- 00.000 E degrees		 	  = 0x00 00 00
+			-- 00.000 + LSB E degrees	  = 0x00 00 01
+			-- 00.000 - LSB W degrees	  = 0xFF FF FF
+			-- 90.000 E degrees			  = 0x40 00 00
+			-- -180.000 degrees			  = 0x80 00 00
+			-- Max Longitude (+180 - LSB) = 0x7F FF FF
+	end longitude_Type;
+	
+	-- 'ddd' field
+	data Altitude_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 12 bits;
+			Data_Model::Integer_Range => 0 .. 4095;
+			Data_Model::Representation =>("Altitude (ft) = ('value' * 25) - 1000");
+			Data_Model::Measurement_Unit => "Feet";
+			-- Example:
+			-- -1000 ft				 = 0x000
+			-- 0 feet				 = 0x028
+			-- 1000 ft				 = 0x050
+			-- Invalid / Unavailable = 0xFFF
+	end Altitude_Type;
+	
+	-- 'm' field
+	data MiscField_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 4 bits;
+			Data_Model::Integer_Range => 0 .. 15;
+			-- Example:
+			--
+			--	Bit 3	|	Bit 2	|	Bit 1	| Bit 0		| Meaning
+			---------------------------------------------------------
+			--	 -			-			'0'			'0'			'tt' (track Heading) not valid
+			--	 -			-			'0'			'1'			'tt' = True Track Angle
+			--	 -			-			'1'			'0'			'tt' = Heading (Magnetic)
+			--	 -			-			'1'			'1'			'tt' = Heading (True)
+			--	 -			'0'			-			-			Report is updated
+			--	 -			'1'			-			-			Report is extrapolated
+			--	'0'			-			-			-			On Ground
+			--	'1'			-			-			-			Airborne
+			--------------------------------------------------------------------------------------
+	end MiscField_Type;
+	
+	-- 'i' field
+	data Nic_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 4 bits;
+			Data_Model::Integer_Range => 0 .. 11;			
+			Data_Model::Representation =>
+			(
+			 "'0' = Unknown",
+			 "'1' = < 20.0NM",
+			 "'2' = < 8.0NM",
+			 "'3' = < 4.0NM",
+			 "'4' = < 2.0NM",
+			 "'5' = < 1.0NM",
+			 "'6' = < 0.6NM",
+			 "'7' = < 0.2NM",
+			 "'8' = < 0.1NM",
+			 "'9' = HPL < 75 m and VPL < 112 m",
+			 "'10' = HPL < 25 m and VPL < 37.5 m",
+			 "'11' = HPL < 7.5 m and VPL < 11 m",
+			 "Values 12-15 not used"
+			 );
+	end Nic_Type;
+	
+	-- 'a' field
+	data NACp_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 4 bits;
+			Data_Model::Integer_Range => 0 .. 11;			
+			Data_Model::Representation =>
+			(
+			 "'0' = Unknown",
+			 "'1' = < 10.0NM",
+			 "'2' = < 4.0NM",
+			 "'3' = < 2.0NM",
+			 "'4' = < 1.0NM",
+			 "'5' = < 0.5NM",
+			 "'6' = < 0.3NM",
+			 "'7' = < 0.1NM",
+			 "'8' = < 0.05NM",
+			 "'9' = HFOM < 30 m and VFOM < 45 m",
+			 "'10' = HFOM < 10 m and VFOM < 15 m",
+			 "'11' = HFOM < 3 m and VFOM < 4 m",
+			 "Values 12-15 not used"
+			 );
+	end NACp_Type;
+	
+	-- 'hhh' field
+	data HorizontalVelocity_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Model::Integer_Range => 0 .. 4095;
+			Data_Size => 12 bits;
+			--Units are in 1 knot
+			--The direction is given by the 'tt' field (TrackHeading_Type)
+			--If Horizontal velocity is >= 4,094 knots, value will hold at 0xFFE
+			-- 0xFFF is reserved to indicate no horizontal information is available			
+	end HorizontalVelocity_Type;
+	
+	-- 'vvv' field
+	data VerticalVelocity_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Signed;
+			Data_Model::Integer_Range => -32576 .. 32576;
+			Data_Size => 12 bits;
+			-- Units are in 64 feet per minute increments (FPM)
+			-- Valid range is+/- 32,576 FPM
+			-- If velocity exceeds +/- 32,576, FPM will hold value that represents 32,576 FPM
+			-- 0x800 reserved to indicate no vertical velocity information available
+			--
+			-- ** The values 0x1FF through 0x7FF and 0x801 through 0xE01 are not used. **
+	end VerticalVelocity_Type;
+	
+	-- 'tt' field
+	data TrackHeading_Type extends Base_Types::Unsigned_8
+		properties
+			Data_Model::Integer_Range => 0 .. 255;
+			-- Units are in 360/256 degrees (aprox. 1.4 degrees)
+	end TrackHeading_Type;
+	
+	-- 'ee' field
+	data EmitterCategory_Type extends Base_Types::Unsigned_8
+		properties
+			Data_Model::Integer_Range => 0 .. 21;
+			Data_Model::Representation =>
+			(
+			 "1 = No Aircraft Type information",
+			 "2 = Light",
+			 "3 = large",
+			 "4 = High Vortex",
+			 "5 = Heavy",
+			 "6 = High manueverable",
+			 "7 = Rotorcraft",
+			 "8 = Unassigned",
+			 "9 = Glider",
+			"10 = lighter than air",
+			"11 = Parachutist",
+			"12 = ultra light",
+			"13 = Unassigned",
+			"14 = Unmanned Aerial Vehicle",
+			"15 = Space Vehicle",
+			"16 = Unassigned",
+			"17 = Surface vehicle - Emergency",
+			"18 = Surface vehicle - service",
+			"19 = point obstacle",
+			"20 = cluster obstacle",
+			"21 = line obstacle",
+			"22 - 39 (Reserved)"
+			);
+	end EmitterCategory_Type;
+	
+	-- 'cc' field
+	data Callsign_Type extends Base_Types::Character
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 8 Bytes;
+			
+			--'0' through '9' and 'A' through 'Z' are valid
+			-- Space is only allowed as a trailing pad character
+	end Callsign_Type;
+	
+	-- 'p' field
+	data EmergencyCode_Type extends Base_Types::Integer
+		properties
+			Data_Model::Number_Representation => Unsigned;
+			Data_Size => 4 bits;
+			-- Example:
+			-- '0' = No Emergency
+			-- '1' = General Emergency
+			-- '2' = Medical Emergency
+			-- '3' = Minimum fuel
+			-- '4' = No communication
+			-- '5' = unlawful interference
+			-- '6' = downed aircraft
+			-- '7-15' = Reserved
+	end EmergencyCode_Type;
+	
+	-- 'r' field
+	data Report_Type extends Base_Types::Unsigned_8
+		-- Bit 0 - 3: datalink
+		-- datalink = 0 : Unknown datalink
+		-- datalink = 1 : UAT datalink
+		-- datalink = 2 : ES1090 datalink
+		-- datalink = 3 : Mode S datalink
+		-- datalink = 4 : Mode AC datalink
+		-- datalink = 5 : TCAS datalink
+		-- datalink = 6 - 15 : reserved
+		-- Bit 4-7 : reserved
+	end Report_Type;
+	
+	-- One instance of the Traffic Report per aircraft in the vicinity of ownship.  If there are 10 Aircraft in the area, there will be 10
+    -- Traffic report messages being received and thereby 10 TrafficReport messages sent (per second) .  
+    --------------------------------------------------------------------------------------------------------------------------------
+    --                                         Byte 1                                                                           Byte 29
+    -- Traffic Report data format (29 Bytes) = ID st aa aa aa ll ll ll nn nn nn dd dm ia hh hv vv tt ee cc cc cc cc cc cc cc cc px r
+    --------------------------------------------------------------------------------------------------------------------------------
+    
+	data TrafficReport	
+		properties
+			Data_Model::Data_Representation => Struct;
+			Data_Size => 29 Bytes;
+	end TrafficReport;
+		
+	data implementation TrafficReport.impl
+		subcomponents			
+			MessageID: data MessageID_Type;								 -- 8 bits
+			TrafficAlertStatus	: data TrafficAlertStatus_Type;	   		 -- 4 bits		's'
+			TargetIdentity: data TargetIdentity_Type.impl;   			 -- 28 bits		't aa aa aa'
+			Latitude: data Latitude_Type;								 -- 24 bits		'll ll ll'
+			Longitude: data Longitude_Type; 					         -- 24 bits  	'nn nn nn'
+			Altitude: data Altitude_Type;								 -- 12 bits	 	'ddd'
+			MiscField: data MiscField_Type;							 	 -- 4 bits  	'm'
+			NIC: data NIC_Type;										 	 -- 4 bits   	'i'
+			NACp: data NACp_Type;                                        -- 4 bits  	'a'
+			HorizontalVelocity: data HorizontalVelocity_Type;            -- 12 bits 	'hhh'
+			VerticalVelocity: data VerticalVelocity_Type;				 -- 12 bits 	'vvv' 
+			TrackHeading: data TrackHeading_Type;						 -- 8 bits	 	'tt'
+			EmitterCategory: data EmitterCategory_Type;				 	 -- 8 bits	 	'ee'
+			Callsign: data Callsign_Type;								 -- 64 bits	  	'cc cc cc cc cc cc cc cc'
+			EmergencyCode: data EmergencyCode_Type;					 	 -- 4 bits  	'p'
+			Spare:  data Common_Types::Pad {Data_Size => 4 bits;}; 		 -- 4 bits      'x'		
+			Report: data Report_Type;									 -- 8 bits		'r' 			
+	end TrafficReport.impl;
+	
+	data TrafficReportArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (TrafficReport.impl));
+			Data_Size => 4350 Bytes;
+	end TrafficReportArray;
+
+	data ADSB_Aggregated_Message	
+		properties
+			Data_Model::Data_Representation => Struct;
+			Data_Size => 4386 Bytes;
+	end ADSB_Aggregated_Message;
+
+	data implementation ADSB_Aggregated_Message.impl
+		subcomponents
+			Heartbeat: data HeartBeat_Message.impl;
+			Traffic: data TrafficReportArray;
+			Ownship: data TrafficReport.impl;
+		properties
+			HAMR::Bit_Codec_Max_Size => 4386 Bytes;
+	end ADSB_Aggregated_Message.impl;
+	
+	data SuspectTraffic
+		properties
+			Data_Model::Data_Representation => Struct;
+			Data_Size => 4 Bytes;
+	end SuspectTraffic;
+	
+	data implementation SuspectTraffic.impl
+		subcomponents
+			Spare:  data Common_Types::Pad {Data_Size => 4 bits;}; 		 -- 4 bits		
+			TargetIdentity: data TargetIdentity_Type.impl;   			 -- 28 bits
+	end SuspectTraffic.impl;
+	
+	data SuspectTrafficArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (SuspectTraffic.impl));
+			Data_Size => 600 Bytes;
+	end SuspectTrafficArray;
+	
+	data MonitorReport
+		properties
+			Data_Model::Data_Representation => Struct;
+			Data_Size => 604 Bytes;
+	end MonitorReport;
+	
+	data implementation MonitorReport.impl
+		subcomponents
+			MessageID: data MessageID_Type;	
+			MonitorID: data Base_Types::Unsigned_8;
+			Spare: data Base_Types::Unsigned_16;
+			SuspectTraffic: data SuspectTrafficArray;
+		properties
+			HAMR::Bit_Codec_Max_Size => 604 Bytes;
+	end MonitorReport.impl;
+	
+	data TargetIdentityArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (TargetIdentity_Type.impl));
+	end TargetIdentityArray;
+	
+	data LatitudeArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (Latitude_Type));
+	end LatitudeArray;
+	
+	data LongitudeArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (Longitude_Type));
+	end LongitudeArray;
+	
+	data AltitudeArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (Altitude_Type));
+	end AltitudeArray;
+	
+end ADSB_Types;

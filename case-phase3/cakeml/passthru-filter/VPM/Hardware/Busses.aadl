@@ -1,0 +1,106 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package Busses
+public
+	with SEI;
+	
+	-------------------------------------------------------
+	-- A generic ARINC429 bus.
+	-------------------------------------------------------
+	bus ARINC_429
+	end ARINC_429;
+
+	--------------
+	-- Video Bus
+	--------------
+	bus ARINC_818
+	end ARINC_818;
+	
+	-------------------------------------------------------
+	-- Protocols including TCP/UDP modeled as virtual buses
+	-------------------------------------------------------
+	virtual bus TCP
+	end TCP;
+	
+	virtual bus UDP
+	end UDP;
+	
+	-------------------------------------------------------
+	-- Additional protocols modeled
+	-------------------------------------------------------
+	virtual bus Service_HTTP
+	end Service_HTTP;
+	
+	virtual bus Service_HTTPS
+	end Service_HTTPS;
+	
+	virtual bus Service_NDO
+	end Service_NDO;
+	
+	virtual bus implementation TCP.impl
+		subcomponents
+			HTTP: virtual bus Service_HTTP;
+			HTTPS: virtual bus Service_HTTPS;
+	end TCP.impl;
+	
+	virtual bus implementation UDP.impl
+		subcomponents
+			NDO: virtual bus Service_NDO;
+	end UDP.impl;
+	
+	bus IEEE_802_3
+--		properties
+--			Bus_Properties::Available_Bandwidth => (10 MBytesps, 100 MBytesps, 1 GBytesps);
+	end IEEE_802_3;
+
+	bus implementation IEEE_802_3.impl
+		subcomponents
+			TCP: virtual bus TCP.impl;
+			UDP: virtual bus UDP.impl;
+	end IEEE_802_3.impl;
+	
+	-------------------------------------------------------
+	-- A generic WiFI bus.
+	-------------------------------------------------------
+	bus IEEE_802_11
+	end IEEE_802_11;
+	
+	bus implementation IEEE_802_11.impl
+		subcomponents
+			TCP: virtual bus TCP.impl;
+			UDP: virtual bus UDP.impl;
+	end IEEE_802_11.impl;
+
+	-----------------
+	-- MIL-STD 1553B 
+	-----------------
+	bus MIL_1553B	
+	end MIL_1553B;	
+	
+	-------------------------------------------------------
+	-- A generic serial bus.
+	-------------------------------------------------------
+	bus RS_422		
+--		properties
+--			Bus_Properties::Available_Bandwidth => (9_600 Bytesps, 19_200 Bytesps, 38_400 Bytesps, 57_600 Bytesps,
+--						115_200 Bytesps);
+	end RS_422;
+	
+	bus implementation RS_422.impl
+	end RS_422.impl;
+	
+	-------------------------------------------------------
+	-- USB 2.0 and 3.0 buses
+	-------------------------------------------------------
+	bus USB
+	end USB;
+
+	bus implementation USB.Two
+		properties
+			SEI::BandWidthCapacity => 60.0 Bytesps;
+	end USB.Two;
+
+	bus implementation USB.Three
+		properties
+			SEI::BandWidthCapacity => 625.0 MBytesps;	
+	end USB.Three;	
+end Busses;

@@ -1,0 +1,29 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package CASE_AGREE
+public
+	
+	with ADSB_Types;
+	
+	annex agree {**
+		
+		-- monitor message constants
+		const DISTINCT : ADSB_Types::TargetIdentity_Type.impl = ADSB_Types::TargetIdentity_Type.impl {Address = 0; ParticipantAddress = 0};
+		const DISTINCT2 : ADSB_Types::SuspectTraffic.impl = ADSB_Types::SuspectTraffic.impl {Spare = 0; TargetIdentity = DISTINCT};	
+		const MONITOR_MSG_ID : int = 100;	
+		
+		-- unit conversions
+		fun ALTITUDE_TO_FT (alt : ADSB_Types::Altitude_Type) : int = alt * 25 - 1000;
+		
+		fun LAT_LONG_TO_DEG (coord : ADSB_Types::Latitude_Type) : real = real(coord) * 180.0 / 2.0 ^ 23;
+		
+		fun VERT_VEL_TO_FPM (vel : ADSB_Types::VerticalVelocity_Type) : int = vel * 64;
+		
+		fun ORIENTATION_TO_DEG (track : ADSB_Types::TrackHeading_Type) : real = real(track) * 360.0 / 256.0;
+		
+		-- common monitor functions
+		fun GET_TARGET_ID (traffic : ADSB_Types::TrafficReportArray, index : int) : ADSB_Types::SuspectTraffic.impl =
+			ADSB_Types::SuspectTraffic.impl {Spare = 0; TargetIdentity = (traffic[index]).TargetIdentity};
+		
+	**};
+	
+end CASE_AGREE;

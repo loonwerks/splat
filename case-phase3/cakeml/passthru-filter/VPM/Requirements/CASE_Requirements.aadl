@@ -1,0 +1,5 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package CASE_Requirements
+private
+	annex resolute{** **};
+end CASE_Requirements;

@@ -1,0 +1,177 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package Processors
+public
+	with Memories;
+	with Processor_Properties_Lib;
+	with Busses;
+	
+  	virtual processor logical
+	end logical;
+
+	virtual processor implementation logical.core
+		properties
+			Priority_Range => 1 .. 255;
+			Scheduling_Protocol => (RMS);
+	end logical.core;
+
+	virtual processor implementation logical.partition
+		properties
+			Scheduling_Protocol => (ARINC653);
+	end logical.partition;
+	
+	-----------------------------------
+	--Xilinx Zync Ultrascale+ MPSoC Zu7
+	-----------------------------------
+	system Ultrascale_MPSoC_Zu7
+		features
+			Memory_Access: requires bus access Memories::Memory_Bus;
+			Eth_Conn: requires bus access Busses::IEEE_802_3.impl;
+	end Ultrascale_MPSoC_Zu7;
+	
+	system implementation Ultrascale_MPSoC_Zu7.impl
+		subcomponents
+			application_proc: system ARM_Cortex.A53;
+			real_time_proc: system ARM_Cortex.R5;
+		connections
+			c1: feature Eth_Conn <-> application_proc.Eth_Conn;
+			c2: feature Eth_Conn <-> real_time_proc.Eth_Conn;
+			c3: feature Memory_Access <-> application_proc.RAM_Bus;
+			c4: feature Memory_Access <-> real_time_proc.RAM_Bus;
+	end Ultrascale_MPSoC_Zu7.impl;
+	
+	------------------------------------------------------------------------
+	-- Intel Family
+	------------------------------------------------------------------------
+	processor x86  
+	end x86;
+	
+	processor implementation x86.i7
+		subcomponents
+			Core0: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 0;};
+			Core1: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 1;};
+			Core2: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 2;};
+			Core3: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 3;};
+			Core4: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 4;};
+			Core5: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 5;};
+			Core6: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 6;};
+			Core7: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 7;};
+		properties
+			Processor_Properties_Lib::Processor_Family => x86_64;
+	end x86.i7;
+
+	------------------------------------------------------------------------
+	-- ARM Family
+	------------------------------------------------------------------------
+	processor ARM  
+		features
+			RAM_Bus : requires bus access Memories::Memory_Bus;
+			Eth_Conn: requires bus access Busses::IEEE_802_3;
+	end ARM;
+	
+	------------------------------------------------------------------------
+	-- Generic ARM implementation that is silent as to the number of cores.
+	------------------------------------------------------------------------
+	processor implementation ARM.Generic
+		subcomponents
+			L1_Cache: memory Memories::Cache_Memory {Memory_Size => 32 Kbyte;};
+			L2_Cache: memory Memories::Cache_Memory {Memory_Size => 2 Mbyte;};
+			Core0: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 0;};
+			
+		properties
+			Processor_Properties_Lib::Processor_Family => ARM;
+			Processor_Properties_Lib::Endianess => Little_Endian;
+			Processor_Properties_Lib::Word_Length => 32 bits;
+			Processor_Properties_Lib::Processor_Frequency => 2 GHz;
+	end ARM.Generic;
+	
+	---------------------------------------------------------------------------
+	-- Define a representation of the Cortex A15 and A7 and A53 quad core CPUs.
+	---------------------------------------------------------------------------
+	processor implementation ARM.A15
+		subcomponents
+			--memories is from UxAS TA6 exemplar in the hardware folder.  Need to decide if this should come over
+			L1_Cache: memory Memories::Cache_Memory {Memory_Size => 32 Kbyte;};
+			L2_Cache: memory Memories::Cache_Memory {Memory_Size => 2 Mbyte;};
+			Core0: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 0;};
+			Core1: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 1;};
+			Core2: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 2;};
+			Core3: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 3;};
+		properties
+			Processor_Properties_Lib::Processor_Family => ARM;
+			Processor_Properties_Lib::Endianess => Little_Endian;
+			Processor_Properties_Lib::Word_Length => 32 bits;
+			Processor_Properties_Lib::Processor_Frequency => 2000 MHz;
+	end ARM.A15;
+
+	processor implementation ARM.A7
+		subcomponents
+			L1_Cache: memory Memories::Cache_Memory {Memory_Size => 32 Kbyte;};
+			L2_Cache: memory Memories::Cache_Memory {Memory_Size => 512 Kbyte;};
+			Core0: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 0;};
+			Core1: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 1;};
+			Core2: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 2;};
+			Core3: virtual processor logical.core {Processor_Properties_Lib::Core_Id => 3;};
+		properties
+			Processor_Properties_Lib::Processor_Family => ARM;
+			Processor_Properties_Lib::Endianess => Little_Endian;
+			Processor_Properties_Lib::Word_Length => 32 bits;
+			Processor_Properties_Lib::Processor_Frequency => 1400 MHz;
+	end ARM.A7;	
+	
+	system ARM_Cortex
+		features
+			RAM_Bus : requires bus access Memories::Memory_Bus;
+			Eth_Conn: requires bus access Busses::IEEE_802_3;
+	end ARM_Cortex;
+	
+	system implementation ARM_Cortex.A53
+		subcomponents
+			L1_Cache: memory Memories::Cache_Memory {Memory_Size => 32 Kbyte;}; --TODO: confirm value. Documents list 8k-64k
+			L2_Cache: memory Memories::Cache_Memory {Memory_Size => 512 Kbyte;}; -- TODO: confirm value. Documents list 128KB-2MB
+			Core0: processor ARM.A53 {Processor_Properties_Lib::Core_Id => 0;};
+			Core1: processor ARM.A53 {Processor_Properties_Lib::Core_Id => 1;};
+			Core2: processor ARM.A53 {Processor_Properties_Lib::Core_Id => 2;};
+			Core3: processor ARM.A53 {Processor_Properties_Lib::Core_Id => 3;};
+		connections
+			c1: feature Eth_Conn <-> Core0.Eth_Conn;
+			c2: feature Eth_Conn <-> Core1.Eth_Conn;
+			c3: feature Eth_Conn <-> Core2.Eth_Conn;
+			c4: feature Eth_Conn <-> Core3.Eth_Conn;
+			c5: feature RAM_Bus <-> Core0.RAM_Bus;
+			c6: feature RAM_Bus <-> Core1.RAM_Bus;
+			c7: feature RAM_Bus <-> Core2.RAM_Bus;
+			c8: feature RAM_Bus <-> Core3.RAM_Bus;
+	end ARM_Cortex.A53;
+	
+	processor implementation ARM.A53
+		properties
+			Processor_Properties_Lib::Processor_Family => ARM;
+			Processor_Properties_Lib::Endianess => Little_Endian;
+			Processor_Properties_Lib::Word_Length => 32 bits; --TODO: Update value.
+	end ARM.A53;
+
+	
+	---------------------------------------------------------------------------
+	-- Define a representation of the Cortex R5 dual core CPU.
+	---------------------------------------------------------------------------
+	processor implementation ARM.R5
+		properties
+			Processor_Properties_Lib::Processor_Family => ARM;
+			Processor_Properties_Lib::Endianess => Little_Endian;
+			Processor_Properties_Lib::Word_Length => 32 bits; --TODO: Update value.
+	end ARM.R5;
+	
+	system implementation ARM_Cortex.R5
+		subcomponents
+			L1_Cache: memory Memories::Cache_Memory {Memory_Size => 32 Kbyte;}; --TODO: Update value.
+			L2_Cache: memory Memories::Cache_Memory {Memory_Size => 512 Kbyte;}; -- TODO: Update value.
+			Core0: processor ARM.R5 {Processor_Properties_Lib::Core_Id => 0;};
+			Core1: processor ARM.R5 {Processor_Properties_Lib::Core_Id => 1;};
+		connections
+			c1: feature Eth_Conn <-> Core0.Eth_Conn;
+			c2: feature Eth_Conn <-> Core1.Eth_Conn;
+			c3: feature RAM_Bus <-> Core0.RAM_Bus;
+			c4: feature RAM_Bus <-> Core1.RAM_Bus;
+	end ARM_Cortex.R5;
+	
+end Processors;

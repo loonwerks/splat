@@ -1,0 +1,119 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package CASE_Proxies
+public
+	
+	with DTU_Types;
+	with ADSB_Types;
+	with Base_Types;
+	with Data_Model;
+	with VPM;
+	with HAMR;
+	
+	process Proxy_High
+		features
+			ADSB_Heartbeat_In: in event data port ADSB_Types::HeartBeat_Message.impl;
+			ADSB_Ownship_In: in event data port ADSB_Types::TrafficReport.impl;
+			ADSB_Traffic_In: in event data port ADSB_Types::TrafficReport.impl {Acceptable_Array_Size => (0 .. 150);};
+            
+			SHM_QUEUE_ADSB_Heartbeat_Out: out event data port shm_queue_adsb_Heartbeat.impl;
+			SHM_QUEUE_ADSB_Ownship_Out: out event data port shm_queue_adsb_ownship.impl;
+			SHM_QUEUE_ADSB_Traffic_Out: out event data port shm_queue_adsb_traffic.impl;
+	end Proxy_High;
+	
+	process implementation Proxy_High.impl
+	end Proxy_High.impl;
+	
+	process Proxy_Low
+		features
+			SHM_QUEUE_ADSB_Heartbeat_In: in event data port shm_queue_adsb_Heartbeat.impl;
+			SHM_QUEUE_ADSB_Ownship_In: in event data port shm_queue_adsb_ownship.impl;
+			SHM_QUEUE_ADSB_Traffic_In: in event data port shm_queue_adsb_traffic.impl;
+			
+			ADSB_Heartbeat_Out: out event data port ADSB_Types::HeartBeat_Message.impl;
+			ADSB_Ownship_Out: out event data port ADSB_Types::TrafficReport.impl;
+			ADSB_Traffic_Out: out event data port ADSB_Types::TrafficReport.impl {Acceptable_Array_Size => (0 .. 150);};	
+	end Proxy_Low;
+	
+	process implementation Proxy_Low.impl
+		
+	end Proxy_Low.impl;
+	
+	----------------------------------------------------------------------
+	-- Message Definitions
+	----------------------------------------------------------------------
+	
+	data IPv4
+		properties
+			Data_Model::Data_Representation => Array;
+            Data_Model::Base_Type => (classifier (Base_Types::Unsigned_8));
+            Data_Model::Dimension => (4);
+	end IPv4;
+		
+	data shm_queue_element
+		properties
+			Data_Model::Data_Representation => Struct;
+	end shm_queue_element;
+	
+	data shm_queue_header
+		properties
+			Data_Model::Data_Representation => Struct;
+	end shm_queue_header;
+	
+	data implementation shm_queue_header.impl
+		subcomponents
+			length: data Base_Types::Unsigned_32;
+			tag: data Base_Types::Unsigned_32;
+			protocol: data Base_Types::Unsigned_32;
+			command: data Base_Types::Unsigned_32;
+			connection_data: data connection_data.impl;
+		properties
+			HAMR::Bit_Codec_Max_Size => 64 Bytes; -- aligned to 8 bytes
+	end shm_queue_header.impl;
+	
+	data implementation shm_queue_element.impl
+		subcomponents
+			header: data shm_queue_header.impl;
+			payload: data;
+	end shm_queue_element.impl;
+	
+	data connection_data
+		properties
+			Data_Model::Data_Representation => Struct;
+	end connection_data;
+	
+	data implementation connection_data.impl
+		subcomponents
+			local_address: data IPv4;
+			local_port: data Base_Types::Unsigned_16;
+			remote_address: data IPv4;
+			remote_port: data Base_Types::Unsigned_16;
+		properties
+			HAMR::Bit_Codec_Max_Size => 32 Bytes; -- aligned to 8 bytes
+	end connection_data.impl;
+	
+	-- Tagged ADS-B Message Definitions
+	data shm_queue_adsb_Heartbeat extends shm_queue_element
+	end shm_queue_adsb_Heartbeat;
+	
+	data implementation shm_queue_adsb_Heartbeat.impl extends shm_queue_element.impl
+		subcomponents
+			payload: refined to data ADSB_Types::HeartBeat_Message.impl;
+	end shm_queue_adsb_Heartbeat.impl;
+	
+	data shm_queue_adsb_ownship extends shm_queue_element
+	end shm_queue_adsb_ownship;
+	
+	data implementation shm_queue_adsb_ownship.impl extends shm_queue_element.impl
+		subcomponents
+			payload: refined to data ADSB_Types::TrafficReport.impl;
+	end shm_queue_adsb_ownship.impl;
+	
+	data shm_queue_adsb_traffic extends shm_queue_element
+	end shm_queue_adsb_traffic;
+	
+	data implementation shm_queue_adsb_traffic.impl extends shm_queue_element.impl
+		subcomponents
+			payload: refined to data ADSB_Types::TrafficReport.impl {Acceptable_Array_Size => (0 .. 150);};
+	end shm_queue_adsb_traffic.impl;
+	
+end CASE_Proxies;

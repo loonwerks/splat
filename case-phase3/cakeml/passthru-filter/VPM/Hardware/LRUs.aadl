@@ -1,0 +1,55 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package LRUs
+public
+	with Busses; renames Busses::all;
+	with Processors; renames Processors::all;
+
+	data Eth_Traffic_Type		
+	end Eth_Traffic_Type;
+	
+	--Abstract data implementation of an ethernet packet.  Expected to be refined
+	data implementation Eth_Traffic_Type.impl
+		subcomponents
+			Header : data;
+			Payload: data;
+	end Eth_Traffic_Type.impl;
+	
+--TODO:  Determine if this is better modeled as a thread group rather than process or if each switch port somehow needs to be modeled
+	process switch_process
+		features
+			ingressPacket : in data port;
+			egressPacket : out data port;
+		flows
+			routePacket_flow : flow path ingressPacket -> egressPacket;
+		properties
+			--these numbers reflect the ASL 100Mbit switch numbers
+			--the min number is with no traffic ahead of an ingress packet to be put in the outgoing queue
+			--the max number reflects what is typically used during analysis for the latency through an ASL switch
+			Latency => 17us .. 12ms applies to routePacket_flow; 
+	end switch_process;
+	
+	------------------------------------------
+	-- General definition of a video processing module
+	------------------------------------------	
+	system VPM
+	end VPM;
+	
+	system implementation VPM.i
+	end VPM.i;
+	
+	system VPM_8600B extends VPM
+		features
+			M1553B_Conn: requires bus access MIL_1553B;
+			RS170_out: provides bus access;	
+	end VPM_8600B;
+	
+	system implementation VPM_8600B.impl extends VPM.i
+		subcomponents
+			A1_Basecard: system Processors::Ultrascale_MPSoC_Zu7.impl;
+			A1_Mezz: system Processors::Ultrascale_MPSoC_Zu7.impl;
+			A2_Basecard: system Processors::Ultrascale_MPSoC_Zu7.impl;
+			A2_Mezz: system Processors::Ultrascale_MPSoC_Zu7.impl;
+			A3_Basecard: system Processors::Ultrascale_MPSoC_Zu7.impl;
+	end VPM_8600B.impl;
+	
+end LRUs;

@@ -1,0 +1,30 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+---------------------------------------------------------------------------------------
+-- This property set lists additional properties for processors. This supports
+-- only the hardware processor, the operating system services (scheduler, etc) are
+-- modeled as virtual processor to separate concerns.
+---------------------------------------------------------------------------------------
+property set Processor_Properties_Lib is
+
+--Note: 2#1#e32 has to be used in place of Max_Aadlinteger when units are assigned after Max_Aadlinteger
+
+	Processor_Family: enumeration (ARM, AVR, SPARC, PowerPC, x86, x86_64) applies to (processor);
+	
+	Frequency_Type: type aadlinteger 0Hz .. 2#1#e32 GHz units (Hz, KHz => Hz * 1000, MHz => KHz * 1000, GHz => MHz * 1000);		
+	Processor_Frequency: Processor_Properties_Lib::Frequency_Type applies to (processor);
+	
+	--  Endianess of the processor. Note that some processors can either
+	--  be Little- or Big- endian, the OS decides of the actual endianess.
+	Endianess: enumeration (Little_Endian, Big_Endian, Bi_Endian) applies to (processor);
+	--  Length of a word for this processor architecture
+	Word_Length: Size applies to (processor);
+	
+	--"memory" can only be used in hardware declaration; not virtual processors representing partitions nor processes representing sw
+	--extending properties to enable identification of different types of memory used in system processors
+	Processor_Memory_Type: type enumeration (SDRAM, NOR_Flash, NAND_Flash, NOV_RAM, Semi_Persistent_RAM);
+	Memory_Type : Processor_Properties_Lib::Processor_memory_Type applies to (memory);
+	
+	Encryption_Type : enumeration (AES_256, Classified, Other) applies to (processor);	
+	
+	Core_Id: aadlinteger 0 .. Max_Aadlinteger applies to (virtual processor, processor);	
+end Processor_Properties_Lib;

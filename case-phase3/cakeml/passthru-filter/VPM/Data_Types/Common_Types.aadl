@@ -1,0 +1,127 @@
+--Copyright © 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+--------------------------------------------------------------------------------------
+-- Define basic data types that are used in defining fields in higher level messages.
+-- This can be used to extend Base_Types and created a layer of abstraction for uses.
+--------------------------------------------------------------------------------------
+package Common_Types
+public
+	with Base_Types;
+	with Data_Model;
+	with HAMR;
+	
+	----
+	data Integer extends Base_Types::Integer
+	end Integer;
+	
+	data implementation Integer.i
+	end Integer.i;
+	----
+	data Float extends Base_Types::Float
+	end Float;
+	
+	data implementation Float.i
+	end Float.i;
+	----
+	data Unsigned_Char extends Base_Types::Integer
+	end Unsigned_Char;
+	
+	data implementation Unsigned_Char.i
+	end Unsigned_Char.i;
+	----
+	data String extends Base_Types::Integer
+	end String;
+	
+	data implementation String.i
+	end String.i;
+	----
+	data Float_64 extends Base_Types::Float_64
+	end Float_64;
+	
+	data implementation Float_64.i
+	end Float_64.i;
+	----
+	data Float_32 extends Base_Types::Float_32
+	end Float_32;
+	
+	data implementation Float_32.i
+	end Float_32.i;
+	----
+	data Integer_8 extends Base_Types::Integer_8
+	end Integer_8;
+	
+	data implementation Integer_8.i
+	end Integer_8.i;
+	----
+	data Integer_16 extends Base_Types::Integer_16
+	end Integer_16;
+	
+	data implementation Integer_16.i
+	end Integer_16.i;
+	----
+	data Integer_64 extends Base_Types::Integer_64
+	end Integer_64;
+	
+	data implementation Integer_64.i
+	end Integer_64.i;
+	----
+	data Integer_32 extends Base_Types::Integer_32
+	end Integer_32;
+	
+	data implementation Integer_32.i
+	end Integer_32.i;
+	----
+	data Unsigned_8 extends Base_Types::Unsigned_8
+	end Unsigned_8;
+	
+	data implementation Unsigned_8.i
+	end Unsigned_8.i;
+	----
+	data Unsigned_16 extends Base_Types::Unsigned_16
+	end Unsigned_16;
+	
+	data implementation Unsigned_16.i
+	end Unsigned_16.i;
+	----
+	data Unsigned_24 extends Integer
+  		properties
+		    Data_Model::Number_Representation => Unsigned;
+		    Data_Size => 3 Bytes;
+  	end Unsigned_24;
+  	----
+	data Unsigned_32 extends Base_Types::Unsigned_32
+		properties
+			HAMR::Bit_Codec_Max_Size => 4 Bytes;
+	end Unsigned_32;
+	
+	data implementation Unsigned_32.i
+	end Unsigned_32.i;
+	----
+	data Byte extends Base_Types::Unsigned_8
+	end Byte;
+	
+	data implementation Byte.i
+	end Byte.i;
+	----
+	data Bool extends Base_Types::Boolean
+	end Bool;
+	
+	data implementation Bool.i
+	end Bool.i;
+	----
+	data Enum_Int extends Base_Types::Integer
+	end Enum_Int;
+	
+	data implementation Enum_Int.i
+	end Enum_Int.i;	
+	----
+	data Pad extends Base_Types::Integer
+		properties
+			Data_Model::Integer_Range => 0 .. 0;
+	end Pad;
+	
+	data implementation Pad.i
+	end Pad.i;
+	
+	--Struct - n/a	
+	
+end Common_Types;
