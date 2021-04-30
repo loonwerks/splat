@@ -1,0 +1,9 @@
+Code here builds CakeML version of the pass-through filter specified in VPM.
+There is a Linux version, with mocked-up IO, in mock.cml. Build and run with
+
+   $ make mock.cake
+   $ ./mock.cake
+
+There is a HAMR version, in hamr.cml. The only significant difference
+with the mocked-up version is in the API structure, which invokes FFI
+calls provided by the HAMR build.
