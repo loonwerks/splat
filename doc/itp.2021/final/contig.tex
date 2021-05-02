@@ -111,7 +111,7 @@ those where information embedded in fields of the message determines
 the final structure of the message. Two of the main culprits are
 variable-length arrays and unions. A \emph{variable-length array} is a
 field where the number of elements in the field depends on the value
-of some already-seen field (or, more generally, as the result of a
+of some already-seen field (or, more generally, is the result of a
 computation involving previously-seen information in the message).
 The length is therefore a value determined at runtime. A \emph{union}
 is deployed when some information held in a message is used to
@@ -201,7 +201,7 @@ developed subsequently, for example by Dennis Ritchie in
 C \cite{dmr-lvals}.
 
 Before getting into formal details, we discuss a few examples.  We
-will use familiar notation: records are lists of $\mathit{filedname} :
+will use familiar notation: records are lists of $\mathit{fieldname} :
 \tau$ elements enclosed by braces; an array field
 $\konst{Array}\;c\;\mathit{dim}$ is written $c\, [\mathit{dim}]$; and
 $\konst{Alt}\;b\;\tau_1\;\tau_2$ is written
