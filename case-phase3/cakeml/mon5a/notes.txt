@@ -1,0 +1,96 @@
+The "Bad Physics" or "Math" Monitor.
+--------------------------------------
+
+ This monitor checks that all of the aircraft it is sensing are
+behaving in a physically possible way.  More precisely, given a
+collection of traffic reports
+
+   S1, ..., Sk
+
+collected at time t and a collection of traffic reports
+
+   T1, ..., Tn
+
+collected at t+1, we want to check if
+
+  - there exists i,j s.t. Si and Tj have the same identity, i.e. are
+    from the same aircraft, and
+
+  - it is impossible that an aircraft could be in the position of Si
+    at time t and in the position of Tj at time t+1.
+
+The output of the monitor is either: nothing (meaning all aircraft are
+behaving as expected); or, an array where each element is either a
+designated dummy element, or is the identifier of a suspicious
+aircraft (and at least one aicraft is suspicious).
+
+
+Anomaly detection.
+--------------------
+
+ Anomaly detection is based on the function COMPUTE_BOUNDS, which
+takes the previous and current lat/lon/alt data and returns lower and
+upper bounds for horizontal velocity, vertical velocity, and
+orientation.  COMPUTE_BOUNDS is externally implemented in C and
+accessed through a call through the CakeML FFI.
+
+  COMPUTE_BOUNDS
+       (prev_lat:real, prev_long:real, prev_alt:int,
+        lat:real,      long:real,      alt:int) : boundaries.impl;
+
+ The bounds are returned in a "boundaries" record, declared as
+
+   data implementation boundaries.impl
+   subcomponents
+     hVel_lower    : data Base_Types::Float;
+     hVel_upper    : data Base_Types::Float;
+     vVel_lower    : data Base_Types::Integer;
+     vVel_upper    : data Base_Types::Integer;
+     heading_lower : data Base_Types::Float;
+     heading_upper : data Base_Types::Float;
+   end boundaries.impl;
+
+ An aircraft is "anomalous" if it violates one of the bounds. Thus,
+given a traffic report "now" from the current reports, and a report
+"yest" from the previous reports, we can check if they are anomalous by
+requiring that they represent the same aircraft and that one of the
+bounds is violated.
+
+   fun UNEXPECTED (now:traffic_report.impl, yest:traffic_report.impl) : bool =
+      (now.targetID = yest.targetID)
+      and
+      BOUNDS_VIOLATION (now,yest,
+        COMPUTE_BOUNDS(yest.lat, yest.long, yest.alt, now.lat, now.long, now.alt));
+
+   fun BOUNDS_VIOLATION(now:traffic_report.impl, yest:traffic_report.impl, bounds:boundaries.impl) : bool =
+      (real(now.hVel) <= bounds.hVel_lower
+        or real(now.hVel) >= bounds.hVel_upper
+        or now.vVel <= bounds.vVel_lower
+        or now.vVel >= bounds.vVel_upper
+        or now.heading <= bounds.heading_lower
+        or now.heading >= bounds.heading_upper);
+
+Question: the inequality checks about are non-strict, but is that what is really wanted.
+
+Question: maybe the FFI should return ints, since that is what the
+  bounds are being compared against, at least for hVel.
+
+The State.
+----------
+
+We need to keep the traffic reports from the previous step, so we have
+the following Lustre variables: "Today" and "Yesterday".
+
+"Today" is equal to the traffic component of the Observed input port:
+
+  eq Today : traffic_report[150] = Observed.traffic;
+
+"Yesterday" is the previous value of Today.
+
+  eq Yesterday : traffic_report[150] = Observed.traffic -> pre Today
+
+Note that the system can't be anomalous at the first step, since there
+is no previous traffic report collection to measure against.
+
+  eq abnormal : bool =
+    (false -> (exists now in Today, exists yest in Yesterday, UNEXPECTED(now,yest)));
