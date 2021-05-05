@@ -53,11 +53,6 @@ fun firstOpt f list =
 fun concatOpts optlist =
     Some(List.concat(List.map Option.valOf optlist)) handle _ => None;
 
-(*---------------------------------------------------------------------------*)
-(* Filter with ('a -> bool option) predicate. Strict: return None if pred    *)
-(* returns None.                                                             *)
-(*---------------------------------------------------------------------------*)
-
 fun filterOpt pred list = let
    fun accFn list acc =
     case list
@@ -83,6 +78,7 @@ fun twoExp n = Array.sub pow2Arr n handle _ => pow 2 n
 end;
 
 val w8zero = Word8.fromInt 0;
+val w64FF = Word64.fromInt 255;
 
 val emptybuf = Word8Array.array 0 w8zero;
 val singlebuf = Word8Array.array 1 (Word8.fromInt 0);
@@ -113,7 +109,6 @@ fun file2buf fileName buf =
        string2buf s buf
     end
 
-
 fun tilde_to_uminus ch = if ch = #"~" then #"-" else ch;
 
 fun i2d i =
@@ -132,6 +127,32 @@ fun array_existsI pred arr =
 val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
+
+
+fun byteAt w n =
+  Word8.fromInt
+    (Word64.toInt
+      (Word64.andb (Word64.>> w (n*8)) w64FF));
+
+fun pack_double buf index d =
+ let fun write n x = Word8Array.update buf n x
+ in
+    write index (byteAt d 0)
+  ; write (index+1) (byteAt d 1)
+  ; write (index+2) (byteAt d 2)
+  ; write (index+3) (byteAt d 3)
+  ; write (index+4) (byteAt d 4)
+  ; write (index+5) (byteAt d 5)
+  ; write (index+6) (byteAt d 6)
+  ; write (index+7) (byteAt d 7)
+ end;
+
+fun unpack_double buf index =
+ let fun elt n = Word8Array.sub buf n
+ in  Word64.concatAll
+       (elt index)     (elt (index+1)) (elt (index+2)) (elt (index+3))
+       (elt (index+4)) (elt (index+5)) (elt (index+6)) (elt (index+7))
+ end;
 
 end (* Utils *)
 
@@ -1612,7 +1633,7 @@ type double = Double.double;
 (* ---------------------------------------------------------------------------*)
 
 datatype boundaries =
-  Boundaries_Recd double double int int double double;
+  Boundaries_Recd double double double double double double;
 
 fun hVel_lower_of bd =
  case bd
@@ -1646,30 +1667,94 @@ val is_latched = False;
 
 val default_TARGET_ID = Adsb_Types.TargetID_Recd 0 0;
 
-val f42 = Double.fromString "42.0";
+val arg_buffer    = Word8Array.array (6 * 8) Utils.w8zero;
+val return_buffer = Word8Array.array (6 * 8) Utils.w8zero;
 
-val dummy_boundaries = Boundaries_Recd f42 f42 0 0 f42 f42;
+fun unpack_to_boundaries() =
+ let val lbH = Utils.unpack_double return_buffer 0
+     val ubH = Utils.unpack_double return_buffer 8
+     val lbV = Utils.unpack_double return_buffer 16
+     val ubV = Utils.unpack_double return_buffer 24
+     val lbO = Utils.unpack_double return_buffer 32
+     val ubO = Utils.unpack_double return_buffer 40
+ in Boundaries_Recd
+      lbH
+      ubH
+      lbV
+      ubV
+      lbO
+      ubO
+ end
 
-(*  FFI.compute_BOUNDS prev_lat prev_long prev_alt lat long alt *)
+fun add_double index d = Utils.pack_double arg_buffer index d;
 
-fun compute_BOUNDS prev_lat prev_long prev_alt lat long alt
-  = dummy_boundaries;
+fun pack_args a b c d e f =
+ let val () = Utils.clear_buf arg_buffer
+     val () = add_double 0 a
+     val () = add_double 8 b
+     val () = add_double 16 c
+     val () = add_double 24 d
+     val () = add_double 32 e
+     val () = add_double 40 f
+ in
+  Word8Array.substring arg_buffer 0 48
+ end
+
+
+fun compute_BOUNDS a b c d e f =
+ let val arg_string = pack_args a b c d e f
+     val () = Utils.clear_buf return_buffer
+     val () = #(compute_bounds) arg_string return_buffer
+ in
+    unpack_to_boundaries()
+ end;
+
+(* test basic pack/unpack fnality *)
+val f42 = Utils.i2d 42;
+val f43 = Utils.i2d 43;
+val f44 = Utils.i2d 44;
+val g42 = Utils.i2d ~42;
+val g43 = Utils.i2d ~43;
+val zero = Utils.i2d 0;
+
+val bounds = compute_BOUNDS f42 f43 f44 g42 g43 zero;
+
+fun printF s d = print (s^Double.toString d^"\n");
+
+val _ =
+ case bounds
+  of Boundaries_Recd hlo hhi vlo vhi olo ohi =>
+ (print "Bounds: \n";
+  printF "  hVel_lower_bound : " hlo;
+  printF "  hVel_upper_bound : " hhi;
+  printF "  vVel_lower_bound : " vlo;
+  printF "  vVel_upper_bound : " vhi;
+  printF "  heading_lower_bound : " olo;
+  printF "  heading_upper_bound : " ohi;
+  print  "End Bounds.\n");
+
+
+(*
+val dummy_boundaries = Boundaries_Recd f42 f42 f42 f42 f42 f42;
+fun compute_BOUNDS prev_lat lat prev_long long prev_alt alt = dummy_boundaries;
+*)
 
 fun bounds_VIOLATION now yest bounds =
-  Double.<= (int_to_real(horizV_of now)) (hVel_lower_of bounds) orelse
-  Double.>= (int_to_real(horizV_of now)) (hVel_upper_of bounds) orelse
-  vertV_of now <= vVel_lower_of bounds orelse
-  vertV_of now >= vVel_upper_of bounds orelse
-  Double.<= (heading_of now) (heading_lower_of bounds) orelse
-  Double.>= (heading_of now) (heading_upper_of bounds);
+  Double.< (int_to_real(horizV_of now)) (hVel_lower_of bounds) orelse
+  Double.> (int_to_real(horizV_of now)) (hVel_upper_of bounds) orelse
+  Double.< (int_to_real (vertV_of now)) (vVel_lower_of bounds) orelse
+  Double.> (int_to_real (vertV_of now)) (vVel_upper_of bounds) orelse
+  Double.< (heading_of now) (heading_lower_of bounds) orelse
+  Double.> (heading_of now) (heading_upper_of bounds);
 
 fun unexpected now yest =
   (targetID_of now = targetID_of yest)
   andalso
   bounds_VIOLATION now yest
      (compute_BOUNDS
-       (lat_of yest) (lon_of yest) (alt_of yest)
-       (lat_of now)  (lon_of now) (alt_of now));
+       (lat_of yest) (lat_of now)
+       (lon_of yest) (lon_of now)
+       (int_to_real (alt_of yest)) (int_to_real (alt_of now)));
 
 fun suspectIDs today yesterday =
   Array.tabulate
@@ -1683,7 +1768,7 @@ fun suspectIDs today yesterday =
         else default_TARGET_ID);
 
 (*---------------------------------------------------------------------------*)
-(* This particular monitor is number 2. But also 5a                          *)
+(* This particular monitor is number 1. But also 5a                          *)
 (*---------------------------------------------------------------------------*)
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 1 sus;

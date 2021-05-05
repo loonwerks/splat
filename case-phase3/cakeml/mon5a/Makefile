@@ -41,8 +41,9 @@ all: cake$(SUFF) $(CML_PROGS)
 
 LDLIBS += -lm
 
-cake$(SUFF): cake.o basis_ffi.o
-	$(CC) $(LDFLAGS) $< basis_ffi.o $(LOADLIBES) $(LDLIBS) -o $@
+cake$(SUFF): cake.o basis_ffi.o monitorBoundaries.o
+	$(CC) $(LDFLAGS) $< basis_ffi.o monitorBoundaries.o $(LOADLIBES) $(LDLIBS) -o $@
+
 
 # Using the CakeML compiler
 
@@ -56,8 +57,8 @@ cake$(SUFF): cake.o basis_ffi.o
 %.cake.S : %.cml cake$(SUFF)
 	$(PREF)cake$(SUFF) $(CAKEFLAGS) <$< >$@
 
-%.cake$(SUFF) : %.cake.S basis_ffi.o
-	$(CC) $(LDFLAGS) $< basis_ffi.o $(LOADLIBES) $(LDLIBS) -o $@
+%.cake$(SUFF) : %.cake.S basis_ffi.o monitorBoundaries.o
+	$(CC) $(LDFLAGS) $< basis_ffi.o monitorBoundaries.o $(LOADLIBES) $(LDLIBS) -o $@
 
 clean:
 	$(RM) basis_ffi.o cake.o cake$(SUFF) *.cake.o *.cake.S *.cake$(SUFF)

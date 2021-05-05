@@ -22,26 +22,31 @@ public
     		
     		const DEFAULT_TARGET_ID : target_id.impl = target_id.impl {Address = 0; Participant_Address = 0}; 
     		
+	        type boundaries = struct {
+		         hVel_lower    : real, hVel_upper    : real, 
+		         vVel_lower    : real, vVel_upper    : real,
+                 heading_lower : real, heading_upper : real};
+    
 			uninterpreted COMPUTE_BOUNDS 
-			               (prev_lat:real, prev_long:real, prev_alt:int,
-			               	lat:real,      long:real,      alt:int) : boundaries.impl;
+			               (prev_lat:real, prev_long:real, prev_alt:real,
+			               	lat:real,      long:real,      alt:real) : boundaries;
 				
         -- Todo:check on strictness of ineqs. Also, maybe the FFI should return ints, since that is what 
         -- the bounds are being compared against? Seems, so at least for hVel.
-       	fun BOUNDS_VIOLATION(now:traffic_report.impl, yest:traffic_report.impl, bounds:boundaries.impl) : bool = 
-       		(   real(now.hVel) <= bounds.hVel_lower
-             or real(now.hVel) >= bounds.hVel_upper 
-             or now.vVel <= bounds.vVel_lower
-             or now.vVel >= bounds.vVel_upper
-             or now.heading <= bounds.heading_lower
-             or now.heading >= bounds.heading_upper);
+       	fun BOUNDS_VIOLATION(now:traffic_report.impl, yest:traffic_report.impl, bounds:boundaries) : bool = 
+       		(   real(now.hVel) < bounds.hVel_lower
+             or real(now.hVel) > bounds.hVel_upper 
+             or real(now.vVel) < bounds.vVel_lower
+             or real(now.vVel) > bounds.vVel_upper
+             or now.heading < bounds.heading_lower
+             or now.heading > bounds.heading_upper);
 
          -- The "now" traffic report is unexpected given the "yest" report
          fun UNEXPECTED (now:traffic_report.impl, yest:traffic_report.impl) : bool = 
              (now.targetID = yest.targetID)
              and
              BOUNDS_VIOLATION (now,yest,
-            	COMPUTE_BOUNDS(yest.lat, yest.long, yest.alt, now.lat, now.long, now.alt));
+            	COMPUTE_BOUNDS(yest.lat, yest.long, real(yest.alt), now.lat, now.long, real(now.alt)));
             	
         eq Yesterday : traffic_report.impl[150] = (Observed.Traffic -> pre (Today));
 
@@ -73,21 +78,6 @@ public
 		properties
 			Dispatch_Protocol => Sporadic;
 	end CASE_Monitor.Impl;
-
-	data boundaries
-		properties
-			Data_Model::Data_Representation => Struct;
-	end boundaries;
-
-	data implementation boundaries.impl
-		subcomponents
-         hVel_lower : data Base_Types::Float;
-         hVel_upper : data Base_Types::Float;
-         vVel_lower : data Base_Types::Integer;
-         vVel_upper : data Base_Types::Integer;
-         heading_lower : data Base_Types::Float;
-         heading_upper : data Base_Types::Float;
-    end boundaries.impl;
 
    data target_id
 		properties
