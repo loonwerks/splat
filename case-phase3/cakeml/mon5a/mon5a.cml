@@ -1818,7 +1818,7 @@ fun stepFn inports stateVars =
 
       val event_observed = True;
 
-      val suspect_traffic_out =
+z      val suspect_traffic_out =
           if event_observed andalso trueOpt abnormal
             then
              Some (mk_monitor_report

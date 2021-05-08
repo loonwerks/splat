@@ -1137,8 +1137,27 @@ fun ownship_of mesgs =
  case mesgs
   of Adsb_messages_Recd hb trA own => own;
 
+(*---------------------------------------------------------------------------*)
+(* Subtlety: i is expected to be less than 128, so that the high 4 bits of   *)
+(* fromInt i are 0s. This correponds to the 4 bits of padding expected at    *)
+(* the beginning of a targetID in a message. See                             *)
+(*                                                                           *)
+(*    Adsb_Contig.target_identity                                            *)
+(*                                                                           *)
+(* above for what is expected.                                               *)
+(*---------------------------------------------------------------------------*)
+
+val twoE23 = Utils.twoExp 23;
+
+fun check_enc_tid_inputs i j =
+  if i < 0 orelse 128 <= i orelse
+     j < 0 orelse twoE23 <= j then
+     raise Utils.ERR "Adsb_Types" "enc_tid_nums: out of range"
+  else ();
+
 fun enc_tid_nums i j =
- let val (d,r1) = Utils.divmod j 256
+ let val _ = check_enc_tid_inputs i j
+     val (d,r1) = Utils.divmod j 256
      val (d,r2) = Utils.divmod d 256
      val (d,r3) = Utils.divmod d 256
   in
@@ -1408,7 +1427,7 @@ end (* Adsb_Parse *)
 structure API =
 struct
 
-val input_buffer = Word8Array.array 4386 Utils.w8zero;
+val input_buffer = Word8Array.array 4387 Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
 (* Clear buffer, read port into buffer, copy buffer to string                *)
@@ -1435,7 +1454,7 @@ end
 structure API =
 struct
 
-val input_buffer = Word8Array.array 4386 Utils.w8zero;
+val input_buffer = Word8Array.array 4387 Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
 (*    #(api_logInfo) s Utils.emptybuf;                                       *)
@@ -1485,8 +1504,8 @@ struct
 val addr_of = Adsb_Types.addr_of;
 val partAddr_of = Adsb_Types.partAddr_of;
 val targetID_of = Adsb_Types.targetID_of;
-val ownship_of = Adsb_Types.ownship_of;
-val traffic_of = Adsb_Types.traffic_of;
+val ownship_of  = Adsb_Types.ownship_of;
+val traffic_of  = Adsb_Types.traffic_of;
 
 val theState = Ref ();
 
@@ -1525,12 +1544,13 @@ fun mk_monitor_report suspects = Adsb_Types.Monitor_Report_Recd 100 2 suspects;
 
 fun lcUPDATE_SUSPECT_IDS msg =
  mk_monitor_report
-   (Array.tabulate
-    (Array.length (traffic_of msg))
-    (fn i =>
-      if is_DUPLICATE_TRAFFIC msg i orelse is_DUPLICATE_OWNSHIP msg i then
+   (Array.tabulate (Array.length (traffic_of msg))
+     (fn i =>
+       if is_DUPLICATE_TRAFFIC msg i orelse
+          is_DUPLICATE_OWNSHIP msg i
+       then
           get_TARGET_ID (traffic_of msg) i
-      else lcDISTINCT));
+       else lcDISTINCT));
 
 fun lcDUPLICATE_IN_REPORT msg =
  Utils.array_existsI
@@ -1552,57 +1572,20 @@ fun stepFn () =
  let val () = API.fill_input_buffer ()
  in
  case parseInput()
-  of None =>  ()  (* Not an event *)
+  of None =>  ()   (* Not an event *)
    | Some None =>  API.logInfo "Monitor failure: unable to parse input event"
    | Some (Some msg) =>
       if lcDUPLICATE_IN_REPORT msg then
-        let val susRpt = lcUPDATE_SUSPECT_IDS msg
-            val susBytes = Adsb_Types.encode_monitor_report susRpt
+        let val susReport = lcUPDATE_SUSPECT_IDS msg
+            val susBytes = Adsb_Types.encode_monitor_report susReport
             val susString = String.implode (List.map Utils.w8char susBytes)
         in API.put_Suspect_Traffic_Out susString
         end
       else ()
  end
 
-
 end (* Monitor *)
 
 (* One-shot test
 val _ = Monitor.stepFn();
-*)
-
-(*---------------------------------------------------------------------------*)
-(*  Actual setup and invocation                                              *)
-(*---------------------------------------------------------------------------*)
-(*
-structure Control =
-struct
-
-fun pacer_emit() =
-    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
-     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
-
-fun pacer_wait() =
-    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
-     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
-
-fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
-fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
-
-fun loop () =
-  if pacer_wait() then
-    ( receiveInput();
-      Monitor.stepFn();
-      sendOutput();
-      pacer_emit();
-      loop()
-    )
-  else
-    loop();
-
-fun start () = (pacer_emit(); loop());
-
-end (* Control *)
-
-val _ = Control.start();
 *)
