@@ -1,0 +1,311 @@
+--Copyright � 2021 Rockwell Collins, Inc., a part of Collins Aerospace
+package VPM
+public
+
+	with LRUs, Processors, Memories;
+	with Busses;
+	with Base_Types;
+	with ADSB_Types;
+	with CASE_Proxies;
+	with Data_Model;
+	with CASE_Properties;
+
+	thread CASE_Monitor
+		features
+			Observed: in event data port adsb_messages.impl;
+			Suspect_Traffic_Out: out event data port monitor_report.impl;
+		properties
+			CASE_Properties::Monitoring => 100;
+			CASE_Properties::Component_Spec => ("CASE_Monitor_Suspect_Traffic_Out");
+		annex agree {**
+			const is_latched : bool = false;
+			
+			const DEFAULT_TARGET_ID: target_id.impl = target_id.impl {Address = 0; Participant_Address = 0}; 
+			fun GET_TARGET_ID (traffic : traffic_report.impl[150], index : int) : target_id.impl = (traffic[index]).targetID;
+			
+            fun MK_MONITOR_REPORT (sus_array: target_id.impl[150]) :  monitor_report.impl = 
+              monitor_report.impl {messageID = 100; monitorID = 3; suspects = sus_array};
+			
+			const LATITUDE_DELTA : real = 1.0; -- 1 degree
+			const LONGITUDE_DELTA : real = 1.0; -- 1 degree
+			const ALTITUDE_DELTA : int = 2000; -- 2000 feet
+			
+			-- returns true iff ship is in Zone A of ownship
+			fun IN_ZONE_A (ownship : traffic_report.impl, ship : traffic_report.impl) : bool =
+				(ship.lat >= ( ownship.lat - LATITUDE_DELTA) ) and
+				(ship.lat <= ( ownship.lat + LATITUDE_DELTA) ) and
+				(ship.long >= ( ownship.long - LONGITUDE_DELTA) ) and
+				(ship.long <= ( ownship.long + LONGITUDE_DELTA) ) and
+				(ship.alt >= ( ownship.alt - ALTITUDE_DELTA) ) and
+				(ship.alt <= ( ownship.alt + ALTITUDE_DELTA));
+
+            -- is a ship in a traffic report array
+			fun PRESENT(ship: traffic_report.impl, reports : traffic_report.impl[150]) : bool =
+				exists elt in reports, ship.targetID = elt.targetID;
+
+            -- is ship2 in Zone A of ship1 (the ownship) and also not present in previous
+            fun SUSPECT (ship1 : traffic_report.impl, ship2 : traffic_report.impl,previous: traffic_report.impl[150]) : bool = 
+				   IN_ZONE_A (ship1,ship2) and not (PRESENT (ship2,previous));
+				                
+            eq Yesterday : traffic_report.impl[150] = (Observed.Traffic -> pre (Today));
+
+            eq Today : traffic_report.impl[150] = Observed.Traffic;
+             
+            -- true iff there is a suspicious traffic report in Observed.Traffic
+     	    eq abnormal : bool = (false -> (exists ship in Observed.Traffic, SUSPECT(Observed.Ownship,ship,Yesterday))); 
+
+            fun SUSPECT_IDS (ownship : traffic_report.impl, 
+            	             traffic : traffic_report.impl[150], 
+            	             previous : traffic_report.impl[150]):  target_id.impl[150] = 
+				flatmap i in indices(traffic),
+				      [| if SUSPECT (ownship, traffic[i], previous)
+				      	    then (traffic[i]).targetID 
+				      	    else DEFAULT_TARGET_ID |];
+
+		guarantee CASE_Monitor_Suspect_Traffic_Out 
+		  "Output duplicated IDs in traffic reports" : 
+		     if event(Observed) and abnormal then 
+		        event (Suspect_Traffic_Out) 
+		        and 
+		        (Suspect_Traffic_Out = 
+		        	MK_MONITOR_REPORT (SUSPECT_IDS (Observed.Ownship, Observed.Traffic, Yesterday)))
+		     else not(event(Suspect_Traffic_Out));
+
+			**};
+	end CASE_Monitor;
+
+	thread implementation CASE_Monitor.Impl
+		properties
+			Dispatch_Protocol => Sporadic;
+	end CASE_Monitor.Impl;
+
+	data target_id
+		properties
+			Data_Model::Data_Representation => Struct;
+	end target_id;
+
+	data implementation target_id.impl
+		subcomponents
+			Address: data Base_Types::Integer;
+			Participant_Address: data Base_Types::Integer;
+	end target_id.impl;
+
+	data misc_indicators
+		properties
+			Data_Model::Data_Representation => Struct;
+	end misc_indicators;
+
+	data implementation misc_indicators.impl
+		subcomponents
+			tt_bit0: data Base_Types::Boolean;
+			tt_bit1: data Base_Types::Boolean;
+			reportKind: data Base_Types::Boolean;
+			airborne: data Base_Types::Boolean;
+
+	end misc_indicators.impl;
+
+	data traffic_report
+		properties
+			Data_Model::Data_Representation => Struct;
+	end traffic_report;
+
+	data implementation traffic_report.impl
+		subcomponents
+			messageID: data Base_Types::Integer;
+			status: data Base_Types::Integer;
+			targetID: data target_id.impl;
+			lat: data Base_Types::Float;
+			long: data Base_Types::Float;
+			alt: data Base_Types::Integer;
+			miscInd: data misc_indicators;
+			nic: data Base_Types::Integer;
+			nacp: data Base_Types::Integer;
+			hVel: data Base_Types::Integer;
+			vVel: data Base_Types::Integer;
+			heading: data Base_Types::Float;
+			emitter: data Base_Types::Integer;
+			callSign: data Base_Types::String;
+			prio: data Base_Types::Integer;
+			fdl: data Base_Types::Integer;
+	end traffic_report.impl;
+
+	data adsb_messages
+		properties
+			Data_Model::Data_Representation => Struct;
+	-- Data_Size => 4386 Bytes;
+	end adsb_messages;
+
+	data implementation adsb_messages.impl
+		subcomponents
+			Heartbeat: data ADSB_Types::HeartBeat_Message.impl;
+			Traffic: data traffic_report.impl[150];
+			Ownship: data traffic_report.impl;
+	end adsb_messages.impl;
+
+	-- Need to name array types in order for the type system to be happy.
+	-- But only sometimes, it seems, and this is one of them.
+	data target_idArray
+		properties
+			Data_Model::Data_Representation => Array;
+			Data_Model::Dimension => (150);
+			Data_Model::Base_Type => (classifier (target_id.impl));
+	end target_idArray;
+
+	data monitor_report
+		properties
+			Data_Model::Data_Representation => Struct;
+	end monitor_report;
+
+	data implementation monitor_report.impl
+		subcomponents
+			messageID: data Base_Types::Integer;
+			monitorID: data Base_Types::Integer;
+			suspects: data target_idArray;
+	end monitor_report.impl;
+
+	thread adapter_in_high
+		-- automagically generated
+		features
+			SHM_QUEUE_ADSB_Heartbeat_In: in event data port CASE_Proxies::shm_queue_adsb_Heartbeat.impl;
+			SHM_QUEUE_ADSB_Ownship_In: in event data port CASE_Proxies::shm_queue_adsb_ownship.impl;
+			SHM_QUEUE_ADSB_Traffic_In: in event data port CASE_Proxies::shm_queue_adsb_traffic.impl;
+
+			ADSB_Messages_Out: out event data port adsb_messages.impl;
+
+			SHM_TAGS_adsb_to_ptab: out event data port CASE_Proxies::shm_queue_tag.impl;
+		flows
+			f1: flow path SHM_QUEUE_ADSB_Heartbeat_In -> ADSB_Messages_Out;
+			f2: flow path SHM_QUEUE_ADSB_Ownship_In -> ADSB_Messages_Out;
+			f3: flow path SHM_QUEUE_ADSB_Traffic_In -> ADSB_Messages_Out;
+
+			f4: flow path SHM_QUEUE_ADSB_Heartbeat_In -> SHM_TAGS_adsb_to_ptab;
+			f5: flow path SHM_QUEUE_ADSB_Ownship_In -> SHM_TAGS_adsb_to_ptab;
+			f6: flow path SHM_QUEUE_ADSB_Traffic_In -> SHM_TAGS_adsb_to_ptab;
+	end adapter_in_high;
+
+	thread implementation adapter_in_high.impl
+
+	end adapter_in_high.impl;
+
+	thread adapter_out_low
+		-- automagically generated
+		features
+			ADSB_Messages_In: in event data port adsb_messages.impl;
+
+			SHM_TAGS_adsb_to_ptab: in event data port CASE_Proxies::shm_queue_tag.impl;
+
+			SHM_QUEUE_ADSB_Heartbeat_Out: out event data port CASE_Proxies::shm_queue_adsb_Heartbeat.impl;
+			SHM_QUEUE_ADSB_Ownship_Out: out event data port CASE_Proxies::shm_queue_adsb_ownship.impl;
+			SHM_QUEUE_ADSB_Traffic_Out: out event data port CASE_Proxies::shm_queue_adsb_traffic.impl;
+		flows
+			f1: flow path ADSB_Messages_In -> SHM_QUEUE_ADSB_Heartbeat_Out;
+			f2: flow path ADSB_Messages_In -> SHM_QUEUE_ADSB_Ownship_Out;
+			f3: flow path ADSB_Messages_In -> SHM_QUEUE_ADSB_Traffic_Out;
+
+			f4: flow path SHM_TAGS_adsb_to_ptab -> SHM_QUEUE_ADSB_Heartbeat_Out;
+			f5: flow path SHM_TAGS_adsb_to_ptab -> SHM_QUEUE_ADSB_Ownship_Out;
+			f6: flow path SHM_TAGS_adsb_to_ptab -> SHM_QUEUE_ADSB_Traffic_Out;
+	end adapter_out_low;
+
+	thread implementation adapter_out_low.impl
+
+	end adapter_out_low.impl;
+
+	process SW
+		features
+			SHM_QUEUE_ADSB_Heartbeat_In: in event data port CASE_Proxies::shm_queue_adsb_Heartbeat.impl;
+			SHM_QUEUE_ADSB_Ownship_In: in event data port CASE_Proxies::shm_queue_adsb_ownship.impl;
+			SHM_QUEUE_ADSB_Traffic_In: in event data port CASE_Proxies::shm_queue_adsb_traffic.impl;
+
+			SHM_QUEUE_ADSB_Heartbeat_Out: out event data port CASE_Proxies::shm_queue_adsb_Heartbeat.impl;
+			SHM_QUEUE_ADSB_Ownship_Out: out event data port CASE_Proxies::shm_queue_adsb_ownship.impl;
+			SHM_QUEUE_ADSB_Traffic_Out: out event data port CASE_Proxies::shm_queue_adsb_traffic.impl;
+	end SW;
+
+	process implementation SW.impl
+		subcomponents
+			adapter_in_high: thread adapter_in_high.impl;
+			adapter_out_low: thread adapter_out_low.impl;
+			Teleport_Monitor: thread CASE_Monitor.Impl;
+		connections
+			c1: port SHM_QUEUE_ADSB_Heartbeat_In -> adapter_in_high.SHM_QUEUE_ADSB_Heartbeat_In;
+			c2: port SHM_QUEUE_ADSB_Ownship_In -> adapter_in_high.SHM_QUEUE_ADSB_Ownship_In;
+			c3: port SHM_QUEUE_ADSB_Traffic_In -> adapter_in_high.SHM_QUEUE_ADSB_Traffic_In;
+			c4: port adapter_in_high.ADSB_Messages_Out -> adapter_out_low.ADSB_Messages_In;
+			c5: port adapter_in_high.SHM_TAGS_adsb_to_ptab -> adapter_out_low.SHM_TAGS_adsb_to_ptab;
+			c6: port adapter_out_low.SHM_QUEUE_ADSB_Heartbeat_Out -> SHM_QUEUE_ADSB_Heartbeat_Out;
+			c7: port adapter_out_low.SHM_QUEUE_ADSB_Ownship_Out -> SHM_QUEUE_ADSB_Ownship_Out;
+			c8: port adapter_out_low.SHM_QUEUE_ADSB_Traffic_Out -> SHM_QUEUE_ADSB_Traffic_Out;
+			c9: port adapter_in_high.ADSB_Messages_Out -> Teleport_Monitor.Observed;
+	end SW.impl;
+
+	system VPM_8600B_Ext extends LRUs::VPM_8600B
+		features
+			Eth_Conn: requires bus access Busses::IEEE_802_3.impl;
+
+			ADSB_Heartbeat_In: in event data port ADSB_Types::HeartBeat_Message.impl;
+			ADSB_Ownship_In: in event data port ADSB_Types::TrafficReport.impl;
+			ADSB_Traffic_In: in event data port ADSB_Types::TrafficReport.impl {Acceptable_Array_Size => (0 .. 150);};
+
+			ADSB_Heartbeat_Out: out event data port ADSB_Types::HeartBeat_Message.impl;
+			ADSB_Ownship_Out: out event data port ADSB_Types::TrafficReport.impl;
+			ADSB_Traffic_Out: out event data port ADSB_Types::TrafficReport.impl {Acceptable_Array_Size => (0 .. 150);};
+
+	end VPM_8600B_Ext;
+
+	system implementation VPM_8600B_Ext.impl extends LRUs::VPM_8600B.impl
+		subcomponents
+			NAND_Flash: memory Memories::Flash_Memory;
+			Memory_Bus: bus Memories::Memory_Bus;
+
+			Proxy_Low: process CASE_Proxies::Proxy_Low.impl;
+			Proxy_High: process CASE_Proxies::Proxy_High.impl;
+
+			SW: process SW.impl;
+
+		connections
+			A1_Basecard_mem: bus access A1_Basecard.Memory_Access <-> Memory_Bus;
+			A1_Mez_mem: bus access A1_Mezz.Memory_Access <-> Memory_Bus;
+			A2_Basecard_mem: bus access A2_Basecard.Memory_Access <-> Memory_Bus;
+			A2_Mez_mem: bus access A2_Mezz.Memory_Access <-> Memory_Bus;
+			A3_Basecard_mem: bus access A3_Basecard.Memory_Access <-> Memory_Bus;
+			mem_card: bus access NAND_Flash.Flash_Data_Bus <-> Memory_Bus;
+
+			A1_Basecard_Eth: bus access A1_Basecard.Eth_Conn <-> Eth_Conn;
+			A1_Mez_Eth: bus access A1_Mezz.Eth_Conn <-> Eth_Conn;
+			A2_Basecard_Eth: bus access A2_Basecard.Eth_Conn <-> Eth_Conn;
+			A2_Mez_Eth: bus access A2_Mezz.Eth_Conn <-> Eth_Conn;
+			A3_Basecard_Eth: bus access A3_Basecard.Eth_Conn <-> Eth_Conn;
+
+			c1: port ADSB_Heartbeat_In -> Proxy_High.ADSB_Heartbeat_In;
+			c2: port ADSB_Ownship_In -> Proxy_High.ADSB_Ownship_In;
+			c3: port ADSB_Traffic_In -> Proxy_High.ADSB_Traffic_In;
+
+			c4: port Proxy_Low.ADSB_Heartbeat_Out -> ADSB_Heartbeat_Out;
+			c5: port Proxy_Low.ADSB_Ownship_Out -> ADSB_Ownship_Out;
+			c6: port Proxy_Low.ADSB_Traffic_Out -> ADSB_Traffic_Out;
+
+			-- new connections
+			c7: port Proxy_High.SHM_QUEUE_ADSB_Heartbeat_Out -> SW.SHM_QUEUE_ADSB_Heartbeat_In;
+			c8: port Proxy_High.SHM_QUEUE_ADSB_Ownship_Out -> SW.SHM_QUEUE_ADSB_Ownship_In;
+			c9: port Proxy_High.SHM_QUEUE_ADSB_Traffic_Out -> SW.SHM_QUEUE_ADSB_Traffic_In;
+
+			c10: port SW.SHM_QUEUE_ADSB_Heartbeat_Out -> Proxy_Low.SHM_QUEUE_ADSB_Heartbeat_In;
+			c11: port SW.SHM_QUEUE_ADSB_Ownship_Out -> Proxy_Low.SHM_QUEUE_ADSB_Ownship_In;
+			c12: port SW.SHM_QUEUE_ADSB_Traffic_Out -> Proxy_Low.SHM_QUEUE_ADSB_Traffic_In;
+
+		properties
+			Actual_Memory_Binding => (
+				reference (NAND_Flash)) applies to A1_Basecard.application_proc, A1_Mezz.application_proc, A2_Basecard.application_proc, A2_Mezz.application_proc, A3_Basecard.application_proc;
+
+			-- proxies running on separate R5 cores
+			Actual_Processor_Binding => (reference (A1_Basecard.real_time_proc.Core0)) applies to Proxy_Low;
+
+			Actual_Processor_Binding => (reference (A1_Basecard.real_time_proc.Core1)) applies to Proxy_High;
+
+			-- new process runs on A53
+			Actual_Processor_Binding => (reference (A1_Basecard.application_proc.Core0)) applies to SW;
+
+	end VPM_8600B_Ext.impl;
+	
+end VPM;
