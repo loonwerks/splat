@@ -156,7 +156,6 @@ fun unpack_double buf index =
 
 end (* Utils *)
 
-
 structure BitFns =
 struct
 
@@ -1561,7 +1560,6 @@ end
 (* Mocked-up version of API                                                  *)
 (*---------------------------------------------------------------------------*)
 
-
 structure API =
 struct
 
@@ -1607,7 +1605,6 @@ fun fill_input_buffer () =
 fun put_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
 
 end (* API *)
-
 
 structure Monitor =
 struct
@@ -1710,6 +1707,7 @@ fun compute_BOUNDS a b c d e f =
  end;
 
 (* test basic pack/unpack fnality *)
+(*
 val f42 = Utils.i2d 42;
 val f43 = Utils.i2d 43;
 val f44 = Utils.i2d 44;
@@ -1732,7 +1730,7 @@ val _ =
   printF "  heading_lower_bound : " olo;
   printF "  heading_upper_bound : " ohi;
   print  "End Bounds.\n");
-
+*)
 
 (*
 val dummy_boundaries = Boundaries_Recd f42 f42 f42 f42 f42 f42;
@@ -1818,7 +1816,7 @@ fun stepFn inports stateVars =
 
       val event_observed = True;
 
-z      val suspect_traffic_out =
+      val suspect_traffic_out =
           if event_observed andalso trueOpt abnormal
             then
              Some (mk_monitor_report
@@ -1861,7 +1859,3 @@ fun monFn () =
  end
 
 end (* Monitor *)
-
-(* One-shot test
-val _ = Monitor.monFn();
-*)
