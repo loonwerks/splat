@@ -1540,17 +1540,16 @@ struct
 val input_buffer = Word8Array.array 4386 Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
-(* Clear buffer, read port into buffer, copy buffer to string                *)
+(* Clear buffer, read port into buffer                                       *)
 (*---------------------------------------------------------------------------*)
+
 fun fill_input_buffer () =
   let val () = Utils.clear_buf input_buffer
-      val () = #(api_get_filter_in) "" input_buffer
-   in
-      Utils.buf2string in_buf
-   end;
+  in #(api_get_Observed) "" input_buffer
+  end;
 
-fun output_calls string =
-   #(api_put_filter_out) string Utils.emptybuf;
+fun put_Suspect_Traffic_Out string =
+   #(api_put_Suspect_Traffic_Out) string Utils.emptybuf;
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
