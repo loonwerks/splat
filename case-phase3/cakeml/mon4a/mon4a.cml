@@ -935,8 +935,8 @@ val heartbeat = BitContig.Recd [
 
 val adsb_messages = BitContig.Recd [
   ("Heartbeat", heartbeat),
-  ("Traffic", BitContig.Array traffic_report (BitContig.IntLit 150)),
-  ("Ownship", traffic_report)
+  ("Ownship", traffic_report),
+  ("Traffic", BitContig.Array traffic_report (BitContig.IntLit 150))
  ];
 
 val target_identity = BitContig.Recd [
@@ -1111,31 +1111,31 @@ fun print_heartbeat hb =
 datatype adsb_messages =
    Adsb_messages_Recd
     heartbeat
-    (traffic_report array)
-    traffic_report;
+    traffic_report
+    (traffic_report array);
 
 
 fun print_adsb_messages mesgs =
  case mesgs
-  of Adsb_messages_Recd hb trA own =>
+  of Adsb_messages_Recd hb own trA =>
       (print "ADSB Messages.\n";
        print_heartbeat hb;
-       print "\n <TRAFFIC REPORT ARRAY> \n\n";
        print_traffic_report own;
+       print "\n <TRAFFIC REPORT ARRAY> \n\n";
        print "End ADSB Messages.\n\n"
      );
 
 fun heartbeat_of mesgs =
  case mesgs
-  of Adsb_messages_Recd hb trA own => hb;
+  of Adsb_messages_Recd hb own trA => hb;
 
 fun traffic_of mesgs =
  case mesgs
-  of Adsb_messages_Recd hb trA own => trA;
+  of Adsb_messages_Recd hb own trA => trA;
 
 fun ownship_of mesgs =
  case mesgs
-  of Adsb_messages_Recd hb trA own => own;
+  of Adsb_messages_Recd hb own trA => own;
 
 (*---------------------------------------------------------------------------*)
 (* Subtlety: i is expected to be less than 128, so that the high 4 bits of   *)
@@ -1408,12 +1408,12 @@ fun mk_adsb_messages ptree =
  case ptree
   of BitContig.RECD [
   ("Heartbeat", heartbeat),
-  ("Traffic", treports),
-  ("Ownship", ownship_report) ]
+  ("Ownship", ownship_report),
+  ("Traffic", treports)]
   => Adsb_Types.Adsb_messages_Recd
        (mk_heartbeat heartbeat)
-       (mk_array mk_traffic_report treports)
        (mk_traffic_report ownship_report)
+       (mk_array mk_traffic_report treports)
   | otherwise => raise Utils.ERR "mk_adsb_messages" "";
 
 

@@ -927,8 +927,8 @@ val heartbeat = BitContig.Recd [
 
 val adsb_messages = BitContig.Recd [
   ("Heartbeat", heartbeat),
-  ("Traffic", BitContig.Array traffic_report (BitContig.IntLit 150)),
-  ("Ownship", traffic_report)
+  ("Ownship", traffic_report),
+  ("Traffic", BitContig.Array traffic_report (BitContig.IntLit 150))
  ];
 
 (*---------------------------------------------------------------------------*)
