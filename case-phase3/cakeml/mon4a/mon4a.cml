@@ -1095,6 +1095,9 @@ fun print_status_2 s s2a s2b s2c s2d =
   printB "     UTC-OK :           " s2d
 );
 
+fun print_uninterp_heartbeat hb =
+    print "Heartbeat message (skipping details)\n";
+
 fun print_heartbeat hb =
  case hb
   of Heartbeat_Recd
@@ -1121,27 +1124,26 @@ datatype adsb_messages =
     (traffic_report array);
 
 
-fun print_adsb_messages mesgs =
- case mesgs
-  of Adsb_messages_Recd hb own trA =>
-      (print "ADSB Messages.\n";
-       print_heartbeat hb;
-       print_traffic_report own;
-       print "\n <TRAFFIC REPORT ARRAY> \n\n";
-       print "End ADSB Messages.\n\n"
-     );
-
 fun heartbeat_of mesgs =
  case mesgs
   of Adsb_messages_Recd hb own trA => hb;
+
+fun ownship_of mesgs =
+ case mesgs
+  of Adsb_messages_Recd hb own trA => own;
 
 fun traffic_of mesgs =
  case mesgs
   of Adsb_messages_Recd hb own trA => trA;
 
-fun ownship_of mesgs =
- case mesgs
-  of Adsb_messages_Recd hb own trA => own;
+fun print_adsb_messages mesgs =
+ (print "ADSB Messages.\n";
+  print_uninterp_heartbeat (heartbeat_of mesgs);
+  (* print_heartbeat (heartbeat_of mesgs); *)
+  print_traffic_report (ownship_of mesgs);
+  print "\n <TRAFFIC REPORT ARRAY> \n\n";
+  print "End ADSB Messages.\n\n"
+ );
 
 fun println s = print (s^"\n");
 fun cons h t = h::t;
@@ -1167,9 +1169,8 @@ fun print_messageIDs msgs =
     println "Message IDs.";
     println ("Ownship: "^otid) ;
     println "Traffic (duplicates suppressed):";
-    print "   "; println trafficIDstring;
-    print "\n\n"
- end;
+    print "   "; println trafficIDstring
+end;
 
 (*---------------------------------------------------------------------------*)
 (* Subtlety: i is expected to be less than 128, so that the high 4 bits of   *)
@@ -1181,11 +1182,11 @@ fun print_messageIDs msgs =
 (* above for what is expected.                                               *)
 (*---------------------------------------------------------------------------*)
 
-val twoE23 = Utils.twoExp 23;
+val twoE24 = Utils.twoExp 24;
 
 fun check_enc_tid_inputs i j =
   if i < 0 orelse 128 <= i orelse
-     j < 0 orelse twoE23 <= j then
+     j < 0 orelse twoE24 <= j then
      raise Utils.ERR "Adsb_Types" "enc_tid_nums: out of range"
   else ();
 
@@ -1297,7 +1298,7 @@ fun eventParse p byteA =
   let val (contig,mk_data) = p
   in case BitContig.parseFn
             theEnv byteA (BitContig.VarName"root") contig
-              ([],1,BitContig.empty_lvalMap())
+              ([],8,BitContig.empty_lvalMap())
       of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
        | otherwise => Some None
   end;
@@ -1612,19 +1613,24 @@ fun stepFn () =
    | Some (Some msg) =>
       (API.logInfo "Event: parsed successfully\n"
        ;
-      Adsb_Types.print_messageIDs msg
+       Adsb_Types.print_messageIDs msg
        ;
       if lcDUPLICATE_IN_REPORT msg then
-        let val susReport = lcUPDATE_SUSPECT_IDS msg
+        let val () = print "Duplicate Found!  Output Message:\n"
+	    val susReport = lcUPDATE_SUSPECT_IDS msg
             val susBytes = Adsb_Types.encode_monitor_report susReport
             val susString = String.implode (List.map Utils.w8char susBytes)
-        in API.put_Suspect_Traffic_Out susString
+        in API.put_Suspect_Traffic_Out susString; print "\n"
         end
       else ()
      )
  end
 
 end (* Monitor *)
+
+(*---------------------------------------------------------------------------*)
+(* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
+(*---------------------------------------------------------------------------*)
 
 fun read_test istrm =
  let fun fillAcc n acc =
@@ -1644,166 +1650,135 @@ fun drop_newline instrm =
 
 val instrm = TextIO.openIn "test-1";
 print "row 1\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 2\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 3\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 4\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 5\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 6\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 7\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 8\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 9\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 10\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 11\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 12\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 13\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 14\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 15\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 16\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 17\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 18\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 19\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 20\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 21\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 22\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 23\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 24\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 25\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 26\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 27\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 28\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 29\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 30\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
 print "row 31\n";
-val rval = read_test instrm; drop_newline instrm;
+val rval = read_test instrm;
 val () = Monitor.stepFn();
-val _ = TextIO.output TextIO.stdOut "\n\n";
 
-print "Checking end of Input\n";
+print "\n\nChecking that at end of Input ... ";
 
 val _ =
  case TextIO.input1 instrm
   of Some _ => print "Remaining input!\n"
-   | None => print "No input left, as expected.\n";
+   | None => print "No input left, as expected.\n\n";
 
 (* One-shot test
 
