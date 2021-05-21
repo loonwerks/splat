@@ -2,7 +2,8 @@ Implementation of CASE Phase 3 gate. Source model is in VPM.aadl,
 where other monitors have been commented out because they make the
 editor too slow.
 
-Currently, the gate output is a stub.
+Currently, the gate output is a stub. Also, the gate has *not* incorporated the
+afternoon revision of Friday, May 21.
 
 To build :
 
