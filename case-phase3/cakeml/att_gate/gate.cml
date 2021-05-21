@@ -1241,7 +1241,7 @@ fun put_VDTU_Request_Message_Out string = TextIO.output TextIO.stdOut string;
 end (* Mock API *)
 
 
-structure Monitor =
+structure Gate =
 struct
 
 val default_PAYLOAD = Utils.byte_array_fromList(List.map Word8.fromInt
@@ -1587,7 +1587,7 @@ fun parse_block () = Gate_Parse.eventParse block_parseinfo API.block_buffer;
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
 
-fun monFn () =
+fun gateFn () =
  let val () = API.fill_trustedIDs_buffer ()
      val () = API.fill_block_buffer ()
  in
@@ -1610,5 +1610,4 @@ fun monFn () =
       end
  end
 
-
-end (* Monitor *)
+end (* Gate *)
