@@ -1,0 +1,61 @@
+use "../../../mesg_format/Contig.sig";
+use "../../../mesg_format/Contig.sml";
+
+open Contig;
+
+val IntLit = intLit;
+
+val ipv4 = Array (u8, IntLit 4);
+
+val allowedElement = Recd [
+ ("protocol", u32),
+ ("remote_address", ipv4)
+ ];
+
+val allowList = Array(allowedElement, IntLit 4);
+
+val connection_data = Recd [
+  ("local_address", ipv4),
+  ("spare1", Raw (IntLit 4)),
+  ("local_port", u16),
+  ("spare2", Raw (IntLit 6)),
+  ("remote_address", ipv4),
+  ("spare3", Raw (IntLit 4)),
+  ("remote_port", u16),
+  ("spare4", Raw (IntLit 6))
+ ];
+
+(*
+when command field
+0,1,2,3
+empty, data, connect, close
+
+if connect or close then
+connection_data and payload (=2048)
+is there othewise zeroed out
+*)
+
+fun varloc s = Loc (VarName s);
+
+val CONNECT = IntLit 2;
+
+val shm_Queue_Element = Recd [
+ ("length", u32),
+ ("spare1", Raw (IntLit 4)),
+ ("tag", u32),
+ ("spare2", Raw (IntLit 4)),
+ ("protocol", u32),
+ ("spare3", Raw (IntLit 4)),
+ ("command", u8),
+ ("spare4", Raw (IntLit 7)),
+ ("command_branch",
+   Union [
+     (Beq (varloc "command", CONNECT),
+      Recd [("connection_data", connection_data),
+            ("payload", Array (u8, IntLit 2016))]),
+      (Bnot (Beq (varloc "command", CONNECT)),
+      Recd [("payload", Array (u8, IntLit 2048))])
+      ])
+];
+
+val vdtu_Message_Block = Array (SHM_Queue_Element, IntLit 8);
