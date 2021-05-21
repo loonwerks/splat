@@ -1,0 +1,1614 @@
+structure Utils =
+struct
+
+exception ERR string string;
+
+fun stub s = raise ERR s "stub";
+
+fun total f x = Some (f x) handle _ => None;
+
+fun assert b s = if b then () else raise ERR s "assertion failure";
+
+fun first pred list =
+ case list
+  of [] => raise ERR "first" ""
+   | h::t => if pred h then h else first pred t;
+
+fun quote s = String.concat ["\"",s,"\""];
+
+fun take_drop n list =
+ if n <= List.length list
+  then Some(List.take list n,List.drop list n)
+  else None;
+
+fun front_last list =
+ let val _ = assert (not (List.null list)) "front_last: null input list"
+     fun flacc l acc =
+      case l
+       of [x] => (List.rev acc,x)
+        | h::t => flacc t (h::acc)
+ in flacc list []
+ end
+
+fun divmod i n = (Int.div i n, Int.mod i n);
+
+fun rev_itlist f list acc =
+ case list
+  of [] => acc
+   | h::t => rev_itlist f t (f h acc);
+
+fun itlist f list b =
+ case list
+  of [] => b
+   | h::t => f h (itlist f t b);
+
+fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
+
+fun firstOpt f list =
+ case list
+  of [] => None
+   | h::t =>
+ case f h
+  of None => firstOpt f t
+   | Some x => Some h;
+
+fun concatOpts optlist =
+    Some(List.concat(List.map Option.valOf optlist)) handle _ => None;
+
+fun strcatOpts optlist =
+    Some(String.concat(List.map Option.valOf optlist)) handle _ => None;
+
+fun filterOpt pred list = let
+   fun accFn list acc =
+    case list
+     of [] => Some (List.rev acc)
+      | h::t =>
+        case pred h
+         of None => None
+          | Some True => accFn t (h::acc)
+          | Some False => accFn t acc
+ in
+   accFn list []
+ end;
+
+fun pow b k =
+ let fun accFn k acc = if k <= 0 then acc else accFn (k-1) (acc * b)
+ in accFn k 1
+ end
+
+local
+   val pow2Arr = Array.fromList (List.map (pow 2) (upto 0 512));
+in
+fun twoExp n = Array.sub pow2Arr n handle _ => pow 2 n
+end;
+
+val w8zero = Word8.fromInt 0;
+val w64FF = Word64.fromInt 255;
+
+fun byte_array_fromList list =
+ let val arr = Word8Array.array (List.length list) w8zero
+     fun appFn i list =
+        case list
+         of [] => ()
+          | h::t => (Word8Array.update arr i h; appFn (i+1) t)
+ in appFn 0 list;
+    arr
+ end;
+
+val emptybuf = Word8Array.array 0 w8zero;
+val singlebuf = Word8Array.array 1 (Word8.fromInt 0);
+
+fun clear_buf buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+fun buf2string buf = Word8Array.substring buf 0 (Word8Array.length buf);
+
+fun string2buf s buf =
+ if String.size s <= Word8Array.length buf then
+   Word8Array.copyVec s 0 (String.size s) buf 0
+ else
+   raise ERR "string2buf" "string too big for buffer";
+
+fun file2buf fileName buf =
+    let val istrm = TextIO.openIn fileName
+        val () = print(String.concat
+                     ["Taking input from file : ",fileName,".\n"])
+        val s = TextIO.inputAll istrm
+        val () = TextIO.closeIn istrm
+    in
+       string2buf s buf
+    end
+
+fun tilde_to_uminus ch = if ch = #"~" then #"-" else ch;
+
+fun i2d i =
+ let val s = Int.toString i
+     val s' = String.translate tilde_to_uminus s
+ in
+  Double.fromString (s' ^ ".0")
+ end
+
+fun array_existsI pred arr =
+ let val len = Array.length arr
+ in if len = 0 then False
+    else List.exists pred (upto 0 (len - 1))
+ end
+
+val w8char = Char.chr o Word8.toInt;
+
+fun copies x n = if n <= 0 then [] else x::copies x (n-1);
+
+fun boolVal n =
+  if n = 0 then False else
+  if n = 1 then True
+  else raise ERR "boolVal" "";
+
+fun byteAt w n =
+  Word8.fromInt
+    (Word64.toInt
+      (Word64.andb (Word64.>> w (n*8)) w64FF));
+
+fun pack_double buf index d =
+ let fun write n x = Word8Array.update buf n x
+ in
+    write index (byteAt d 0)
+  ; write (index+1) (byteAt d 1)
+  ; write (index+2) (byteAt d 2)
+  ; write (index+3) (byteAt d 3)
+  ; write (index+4) (byteAt d 4)
+  ; write (index+5) (byteAt d 5)
+  ; write (index+6) (byteAt d 6)
+  ; write (index+7) (byteAt d 7)
+ end;
+
+fun unpack_double buf index =
+ let fun elt n = Word8Array.sub buf n
+ in  Word64.concatAll
+       (elt index)     (elt (index+1)) (elt (index+2)) (elt (index+3))
+       (elt (index+4)) (elt (index+5)) (elt (index+6)) (elt (index+7))
+ end;
+
+end (* Utils *)
+
+structure ByteContig =
+struct
+
+datatype lval
+  = VarName string
+  | RecdProj lval string
+  | ArraySub lval exp
+and exp
+  = Loc lval
+  | IntLit int
+  | ConstName string
+  | Add exp exp
+  | Mult exp exp
+;
+
+datatype bexp
+  = BoolLit bool
+  | BLoc lval
+  | Bnot bexp
+  | Bor  bexp bexp
+  | Band bexp bexp
+  | Beq  exp exp
+  | Blt  exp exp
+  | Bgt  exp exp
+  | Ble  exp exp
+  | Bge  exp exp
+  | DleA Double.double exp
+  | DleB exp Double.double
+;
+
+datatype atom
+  = Bool
+  | Signed int
+  | Unsigned int
+  | Blob;
+
+
+datatype contig
+  = Void
+  | Basic atom
+  | Declared string
+  | Raw exp
+  | Assert bexp
+  | Recd ((string * contig) list)
+  | Array contig exp
+  | Union ((bexp * contig) list)
+
+datatype ptree
+  = LEAF atom string
+  | RECD ((string * ptree) list)
+  | ARRAY (ptree list)
+;
+
+datatype ('a,'b) verdict = PASS 'a | FAIL 'b;
+
+fun lval_to_string lval =
+ case lval
+  of VarName s => s
+   | RecdProj lval s => lval_to_string lval^"."^s
+   | ArraySub lval (IntLit i) => lval_to_string lval^"["^Int.toString i^"]"
+
+(*---------------------------------------------------------------------------*)
+(* Support for lval-map                                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun lval_compare x y =
+ case (x,y)
+  of (VarName s1, VarName s2) => String.compare s1 s2
+   | (VarName _, _) => Less
+   | (RecdProj a b, VarName _) => Greater
+   | (RecdProj e1 s1,RecdProj e2 s2) =>
+       (case lval_compare e1 e2
+         of Equal => String.compare s1 s2
+	  | other => other)
+   | (RecdProj a b,_) => Less
+   | (ArraySub a b, ArraySub c d) =>
+       (case lval_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (ArraySub a b, _) => Greater
+and
+ exp_compare x y =
+ case (x,y)
+  of (Loc lv1, Loc lv2) => lval_compare lv1 lv2
+   | (Loc lv1, _) => Less
+   | (IntLit _, Loc _) => Greater
+   | (IntLit i, IntLit j) => Int.compare i j
+   | (IntLit i, other) => Less
+   | (ConstName _, Loc _) => Greater
+   | (ConstName _, IntLit _) => Greater
+   | (ConstName s1, ConstName s2) => String.compare s1 s2
+   | (ConstName s, _) => Less
+   | (Add a b, Mult c d) => Less
+   | (Add a b, Add c d) =>
+       (case exp_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (Add a b, _) => Greater
+   | (Mult a b, Mult c d) =>
+       (case exp_compare a c
+         of Equal => exp_compare b d
+	  | other => other)
+   | (Mult a b, _) => Greater
+;
+
+(*---------------------------------------------------------------------------*)
+(* Map from lvals to (atom,(offset,width)) pairs, where atom signals what    *)
+(* kind of type the string between offset and offset+width should be         *)
+(* interpeted as.                                                            *)
+(*---------------------------------------------------------------------------*)
+
+fun empty_lvalMap() = Map.empty lval_compare;
+
+fun unopFn f g e = Option.map f (g e);
+
+fun binopFn f g e1 e2 =
+  case (g e1, g e2)
+   of (Some v1, Some v2) => Some (f v1 v2)
+    | otherwise => None;
+
+fun total_bytes_of array i w =
+ Some (Word8Array.substring array i w) handle _ => None;
+
+
+fun evalExp env bytes =
+ let val (envDelta,lvalMap,valFn) = env
+     fun locVal (a,(i,width)) =
+         Option.mapPartial (valFn a)
+           (total_bytes_of bytes i width)
+   fun evalE exp =
+    case exp
+     of Loc lval => Option.mapPartial locVal (Map.lookup lvalMap lval)
+      | IntLit i => Some i
+      | ConstName s =>
+          (case Alist.lookup envDelta s
+            of Some i => i
+             | None => None)
+      | Add e1 e2  => binopFn Int.+ evalE e1 e2
+      | Mult e1 e2 => binopFn Int.* evalE e1 e2
+ in
+   evalE
+ end
+;
+
+
+fun equal x y = (x = y);
+fun orOp x y = (x orelse y);
+fun andOp x y = (x andalso y);
+
+fun evalBexp env bytes =
+ let val (envDelta,lvalMap,valFn,dvalFn) = env
+     val evalE = evalExp (envDelta,lvalMap,valFn) bytes
+     fun blocVal tuple =
+       case tuple
+        of (Bool,(i,width)) =>
+             Option.map Utils.boolVal
+              (Option.mapPartial (valFn Bool)
+                (total_bytes_of bytes i width))
+         | otherwise => None
+   fun evalB bexp =
+    case bexp
+     of BoolLit b => Some b
+      | BLoc lval => Option.mapPartial blocVal (Map.lookup lvalMap lval)
+      | Bnot b     => Option.map not (evalB b)
+      | Bor  b1 b2 => binopFn orOp evalB b1 b2
+      | Band b1 b2 => binopFn andOp evalB b1 b2
+      | Beq e1 e2  => binopFn equal evalE e1 e2
+      | Blt e1 e2  => binopFn Int.< evalE e1 e2
+      | Bgt e1 e2  => binopFn Int.> evalE e1 e2
+      | Ble e1 e2  => binopFn Int.<= evalE e1 e2
+      | Bge e1 e2  => binopFn Int.>= evalE e1 e2
+      | otherwise  => None
+ in
+  evalB
+ end;
+
+
+fun lval_append p lval =
+ case lval
+  of VarName s => RecdProj p s
+   | RecdProj q s => RecdProj (lval_append p q) s
+   | ArraySub q dim => ArraySub (lval_append p q) dim
+;
+
+fun path_prefixes lval =
+ case lval
+  of VarName _ => [lval]
+   | RecdProj p s => lval :: path_prefixes p
+   | ArraySub (VarName _) d => [lval]
+   | ArraySub (RecdProj p s) dim => lval :: path_prefixes p
+   | ArraySub arr dim => lval :: path_prefixes arr
+;
+
+fun resolve_lval lvalMap path lval =
+ let val prefixes = path_prefixes path
+     val prospects = List.map (flip lval_append lval) prefixes @ [lval]
+ in Utils.firstOpt (Map.lookup lvalMap) prospects
+ end
+
+fun mk_Loc x = Loc x;
+fun mk_Add x y = Add x y;
+fun mk_Mult x y = Mult x y;
+
+fun resolveExp lvalMap p exp =
+ case exp
+  of Loc lval   => unopFn mk_Loc (resolve_lval lvalMap p) lval
+   | Add  e1 e2 => binopFn mk_Add (resolveExp lvalMap p) e1 e2
+   | Mult e1 e2 => binopFn mk_Mult (resolveExp lvalMap p) e1 e2
+   | otherwise  => Some exp
+
+
+fun mk_BLoc x = BLoc x
+fun mk_Bnot x = Bnot x
+fun mk_Bor x y = Bor x y
+fun mk_Band x y = Band x y
+fun mk_Beq x y = Beq x y
+fun mk_Blt x y = Blt x y
+fun mk_Bgt x y = Bgt x y
+fun mk_Ble x y = Ble x y
+fun mk_Bge x y = Bge x y
+fun mk_dleA r1 r2 = DleA r1 r2;
+fun mk_dleB r1 r2 = DleB r1 r2;
+
+fun resolveBexp lvalMap p bexp =
+ case bexp
+  of BoolLit _  => Some bexp
+   | BLoc lval  => unopFn mk_BLoc (resolve_lval lvalMap p) lval
+   | Bnot b     => unopFn mk_Bnot(resolveBexp lvalMap p) b
+   | Bor b1 b2  => binopFn mk_Bor(resolveBexp lvalMap p) b1 b2
+   | Band b1 b2 => binopFn mk_Band(resolveBexp lvalMap p) b1 b2
+   | Beq e1 e2  => binopFn mk_Beq(resolveExp lvalMap p) e1 e2
+   | Blt e1 e2  => binopFn mk_Blt(resolveExp lvalMap p) e1 e2
+   | Bgt e1 e2  => binopFn mk_Bgt(resolveExp lvalMap p) e1 e2
+   | Ble e1 e2  => binopFn mk_Ble(resolveExp lvalMap p) e1 e2
+   | Bge e1 e2  => binopFn mk_Bge(resolveExp lvalMap p) e1 e2
+   | DleA r e   => unopFn (mk_dleA r) (resolveExp lvalMap p) e
+   | DleB e r   => unopFn (fn x => mk_dleB x r) (resolveExp lvalMap p) e
+;
+
+(*---------------------------------------------------------------------------*)
+(* substFn is given an assignment for a contig and applies it to the contig, *)
+(* yielding a string.                                                        *)
+(*---------------------------------------------------------------------------*)
+
+fun substFn env byteArr theta path contig =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = env
+     fun thetaFn lval =
+         (case Map.lookup theta lval
+           of None => None
+            | Some (a,(i,width)) => total_bytes_of byteArr i width)
+ in
+  case contig
+   of Void     => None
+    | Basic _  => thetaFn path
+    | Raw _    => thetaFn path
+    | Assert b =>
+       (case resolveBexp theta path b
+         of None => None
+          | Some b' =>
+        case evalBexp (consts,theta,valFn,dvalFn) byteArr b'
+         of Some true => Some ""
+          | otherwise => None)
+    | Declared name => Option.mapPartial (substFn env byteArr theta path)
+                                         (Alist.lookup decls name)
+    | Recd fields =>
+       let fun fieldFn (fName,c) = substFn env byteArr theta (RecdProj path fName) c
+       in Utils.strcatOpts (List.map fieldFn fields)
+       end
+    | Array c exp =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp' =>
+        let val dim = Option.valOf (evalExp (consts,theta,valFn) byteArr exp')
+            fun indexFn i = substFn env byteArr theta (ArraySub path (IntLit i)) c
+        in Utils.strcatOpts (List.map indexFn (Utils.upto 0 (dim - 1)))
+        end)
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+               (resolveBexp theta path bexp)
+       in case Utils.filterOpt choiceFn choices
+           of Some [(_,c)] => substFn env byteArr theta path c
+            | otherwise => None
+       end
+end
+;
+
+fun fieldFn path (fName,c) = (RecdProj path fName, c)
+fun indexFn path c i = (ArraySub path (IntLit i),c)
+
+fun matchFn env byteArr state =
+ let val (worklist,pos,theta) = state
+     val (consts,decls,atomWidth,valFn,dvalFn) = env
+     val arrlen = Word8Array.length byteArr
+ in
+ case worklist
+  of [] => Some (pos,theta)
+   | (_,Void)::_ => None
+   | (path,Basic a)::t =>
+     let val width = atomWidth a
+         val nextpos = pos + width
+     in if arrlen <= nextpos then
+          None
+        else
+          matchFn env byteArr (t,nextpos,Map.insert theta path (a,(pos,width)))
+     end
+   | (path,Declared name)::t =>
+       (case Alist.lookup decls name
+        of None => None
+	 | Some c => matchFn env byteArr ((path,c)::t,pos,theta))
+   | (path,Raw exp)::t =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp' =>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => None
+          | Some width =>
+        let val nextpos = pos + width
+        in if arrlen <= nextpos then
+              None
+            else
+              matchFn env byteArr
+                  (t,nextpos, Map.insert theta path (Blob,(pos,width)))
+        end)
+   | (path,Assert bexp)::t =>
+       (case resolveBexp theta path bexp
+        of None => None
+         | Some bexp' =>
+        case evalBexp (consts,theta,valFn,dvalFn) byteArr bexp'
+         of None => None
+          | Some False => None
+          | Some True => matchFn env byteArr (t,pos,theta))
+   | (path,Recd fields)::t =>
+         matchFn env byteArr (List.map (fieldFn path) fields @ t,pos,theta)
+   | (path,Array c exp)::t =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp'=>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => None
+          | Some dim =>
+        matchFn env byteArr
+           (List.map (indexFn path c) (Utils.upto 0 (dim - 1)) @ t,pos,theta))
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+                (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+                (resolveBexp theta path bexp)
+       in case Utils.filterOpt choiceFn choices
+           of Some[(_,c)] => matchFn env byteArr ((path,c)::t,pos,theta)
+            | otherwise => None
+       end
+ end
+;
+
+
+fun match env contig byteArr =
+  matchFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap());
+
+(*
+fun check_match env contig byteArr =
+ case match env contig byteArr
+  of None => raise ERR "check_match" "no match"
+  |  Some(pos,theta) =>
+      case substFn env byteArr theta (VarName"root") contig
+       of Some bits => (s1^s2 = s)
+       |  None => raise ERR "check_match" "substFn failed"
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Version of matchFn that checks assertions, acting as a predicate on       *)
+(* messages.                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun predFn env byteArr state =
+ let val (worklist,pos,theta) = state
+     val (consts,decls,atomWidth,valFn,dvalFn) = env
+     val arrlen = Word8Array.length byteArr
+ in
+ case worklist
+  of [] => PASS (pos,theta)
+   | (path,Void)::t => FAIL state
+   | (path,Basic a)::t =>
+     let val width = atomWidth a
+         val nextpos = pos + width
+     in if arrlen <= nextpos then
+           FAIL state
+        else
+          predFn env byteArr (t,nextpos,Map.insert theta path (a,(pos,width)))
+     end
+   | (path,Declared name)::t =>
+       (case Alist.lookup decls name
+         of None => FAIL state
+          | Some c => predFn env byteArr ((path,c)::t,pos,theta))
+   | (path,Raw exp)::t =>
+       (case resolveExp theta path exp
+         of None => FAIL state
+          | Some exp' =>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => FAIL state
+          | Some width =>
+        let val nextpos = pos + width
+        in if arrlen <= nextpos then
+              FAIL state
+           else
+             predFn env byteArr
+              (t, nextpos, Map.insert theta path (Blob,(pos,width)))
+        end)
+   | (path,Assert bexp)::t =>
+       (case resolveBexp theta path bexp
+        of None => FAIL state
+         | Some bexp' =>
+        case evalBexp (consts,theta,valFn,dvalFn) byteArr bexp'
+         of Some true => predFn env byteArr (t,pos,theta)
+          | otherwise => FAIL state)
+   | (path,Recd fields)::t =>
+       predFn env byteArr (List.map (fieldFn path) fields @ t,pos,theta)
+   | (path,Array c exp)::t =>
+       (case resolveExp theta path exp
+         of None => FAIL state
+          | Some exp'=>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => FAIL state
+          | Some dim =>
+         predFn env byteArr
+           (List.map (indexFn path c) (Utils.upto 0 (dim - 1)) @ t,pos,theta))
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+               (resolveBexp theta path bexp)
+       in case Utils.filterOpt choiceFn choices
+           of Some[(_,c)] => predFn env byteArr ((path,c)::t,pos,theta)
+            | otherwise => FAIL state
+       end
+end
+;
+
+
+fun debug env contig byteArr =
+  predFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap());
+
+fun wellformed env contig byteArr =
+ case predFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap())
+  of PASS _ => True
+   | FAIL _ => False;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing into the ptree type. It provides record and array structure, but  *)
+(* leaves leaf elements uninterpreted.                                       *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Environments:                                                             *)
+(*                                                                           *)
+(*   consts : maps constant names to integers                                *)
+(*   decls  : maps names to previously declared contigs                      *)
+(*   atomWidth : gives width info for basic types                            *)
+(*   valFn  : function for computing an integer value                        *)
+(*            stored at the designated location in the string.               *)
+(*   dvalFn : function for computing a double value                          *)
+(*            stored at the designated location in the string.               *)
+(*                                                                           *)
+(* parseFn operates on a state tuple (stk,s,lvmap)                           *)
+(*                                                                           *)
+(*  stk  : ptree list         ;;; parser stack                               *)
+(*  s    : string             ;;; remainder of string                        *)
+(* lvmap : (lval |-> string)  ;;; previously seen values, accessed by path   *)
+(*                                                                           *)
+(* which is wrapped in the error monad.                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun parseFn env byteArr path contig state =
+ let val (consts,decls,atomWidth,valFn,dvalFn) = env
+     val (stk,pos,theta) = state
+     val arrlen = Word8Array.length byteArr
+ in
+ case contig
+  of Void => None
+   | Basic a =>
+       let val width = atomWidth a
+           val nextpos = pos + width
+       in if arrlen <= nextpos then
+          None
+          else
+           Some(LEAF a (Option.valOf (total_bytes_of byteArr pos width))::stk,
+                nextpos,
+                Map.insert theta path (a,(pos,width)))
+       end
+   | Declared name =>
+       (case Alist.lookup decls name
+         of None => None
+          | Some c => parseFn env byteArr path c state)
+   | Raw exp =>
+       (case resolveExp theta path exp
+         of None => None
+          | Some exp' =>
+        case evalExp (consts,theta,valFn) byteArr exp'
+         of None => None
+          | Some width =>
+        let val nextpos = pos + width
+        in if arrlen <= nextpos then
+              None
+           else
+            Some (LEAF Blob (Option.valOf(total_bytes_of byteArr pos width))::stk,
+                  nextpos,
+                  Map.insert theta path (Blob,(pos,width)))
+        end)
+   | Assert bexp =>
+       (case resolveBexp theta path bexp
+         of None => None
+	  | Some  bexp' =>
+         case evalBexp (consts,theta,valFn,dvalFn) byteArr bexp'
+          of None => None
+           | Some tval =>
+         if tval then Some state
+         else (print "Assertion failure"; None))
+   | Recd fields =>
+       let fun fieldFn field stOpt =
+             let val (fName,c) = field
+             in case stOpt
+                 of None => None
+                  | Some st => parseFn env byteArr (RecdProj path fName) c st
+             end
+          fun is_assert pair = (case snd pair of Assert _ => True | otherwise => False)
+          val fields' = List.filter (not o is_assert) fields
+       in case Utils.rev_itlist fieldFn fields (Some state)
+           of None => None
+            | Some (stk',pos',theta') =>
+          case Utils.take_drop (List.length fields') stk'
+           of None => None
+            | Some(elts,stk'') =>
+              Some(RECD (List.zip (List.map fst fields', List.rev elts))::stk'',
+                   pos', theta')
+       end
+   | Array c exp =>
+       let fun indexFn i stOpt =
+            (case stOpt
+             of None => None
+              | Some st => parseFn env byteArr (ArraySub path (IntLit i)) c st)
+       in case resolveExp theta path exp
+           of None => None
+	    | Some exp' =>
+          case evalExp (consts,theta,valFn) byteArr exp'
+           of None => None
+            | Some dim =>
+          case Utils.rev_itlist indexFn (Utils.upto 0 (dim - 1)) (Some state)
+           of None => None
+            | Some (stk',pos',theta') =>
+          case Utils.take_drop dim stk'
+           of None => None
+            | Some(elts,stk'') => Some(ARRAY (List.rev elts)::stk'', pos', theta')
+       end
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (consts,theta,valFn,dvalFn) byteArr)
+               (resolveBexp theta path bexp)
+       in case Utils.filterOpt choiceFn choices
+           of Some[(_,c)] => parseFn env byteArr path c state
+            | otherwise => None
+       end
+ end
+;
+
+
+fun parse env contig byteArr =
+ case parseFn env byteArr (VarName"root") contig ([],0,empty_lvalMap())
+  of Some ([ptree],pos,theta) => (ptree,pos,theta)
+   | Some otherwise => raise Utils.ERR "parse" "expected stack of size 1"
+   | None => raise Utils.ERR "parse" ""
+;
+
+fun add_contig_decl (s,d) env =
+ let val (consts,decls,aW,vFn,dvFn) = env
+ in (consts,(s,d)::decls,aW,vFn,dvFn)
+ end
+
+
+end (* ByteContig *)
+
+(*---------------------------------------------------------------------------*)
+(* Contiguity types for Gate inputs                                          *)
+(*---------------------------------------------------------------------------*)
+
+structure Gate_Contig =
+struct
+
+fun varloc s   = ByteContig.Loc (ByteContig.VarName s);
+fun intLit i   = ByteContig.IntLit i;
+fun rawBlock i = ByteContig.Raw (intLit i);
+fun unsigned n = ByteContig.Basic(ByteContig.Unsigned n);
+fun signed n   = ByteContig.Basic(ByteContig.Signed n);
+
+fun beq a b = ByteContig.Beq a b
+fun bnot a = ByteContig.Bnot a
+
+fun mkArray c1 c2 = ByteContig.Array c1 c2;
+fun mkRecd list   = ByteContig.Recd list;
+fun mkUnion list  = ByteContig.Union list;
+
+(* -------------------------------------------------------------------------- *)
+(* Some basic contig types.                                                   *)
+(* -------------------------------------------------------------------------- *)
+
+val bool = ByteContig.Basic ByteContig.Bool;
+val u8   = unsigned 1;
+val char = unsigned 1;
+val u16  = unsigned 2;
+val u32  = unsigned 4;
+val i32  = signed 4;
+val i64  = signed 8;
+
+(* -------------------------------------------------------------------------- *)
+(* Gate contig types.                                                         *)
+(* -------------------------------------------------------------------------- *)
+
+val ipv4 = mkArray u8 (intLit 4);
+
+val allowedElement = mkRecd [
+ ("protocol",       u32),
+ ("remote_address", ipv4)
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* Trusted IDs input port                                                    *)
+(*---------------------------------------------------------------------------*)
+
+val trustedIDs = mkArray allowedElement (intLit 4);
+
+val connection_data = mkRecd [
+  ("local_address", ipv4), ("spare1", rawBlock 4), ("local_port", u16),
+  ("spare2", rawBlock 6),
+  ("remote_address", ipv4),("spare3", rawBlock 4), ("remote_port", u16),
+  ("spare4", rawBlock 6)
+ ];
+
+(*---------------------------------------------------------------------------*)
+(* command field mapping                                                     *)
+(*                                                                           *)
+(*   empty   -> 0                                                            *)
+(*   data    -> 1                                                            *)
+(*   connect -> 2                                                            *)
+(*   close   -> 3                                                            *)
+(*                                                                           *)
+(* if connect or close then connection_data and payload (=2048) is there     *)
+(* othewise zeroed out.                                                      *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val constCONNECT = intLit 2;
+
+val shm = mkRecd [
+ ("length",   u32),
+ ("spare1",   rawBlock 4),
+ ("tag",      u32),
+ ("spare2",   rawBlock 4),
+ ("protocol", u32),
+ ("spare3",   rawBlock 4),
+ ("command",  u8),
+ ("spare4",   rawBlock 7),
+ ("command_branch",
+   mkUnion [
+     (beq (varloc "command") constCONNECT,
+         mkRecd [("connection_data", connection_data),
+                 ("payload", mkArray u8 (intLit 2016))]),
+     (bnot (beq (varloc "command") constCONNECT),
+         mkRecd [("payload", mkArray u8 (intLit 2048))])
+      ])
+];
+
+(*---------------------------------------------------------------------------*)
+(* VDTU_Request_Message_In input port                                        *)
+(*---------------------------------------------------------------------------*)
+
+val vdtu_input_array = mkArray shm (intLit 8);
+
+end (* Gate_Contig *)
+
+
+(*---------------------------------------------------------------------------*)
+(* Types used by the Gate implementation                                     *)
+(*---------------------------------------------------------------------------*)
+
+structure Gate_Types =
+struct
+
+type ipv4 = byte_array;
+
+type payload = byte_array;
+
+datatype allowed_element = AllowedElementRecd int ipv4;
+
+type whitelist = allowed_element array;
+
+datatype connection_data = Connection_dataRecd ipv4 int ipv4 int;
+
+(*---------------------------------------------------------------------------*)
+(* length, tag, protocol, command, connection_data, payload                  *)
+(*---------------------------------------------------------------------------*)
+
+datatype shm = SHMRecd int int int int connection_data payload;
+
+type vdtu_message_block = shm array;
+
+datatype tag_ip_pair    = TAG_IP_PairRecd int ipv4 bool;
+datatype tag_valid_pair = TAG_VALID_PAIRRecd int bool;
+
+(*---------------------------------------------------------------------------*)
+(* Projections                                                               *)
+(*---------------------------------------------------------------------------*)
+
+fun tag_of_tip t   = case t of TAG_IP_PairRecd tag ip valid => tag;
+fun ip_of_tip t    = case t of TAG_IP_PairRecd tag ip valid => ip;
+fun valid_of_tip t = case t of TAG_IP_PairRecd tag ip valid => valid;
+
+fun tag_of_tvp t   = case t of TAG_VALID_PAIRRecd tag valid => tag;
+fun valid_of_tvp t = case t of TAG_VALID_PAIRRecd tag valid => valid;
+
+fun tag_of_shm t = case t of SHMRecd len tag prot comm connex payld => tag;
+fun connection_data_of t = case t of SHMRecd len tag prot comm connex payld => connex;
+fun command_of t = case t of SHMRecd len tag prot comm connex payld => comm;
+
+fun remote_address_of_allowed t = case t of AllowedElementRecd x raddr => raddr;
+fun remote_address_of_connex t =
+  case t
+   of Connection_dataRecd laddr lport raddr rport => raddr;
+
+fun printB s b = print (s^Bool.toString b^"\n");
+fun printI s i = print (s^Int.toString i^"\n");
+fun printR s d = print (s^Double.toString d^"\n");
+fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
+
+
+fun encode_block block = Utils.stub "encode_block";
+(* encode_array encode_shm block *)
+
+
+(*
+
+fun enc_tid_nums i j =
+ let val (d,r1) = Utils.divmod j 256
+     val (d,r2) = Utils.divmod d 256
+     val (d,r3) = Utils.divmod d 256
+  in
+   List.map Word8.fromInt [i,r3,r2,r1]
+  end;
+
+fun encode_targetID ti = (* word8 list *)
+ case ti
+  of TargetID_Recd i j => enc_tid_nums i j;
+
+fun array_toList f arr =
+ Array.foldr (fn x => fn list => f x :: list) [] arr;
+
+*)
+end (* Gate_Types *)
+
+structure Gate_Parse =
+struct
+
+(* -------------------------------------------------------------------------- *)
+(* Widths for basic items,  in bits.                                          *)
+(* -------------------------------------------------------------------------- *)
+
+fun gate_atom_width atm =
+ case atm
+  of ByteContig.Bool       => 1
+   | ByteContig.Signed i   => i
+   | ByteContig.Unsigned i => i
+   | other => raise Utils.ERR "gate_atom_width" "unknown width of Raw";
+
+(*---------------------------------------------------------------------------*)
+(* Valuation functions and base environment                                  *)
+(*---------------------------------------------------------------------------*)
+
+fun byteValBE string =
+ let val len = String.size string
+     fun accFn i acc =
+       if i < len then
+         let val byte = Char.ord (String.sub string i)
+	 in accFn (i+1) (byte + 256 * acc)
+         end
+       else acc
+ in accFn 0 0
+ end
+
+val unsigned = byteValBE;
+
+fun twos_comp string =
+ let val sup = Utils.twoExp (String.size string)
+     val half = Int.div sup 2
+     val n = unsigned string
+  in
+    if n < half then n else n - sup
+ end;
+
+fun valFn atm string =
+ case atm
+  of ByteContig.Signed i => Some (twos_comp string)
+   | ByteContig.Unsigned i => Some (unsigned string)
+   | otherwise => Some (unsigned string);
+
+fun dvalFn atm bits = raise Utils.ERR "dvalFn" "undefined";
+
+val gateEnv = ([],[],gate_atom_width,valFn,dvalFn)
+
+(*---------------------------------------------------------------------------*)
+(* Takes a contig and a decoder and combines them into a parser.             *)
+(*---------------------------------------------------------------------------*)
+
+fun genParse env p byteArr i =
+ let val (contig,mk_data) = p
+ in
+ case ByteContig.parseFn
+        env byteArr (ByteContig.VarName"root") contig
+        ([],i,ByteContig.empty_lvalMap())
+  of Some ([ptree],_,_) =>
+     (print "genParse: generated ptree\n"; Utils.total mk_data ptree)
+   | otherwise => None
+ end;
+
+fun gateParse p byteArr = genParse gateEnv p byteArr 0;
+
+(*---------------------------------------------------------------------------*)
+(* Parse a message prefixed with a byte which tells if it's an event.        *)
+(* Somewhat complex information on output makes this convoluted:             *)
+(*                                                                           *)
+(*  None          -- no event on port (input is not of form "0x1 ...")       *)
+(*  Some None     -- event on port, but parse of input failed                *)
+(*  Some (Some d) -- event on port, parse of input yields data d             *)
+(*                                                                           *)
+(* Inside the stepFn there needs to be code handling situations where inputs *)
+(* are events, but the port contents fail to parse.                          *)
+(*---------------------------------------------------------------------------*)
+
+fun is_event byteA =
+  0 < Word8Array.length byteA andalso
+  Word8Array.sub byteA 0 = Word8.fromInt 1;
+
+fun eventParse p byteA =
+ if not(is_event byteA) then
+    None
+ else
+  let val (contig,mk_data) = p
+  in case ByteContig.parseFn
+            gateEnv byteA (ByteContig.VarName"root") contig
+              ([],1,ByteContig.empty_lvalMap())
+      of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
+       | otherwise => Some None
+  end;
+
+(*---------------------------------------------------------------------------*)
+(* Interpretation support                                                    *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_int ptree =
+ case ptree
+  of ByteContig.LEAF a string => Option.valOf (valFn a string)
+   | otherwise => raise Utils.ERR "Parse.mk_int" "expected a LEAF";
+
+fun mk_byte ptree =
+ case ptree
+  of ByteContig.LEAF a string => Word8.fromInt(Option.valOf (valFn a string))
+   | otherwise => raise Utils.ERR "Parse.mk_int" "expected a LEAF";
+
+val mk_bool = Utils.boolVal o mk_int;
+
+fun mk_string ptree =
+ case ptree
+  of ByteContig.ARRAY elts => String.implode (List.map (Char.chr o mk_int) elts)
+   | otherwise  => raise Utils.ERR "mk_string" "";
+
+fun mk_array eltFn ptree =
+ case ptree
+  of ByteContig.ARRAY elts => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise Utils.ERR "mk_array" "";
+
+fun mk_byte_array ptree =
+ case ptree
+  of ByteContig.ARRAY elts => Utils.byte_array_fromList (List.map mk_byte elts)
+   | otherwise  => raise Utils.ERR "mk_byte_array" "";
+
+(*---------------------------------------------------------------------------*)
+(* Construct allowedElement array                                            *)
+(*---------------------------------------------------------------------------*)
+
+val default_ipv4 =
+  Utils.byte_array_fromList
+      [Utils.w8zero,Utils.w8zero,Utils.w8zero,Utils.w8zero];
+
+fun mk_ipv4 ptree = mk_byte_array ptree;
+
+(*
+val batm = ByteContig.Unsigned 1;
+val zet = ByteContig.LEAF batm (String.str(Char.chr 0));
+val x = mk_ipv4 (ByteContig.ARRAY [zet,zet,zet,zet])
+
+fun print_byte_array arr =
+ let val s = Word8Array.substring arr 0 (Word8Array.length arr)
+     val chars = String.explode s
+     fun pchar ch = print(String.concat["\\", Int.toString(Char.ord ch)])
+ in List.app pchar chars
+ end;
+*)
+
+fun mk_allowed_element ptree =
+ case ptree
+  of ByteContig.RECD [("protocol", prot), ("remote_address", ra)] =>
+     Gate_Types.AllowedElementRecd (mk_int prot) (mk_ipv4 ra)
+  | otherwise => raise Utils.ERR "mk_allowed_element" "";
+
+(*---------------------------------------------------------------------------*)
+(* Trusted IDs input port                                                    *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_trustedIDs ptree = mk_array mk_allowed_element ptree;
+
+(*---------------------------------------------------------------------------*)
+(* Construct SHM array                                                       *)
+(*---------------------------------------------------------------------------*)
+
+val default_connection_data =
+  Gate_Types.Connection_dataRecd default_ipv4 0 default_ipv4 0;
+
+val batm = ByteContig.Unsigned 1;
+val zet = ByteContig.LEAF batm (String.str(Char.chr 0));
+val x = mk_ipv4 (ByteContig.ARRAY [zet,zet,zet,zet])
+
+fun mk_connection_data ptree =
+ case ptree
+  of ByteContig.RECD [
+      ("local_address", laddr), ("spare1",  _),
+      ("local_port", lport),    ("spare2",  _),
+      ("remote_address", raddr),("spare3",  _),
+      ("remote_port", rport),   ("spare4",  _)]
+      => Gate_Types.Connection_dataRecd
+            (mk_ipv4 laddr)
+ 	    (mk_int lport)
+	    (mk_ipv4 raddr)
+	    (mk_int rport)
+   | otherwise => raise Utils.ERR "mk_connection_data" "";
+
+fun mk_payload ptree = mk_byte_array ptree;
+
+fun mk_shm_elt ptree =
+ case ptree
+  of ByteContig.RECD
+     (("length", len) :: ("spare1",  _) ::
+     ("tag",     tag)  :: ("spare2",  _) ::
+     ("protocol",prot) :: ("spare3",  _) ::
+     ("command", comm) :: ("spare4",  _) :: rst)
+     => (case rst
+         of [("connection_data", cdata), ("payload", byteA)]
+             => Gate_Types.SHMRecd
+                   (mk_int len) (mk_int tag) (mk_int prot) (mk_int comm)
+                   (mk_connection_data cdata) (mk_payload byteA)
+          | [("payload", byteA)]
+             => Gate_Types.SHMRecd
+                   (mk_int len) (mk_int tag) (mk_int prot) (mk_int comm)
+                   default_connection_data
+                   (mk_payload byteA)
+          | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format")
+   | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format";
+
+fun mk_shm_queue ptree =  mk_array mk_shm_elt ptree;
+
+end (* Gate_Parse *)
+
+
+(*---------------------------------------------------------------------------*)
+(* Deployment API                                                            *)
+(*---------------------------------------------------------------------------*)
+
+(*
+structure API =
+struct
+
+val input_buffer = Word8Array.array 4386 Utils.w8zero;
+
+(*---------------------------------------------------------------------------*)
+(* Clear buffer, read port into buffer                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun fill_input_buffer () =
+  let val () = Utils.clear_buf input_buffer
+  in  #(api_get_Observed) "" input_buffer
+  end;
+
+fun put_Suspect_Traffic_Out string =
+   #(api_put_Suspect_Traffic_Out) string Utils.emptybuf;
+
+fun logInfo s = #(api_logInfo) s Utils.emptybuf;
+
+end
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Mocked-up version of API                                                  *)
+(*---------------------------------------------------------------------------*)
+
+structure API =
+struct
+
+val trustedIDs_buffer = Word8Array.array (1 + 8*4) Utils.w8zero;
+val block_buffer      = Word8Array.array (1 + 2080*16) Utils.w8zero;
+
+(*---------------------------------------------------------------------------*)
+(*    #(api_logInfo) s Utils.emptybuf;                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun logInfo s = TextIO.output TextIO.stdErr s;
+
+(*---------------------------------------------------------------------------*)
+(* Grab inputs.                                                              *)
+(*---------------------------------------------------------------------------*)
+
+fun api_get_Trusted_IDs emptyString buf = Utils.stub "API.api_get_Observed";
+
+fun api_get_VDTU_Request_Message_In emptystring buf =
+    Utils.stub "API.api_get_VDTU_Request_Message_In";
+(*
+ case CommandLine.arguments()
+  of [fileName] => Utils.file2buf fileName buf
+   | otherwise =>
+     (TextIO.print_err"Expected a filename"; raise Utils.ERR "" "");
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Clear buffer, read file into buffer, copy buffer to string. As stub code, *)
+(* it's an elaborate no-op, but enables easy testing. Note that              *)
+(* api_get_filter_in is assumed to raise an exception when the input is too  *)
+(* large for the buffer.                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun fill_trustedIDs_buffer () =
+  let val () = Utils.clear_buf trustedIDs_buffer
+      val () = api_get_Trusted_IDs "" trustedIDs_buffer
+   in ()
+   end
+   handle _ =>
+    (logInfo "Monitor failure: unable to fill input buffer.";
+     raise Utils.ERR "fill_input_buffer" ""
+    );
+
+
+fun fill_block_buffer () =
+  let val () = Utils.clear_buf block_buffer
+      val () = api_get_VDTU_Request_Message_In "" block_buffer
+   in ()
+   end
+   handle _ =>
+    (logInfo "Monitor failure: unable to fill input buffer.";
+     raise Utils.ERR "fill_input_buffer" ""
+    );
+
+(*---------------------------------------------------------------------------*)
+(*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
+(*---------------------------------------------------------------------------*)
+
+fun put_VDTU_Request_Message_Out string = TextIO.output TextIO.stdOut string;
+
+end (* Mock API *)
+
+
+structure Monitor =
+struct
+
+val default_PAYLOAD = Utils.byte_array_fromList(List.map Word8.fromInt
+          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+          0,0,0]);
+
+
+val default_IP = Gate_Parse.default_ipv4;
+
+val default_TAG = 0;
+
+val default_CONNECTION_DATA =
+    Gate_Types.Connection_dataRecd default_IP 0 default_IP 0;
+
+val default_SHM_ELEMENT =
+  Gate_Types.SHMRecd
+        0 default_TAG 0 0 default_CONNECTION_DATA default_PAYLOAD;
+
+val default_TAG_IP_Pair =
+  Gate_Types.TAG_IP_PairRecd default_TAG default_IP False;
+
+val default_TAG_VALID_PAIR = Gate_Types.TAG_VALID_PAIRRecd default_TAG False;
+
+val default_TAG_MAP = Array.fromList
+ [default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,
+  default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,
+  default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,
+  default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair];
+
+val default_ALLOW_LIST_ELEMENT = Gate_Types.AllowedElementRecd 0 default_IP;
+
+val default_ALLOW_LIST = Array.fromList
+   [default_ALLOW_LIST_ELEMENT,default_ALLOW_LIST_ELEMENT,
+    default_ALLOW_LIST_ELEMENT,default_ALLOW_LIST_ELEMENT];
+
+val tag_of_tip   = Gate_Types.tag_of_tip;
+val ip_of_tip    = Gate_Types.ip_of_tip;
+val valid_of_tip = Gate_Types.valid_of_tip;
+val tag_of_tvp   = Gate_Types.tag_of_tvp;
+val valid_of_tvp = Gate_Types.valid_of_tvp;
+val tag_of_shm   = Gate_Types.tag_of_shm;
+val command_of   = Gate_Types.command_of;
+val connection_data_of        = Gate_Types.connection_data_of;
+val remote_address_of_connex  = Gate_Types.remote_address_of_connex;
+val remote_address_of_allowed = Gate_Types.remote_address_of_allowed;
+
+fun found_in_TAGS tag_ip tvpArr =
+  Array.exists
+    (fn tvp => (tag_of_tvp tvp = tag_of_tip tag_ip) andalso
+               (valid_of_tvp tvp = valid_of_tip tag_ip))
+    tvpArr;
+
+fun found_in_TAG_MAP tag_ip map = Array.exists (fn tip => tip = tag_ip) map;
+
+fun found_TAG_IN_TAG_MAP tag map =
+    Array.exists (fn i => tag_of_tip i = tag) map;
+
+fun found_in_WHITELIST whitelist ip =
+    Array.exists (fn elt => remote_address_of_allowed elt = ip) whitelist;
+
+fun is_DATA msg    = (command_of msg = 1);
+fun is_CONNECT msg = (command_of msg = 2);
+fun is_CLOSE msg   = (command_of msg = 3);
+
+fun remove_DUPLICATE_TAG_IP_PAIRS map1 map2 =
+  Array.tabulate
+     (Array.length map1)
+     (fn i =>  if found_in_TAG_MAP (Array.sub map1 i) map2
+                 then default_TAG_IP_Pair
+                 else (Array.sub map1 i))
+
+fun count_HOLES map hole top =
+ List.foldl
+  (fn i => fn count =>
+       if i <= top andalso Array.sub map i = hole
+          then count + 1
+         else count)
+  0 (Utils.upto 0 (Array.length map - 1));
+
+fun count_ELEMENTS map hole top =
+ List.foldl
+  (fn i => fn count =>
+      if i <= top andalso Array.sub map i <> hole
+         then count + 1
+         else count)
+  0 (Utils.upto 0 (Array.length map - 1));
+
+fun get_NTH_ELEM map n =
+  if count_ELEMENTS map default_TAG_IP_Pair 16 < n then
+     0
+  else
+   List.foldl (fn i => fn index =>
+      if count_ELEMENTS map default_TAG_IP_Pair i = n
+         then i
+         else index)
+    0 (Utils.upto 0 (Array.length map - 1));
+
+fun ite index map default =
+  if index > 0 andalso index <= 16 then
+     Array.sub map index
+     else default;
+
+fun merge_TAG_MAPS map1 map2 =
+  Array.tabulate
+    (Array.length map1)
+    (fn i =>
+        if Array.sub map1 i <> default_TAG_IP_Pair then
+           Array.sub map1 i
+        else ite (get_NTH_ELEM map2 (count_HOLES map1 default_TAG_IP_Pair i))
+                 map2 default_TAG_IP_Pair);
+
+fun remove_DUPLICATE_TAGS map tags =
+  Array.tabulate
+    (Array.length map)
+    (fn i => if found_in_TAGS (Array.sub map i) tags
+              then default_TAG_IP_Pair
+              else Array.sub map i);
+
+fun get_NEW_TAGS_FROM_SHM_QUEUE msgs =
+  Array.tabulate
+    (Array.length msgs)
+    (fn i =>
+         if is_CONNECT (Array.sub msgs i) then
+             Gate_Types.TAG_IP_PairRecd
+                  (tag_of_shm (Array.sub msgs i))
+		  (remote_address_of_connex (connection_data_of (Array.sub msgs i)))
+		  True
+           else default_TAG_IP_Pair);
+
+fun get_STALE_TAGS_FROM_SHM_QUEUE msgs =
+  Array.tabulate
+    (Array.length msgs)
+    (fn i => if is_CLOSE (Array.sub msgs i)
+               then Gate_Types.TAG_VALID_PAIRRecd (tag_of_shm (Array.sub msgs i)) True
+             else default_TAG_VALID_PAIR);
+
+fun filter_BY_WHITELIST map whitelist =
+  Array.tabulate
+    (Array.length map)
+    (fn i =>
+         if valid_of_tip (Array.sub map i)
+            andalso found_in_WHITELIST whitelist (ip_of_tip (Array.sub map i))
+         then
+            Array.sub map i
+         else default_TAG_IP_Pair);
+
+fun close_PRECEDES_DATA block tag index =
+ List.exists
+  (fn i => is_CLOSE (Array.sub block i)
+           andalso tag_of_shm (Array.sub block i) = tag
+           andalso i < index)
+  (Utils.upto 0 (Array.length block - 1));
+
+fun update_BLOCK block tag_map =
+ Array.tabulate
+   (Array.length block)
+   (fn i => if ((is_DATA (Array.sub block i) andalso
+                    not (close_PRECEDES_DATA block (tag_of_shm(Array.sub block i)) i))
+                orelse
+                  is_CONNECT (Array.sub block i)
+                orelse
+                  is_CLOSE (Array.sub block i)
+               ) andalso
+                 found_TAG_IN_TAG_MAP (tag_of_shm(Array.sub block i)) tag_map
+            then
+              Array.sub block i
+            else default_SHM_ELEMENT);
+
+fun pre x = x;
+
+val initStep = Ref True;
+
+fun stepFn inports stateVars =
+ let val (trusted_IDs,vdtu_Request_Message_In) = inports
+     val event_trusted_IDs = Option.isSome trusted_IDs
+     val event_vdtu_Request_Message_In = Option.isSome vdtu_Request_Message_In
+     val (whitelist,previous_tag_map,tag_map,tag_map_wo_close) = stateVars
+
+     (*--------------------------*)
+     (* Compute new state values *)
+     (*--------------------------*)
+
+     val newStateVars =
+       if !initStep then
+          let val whitelist =
+                if event_trusted_IDs then
+                   Option.valOf trusted_IDs
+                else default_ALLOW_LIST
+              val previous_tag_map = default_TAG_MAP
+              val tag_map =
+                if event_vdtu_Request_Message_In then
+                   filter_BY_WHITELIST
+                     (merge_TAG_MAPS previous_tag_map
+                        (remove_DUPLICATE_TAG_IP_PAIRS
+                           (get_NEW_TAGS_FROM_SHM_QUEUE
+                               (Option.valOf vdtu_Request_Message_In))
+                           previous_tag_map)) whitelist
+                else filter_BY_WHITELIST previous_tag_map whitelist
+              val tag_map_wo_close =
+                if event_vdtu_Request_Message_In then
+                   remove_DUPLICATE_TAGS tag_map
+                     (get_STALE_TAGS_FROM_SHM_QUEUE
+                        (Option.valOf vdtu_Request_Message_In))
+               else tag_map
+              val () = (initStep := False)
+          in
+            (whitelist,previous_tag_map,tag_map,tag_map_wo_close)
+          end
+       else
+          let val (whitelist,previous_tag_map,tag_map,tag_map_wo_close) =
+	          (Option.valOf whitelist,Option.valOf previous_tag_map,
+		   Option.valOf tag_map,Option.valOf tag_map_wo_close)
+              val whitelist =
+                if event_trusted_IDs then Option.valOf trusted_IDs else (pre whitelist)
+              val previous_tag_map = pre tag_map_wo_close
+              val tag_map =
+                if event_vdtu_Request_Message_In then
+                   filter_BY_WHITELIST
+                      (merge_TAG_MAPS previous_tag_map
+                         (remove_DUPLICATE_TAG_IP_PAIRS
+                            (get_NEW_TAGS_FROM_SHM_QUEUE
+                               (Option.valOf vdtu_Request_Message_In))
+                            previous_tag_map))
+                      whitelist
+                else filter_BY_WHITELIST previous_tag_map whitelist
+              val tag_map_wo_close =
+                if event_vdtu_Request_Message_In then
+                   remove_DUPLICATE_TAGS tag_map
+                      (get_STALE_TAGS_FROM_SHM_QUEUE
+                          (Option.valOf vdtu_Request_Message_In))
+                else tag_map
+          in
+            (whitelist,previous_tag_map,tag_map,tag_map_wo_close)
+          end
+
+     val (whitelist,previous_tag_map,tag_map,tag_map_wo_close) = newStateVars
+
+     (*-----------------------*)
+     (* Compute output values *)
+     (*-----------------------*)
+
+     val vdtu_Request_Message_Out =
+       if event_vdtu_Request_Message_In
+         then Some(update_BLOCK (Option.valOf vdtu_Request_Message_In) tag_map)
+         else None
+
+     val newStateVarOpts = (Some whitelist, Some previous_tag_map,
+                            Some tag_map,Some tag_map_wo_close)
+  in
+    (newStateVarOpts,vdtu_Request_Message_Out)
+  end
+
+fun trueOpt opt = case opt of Some True => True | otherwise => False;
+
+(*---------------------------------------------------------------------------*)
+(* move from 'a option option to 'a option                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun dropOpt optOpt =
+ case optOpt
+  of None => None
+   | Some(Some x) => Some x
+   | Some None => raise Utils.ERR "dropOpt" "Some(None) is an error";
+
+val theState = Ref (None, None, None,None)
+ : (Gate_Types.whitelist option *
+    Gate_Types.tag_ip_pair array option *
+    Gate_Types.tag_ip_pair array option *
+    Gate_Types.tag_ip_pair array option) ref;
+
+val trustedID_parseinfo =
+    (Gate_Contig.trustedIDs,Gate_Parse.mk_trustedIDs);
+
+val block_parseinfo =
+    (Gate_Contig.vdtu_input_array,Gate_Parse.mk_shm_queue);
+
+fun parse_trustedIDs () =
+  Gate_Parse.eventParse trustedID_parseinfo API.trustedIDs_buffer;
+
+fun parse_block () = Gate_Parse.eventParse block_parseinfo API.block_buffer;
+
+(* ---------------------------------------------------------------------------*)
+(* One thread invocation                                                      *)
+(* ---------------------------------------------------------------------------*)
+
+fun monFn () =
+ let val () = API.fill_trustedIDs_buffer ()
+     val () = API.fill_block_buffer ()
+ in
+ case (parse_trustedIDs(), parse_block())
+  of (Some None,_) => API.logInfo "Monitor warning: unable to parse Trusted_ID input event"
+   | (_,Some None) => API.logInfo "Monitor warning: unable to parse block input event"
+   | (tidOptOpt,blockOptOpt) =>
+      let val tidOpt = dropOpt tidOptOpt
+          val blockOpt = dropOpt blockOptOpt
+          val (newState,outOpt) = stepFn (tidOpt,blockOpt) (!theState)
+          val () = theState := newState
+      in case outOpt
+          of None => ()
+           | Some block =>
+              let val rptBytes = Gate_Types.encode_block block
+                  val rpt_string = String.implode (List.map Utils.w8char rptBytes)
+              in
+                 API.put_VDTU_Request_Message_Out rpt_string
+              end
+      end
+ end
+
+
+end (* Monitor *)
