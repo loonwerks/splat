@@ -134,6 +134,8 @@ fun array_existsI pred arr =
 
 val w8char = Char.chr o Word8.toInt;
 
+fun copies x n = if n <= 0 then [] else x::copies x (n-1);
+
 end (* Utils *)
 
 structure BitFns =
@@ -1760,5 +1762,5 @@ fun run_tests fileName =
  end
 
 val _ = run_tests "../tests/tc5.bytes";
-val _ = print "\n\nx";
+val _ = print "\n\n";
 val _ = run_tests "../tests/tc6.bytes";
