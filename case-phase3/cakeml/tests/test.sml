@@ -52,26 +52,21 @@ fun get_rows fileName =
 
 fun byte_of (a,b) = Word8.fromInt (hexchar2int a * 16 + hexchar2int b);
 
-fun mk_bytes addEventByte row =
-  let val suffix = List.map byte_of (chunk2 (String.explode row))
-  in if addEventByte
-     then EventByte::suffix
-     else suffix
-  end
+fun mk_bytes row = EventByte::List.map byte_of (chunk2 (String.explode row));
 
-fun row2w8array addEventByte row =
+fun row2w8array row =
    Word8Array.vector
      (Word8Array.fromList
-       (mk_bytes addEventByte row));
+       (mk_bytes row));
 
-fun csv2byteA addEventByte fileName =
-  List.map (row2w8array addEventByte)
-           (get_rows fileName);
+fun csv2byteA fileName = List.map row2w8array (get_rows fileName);
 
-(* Usage: convert false file1 file2 if file1 already has the eventByte prefixed *)
+(* Byte.bytesToString
+fun csv2strings fileName = List.map row2string (get_rows fileName);
+ *)
 
-fun convert addEventByte file1 file2 =
- let val byteArrays = csv2byteA addEventByte file1
+fun convert file1 file2 =
+ let val byteArrays = csv2byteA file1
      val ostrm = BinIO.openOut file2
      val () = List.app (curry BinIO.output ostrm) byteArrays
  in BinIO.closeOut ostrm
@@ -81,14 +76,7 @@ fun convert addEventByte file1 file2 =
 (* Try it on an example.                                                     *)
 (*---------------------------------------------------------------------------*)
 (*
-convert false "tc1.csv" "tc1.bytes";
-convert false "tc2.csv" "tc2.bytes";
-convert false "tc3.csv" "tc3.bytes";
-convert false "tc4.csv" "tc4.bytes";
-convert false "tc5.csv" "tc5.bytes";
-convert false "tc6.csv" "tc6.bytes";
-
-val _ = convert true "data.csv" "test-1";
+val _ = convert "data.csv" "test-1";
 
 use "../../BitFns.sml";
 use "../../BitContig.sig";
