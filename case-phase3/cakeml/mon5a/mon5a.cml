@@ -7,6 +7,10 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
+fun println s = print (s^"\n");
+
+fun cons h t = h::t;
+
 fun first pred list =
  case list
   of [] => raise ERR "first" ""
@@ -127,7 +131,6 @@ fun array_existsI pred arr =
 val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
-
 
 fun byteAt w n =
   Word8.fromInt
@@ -1038,6 +1041,85 @@ datatype traffic_report =
    int
 ;
 
+fun targetID_pair tid = case tid of TargetID_Recd i1 i2 => (i1,i2);
+
+fun is_default_targetID tid = (targetID_pair tid = (0,0));
+
+fun print_targetID tid =
+ case tid
+  of TargetID_Recd i1 i2 =>
+    (print  "  Target ID.\n";
+     printI "    address : " i1;
+     printI "    participantAddress : " i2
+    );
+
+fun targetID_string tid =
+ case tid
+  of TargetID_Recd i1 i2 =>
+    String.concat["(", Int.toString i1, ",", Int.toString i2, ")"];
+
+val aircraft_map =
+   [((0, 0),        ("-",  ~1, "Default")),
+    ((0, 11259375), ("#0",  1, "N71755")),
+    ((0, 11259376), ("#1",  1, "N01ABC")),
+    ((0, 11259377), ("#2",  1, "N02CVW")),
+    ((0, 11259378), ("#3",  2, "N034")),
+    ((0, 11259379), ("#4",  2, "N04041")),
+    ((0, 11259380), ("#5",  3, "N05FXYZ2")),
+    ((0, 11259381), ("#6",  3, "N06N2Q")),
+    ((0, 11259382), ("#7",  4, "N07")),
+    ((1, 11259383), ("#8",  5, "N08JER")),
+    ((1, 11259384), ("#9",  6, "N09GOLF")),
+    ((1, 11259385), ("#10", 7, "N10HM241")),
+    ((2, 11259386), ("#11", 9, "N11DTS")),
+    ((2, 11259387), ("#12", 10, "N12")),
+    ((2, 11259388), ("#13", 11, "N13OBX5")),
+    ((3, 11259389), ("#14", 12, "N14BPP93")),
+    ((3, 11259390), ("#15", 14, "N15RJK")),
+    ((3, 11259391), ("#16", 15, "N16MI"))];
+
+(*---------------------------------------------------------------------------
+ aircraft_map created in SML
+
+fun readHex s =
+ fst
+  (Option.valOf
+    (Int.scan StringCvt.OCT Substring.getc (Substring.full s)));
+
+(*---------------------------------------------------------------------------*)
+(* Database of test aircraft. Map type:                                      *)
+(*   (addr-type,part-addr) |-> (ship-no,emitter,call-sign)                   *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val aircraft_map =
+[((0,readHex "52746757"), ("#0",  1, "N71755")),
+ ((0,readHex "52746760"), ("#1",  1, "N01ABC")),
+ ((0,readHex "52746761"), ("#2",  1, "N02CVW")),
+ ((0,readHex "52746762"), ("#3",  2, "N034")),
+ ((0,readHex "52746763"), ("#4",  2, "N04041")),
+ ((0,readHex "52746764"), ("#5",  3, "N05FXYZ2")),
+ ((0,readHex "52746765"), ("#6",  3, "N06N2Q")),
+ ((0,readHex "52746766"), ("#7",  4, "N07")),
+ ((1,readHex "52746767"), ("#8",  5, "N08JER")),
+ ((1,readHex "52746770"), ("#9",  6, "N09GOLF")),
+ ((1,readHex "52746771"), ("#10", 7, "N10HM241")),
+ ((2,readHex "52746772"), ("#11", 9, "N11DTS")),
+ ((2,readHex "52746773"), ("#12", 10, "N12")),
+ ((2,readHex "52746774"), ("#13", 11, "N13OBX5")),
+ ((3,readHex "52746775"), ("#14", 12, "N14BPP93")),
+ ((3,readHex "52746776"), ("#15", 14, "N15RJK")),
+ ((3,readHex "52746777"), ("#16", 15, "N16MI"))
+];
+
+ ---------------------------------------------------------------------------*)
+
+
+fun aircraft_num tid =
+ case Alist.lookup aircraft_map (targetID_pair tid)
+  of Some (num,emitter,call) => num
+   | None => targetID_string tid;
+
 (*---------------------------------------------------------------------------*)
 (* Traffic report projections                                                *)
 (*---------------------------------------------------------------------------*)
@@ -1165,7 +1247,7 @@ fun print_misc mi =
     )
 ;
 
-fun print_traffic_report rpt =
+fun print_full_traffic_report rpt =
  case rpt
   of Traffic_report_Recd
      messageID status targetID lat lon alt
@@ -1173,7 +1255,7 @@ fun print_traffic_report rpt =
      prio fdl =>
       (print "Traffic Report message.\n";
        printI "  messageID: " messageID ;
-       printI "  status:    " status ;
+       printI "  status   : " status ;
        print_targetID targetID;
        printR "  lat:       " lat;
        printR "  lon:       " lon;
@@ -1190,6 +1272,25 @@ fun print_traffic_report rpt =
        printI "  TR-info:   " fdl;
        print "End Traffic Report.\n\n"
      );
+
+fun print_traffic_report rpt =
+ case rpt
+  of Traffic_report_Recd
+     messageID status targetID lat lon alt
+     misc nic nacp horizV vertV heading emitter callSign
+     prio fdl =>
+      (print "Traffic Report message.\n";
+       printI "  messageID: " messageID ;
+       print ("  aircraft : "^aircraft_num targetID^"\n");
+       printR "  lat:       " lat;
+       printR "  lon:       " lon;
+       printI "  alt:       " alt;
+       printI "  horizV:    " horizV;
+       printI "  vertV:     " vertV;
+       printR "  heading:   " heading;
+       print "End Traffic Report.\n\n"
+     );
+
 
 datatype status_byte_1 = Status_byte_1_Recd bool bool bool bool bool bool bool;
 datatype status_byte_2 = Status_byte_2_Recd bool bool bool bool;
@@ -1265,6 +1366,48 @@ fun traffic_of mesgs =
  case mesgs
   of Adsb_messages_Recd hb own trA => trA;
 
+fun mapArray f array =
+  let val elts = Array.foldr Utils.cons [] array
+  in List.map f elts
+  end;
+
+fun mk_set list =
+ case list
+  of [] => []
+   | h::t => if List.member h t then mk_set t else h::mk_set t;
+
+val println = Utils.println;
+
+fun print_messageIDs msgs =
+ let val otid = targetID_of (ownship_of msgs)
+     val trafficIDs = mapArray targetID_of (traffic_of msgs)
+     val trafficIDset = mk_set trafficIDs
+     val trafficIDstring =
+         String.concatWith ", " (List.map aircraft_num trafficIDset)
+ in
+    println ("   Ownship ID: "^aircraft_num otid) ;
+    println  "   Aircraft in traffic-reports : ";
+    print    "   "; println trafficIDstring
+end;
+
+(*---------------------------------------------------------------------------*)
+(* Subtlety: i is expected to be less than 128, so that the high 4 bits of   *)
+(* fromInt i are 0s. This correponds to the 4 bits of padding expected at    *)
+(* the beginning of a targetID in a message. See                             *)
+(*                                                                           *)
+(*    Adsb_Contig.target_identity                                            *)
+(*                                                                           *)
+(* above for what is expected.                                               *)
+(*---------------------------------------------------------------------------*)
+
+val twoE24 = Utils.twoExp 24;
+
+fun check_enc_tid_inputs i j =
+  if i < 0 orelse 128 <= i orelse
+     j < 0 orelse twoE24 <= j then
+     raise Utils.ERR "Adsb_Types" "enc_tid_nums: out of range"
+  else ();
+
 fun enc_tid_nums i j =
  let val (d,r1) = Utils.divmod j 256
      val (d,r2) = Utils.divmod d 256
@@ -1295,6 +1438,114 @@ fun encode_monitor_report mrpt = (* word8 list *)
  case mrpt
   of Monitor_Report_Recd mesgID monID tidArray =>
         encode_monrept mesgID monID tidArray;
+
+fun filterArray pred array =
+  let fun foldFn i x acc = (i,x)::acc
+      val elts = Array.foldri foldFn [] array
+  in List.filter (fn (i,x) => pred x) elts
+  end;
+
+fun print_monitor_report mrpt =
+ case mrpt
+  of Monitor_Report_Recd mesgID monID tidArray =>
+     let val notable_tids = filterArray (not o is_default_targetID) tidArray
+         fun notable_string pair =
+            let val (i,tid) = pair
+	    in String.concat ["      [",Int.toString i, " |-> ",aircraft_num tid,"]"]
+            end
+         val notables = String.concatWith "\n"
+	                  (List.map notable_string notable_tids)
+     in
+       print "  Monitor Report:\n"
+      ; printI  "    messageID : " mesgID
+      ; printI  "    monitorID : " monID
+      ; println "    Anomalous targetIDs: (format: [targetID array index |-> #aircraft-num])"
+      ;
+       if List.null notable_tids then
+           println "    None."
+       else println notables
+      end;
+
+
+fun int_to_real i = Utils.i2d i;
+
+type double = Double.double;
+
+(* ---------------------------------------------------------------------------*)
+(* Boundary datatype and its projections                                      *)
+(* ---------------------------------------------------------------------------*)
+
+datatype boundaries =
+  Boundaries_Recd double double double double double double;
+
+fun hVel_lower_of bd =
+ case bd
+  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hvlo;
+
+fun hVel_upper_of  bd =
+ case bd
+  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hvhi;
+
+fun vVel_lower_of bd =
+ case bd
+  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => vvlo;
+
+fun vVel_upper_of bd =
+ case bd
+  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => vvhi;
+
+fun heading_lower_of bd =
+ case bd
+  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hdglo;
+
+fun heading_upper_of bd =
+ case bd
+  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hdghi;
+
+fun print_boundaries bounds =
+ case bounds
+  of Boundaries_Recd hlo hhi vlo vhi olo ohi =>
+ (print "Bounds: \n";
+  printR "  hVel_lower_bound : " hlo;
+  printR "  hVel_upper_bound : " hhi;
+  printR "  vVel_lower_bound : " vlo;
+  printR "  vVel_upper_bound : " vhi;
+  printR "  heading_lower_bound : " olo;
+  printR "  heading_upper_bound : " ohi;
+  print  "End Bounds.\n");
+
+fun printI2 s i1 i2 = print (s^Int.toString i1^"     "^Int.toString i2^"\n");
+fun printR2 s d1 d2 = print (s^Double.toString d1^"     "^Double.toString d1^"\n");
+
+fun print_violation rpt1 rpt2 bounds =
+ let val aircraft1 = aircraft_num (targetID_of rpt1)
+     val aircraft2 = aircraft_num (targetID_of rpt2)
+     val lat1 = lat_of rpt1
+     val lat2 = lat_of rpt2
+     val long1 = lon_of rpt1
+     val long2 = lon_of rpt2
+     val alt1 = alt_of rpt1
+     val alt2 = alt_of rpt2
+     val horiz1 = horizV_of rpt1
+     val horiz2 = horizV_of rpt2
+     val vert1 = vertV_of rpt1
+     val vert2 = vertV_of rpt2
+     val heading1 = heading_of rpt1
+     val heading2 = heading_of rpt2
+ in
+  print "Violation.\n";
+   printI "  messageID: " (messageID_of rpt1) ;
+   print ("  aircraft : "^aircraft_num (targetID_of rpt1)^"\n");
+   print  "               Yesterday               Today\n";
+   printR2 "  lat:       " lat1 lat2;
+   printR2 "  lon:       " long1 long2;
+   printI2 "  alt:       " alt1 alt2;
+   printI2 "  horizV:    " horiz1 horiz2;
+   printI2 "  vertV:     " vert1 vert2;
+   printR2 "  heading:   " heading1 heading2;
+   print "End Violation.\n\n";
+   print_boundaries bounds
+ end;
 
 end (* Adsb_Types *)
 
@@ -1372,7 +1623,7 @@ fun eventParse p byteA =
   let val (contig,mk_data) = p
   in case BitContig.parseFn
             theEnv byteA (BitContig.VarName"root") contig
-              ([],1,BitContig.empty_lvalMap())
+              ([],8,BitContig.empty_lvalMap())
       of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
        | otherwise => Some None
   end;
@@ -1588,8 +1839,9 @@ fun api_get_Observed emptyString buf =
 (* large for the buffer.                                                     *)
 (*---------------------------------------------------------------------------*)
 
-fun fill_input_buffer () =
-  let val () = Utils.clear_buf input_buffer
+fun fill_input_buffer () = ()
+(*
+let val () = Utils.clear_buf input_buffer
       val () = api_get_Observed "" input_buffer
    in ()
    end
@@ -1597,12 +1849,13 @@ fun fill_input_buffer () =
     (logInfo "Monitor failure: unable to fill input buffer.";
      raise Utils.ERR "fill_input_buffer" ""
     );
+*)
 
 (*---------------------------------------------------------------------------*)
 (*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
 (*---------------------------------------------------------------------------*)
 
-fun put_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
+fun put_Suspect_Traffic_Out string = () (* TextIO.output TextIO.stdOut string; *)
 
 end (* API *)
 
@@ -1620,41 +1873,6 @@ val alt_of     = Adsb_Types.alt_of;
 val horizV_of  = Adsb_Types.horizV_of;
 val vertV_of   = Adsb_Types.vertV_of;
 val heading_of = Adsb_Types.heading_of;
-
-fun int_to_real i = Utils.i2d i;
-
-type double = Double.double;
-
-(* ---------------------------------------------------------------------------*)
-(* Boundary datatype and its projections                                      *)
-(* ---------------------------------------------------------------------------*)
-
-datatype boundaries =
-  Boundaries_Recd double double double double double double;
-
-fun hVel_lower_of bd =
- case bd
-  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hvlo;
-
-fun hVel_upper_of  bd =
- case bd
-  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hvhi;
-
-fun vVel_lower_of bd =
- case bd
-  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => vvlo;
-
-fun vVel_upper_of bd =
- case bd
-  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => vvhi;
-
-fun heading_lower_of bd =
- case bd
-  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hdglo;
-
-fun heading_upper_of bd =
- case bd
-  of Boundaries_Recd hvlo hvhi vvlo vvhi hdglo hdghi => hdghi;
 
 (*---------------------------------------------------------------------------*)
 (* User code for monitor                                                     *)
@@ -1674,7 +1892,7 @@ fun unpack_to_boundaries() =
      val ubV = Utils.unpack_double return_buffer 24
      val lbO = Utils.unpack_double return_buffer 32
      val ubO = Utils.unpack_double return_buffer 40
- in Boundaries_Recd
+ in Adsb_Types.Boundaries_Recd
       lbH
       ubH
       lbV
@@ -1737,16 +1955,37 @@ val dummy_boundaries = Boundaries_Recd f42 f42 f42 f42 f42 f42;
 fun compute_BOUNDS prev_lat lat prev_long long prev_alt alt = dummy_boundaries;
 *)
 
+val horizV_of     = Adsb_Types.horizV_of;
+val vertV_of      = Adsb_Types.vertV_of;
+val heading_of    = Adsb_Types.heading_of;
+val hVel_lower_of = Adsb_Types.hVel_lower_of;
+val hVel_upper_of = Adsb_Types.hVel_upper_of;
+val vVel_lower_of = Adsb_Types.vVel_lower_of;
+val vVel_upper_of = Adsb_Types.vVel_upper_of;
+val heading_lower_of = Adsb_Types.heading_lower_of;
+val heading_upper_of = Adsb_Types.heading_upper_of;
+val int_to_real = Utils.i2d;
+
 fun bounds_VIOLATION now yest bounds =
-  Double.< (int_to_real(horizV_of now)) (hVel_lower_of bounds) orelse
-  Double.> (int_to_real(horizV_of now)) (hVel_upper_of bounds) orelse
-  Double.< (int_to_real (vertV_of now)) (vVel_lower_of bounds) orelse
-  Double.> (int_to_real (vertV_of now)) (vVel_upper_of bounds) orelse
-  Double.< (heading_of now) (heading_lower_of bounds) orelse
-  Double.> (heading_of now) (heading_upper_of bounds);
+ let val violation =
+        Double.< (int_to_real(horizV_of now)) (hVel_lower_of bounds) orelse
+        Double.> (int_to_real(horizV_of now)) (hVel_upper_of bounds) orelse
+        Double.< (int_to_real (vertV_of now)) (vVel_lower_of bounds) orelse
+        Double.> (int_to_real (vertV_of now)) (vVel_upper_of bounds) orelse
+        Double.< (heading_of now) (heading_lower_of bounds) orelse
+        Double.> (heading_of now) (heading_upper_of bounds)
+ in
+    if violation then
+      Adsb_Types.print_violation yest now bounds
+    else ()
+    ;
+    violation
+ end
 
 fun unexpected now yest =
   (targetID_of now = targetID_of yest)
+  andalso
+  not (Adsb_Types.is_default_targetID (targetID_of now))
   andalso
   bounds_VIOLATION now yest
      (compute_BOUNDS
@@ -1771,63 +2010,68 @@ fun suspectIDs today yesterday =
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 1 sus;
 
-fun trueOpt opt = case opt of Some True => True | otherwise => False;
-
 val theState = Ref (None, None, None)
  : (Adsb_Types.traffic_report array option *
     Adsb_Types.traffic_report array option * bool option) ref;
 
 val initStep = Ref True;
 
+(*---------------------------------------------------------------------------*)
+(* stepFn only called when there is an event and the event port is           *)
+(* successfully parsed. The inport is not an option type.                    *)
+(*---------------------------------------------------------------------------*)
+
 fun stepFn inports stateVars =
  let val observed = inports
-     val (yesterday,today,abnormal) = stateVars
+     val event_observed = True
+     val (yesterday,today,abnormal) = stateVars  (* options *)
 
      (*--------------------------*)
      (* Compute new state values *)
      (*--------------------------*)
 
-     val (yesterday,today,abnormal) =
+     val newStateVars =
          if !initStep then
-           let val yesterday = Some (traffic_of observed)
-               val today = Some (traffic_of observed)
-               val abnormal = Some False
+           let val yesterday = traffic_of observed
+               val today     = traffic_of observed
+               val abnormal  = False
                val () = initStep := False
            in
              (yesterday,today,abnormal)
            end
          else
-           let val yesterday = Some (Option.valOf today)
-               val today = Some (traffic_of observed)
-               val abnormal = Some
-                   (Array.exists
-                     (fn now =>
-                        (Array.exists
-                           (fn yest => unexpected now yest)
-                           (Option.valOf yesterday)))
-                     (Option.valOf today))
+           let val (yesterday,today,abnormal) =
+	           (Option.valOf yesterday,Option.valOf today,Option.valOf abnormal)
+               val yesterday = today
+               val today     = traffic_of observed
+               val abnormal =
+                   Array.exists (fn now =>
+                      (Array.exists (fn yest => unexpected now yest) yesterday))
+                   today
            in
              (yesterday,today,abnormal)
            end
+
+      val (yesterday,today,abnormal) = newStateVars  (* option free *)
 
       (*-----------------------*)
       (* Compute output values *)
       (*-----------------------*)
 
-      val event_observed = True;
-
       val suspect_traffic_out =
-          if event_observed andalso trueOpt abnormal
+          if event_observed andalso abnormal
             then
-             Some (mk_monitor_report
-                     (suspectIDs (Option.valOf today)
-                                 (Option.valOf yesterday)))
+             Some (mk_monitor_report (suspectIDs today yesterday))
           else
              None
 
+      val newStateVarOpts = (Some yesterday,Some today,Some abnormal)
+
   in
-    ((yesterday,today,abnormal),suspect_traffic_out)
+    (newStateVarOpts,suspect_traffic_out)
   end;
+
+val println = Utils.println;
 
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
@@ -1842,15 +2086,20 @@ fun monFn () =
  let val () = API.fill_input_buffer ()
  in
  case parseInput()
-  of None => API.logInfo "Monitor warning: non-event received at \"Observed\" input port"
-   | Some None => API.logInfo "Monitor warning: unable to parse input event"
+  of None => API.logInfo "Monitor notification: non-event received at \"Observed\" input port"
+   | Some None => API.logInfo "Monitor error: unable to parse input event"
    | Some (Some msg) =>
-      let val (newState,outOpt) = stepFn msg (!theState)
+      let val () = println "Input on Observed port (relevant IDs only) :"
+          val () = Adsb_Types.print_messageIDs msg
+          val () = println "\nOutput on Suspect_Traffic_Out port :"
+          val (newState,outOpt) = stepFn msg (!theState)
           val () = theState := newState
       in case outOpt
-          of None => ()
+          of None => API.logInfo "  No output because no bounds violations found.\n\n"
            | Some monitor_report =>
-              let val rptBytes = Adsb_Types.encode_monitor_report monitor_report
+              let val () = Utils.println "  Bounds violations found."
+                  val () = Adsb_Types.print_monitor_report monitor_report
+                  val rptBytes = Adsb_Types.encode_monitor_report monitor_report
                   val rpt_string = String.implode (List.map Utils.w8char rptBytes)
               in
                  API.put_Suspect_Traffic_Out rpt_string
@@ -1859,3 +2108,44 @@ fun monFn () =
  end
 
 end (* Monitor *)
+
+(*---------------------------------------------------------------------------*)
+(* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
+(*---------------------------------------------------------------------------*)
+
+fun next_test istrm =
+ let fun fillAcc n acc =
+     if n = 0 then String.implode (List.rev acc) else
+     case TextIO.input1 istrm
+           of Some b => fillAcc (n-1) (b::acc)
+            | None => raise Utils.ERR "fillAcc" ""
+ in
+  Some (Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0)
+ end
+ handle _ => None;
+
+fun run_tests fileName =
+ let val instrm = TextIO.openIn fileName
+     val () = print ("Physics Monitor: running tests from file: "^fileName^"\n")
+     fun rowStep i =
+      case next_test instrm
+       of None => TextIO.closeIn instrm
+        | Some _ =>
+          let val istr = Int.toString i
+              val () = print (String.concat ["\nRow ", istr, "\n===========\n"])
+              val () = Monitor.monFn()
+          in rowStep (i+1)
+	  end
+ in
+   rowStep 0
+ end
+
+val _ = run_tests "../tests/tc1.bytes";
+(*
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc2.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc3.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc4.bytes";
+*)

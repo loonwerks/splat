@@ -326,7 +326,7 @@ void fficompute_bounds
 
   Boundary_s boundaryRec;
   double lat1,lat2,lon1,lon2,alt1,alt2,
-         hlo,hhi,vlo,vhi,olo,ohi;
+         hlo, hhi, vlo, vhi, olo, ohi;
 
   memcpy(&lat1, input,          dlen);
   memcpy(&lat2, input + dlen,   dlen);
@@ -335,20 +335,22 @@ void fficompute_bounds
   memcpy(&alt1, input + 4*dlen, dlen);
   memcpy(&alt2, input + 5*dlen, dlen);
 
-  printf("FFI(in):\n  lat1 : %f\n  lat2 : %f\n  lon1 : %f\n  lon2 : %f\n  alt1 : %f\n  alt2 : %f\n",
+  /* printf("FFI(in):\n  lat1 : %f\n  lat2 : %f\n  lon1 : %f\n  lon2 : %f\n  alt1 : %f\n  alt2 : %f\n",
 	 lat1, lat2,lon1,lon2,alt1,alt2);
-
+  */
   boundaryRec = calculateBoundaries(lat1,lat2,lon1,lon2,alt1,alt2);
 
-  hlo = cos(lat1);
-  hhi = sin(lat2);
-  vlo = cos(lon1);
-  vhi = sin(lon2);
-  olo = cos(alt1);
-  ohi = sin(alt2);
+  hlo = boundaryRec.vCalcHorzLowBound;
+  hhi = boundaryRec.vCalcHorzHighBound;
+  vlo = boundaryRec.vCalcVertLowBound;
+  vhi = boundaryRec.vCalcVertHighBound;;
+  olo = boundaryRec.betaCalcLowBound;
+  ohi = boundaryRec.betaCalcHighBound;
 
-  printf("FFI(out):\n  cos(lat1) : %f\n  sin(lat2) : %f\n  cos(lon1) : %f\n  sin(lon2) : %f\n  cos(alt1) : %f\n  sin(alt2) : %f\n",
+  /*
+  printf("FFI(out):\n  horiz-Lo : %f\n  horiz-Hi : %f\n  vert-Lo : %f\n  vert-Hi : %f\n  heading-Lo : %f\n  heading-Hi : %f\n",
 	 hlo, hhi,vlo,vhi,olo,ohi);
+  */
 
   memcpy(output,          (unsigned char*) &hlo, dlen);
   memcpy(output + dlen,   (unsigned char*) &hhi, dlen);
@@ -356,4 +358,6 @@ void fficompute_bounds
   memcpy(output + 3*dlen, (unsigned char*) &vhi, dlen);
   memcpy(output + 4*dlen, (unsigned char*) &olo, dlen);
   memcpy(output + 5*dlen, (unsigned char*) &ohi, dlen);
+
+
 }

@@ -1373,7 +1373,7 @@ fun eventParse p byteA =
   let val (contig,mk_data) = p
   in case BitContig.parseFn
             theEnv byteA (BitContig.VarName"root") contig
-              ([],1,BitContig.empty_lvalMap())
+              ([],8,BitContig.empty_lvalMap())
       of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
        | otherwise => Some None
   end;

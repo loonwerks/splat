@@ -910,7 +910,8 @@ fun printR s d = print (s^Double.toString d^"\n");
 fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
 
 
-fun encode_block block = Utils.stub "encode_block";
+fun encode_block block = "<ENCODED BLOCK STUB"
+
 (* encode_array encode_shm block *)
 
 
@@ -1602,10 +1603,12 @@ fun gateFn () =
       in case outOpt
           of None => ()
            | Some block =>
-              let val rptBytes = Gate_Types.encode_block block
-                  val rpt_string = String.implode (List.map Utils.w8char rptBytes)
+              let (* val rptBytes = Gate_Types.encode_block block
+                     val rpt_string = String.implode (List.map Utils.w8char rptBytes)
+                  *)
+		  val block_string = Gate_Types.encode_block block
               in
-                 API.put_VDTU_Request_Message_Out rpt_string
+                 API.put_VDTU_Request_Message_Out block_string
               end
       end
  end
