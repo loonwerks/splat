@@ -7,6 +7,10 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
+fun println s = print (s^"\n");
+
+fun cons h t = h::t;
+
 fun first pred list =
  case list
   of [] => raise ERR "first" ""
@@ -232,6 +236,7 @@ fun boolVal n =
   else raise Utils.ERR "BitFns" "boolVal";
 
 end
+
 
 structure BitContig =
 struct
@@ -964,6 +969,7 @@ val adsb_decls =
 
 end (* Adsb_Contig *)
 
+
 structure Adsb_Types =
 struct
 
@@ -1006,16 +1012,19 @@ datatype traffic_report =
    int
 ;
 
+fun targetID_pair tid = case tid of TargetID_Recd i1 i2 => (i1,i2);
+
+fun is_default_targetID tid = (targetID_pair tid = (0,0));
+
 fun print_targetID tid =
  case tid
   of TargetID_Recd i1 i2 =>
     (print  "  Target ID.\n";
      printI "    address : " i1;
      printI "    participantAddress : " i2
-    )
-;
+    );
 
-fun targetID_pair tid =
+fun targetID_string tid =
  case tid
   of TargetID_Recd i1 i2 =>
     String.concat["(", Int.toString i1, ",", Int.toString i2, ")"];
@@ -1145,11 +1154,8 @@ fun print_adsb_messages mesgs =
   print "End ADSB Messages.\n\n"
  );
 
-fun println s = print (s^"\n");
-fun cons h t = h::t;
-
 fun mapArray f array =
-  let val elts = Array.foldr cons [] array
+  let val elts = Array.foldr Utils.cons [] array
   in List.map f elts
   end;
 
@@ -1158,19 +1164,82 @@ fun mk_set list =
   of [] => []
    | h::t => if List.member h t then mk_set t else h::mk_set t;
 
+val aircraft_map =
+   [((0, 0),        ("-",  ~1, "Default")),
+    ((0, 11259375), ("#0",  1, "N71755")),
+    ((0, 11259376), ("#1",  1, "N01ABC")),
+    ((0, 11259377), ("#2",  1, "N02CVW")),
+    ((0, 11259378), ("#3",  2, "N034")),
+    ((0, 11259379), ("#4",  2, "N04041")),
+    ((0, 11259380), ("#5",  3, "N05FXYZ2")),
+    ((0, 11259381), ("#6",  3, "N06N2Q")),
+    ((0, 11259382), ("#7",  4, "N07")),
+    ((1, 11259383), ("#8",  5, "N08JER")),
+    ((1, 11259384), ("#9",  6, "N09GOLF")),
+    ((1, 11259385), ("#10", 7, "N10HM241")),
+    ((2, 11259386), ("#11", 9, "N11DTS")),
+    ((2, 11259387), ("#12", 10, "N12")),
+    ((2, 11259388), ("#13", 11, "N13OBX5")),
+    ((3, 11259389), ("#14", 12, "N14BPP93")),
+    ((3, 11259390), ("#15", 14, "N15RJK")),
+    ((3, 11259391), ("#16", 15, "N16MI"))];
+
+(*---------------------------------------------------------------------------
+ aircraft_map created in SML
+
+fun readHex s =
+ fst
+  (Option.valOf
+    (Int.scan StringCvt.OCT Substring.getc (Substring.full s)));
+
+(*---------------------------------------------------------------------------*)
+(* Database of test aircraft. Map type:                                      *)
+(*   (addr-type,part-addr) |-> (ship-no,emitter,call-sign)                   *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val aircraft_map =
+[((0,readHex "52746757"), ("#0",  1, "N71755")),
+ ((0,readHex "52746760"), ("#1",  1, "N01ABC")),
+ ((0,readHex "52746761"), ("#2",  1, "N02CVW")),
+ ((0,readHex "52746762"), ("#3",  2, "N034")),
+ ((0,readHex "52746763"), ("#4",  2, "N04041")),
+ ((0,readHex "52746764"), ("#5",  3, "N05FXYZ2")),
+ ((0,readHex "52746765"), ("#6",  3, "N06N2Q")),
+ ((0,readHex "52746766"), ("#7",  4, "N07")),
+ ((1,readHex "52746767"), ("#8",  5, "N08JER")),
+ ((1,readHex "52746770"), ("#9",  6, "N09GOLF")),
+ ((1,readHex "52746771"), ("#10", 7, "N10HM241")),
+ ((2,readHex "52746772"), ("#11", 9, "N11DTS")),
+ ((2,readHex "52746773"), ("#12", 10, "N12")),
+ ((2,readHex "52746774"), ("#13", 11, "N13OBX5")),
+ ((3,readHex "52746775"), ("#14", 12, "N14BPP93")),
+ ((3,readHex "52746776"), ("#15", 14, "N15RJK")),
+ ((3,readHex "52746777"), ("#16", 15, "N16MI"))
+];
+
+ ---------------------------------------------------------------------------*)
+
+val println = Utils.println;
+
+fun aircraft_num tid =
+ case Alist.lookup aircraft_map (targetID_pair tid)
+  of Some (num,emitter,call) => num
+   | None => "!!Unknown!!";
+
 
 fun print_messageIDs msgs =
- let val otid = targetID_pair (targetID_of (ownship_of msgs))
+ let val otid = targetID_of (ownship_of msgs)
      val trafficIDs = mapArray targetID_of (traffic_of msgs)
      val trafficIDset = mk_set trafficIDs
      val trafficIDstring =
-         String.concatWith ", " (List.map targetID_pair trafficIDset)
+         String.concatWith ", " (List.map aircraft_num trafficIDset)
  in
-    println "Message IDs.";
-    println ("Ownship: "^otid) ;
-    println "Traffic (duplicates suppressed):";
-    print "   "; println trafficIDstring
+    println ("   Ownship ID: "^aircraft_num otid) ;
+    println  "   Aircraft in traffic-reports : ";
+    print    "   "; println trafficIDstring
 end;
+
 
 (*---------------------------------------------------------------------------*)
 (* Subtlety: i is expected to be less than 128, so that the high 4 bits of   *)
@@ -1221,6 +1290,33 @@ fun encode_monitor_report mrpt = (* word8 list *)
  case mrpt
   of Monitor_Report_Recd mesgID monID tidArray =>
         encode_monrept mesgID monID tidArray;
+
+fun filterArray pred array =
+  let fun foldFn i x acc = (i,x)::acc
+      val elts = Array.foldri foldFn [] array
+  in List.filter (fn (i,x) => pred x) elts
+  end;
+
+fun print_monitor_report mrpt =
+ case mrpt
+  of Monitor_Report_Recd mesgID monID tidArray =>
+     let val notable_tids = filterArray (not o is_default_targetID) tidArray
+         fun notable_string pair =
+            let val (i,tid) = pair
+	    in String.concat ["      [",Int.toString i, " |-> ",aircraft_num tid,"]"]
+            end
+         val notables = String.concatWith "\n"
+	                  (List.map notable_string notable_tids)
+     in
+       print "  Monitor Report:\n"
+      ; printI  "    messageID : " mesgID
+      ; printI  "    monitorID : " monID
+      ; println "    Duplicate targetIDs: (format: [targetID array index |-> #aircraft-num])"
+      ;
+       if List.null notable_tids then
+           println "    None."
+       else println notables
+      end;
 
 end (* Adsb_Types *)
 
@@ -1604,25 +1700,29 @@ fun parseInput () =
         (Adsb_Contig.adsb_messages, Adsb_Parse.mk_adsb_messages)
         API.input_buffer;
 
+val println = Utils.println;
+
 fun stepFn () =
  let val () = API.fill_input_buffer ()
  in
  case parseInput()
-  of None =>  API.logInfo "not an event\n"
-   | Some None =>  API.logInfo "Monitor failure: unable to parse input event\n"
+  of None => API.logInfo "not an event\n"
+   | Some None => API.logInfo "Monitor failure: unable to parse input event\n"
    | Some (Some msg) =>
-      (API.logInfo "Event: parsed successfully\n"
-       ;
+      (println "Input on Observed port (relevant IDs only) :"
+      ;
        Adsb_Types.print_messageIDs msg
-       ;
+      ;
+      println "\nOutput on Suspect_Traffic_Out port :";
       if lcDUPLICATE_IN_REPORT msg then
-        let val () = print "Duplicate Found!  Output Message:\n"
+        let val () = Utils.println "  Duplicates found."
 	    val susReport = lcUPDATE_SUSPECT_IDS msg
+            val _ = Adsb_Types.print_monitor_report susReport
             val susBytes = Adsb_Types.encode_monitor_report susReport
             val susString = String.implode (List.map Utils.w8char susBytes)
         in API.put_Suspect_Traffic_Out susString; print "\n"
         end
-      else ()
+      else API.logInfo "  No output because no duplicates found.\n\n"
      )
  end
 
@@ -1632,155 +1732,33 @@ end (* Monitor *)
 (* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
 (*---------------------------------------------------------------------------*)
 
-fun read_test istrm =
+fun next_test istrm =
  let fun fillAcc n acc =
      if n = 0 then String.implode (List.rev acc) else
      case TextIO.input1 istrm
            of Some b => fillAcc (n-1) (b::acc)
-            | None => (print "Failed read\n"; raise Utils.ERR "fill" "")
+            | None => raise Utils.ERR "fillAcc" ""
  in
-  Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0
- end;
+  Some (Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0)
+ end
+ handle _ => None;
 
-fun drop_newline instrm =
-  case TextIO.input1 instrm
-   of Some #"\n" => ()
-    | otherwise => (print "Expected a newline, but it's not there!\n";
-                    raise Utils.ERR "drop_newline" "");
+fun run_tests fileName =
+ let val instrm = TextIO.openIn fileName
+     val () = print ("Duplication Monitor: running tests from file: "^fileName^"\n")
+     fun rowStep i =
+      case next_test instrm
+       of None => ()
+        | Some _ =>
+          let val istr = Int.toString i
+              val () = print (String.concat ["\nRow ", istr, "\n===========\n"])
+              val () = Monitor.stepFn()
+          in rowStep (i+1)
+	  end
+ in
+   rowStep 0
+ end
 
-val instrm = TextIO.openIn "test-1";
-print "row 1\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 2\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 3\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 4\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 5\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 6\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 7\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 8\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 9\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 10\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 11\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 12\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 13\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 14\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 15\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 16\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 17\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 18\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 19\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 20\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 21\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 22\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 23\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 24\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 25\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 26\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 27\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 28\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 29\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 30\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "row 31\n";
-val rval = read_test instrm;
-val () = Monitor.stepFn();
-
-print "\n\nChecking that at end of Input ... ";
-
-val _ =
- case TextIO.input1 instrm
-  of Some _ => print "Remaining input!\n"
-   | None => print "No input left, as expected.\n\n";
-
-(* One-shot test
-
-val _ = Monitor.stepFn();
-*)
+val _ = run_tests "../tests/tc5.bytes";
+val _ = print "\n\nx";
+val _ = run_tests "../tests/tc6.bytes";
