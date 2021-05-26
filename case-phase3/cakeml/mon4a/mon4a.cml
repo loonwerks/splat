@@ -25,11 +25,11 @@ fun take_drop n list =
 
 fun front_last list =
  let val _ = assert (not (List.null list)) "front_last: null input list"
-     fun flacc l acc =
+     fun accFn l acc =
       case l
        of [x] => (List.rev acc,x)
-        | h::t => flacc t (h::acc)
- in flacc list []
+        | h::t => accFn t (h::acc)
+ in accFn list []
  end
 
 fun divmod i n = (Int.div i n, Int.mod i n);
@@ -135,6 +135,14 @@ fun array_existsI pred arr =
 val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
+
+fun int2octal n =
+let fun divAcc n acc =
+      if n < 8 then n::acc
+      else let val (d,r) = divmod n 8 in divAcc d (r::acc) end
+in String.concat
+        (List.map Int.toString (divAcc n []))
+end
 
 end (* Utils *)
 
@@ -985,6 +993,10 @@ datatype miscIndicators = MiscIndicators_Recd bool bool bool bool;
 
 datatype targetID = TargetID_Recd int int;
 
+(*---------------------------------------------------------------------------*)
+(* targetID projections                                                      *)
+(*---------------------------------------------------------------------------*)
+
 fun addr_of tid =
  case tid
   of TargetID_Recd addr paddr => addr;
@@ -1014,7 +1026,16 @@ datatype traffic_report =
    int
 ;
 
+(*---------------------------------------------------------------------------*)
+(* targetID projections                                                      *)
+(*---------------------------------------------------------------------------*)
+
 fun targetID_pair tid = case tid of TargetID_Recd i1 i2 => (i1,i2);
+
+fun targetID_string tid =
+ case tid
+  of TargetID_Recd i1 i2 =>
+    String.concat["(", Int.toString i1, ",", Utils.int2octal i2, ")"];
 
 fun is_default_targetID tid = (targetID_pair tid = (0,0));
 
@@ -1023,14 +1044,125 @@ fun print_targetID tid =
   of TargetID_Recd i1 i2 =>
     (print  "  Target ID.\n";
      printI "    address : " i1;
-     printI "    participantAddress : " i2
+     print ("    participantAddress (octal) : "^Utils.int2octal i2)
     );
 
-fun targetID_string tid =
- case tid
-  of TargetID_Recd i1 i2 =>
-    String.concat["(", Int.toString i1, ",", Int.toString i2, ")"];
 
+(*---------------------------------------------------------------------------*)
+(* Traffic report projections                                                *)
+(*---------------------------------------------------------------------------*)
+
+fun messageID_of rpt =
+ case rpt
+  of Traffic_report_Recd
+     messageID status targetID lat lon alt
+     misc nic nacp horizV vertV heading emitter callSign
+     prio fdl => messageID;
+
+fun status_of rpt =
+ case rpt
+  of Traffic_report_Recd
+     messageID status targetID lat lon alt
+     misc nic nacp horizV vertV heading emitter callSign
+     prio fdl => status;
+
+fun targetID_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => targetID;
+
+fun lat_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => lat;
+
+fun lon_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => lon;
+
+fun alt_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => alt;
+
+fun misc_indicators_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => misc;
+
+fun nic_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => nic;
+
+fun nacp_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => nacp;
+
+fun horizV_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => horizV;
+
+fun vertV_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => vertV;
+
+fun heading_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => heading;
+
+fun emitter_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => emitter;
+
+fun callSign_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => callSign;
+
+fun prio_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => prio;
+
+fun fdl_of trpt =
+ case trpt
+  of Traffic_report_Recd
+       messageID status targetID lat lon alt
+       misc nic nacp horizV vertV heading emitter callSign
+       prio fdl => fdl;
 
 fun print_misc mi =
  case mi
@@ -1069,16 +1201,38 @@ fun print_traffic_report rpt =
        print "End Traffic Report.\n\n"
      );
 
-(*---------------------------------------------------------------------------*)
-(* Traffic report projections                                                *)
-(*---------------------------------------------------------------------------*)
+fun mapArray f array =
+  let val elts = Array.foldr Utils.cons [] array
+  in List.map f elts
+  end;
 
-fun targetID_of trpt =
- case trpt
-  of Traffic_report_Recd
-       messageID status targetID lat lon alt
-       misc nic nacp horizV vertV heading emitter callSign
-       prio fdl => targetID;
+fun mapiArray fi array =
+  let fun consi i x list = (i,x)::list
+      val elts = Array.foldri consi [] array
+  in List.map fi elts
+  end;
+
+fun printList_with sep nada prFn list =
+ case list
+  of [] => print nada
+   | otherwise =>
+      let val (front,last) = Utils.front_last list
+      in List.app (fn x => (prFn x; print sep)) front
+         ; prFn last
+      end;
+
+val println = Utils.println
+
+fun print_traffic_report_array reports =
+  let val elts = mapArray id reports
+      fun notable elt = not (is_default_targetID (targetID_of elt))
+      val notables = List.filter notable elts
+in
+   println "Traffic Reports";
+   printList_with "\n" "-" print_traffic_report notables;
+   println "End Traffic Reports.\n"
+ end
+
 
 datatype status_byte_1 = Status_byte_1_Recd bool bool bool bool bool bool bool;
 datatype status_byte_2 = Status_byte_2_Recd bool bool bool bool;
@@ -1156,15 +1310,15 @@ fun print_adsb_messages mesgs =
   print "End ADSB Messages.\n\n"
  );
 
-fun mapArray f array =
-  let val elts = Array.foldr Utils.cons [] array
-  in List.map f elts
-  end;
+fun del x list =
+  case list
+   of [] => []
+    | h::t => if x=h then del x t else h::del x t;
 
 fun mk_set list =
  case list
   of [] => []
-   | h::t => if List.member h t then mk_set t else h::mk_set t;
+   | h::t => h::mk_set(del h t)
 
 val aircraft_map =
    [((0, 0),        ("-",  ~1, "Default")),
@@ -1189,35 +1343,37 @@ val aircraft_map =
 (*---------------------------------------------------------------------------
  aircraft_map created in SML
 
-fun readHex s =
+fun readOct s =
  fst
   (Option.valOf
     (Int.scan StringCvt.OCT Substring.getc (Substring.full s)));
 
 (*---------------------------------------------------------------------------*)
-(* Database of test aircraft. Map type:                                      *)
-(*   (addr-type,part-addr) |-> (ship-no,emitter,call-sign)                   *)
+(* Database of aircraft used in tests.                                       *)
+(* Map type:                                                                 *)
+(*                                                                           *)
+(*   (addr-type,participant-addr) |-> (ship-no,emitter,call-sign)            *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
 val aircraft_map =
-[((0,readHex "52746757"), ("#0",  1, "N71755")),
- ((0,readHex "52746760"), ("#1",  1, "N01ABC")),
- ((0,readHex "52746761"), ("#2",  1, "N02CVW")),
- ((0,readHex "52746762"), ("#3",  2, "N034")),
- ((0,readHex "52746763"), ("#4",  2, "N04041")),
- ((0,readHex "52746764"), ("#5",  3, "N05FXYZ2")),
- ((0,readHex "52746765"), ("#6",  3, "N06N2Q")),
- ((0,readHex "52746766"), ("#7",  4, "N07")),
- ((1,readHex "52746767"), ("#8",  5, "N08JER")),
- ((1,readHex "52746770"), ("#9",  6, "N09GOLF")),
- ((1,readHex "52746771"), ("#10", 7, "N10HM241")),
- ((2,readHex "52746772"), ("#11", 9, "N11DTS")),
- ((2,readHex "52746773"), ("#12", 10, "N12")),
- ((2,readHex "52746774"), ("#13", 11, "N13OBX5")),
- ((3,readHex "52746775"), ("#14", 12, "N14BPP93")),
- ((3,readHex "52746776"), ("#15", 14, "N15RJK")),
- ((3,readHex "52746777"), ("#16", 15, "N16MI"))
+[((0,readOct "52746757"), ("#0",  1,  "N71755")),
+ ((0,readOct "52746760"), ("#1",  1,  "N01ABC")),
+ ((0,readOct "52746761"), ("#2",  1,  "N02CVW")),
+ ((0,readOct "52746762"), ("#3",  2,  "N034")),
+ ((0,readOct "52746763"), ("#4",  2,  "N04041")),
+ ((0,readOct "52746764"), ("#5",  3,  "N05FXYZ2")),
+ ((0,readOct "52746765"), ("#6",  3,  "N06N2Q")),
+ ((0,readOct "52746766"), ("#7",  4,  "N07")),
+ ((1,readOct "52746767"), ("#8",  5,  "N08JER")),
+ ((1,readOct "52746770"), ("#9",  6,  "N09GOLF")),
+ ((1,readOct "52746771"), ("#10", 7,  "N10HM241")),
+ ((2,readOct "52746772"), ("#11", 9,  "N11DTS")),
+ ((2,readOct "52746773"), ("#12", 10, "N12")),
+ ((2,readOct "52746774"), ("#13", 11, "N13OBX5")),
+ ((3,readOct "52746775"), ("#14", 12, "N14BPP93")),
+ ((3,readOct "52746776"), ("#15", 14, "N15RJK")),
+ ((3,readOct "52746777"), ("#16", 15, "N16MI"))
 ];
 
  ---------------------------------------------------------------------------*)
@@ -1227,20 +1383,39 @@ val println = Utils.println;
 fun aircraft_num tid =
  case Alist.lookup aircraft_map (targetID_pair tid)
   of Some (num,emitter,call) => num
-   | None => "!!Unknown!!";
+   | None => targetID_string tid
 
+fun non_default report = not (is_default_targetID (targetID_of report));
+
+fun static_info_of report = (targetID_of report, callSign_of report);
+
+fun static_info_string pair =
+ let val (tid,callsign) = pair
+ in String.concat ["targetID : ", targetID_string tid, "   callSign : ",callsign]
+ end
 
 fun print_messageIDs msgs =
- let val otid = targetID_of (ownship_of msgs)
-     val trafficIDs = mapArray targetID_of (traffic_of msgs)
-     val trafficIDset = mk_set trafficIDs
-     val trafficIDstring =
-         String.concatWith ", " (List.map aircraft_num trafficIDset)
- in
-    println ("   Ownship ID: "^aircraft_num otid) ;
-    println  "   Aircraft in traffic-reports : ";
-    print    "   "; println trafficIDstring
+ let val ownship = ownship_of msgs
+     val traffic = traffic_of msgs
+     val ownship_info = static_info_of ownship
+     val trafficList = mapiArray id traffic
+     val aircraft = List.filter (non_default o snd) trafficList
+     val static_infoList =
+         List.map (fn (i,report) => (i,static_info_of report)) aircraft
+     fun rptstring (i,sinfo) =
+       String.concat ["[", Int.toString i, " |-> ", static_info_string sinfo,"]"]
+     val traffic_string =
+        if List.null aircraft then "None."
+        else String.concatWith "\n      " (List.map rptstring static_infoList)
+in
+    println ("   Ownship ID  : "^static_info_string ownship_info);
+    print "\n";
+    println  "   Traffic IDs : ";
+    print    "      ";
+    println traffic_string
+(*  ;  print_traffic_report_array (traffic_of msgs) *)
 end;
+
 
 
 (*---------------------------------------------------------------------------*)
@@ -1313,7 +1488,7 @@ fun print_monitor_report mrpt =
        print "  Monitor Report:\n"
       ; printI  "    messageID : " mesgID
       ; printI  "    monitorID : " monID
-      ; println "    Duplicate targetIDs: (format: [targetID array index |-> #aircraft-num])"
+      ; println "    Anomalies: (format: [index |-> #aircraft-num])"
       ;
        if List.null notable_tids then
            println "    None."
@@ -1731,7 +1906,7 @@ fun stepFn () =
 end (* Monitor *)
 
 (*---------------------------------------------------------------------------*)
-(* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
+(* Read a chunk of 4387 bytes from istrm into API.input_buffer               *)
 (*---------------------------------------------------------------------------*)
 
 fun next_test istrm =
@@ -1761,6 +1936,24 @@ fun run_tests fileName =
    rowStep 0
  end
 
+(*---------------------------------------------------------------------------*)
+(* Most relevant tests for duplication                                       *)
+(*---------------------------------------------------------------------------*)
+
 val _ = run_tests "../tests/tc5.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc6.bytes";
+
+(* Run the whole suite
+val _ = run_tests "../tests/tc1.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc2.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc3.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc4.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc5.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc6.bytes";
+*)
