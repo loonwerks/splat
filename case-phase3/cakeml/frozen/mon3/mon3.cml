@@ -7,10 +7,6 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
-fun println s = print (s^"\n");
-
-fun cons h t = h::t;
-
 fun first pred list =
  case list
   of [] => raise ERR "first" ""
@@ -25,11 +21,11 @@ fun take_drop n list =
 
 fun front_last list =
  let val _ = assert (not (List.null list)) "front_last: null input list"
-     fun accFn l acc =
+     fun flacc l acc =
       case l
        of [x] => (List.rev acc,x)
-        | h::t => accFn t (h::acc)
- in accFn list []
+        | h::t => flacc t (h::acc)
+ in flacc list []
  end
 
 fun divmod i n = (Int.div i n, Int.mod i n);
@@ -57,11 +53,6 @@ fun firstOpt f list =
 fun concatOpts optlist =
     Some(List.concat(List.map Option.valOf optlist)) handle _ => None;
 
-(*---------------------------------------------------------------------------*)
-(* Filter with ('a -> bool option) predicate. Strict: return None if pred    *)
-(* returns None.                                                             *)
-(*---------------------------------------------------------------------------*)
-
 fun filterOpt pred list = let
    fun accFn list acc =
     case list
@@ -87,6 +78,7 @@ fun twoExp n = Array.sub pow2Arr n handle _ => pow 2 n
 end;
 
 val w8zero = Word8.fromInt 0;
+val w64FF = Word64.fromInt 255;
 
 val emptybuf = Word8Array.array 0 w8zero;
 val singlebuf = Word8Array.array 1 (Word8.fromInt 0);
@@ -136,15 +128,34 @@ val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
 
-fun int2octal n =
-let fun divAcc n acc =
-      if n < 8 then n::acc
-      else let val (d,r) = divmod n 8 in divAcc d (r::acc) end
-in String.concat
-        (List.map Int.toString (divAcc n []))
-end
+
+fun byteAt w n =
+  Word8.fromInt
+    (Word64.toInt
+      (Word64.andb (Word64.>> w (n*8)) w64FF));
+
+fun pack_double buf index d =
+ let fun write n x = Word8Array.update buf n x
+ in
+    write index (byteAt d 0)
+  ; write (index+1) (byteAt d 1)
+  ; write (index+2) (byteAt d 2)
+  ; write (index+3) (byteAt d 3)
+  ; write (index+4) (byteAt d 4)
+  ; write (index+5) (byteAt d 5)
+  ; write (index+6) (byteAt d 6)
+  ; write (index+7) (byteAt d 7)
+ end;
+
+fun unpack_double buf index =
+ let fun elt n = Word8Array.sub buf n
+ in  Word64.concatAll
+       (elt index)     (elt (index+1)) (elt (index+2)) (elt (index+3))
+       (elt (index+4)) (elt (index+5)) (elt (index+6)) (elt (index+7))
+ end;
 
 end (* Utils *)
+
 
 structure BitFns =
 struct
@@ -246,7 +257,6 @@ fun boolVal n =
   else raise Utils.ERR "BitFns" "boolVal";
 
 end
-
 
 structure BitContig =
 struct
@@ -979,7 +989,6 @@ val adsb_decls =
 
 end (* Adsb_Contig *)
 
-
 structure Adsb_Types =
 struct
 
@@ -993,10 +1002,6 @@ datatype miscIndicators = MiscIndicators_Recd bool bool bool bool;
 
 datatype targetID = TargetID_Recd int int;
 
-(*---------------------------------------------------------------------------*)
-(* targetID projections                                                      *)
-(*---------------------------------------------------------------------------*)
-
 fun addr_of tid =
  case tid
   of TargetID_Recd addr paddr => addr;
@@ -1004,6 +1009,14 @@ fun addr_of tid =
 fun partAddr_of tid =
  case tid
   of TargetID_Recd addr paddr => paddr;
+
+fun print_targetID tid =
+ case tid
+  of TargetID_Recd i1 i2 =>
+    (print  "  Target ID.\n";
+     printI "    address : " i1;
+     printI "    participantAddress : " i2
+    );
 
 
 datatype traffic_report =
@@ -1025,28 +1038,6 @@ datatype traffic_report =
    int
    int
 ;
-
-(*---------------------------------------------------------------------------*)
-(* targetID projections                                                      *)
-(*---------------------------------------------------------------------------*)
-
-fun targetID_pair tid = case tid of TargetID_Recd i1 i2 => (i1,i2);
-
-fun targetID_string tid =
- case tid
-  of TargetID_Recd i1 i2 =>
-    String.concat["(", Int.toString i1, ",", Utils.int2octal i2, ")"];
-
-fun is_default_targetID tid = (targetID_pair tid = (0,0));
-
-fun print_targetID tid =
- case tid
-  of TargetID_Recd i1 i2 =>
-    (print  "  Target ID.\n";
-     printI "    address : " i1;
-     print ("    participantAddress (octal) : "^Utils.int2octal i2)
-    );
-
 
 (*---------------------------------------------------------------------------*)
 (* Traffic report projections                                                *)
@@ -1201,39 +1192,6 @@ fun print_traffic_report rpt =
        print "End Traffic Report.\n\n"
      );
 
-fun mapArray f array =
-  let val elts = Array.foldr Utils.cons [] array
-  in List.map f elts
-  end;
-
-fun mapiArray fi array =
-  let fun consi i x list = (i,x)::list
-      val elts = Array.foldri consi [] array
-  in List.map fi elts
-  end;
-
-fun printList_with sep nada prFn list =
- case list
-  of [] => print nada
-   | otherwise =>
-      let val (front,last) = Utils.front_last list
-      in List.app (fn x => (prFn x; print sep)) front
-         ; prFn last
-      end;
-
-val println = Utils.println
-
-fun print_traffic_report_array reports =
-  let val elts = mapArray id reports
-      fun notable elt = not (is_default_targetID (targetID_of elt))
-      val notables = List.filter notable elts
-in
-   println "Traffic Reports";
-   printList_with "\n" "-" print_traffic_report notables;
-   println "End Traffic Reports.\n"
- end
-
-
 datatype status_byte_1 = Status_byte_1_Recd bool bool bool bool bool bool bool;
 datatype status_byte_2 = Status_byte_2_Recd bool bool bool bool;
 datatype mesg_counts = Mesg_count_Recd int int;
@@ -1259,9 +1217,6 @@ fun print_status_2 s s2a s2b s2c s2d =
   printB "     CSA-Not-Avail :    " s2c;
   printB "     UTC-OK :           " s2d
 );
-
-fun print_uninterp_heartbeat hb =
-    print "Heartbeat message (skipping details)\n";
 
 fun print_heartbeat hb =
  case hb
@@ -1289,156 +1244,30 @@ datatype adsb_messages =
     (traffic_report array);
 
 
+fun print_adsb_messages mesgs =
+ case mesgs
+  of Adsb_messages_Recd hb own trA =>
+      (print "ADSB Messages.\n";
+       print_heartbeat hb;
+       print_traffic_report own;
+       print "\n <TRAFFIC REPORT ARRAY> \n\n";
+       print "End ADSB Messages.\n\n"
+     );
+
 fun heartbeat_of mesgs =
  case mesgs
   of Adsb_messages_Recd hb own trA => hb;
-
-fun ownship_of mesgs =
- case mesgs
-  of Adsb_messages_Recd hb own trA => own;
 
 fun traffic_of mesgs =
  case mesgs
   of Adsb_messages_Recd hb own trA => trA;
 
-fun print_adsb_messages mesgs =
- (print "ADSB Messages.\n";
-  print_uninterp_heartbeat (heartbeat_of mesgs);
-  (* print_heartbeat (heartbeat_of mesgs); *)
-  print_traffic_report (ownship_of mesgs);
-  print "\n <TRAFFIC REPORT ARRAY> \n\n";
-  print "End ADSB Messages.\n\n"
- );
-
-fun del x list =
-  case list
-   of [] => []
-    | h::t => if x=h then del x t else h::del x t;
-
-fun mk_set list =
- case list
-  of [] => []
-   | h::t => h::mk_set(del h t)
-
-val aircraft_map =
-   [((0, 0),        ("-",  ~1, "Default")),
-    ((0, 11259375), ("#0",  1, "N71755")),
-    ((0, 11259376), ("#1",  1, "N01ABC")),
-    ((0, 11259377), ("#2",  1, "N02CVW")),
-    ((0, 11259378), ("#3",  2, "N034")),
-    ((0, 11259379), ("#4",  2, "N04041")),
-    ((0, 11259380), ("#5",  3, "N05FXYZ2")),
-    ((0, 11259381), ("#6",  3, "N06N2Q")),
-    ((0, 11259382), ("#7",  4, "N07")),
-    ((1, 11259383), ("#8",  5, "N08JER")),
-    ((1, 11259384), ("#9",  6, "N09GOLF")),
-    ((1, 11259385), ("#10", 7, "N10HM241")),
-    ((2, 11259386), ("#11", 9, "N11DTS")),
-    ((2, 11259387), ("#12", 10, "N12")),
-    ((2, 11259388), ("#13", 11, "N13OBX5")),
-    ((3, 11259389), ("#14", 12, "N14BPP93")),
-    ((3, 11259390), ("#15", 14, "N15RJK")),
-    ((3, 11259391), ("#16", 15, "N16MI"))];
-
-(*---------------------------------------------------------------------------
- aircraft_map created in SML
-
-fun readOct s =
- fst
-  (Option.valOf
-    (Int.scan StringCvt.OCT Substring.getc (Substring.full s)));
-
-(*---------------------------------------------------------------------------*)
-(* Database of aircraft used in tests.                                       *)
-(* Map type:                                                                 *)
-(*                                                                           *)
-(*   (addr-type,participant-addr) |-> (ship-no,emitter,call-sign)            *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
-
-val aircraft_map =
-[((0,readOct "52746757"), ("#0",  1,  "N71755")),
- ((0,readOct "52746760"), ("#1",  1,  "N01ABC")),
- ((0,readOct "52746761"), ("#2",  1,  "N02CVW")),
- ((0,readOct "52746762"), ("#3",  2,  "N034")),
- ((0,readOct "52746763"), ("#4",  2,  "N04041")),
- ((0,readOct "52746764"), ("#5",  3,  "N05FXYZ2")),
- ((0,readOct "52746765"), ("#6",  3,  "N06N2Q")),
- ((0,readOct "52746766"), ("#7",  4,  "N07")),
- ((1,readOct "52746767"), ("#8",  5,  "N08JER")),
- ((1,readOct "52746770"), ("#9",  6,  "N09GOLF")),
- ((1,readOct "52746771"), ("#10", 7,  "N10HM241")),
- ((2,readOct "52746772"), ("#11", 9,  "N11DTS")),
- ((2,readOct "52746773"), ("#12", 10, "N12")),
- ((2,readOct "52746774"), ("#13", 11, "N13OBX5")),
- ((3,readOct "52746775"), ("#14", 12, "N14BPP93")),
- ((3,readOct "52746776"), ("#15", 14, "N15RJK")),
- ((3,readOct "52746777"), ("#16", 15, "N16MI"))
-];
-
- ---------------------------------------------------------------------------*)
-
-val println = Utils.println;
-
-fun aircraft_num tid =
- case Alist.lookup aircraft_map (targetID_pair tid)
-  of Some (num,emitter,call) => num
-   | None => targetID_string tid
-
-fun non_default report = not (is_default_targetID (targetID_of report));
-
-fun static_info_of report = (targetID_of report, callSign_of report);
-
-fun static_info_string pair =
- let val (tid,callsign) = pair
- in String.concat ["targetID : ", targetID_string tid, "   callSign : ",callsign]
- end
-
-fun print_messageIDs msgs =
- let val ownship = ownship_of msgs
-     val traffic = traffic_of msgs
-     val ownship_info = static_info_of ownship
-     val trafficList = mapiArray id traffic
-     val aircraft = List.filter (non_default o snd) trafficList
-     val static_infoList =
-         List.map (fn (i,report) => (i,static_info_of report)) aircraft
-     fun rptstring (i,sinfo) =
-       String.concat ["[", Int.toString i, " |-> ", static_info_string sinfo,"]"]
-     val traffic_string =
-        if List.null aircraft then "None."
-        else String.concatWith "\n      " (List.map rptstring static_infoList)
-in
-    println ("   Ownship ID  : "^static_info_string ownship_info);
-    print "\n";
-    println  "   Traffic IDs : ";
-    print    "      ";
-    println traffic_string
-(*  ;  print_traffic_report_array (traffic_of msgs) *)
-end;
-
-
-
-(*---------------------------------------------------------------------------*)
-(* Subtlety: i is expected to be less than 128, so that the high 4 bits of   *)
-(* fromInt i are 0s. This correponds to the 4 bits of padding expected at    *)
-(* the beginning of a targetID in a message. See                             *)
-(*                                                                           *)
-(*    Adsb_Contig.target_identity                                            *)
-(*                                                                           *)
-(* above for what is expected.                                               *)
-(*---------------------------------------------------------------------------*)
-
-val twoE24 = Utils.twoExp 24;
-
-fun check_enc_tid_inputs i j =
-  if i < 0 orelse 128 <= i orelse
-     j < 0 orelse twoE24 <= j then
-     raise Utils.ERR "Adsb_Types" "enc_tid_nums: out of range"
-  else ();
+fun ownship_of mesgs =
+ case mesgs
+  of Adsb_messages_Recd hb own trA => own;
 
 fun enc_tid_nums i j =
- let val _ = check_enc_tid_inputs i j
-     val (d,r1) = Utils.divmod j 256
+ let val (d,r1) = Utils.divmod j 256
      val (d,r2) = Utils.divmod d 256
      val (d,r3) = Utils.divmod d 256
   in
@@ -1467,33 +1296,6 @@ fun encode_monitor_report mrpt = (* word8 list *)
  case mrpt
   of Monitor_Report_Recd mesgID monID tidArray =>
         encode_monrept mesgID monID tidArray;
-
-fun filterArray pred array =
-  let fun foldFn i x acc = (i,x)::acc
-      val elts = Array.foldri foldFn [] array
-  in List.filter (fn (i,x) => pred x) elts
-  end;
-
-fun print_monitor_report mrpt =
- case mrpt
-  of Monitor_Report_Recd mesgID monID tidArray =>
-     let val notable_tids = filterArray (not o is_default_targetID) tidArray
-         fun notable_string pair =
-            let val (i,tid) = pair
-	    in String.concat ["      [",Int.toString i, " |-> ",aircraft_num tid,"]"]
-            end
-         val notables = String.concatWith "\n"
-	                  (List.map notable_string notable_tids)
-     in
-       print "  Monitor Report:\n"
-      ; printI  "    messageID : " mesgID
-      ; printI  "    monitorID : " monID
-      ; println "    Anomalies: (format: [index |-> #aircraft-num])"
-      ;
-       if List.null notable_tids then
-           println "    None."
-       else println notables
-      end;
 
 end (* Adsb_Types *)
 
@@ -1743,7 +1545,7 @@ val input_buffer = Word8Array.array 4387 Utils.w8zero;
 
 fun fill_input_buffer () =
   let val () = Utils.clear_buf input_buffer
-  in  #(api_get_Observed) "" input_buffer
+  in #(api_get_Observed) "" input_buffer
   end;
 
 fun put_Suspect_Traffic_Out string =
@@ -1758,6 +1560,7 @@ end
 (* Mocked-up version of API                                                  *)
 (*---------------------------------------------------------------------------*)
 
+
 structure API =
 struct
 
@@ -1770,10 +1573,10 @@ val input_buffer = Word8Array.array 4387 Utils.w8zero;
 fun logInfo s = TextIO.output TextIO.stdErr s;
 
 (*---------------------------------------------------------------------------*)
-(* Grab filter input from file.                                              *)
+(* Grab monitor input from file.                                             *)
 (*---------------------------------------------------------------------------*)
 
-fun api_get_filter_in emptyString buf =
+fun api_get_observed emptyString buf =
  case CommandLine.arguments()
   of [fileName] => Utils.file2buf fileName buf
    | otherwise =>
@@ -1786,17 +1589,15 @@ fun api_get_filter_in emptyString buf =
 (* large for the buffer.                                                     *)
 (*---------------------------------------------------------------------------*)
 
-fun fill_input_buffer () = ()
-(*
-let val () = Utils.clear_buf input_buffer
-      val () = api_get_filter_in "" input_buffer
+fun fill_input_buffer () =
+  let val () = Utils.clear_buf input_buffer
+      val () = api_get_observed "" input_buffer
    in ()
    end
    handle _ =>
     (logInfo "Monitor failure: unable to fill input buffer.";
      raise Utils.ERR "fill_input_buffer" ""
     );
-*)
 
 (*---------------------------------------------------------------------------*)
 (*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
@@ -1810,63 +1611,104 @@ end (* API *)
 structure Monitor =
 struct
 
-val addr_of = Adsb_Types.addr_of;
-val partAddr_of = Adsb_Types.partAddr_of;
 val targetID_of = Adsb_Types.targetID_of;
-val ownship_of  = Adsb_Types.ownship_of;
-val traffic_of  = Adsb_Types.traffic_of;
+val ownship_of = Adsb_Types.ownship_of;
+val traffic_of = Adsb_Types.traffic_of;
+val lat_of     = Adsb_Types.lat_of;
+val lon_of     = Adsb_Types.lon_of;
+val alt_of     = Adsb_Types.alt_of;
 
-val theState = Ref ();
+(*---------------------------------------------------------------------------*)
+(* User code for monitor                                                     *)
+(*---------------------------------------------------------------------------*)
 
 val is_latched = False;
 
-val lcDISTINCT = Adsb_Types.TargetID_Recd 0 0;
+val default_TARGET_ID = Adsb_Types.TargetID_Recd 0 0;
 
-fun get_TARGET_ID traffic index = targetID_of (Array.sub traffic index);
+fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 3 sus;
 
-fun is_DUPLICATE_ID traffic1 traffic2 =
-  (targetID_of traffic1 = targetID_of traffic2)
- andalso
-  not (targetID_of traffic1 = lcDISTINCT);
+fun trueOpt opt = case opt of Some True => True | otherwise => False;
 
-fun is_DUPLICATE_OWNSHIP msg index =
-  is_DUPLICATE_ID
-     (ownship_of msg)
-     (Array.sub (traffic_of msg) index);
+val latitude_DELTA = Utils.i2d 1;
+val longitude_DELTA = Utils.i2d 1;
+val altitude_DELTA = 2000;
 
-fun is_DUPLICATE_TRAFFIC msg index =
- Utils.array_existsI
-   (fn dup_index =>
-      not(dup_index = index)
-      andalso
-      is_DUPLICATE_ID
-        (Array.sub (traffic_of msg) index)
-        (Array.sub (traffic_of msg) dup_index))
-   (traffic_of msg);
+fun in_ZONE_A ownship ship =
+  Double.>= (lat_of ship) (Double.- (lat_of ownship) latitude_DELTA) andalso
+  Double.<= (lat_of ship) (Double.+ (lat_of ownship) latitude_DELTA) andalso
+  Double.>= (lon_of ship) (Double.- (lon_of ownship) longitude_DELTA) andalso
+  Double.<= (lon_of ship) (Double.+ (lon_of ownship) longitude_DELTA) andalso
+  (alt_of ship >= (alt_of ownship - altitude_DELTA)) andalso
+  (alt_of ship <= (alt_of ownship + altitude_DELTA));
 
-(*---------------------------------------------------------------------------*)
-(* 100 = standard Monitor ID,                                                *)
-(*   2 = identifier for the duplicates monitor                               *)
-(*---------------------------------------------------------------------------*)
+fun isIn ship reports =
+   Array.exists (fn elt => (targetID_of ship = targetID_of elt)) reports;
 
-fun mk_monitor_report suspects = Adsb_Types.Monitor_Report_Recd 100 2 suspects;
+fun suspect ownship ship previous =
+    in_ZONE_A ownship ship andalso not(isIn ship previous);
 
-fun lcUPDATE_SUSPECT_IDS msg =
- mk_monitor_report
-   (Array.tabulate (Array.length (traffic_of msg))
-     (fn i =>
-       if is_DUPLICATE_TRAFFIC msg i orelse
-          is_DUPLICATE_OWNSHIP msg i
-       then
-          get_TARGET_ID (traffic_of msg) i
-       else lcDISTINCT));
+fun suspectIDs ownship traffic previous =
+  Array.tabulate
+    (Array.length traffic)
+    (fn i =>
+       if suspect ownship (Array.sub traffic i) previous then
+          targetID_of (Array.sub traffic i)
+       else default_TARGET_ID);
 
-fun lcDUPLICATE_IN_REPORT msg =
- Utils.array_existsI
-  (fn index =>
-    is_DUPLICATE_TRAFFIC msg index orelse is_DUPLICATE_OWNSHIP msg index)
-  (traffic_of msg);
+val theState = Ref (None, None, None)
+ : (Adsb_Types.traffic_report array option
+    * Adsb_Types.traffic_report array option
+    * bool option) ref;
 
+val initStep = Ref True;
+
+fun stepFn inports stateVars =
+ let val observed = inports
+     val (yesterday,today,abnormal) = stateVars
+     fun pre x = x
+
+     (*--------------------------*)
+     (* Compute new state values *)
+     (*--------------------------*)
+
+     val (yesterday,today,abnormal) =
+         if !initStep then
+            let val yesterday = Some (traffic_of observed)
+                val today     = Some (traffic_of observed)
+                val abnormal  = Some False
+                val () = (initStep := False)
+            in
+              (yesterday,today,abnormal)
+            end
+         else
+	    let val yesterday = Some (Option.valOf today)
+                val today = Some (traffic_of observed)
+                val abnormal = Some
+                    (Array.exists
+                      (fn ship => suspect (ownship_of observed) ship (Option.valOf yesterday))
+                      (traffic_of observed))
+            in
+               (yesterday,today,abnormal)
+            end
+
+     (*-----------------------*)
+     (* Compute output values *)
+     (*-----------------------*)
+
+     val event_observed = True
+
+     val suspect_traffic_out =
+       if event_observed andalso trueOpt abnormal then
+          Some
+             (mk_monitor_report
+               (suspectIDs (ownship_of observed)
+	                   (traffic_of observed) (Option.valOf yesterday)))
+       else
+          None
+ in
+   ((yesterday,today,abnormal),suspect_traffic_out)
+ end;
 
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
@@ -1877,83 +1719,28 @@ fun parseInput () =
         (Adsb_Contig.adsb_messages, Adsb_Parse.mk_adsb_messages)
         API.input_buffer;
 
-val println = Utils.println;
-
-fun stepFn () =
+fun monFn () =
  let val () = API.fill_input_buffer ()
  in
  case parseInput()
-  of None => API.logInfo "not an event\n"
-   | Some None => API.logInfo "Monitor failure: unable to parse input event\n"
+  of None => API.logInfo "Monitor warning: non-event received at \"Observed\" input port"
+   | Some None => API.logInfo "Monitor warning: unable to parse input event"
    | Some (Some msg) =>
-      (println "Input on Observed port (relevant IDs only) :"
-      ;
-       Adsb_Types.print_messageIDs msg
-      ;
-      println "\nOutput on Suspect_Traffic_Out port :";
-      if lcDUPLICATE_IN_REPORT msg then
-        let val () = Utils.println "  Duplicates found."
-	    val susReport = lcUPDATE_SUSPECT_IDS msg
-            val _ = Adsb_Types.print_monitor_report susReport
-            val susBytes = Adsb_Types.encode_monitor_report susReport
-            val susString = String.implode (List.map Utils.w8char susBytes)
-        in API.put_Suspect_Traffic_Out susString; print "\n"
-        end
-      else API.logInfo "  No output because no duplicates found.\n\n"
-     )
+      let val (newState,outOpt) = stepFn msg (!theState)
+          val () = theState := newState
+      in case outOpt
+          of None => ()
+           | Some monitor_report =>
+              let val rptBytes = Adsb_Types.encode_monitor_report monitor_report
+                  val rpt_string = String.implode (List.map Utils.w8char rptBytes)
+              in
+                 API.put_Suspect_Traffic_Out rpt_string
+              end
+      end
  end
 
 end (* Monitor *)
 
-(*---------------------------------------------------------------------------*)
-(* Read a chunk of 4387 bytes from istrm into API.input_buffer               *)
-(*---------------------------------------------------------------------------*)
-
-fun next_test istrm =
- let fun fillAcc n acc =
-     if n = 0 then String.implode (List.rev acc) else
-     case TextIO.input1 istrm
-           of Some b => fillAcc (n-1) (b::acc)
-            | None => raise Utils.ERR "fillAcc" ""
- in
-  Some (Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0)
- end
- handle _ => None;
-
-fun run_tests fileName =
- let val instrm = TextIO.openIn fileName
-     val () = print ("Duplication Monitor: running tests from file: "^fileName^"\n")
-     fun rowStep i =
-      case next_test instrm
-       of None => ()
-        | Some _ =>
-          let val istr = Int.toString i
-              val () = print (String.concat ["\nRow ", istr, "\n===========\n"])
-              val () = Monitor.stepFn()
-          in rowStep (i+1)
-	  end
- in
-   rowStep 0
- end
-
-(*---------------------------------------------------------------------------*)
-(* Most relevant tests for duplication                                       *)
-(*---------------------------------------------------------------------------*)
-
-val _ = run_tests "../tests/tc5.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc6.bytes";
-
-(* Run the whole suite
-val _ = run_tests "../tests/tc1.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc2.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc3.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc4.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc5.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc6.bytes";
+(* One-shot test
+val _ = Monitor.monFn();
 *)
