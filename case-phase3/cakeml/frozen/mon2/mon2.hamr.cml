@@ -1945,7 +1945,7 @@ fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
 fun loop () =
   if pacer_wait() then
     ( receiveInput();
-      Monitor.stepFn();
+      Monitor.monFn();
       sendOutput();
       pacer_emit();
       loop()
