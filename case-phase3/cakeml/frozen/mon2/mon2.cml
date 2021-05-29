@@ -75,6 +75,16 @@ fun filterOpt pred list = let
    accFn list []
  end;
 
+(*---------------------------------------------------------------------------*)
+(* move from 'a option option to 'a option                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun dropOpt errstring optOpt =
+ case optOpt
+  of None => None
+   | Some(Some x) => Some x
+   | Some None => raise ERR "dropOpt" errstring;
+
 fun pow b k =
  let fun accFn k acc = if k <= 0 then acc else accFn (k-1) (acc * b)
  in accFn k 1
@@ -1891,12 +1901,13 @@ val initStep = Ref True;
 val theState = Ref None : int option ref;
 
 (*---------------------------------------------------------------------------*)
-(* Invoked only when when an event has happened and the input is             *)
-(* successfully parsed. So inports is not an option type.                    *)
+(* Note: inports is an option type. When stepFn is invoked, an event on      *)
+(* Observed may or may not have happened.                                    *)
 (*---------------------------------------------------------------------------*)
 
 fun stepFn inports stateVars =
  let val observed = inports
+     val event_observed = Option.isSome observed
      val cycle_count = stateVars
 
      (*--------------------------*)
@@ -1923,9 +1934,10 @@ fun stepFn inports stateVars =
       (*-----------------------*)
 
       val suspect_traffic_out =
-          if lcDUPLICATE_IN_REPORT observed
+          if event_observed andalso
+             lcDUPLICATE_IN_REPORT (Option.valOf observed)
             then
-             Some (lcUPDATE_SUSPECT_IDS observed)
+             Some (lcUPDATE_SUSPECT_IDS (Option.valOf observed))
           else
              None
 
@@ -1933,7 +1945,6 @@ fun stepFn inports stateVars =
   in
     (newStateVarOpts,(suspect_traffic_out,Some cycle_count))
   end;
-
 
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
@@ -1946,38 +1957,42 @@ fun parseInput () =
 
 val println = Utils.println;
 
+fun printInput inputOpt =
+ let in
+   println "Input on Observed port (relevant IDs only) :"
+    ;
+   case inputOpt
+    of None => println "No event on Observed port."
+     | Some msg => Adsb_Types.print_messageIDs msg
+ end;
+
 fun monFn () =
  let val () = API.fill_input_buffer ()
+     val inputOptOpt = parseInput()
+     val inputOpt = Utils.dropOpt "Parsing of input event failed" inputOptOpt
+     val (newState,outOpts) = stepFn inputOpt (!theState)
+     val () = theState := newState
+     val (rptOpt,countOpt) = outOpts
  in
- case parseInput()
-  of None => API.logInfo "not an event\n"
-   | Some None => API.logInfo "Monitor failure: unable to parse input event\n"
-   | Some (Some msg) =>
-     let val () = println "Input on Observed port (relevant IDs only) :"
-         val () = Adsb_Types.print_messageIDs msg
-         val () = println "\nOutput on Suspect_Traffic_Out port :"
-         val (newState,outOpts) = stepFn msg (!theState)
-         val () = theState := newState
-         val (rptOpt,countOpt) = outOpts
-     in
-       let in
-          case countOpt
-           of None => API.logInfo "Cycle Count Output: uninitialized Cycle Count"
-            | Some i => API.send_Cycle_Count_Out (Utils.pack_u64 i)
-        end
-         ;
-        case rptOpt
-         of None => API.logInfo " No output because no duplicates found.\n\n"
-          | Some monitor_report =>
-            let val () = Utils.println "  Duplicates found."
-                val () = Adsb_Types.print_monitor_report monitor_report
-                val rptBytes = Adsb_Types.encode_monitor_report monitor_report
-                val rpt_string = String.implode (List.map Utils.w8char rptBytes)
-            in
-               API.send_Suspect_Traffic_Out rpt_string
-            end
-     end
- end
+   let in
+     case countOpt
+      of None => API.logInfo "Cycle Count Output: uninitialized Cycle Count"
+       | Some i => API.send_Cycle_Count_Out (Utils.pack_u64 i)
+   end
+    ;
+   println "\nOutput on Suspect_Traffic_Out port :"
+    ;
+   case rptOpt
+    of None => API.logInfo " No output because no duplicates found.\n\n"
+     | Some monitor_report =>
+       let val () = Utils.println "  Duplicates found."
+           val () = Adsb_Types.print_monitor_report monitor_report
+           val rptBytes = Adsb_Types.encode_monitor_report monitor_report
+           val rpt_string = String.implode (List.map Utils.w8char rptBytes)
+       in
+          API.send_Suspect_Traffic_Out rpt_string
+       end
+ end;
 
 end (* Monitor *)
 
