@@ -1868,7 +1868,6 @@ end (* Adsb_Parse *)
 (* Deployment API                                                            *)
 (*---------------------------------------------------------------------------*)
 
-(*
 structure API =
 struct
 
@@ -1891,61 +1890,8 @@ fun send_Health_Out string =
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
-end
-*)
-
-(*---------------------------------------------------------------------------*)
-(* Mocked-up version of API                                                  *)
-(*---------------------------------------------------------------------------*)
-
-structure API =
-struct
-
-val input_buffer = Word8Array.array 4387 Utils.w8zero;
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_logInfo) s Utils.emptybuf;                                       *)
-(*---------------------------------------------------------------------------*)
-
-fun logInfo s = TextIO.output TextIO.stdErr s;
-
-(*---------------------------------------------------------------------------*)
-(* Grab filter input from file.                                              *)
-(*---------------------------------------------------------------------------*)
-
-fun api_get_Observed emptyString buf =
- case CommandLine.arguments()
-  of [fileName] => Utils.file2buf fileName buf
-   | otherwise =>
-     (TextIO.print_err"Expected a filename"; raise Utils.ERR "" "");
-
-(*---------------------------------------------------------------------------*)
-(* Clear buffer, read file into buffer, copy buffer to string. As stub code, *)
-(* it's an elaborate no-op, but enables easy testing. Note that              *)
-(* api_get_filter_in is assumed to raise an exception when the input is too  *)
-(* large for the buffer.                                                     *)
-(*---------------------------------------------------------------------------*)
-
-fun fill_input_buffer () = ()
-(*
-let val () = Utils.clear_buf input_buffer
-      val () = api_get_Observed "" input_buffer
-   in ()
-   end
-   handle _ =>
-    (logInfo "Monitor failure: unable to fill input buffer.";
-     raise Utils.ERR "fill_input_buffer" ""
-    );
-*)
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
-(*---------------------------------------------------------------------------*)
-
-fun send_Suspect_Traffic_Out string = () (* TextIO.output TextIO.stdOut string; *)
-fun send_Health_Out string = () (* TextIO.output TextIO.stdOut string; *)
-
 end (* API *)
+
 
 structure Monitor =
 struct
@@ -2131,7 +2077,7 @@ fun monFn () =
    case rptOpt
     of None => ()
      | Some monitor_report =>
-       let val () = Utils.println "  Abnormalities found."
+       let val () = Utils.println "  Duplicates found."
            val () = Adsb_Types.print_monitor_report monitor_report
            val rptBytes = Adsb_Types.encode_monitor_report monitor_report
            val rpt_string = String.implode (List.map Utils.w8char rptBytes)
@@ -2142,49 +2088,33 @@ fun monFn () =
 
 end (* Monitor *)
 
-val _ = Utils.debugLevel := 1;
+structure Control =
+struct
 
-(*---------------------------------------------------------------------------*)
-(* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
-(*---------------------------------------------------------------------------*)
+fun pacer_emit() =
+    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
 
-fun next_test istrm =
- let fun fillAcc n acc =
-     if n = 0 then String.implode (List.rev acc) else
-     case TextIO.input1 istrm
-           of Some b => fillAcc (n-1) (b::acc)
-            | None => raise Utils.ERR "fillAcc" ""
- in
-  Some (Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0)
- end
- handle _ => None;
+fun pacer_wait() =
+    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
 
-fun run_tests fileName =
- let val instrm = TextIO.openIn fileName
-     val () = print ("Teleport Monitor: running tests from file: "^fileName^"\n")
-     fun rowStep i =
-      case next_test instrm
-       of None => TextIO.closeIn instrm
-        | Some _ =>
-          let val istr = Int.toString i
-              val () = Utils.print (String.concat ["\nRow ", istr, "\n===========\n"])
-              val () = Monitor.monFn()
-          in rowStep (i+1)
-	  end
- in
-   rowStep 0
- end
+fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
 
-val _ = run_tests "../../tests/tc1.bytes";
-val _ = print "\n\n";
-(*
-val _ = run_tests "../../tests/tc2.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../../tests/tc3.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../../tests/tc4.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../../tests/tc5.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../../tests/tc6.bytes";
-*)
+fun loop () =
+  if pacer_wait() then
+    ( receiveInput();
+      Monitor.monFn();
+      sendOutput();
+      pacer_emit();
+      loop()
+    )
+  else
+    loop();
+
+fun start () = (pacer_emit(); loop());
+
+end (* Control *)
+
+val _ = Control.start();
