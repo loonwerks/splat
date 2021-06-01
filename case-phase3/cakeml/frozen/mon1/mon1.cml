@@ -2251,7 +2251,7 @@ fun monFn () =
    case rptOpt
     of None => ()
      | Some monitor_report =>
-       let val () = Utils.println "  Duplicates found."
+       let val () = Utils.println "  Abnormalities found."
            val () = Adsb_Types.print_monitor_report monitor_report
            val rptBytes = Adsb_Types.encode_monitor_report monitor_report
            val rpt_string = String.implode (List.map Utils.w8char rptBytes)
