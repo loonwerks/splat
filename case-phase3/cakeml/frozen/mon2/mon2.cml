@@ -1774,6 +1774,9 @@ fun fill_input_buffer () =
 fun send_Suspect_Traffic_Out string =
    #(api_send_Suspect_Traffic_Out) string Utils.emptybuf;
 
+fun send_Health_Out string =
+   #(api_send_Health_Out) string Utils.emptybuf;
+
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
 end
@@ -1823,17 +1826,9 @@ let val () = Utils.clear_buf input_buffer
     );
 *)
 
-(*---------------------------------------------------------------------------*)
-(*    #(api_send_suspect_traffic_out) string Utils.emptybuf                   *)
-(*---------------------------------------------------------------------------*)
-
 fun send_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
 
-(*---------------------------------------------------------------------------*)
-(*    #(api_send_cycle_count_out) string Utils.emptybuf                       *)
-(*---------------------------------------------------------------------------*)
-
-fun send_Cycle_Count_Out string = TextIO.output TextIO.stdOut string;
+fun send_Health_Out string = TextIO.output TextIO.stdOut string;
 
 end (* API *)
 
@@ -1962,7 +1957,7 @@ fun printInput inputOpt =
    println "Input on Observed port (relevant IDs only) :"
     ;
    case inputOpt
-    of None => println "No event on Observed port."
+    of None => println "No event on Observed."
      | Some msg => Adsb_Types.print_messageIDs msg
  end;
 
@@ -1970,6 +1965,7 @@ fun monFn () =
  let val () = API.fill_input_buffer ()
      val inputOptOpt = parseInput()
      val inputOpt = Utils.dropOpt "Parsing of input event failed" inputOptOpt
+     val () = printInput inputOpt
      val (newState,outOpts) = stepFn inputOpt (!theState)
      val () = theState := newState
      val (rptOpt,countOpt) = outOpts
@@ -1977,7 +1973,7 @@ fun monFn () =
    let in
      case countOpt
       of None => API.logInfo "Cycle Count Output: uninitialized Cycle Count"
-       | Some i => API.send_Cycle_Count_Out (Utils.pack_u64 i)
+       | Some i => API.send_Health_Out (Utils.pack_u64 i)
    end
     ;
    println "\nOutput on Suspect_Traffic_Out port :"
