@@ -2179,7 +2179,7 @@ fun stepFn inports stateVars =
                val two_days_ago   = default_TRAFFIC_REPORT_ARRAY
                val three_days_ago = default_TRAFFIC_REPORT_ARRAY
                val abnormal       = False
-               val cycle_count    = 0
+               val cycle_count    = 1
                val ()             = (initStep := False)
            in
              (today, yesterday, two_days_ago, three_days_ago, abnormal, cycle_count)
@@ -2207,7 +2207,7 @@ fun stepFn inports stateVars =
       (*-----------------------*)
 
       val suspect_traffic_out =
-          if event_observed andalso abnormal
+          if event_observed andalso abnormal andalso cycle_count > 3
             then
              Some (mk_monitor_report
                     (suspectIDs today yesterday two_days_ago three_days_ago))

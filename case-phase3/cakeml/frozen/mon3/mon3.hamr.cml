@@ -1994,13 +1994,16 @@ fun stepFn inports stateVars =
 
      val newStateVars =
          if !initStep then
-            let val yesterday = default_TRAFFIC_REPORT_ARRAY
+            let val yesterday =
+       	           if event_observed then
+		     traffic_of (valOf observed)
+                   else default_TRAFFIC_REPORT_ARRAY
                 val today =
        	           if event_observed then
 		     traffic_of (valOf observed)
                    else default_TRAFFIC_REPORT_ARRAY
                 val abnormal    = False
-		val cycle_count = 0
+		val cycle_count = 1
                 val () = (initStep := False)
             in
               (yesterday,today,abnormal,cycle_count)

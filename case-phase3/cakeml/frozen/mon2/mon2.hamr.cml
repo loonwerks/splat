@@ -1859,7 +1859,7 @@ fun stepFn inports stateVars =
 
      val newStateVars =
          if !initStep then
-           let val cycle_count = 0
+           let val cycle_count = 1
                val () = initStep := False
            in
              cycle_count

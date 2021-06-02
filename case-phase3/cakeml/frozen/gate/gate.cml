@@ -9,6 +9,8 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
+fun cons h t = h::t;
+
 fun first pred list =
  case list
   of [] => raise ERR "first" ""
@@ -44,6 +46,11 @@ fun itlist f list b =
 
 fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
 
+fun mapArray f array =
+  let val elts = Array.foldr cons [] array
+  in List.map f elts
+  end;
+
 fun firstOpt f list =
  case list
   of [] => None
@@ -70,6 +77,16 @@ fun filterOpt pred list = let
  in
    accFn list []
  end;
+
+(*---------------------------------------------------------------------------*)
+(* move from 'a option option to 'a option                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun dropOpt errstring optOpt =
+ case optOpt
+  of None => None
+   | Some(Some x) => Some x
+   | Some None => raise ERR "dropOpt" errstring;
 
 fun pow b k =
  let fun accFn k acc = if k <= 0 then acc else accFn (k-1) (acc * b)
@@ -181,20 +198,38 @@ in String.concat
         (List.map Int.toString (divAcc n []))
 end
 
+fun pack_u8 n = String.str (Char.chr n);
+
 fun pad_left x n list =
  let val d = n - List.length list
      val _ = assert (d >= 0) "pad_left: list too long"
  in copies x d @ list
  end
 
-fun pack_u64 n =
-let fun divAcc n acc =
-      if n < 256 then n::acc
-      else let val (d,r) = divmod n 256 in divAcc d (r::acc) end
-    val ilist = pad_left 0 8 (divAcc n [])
+fun divAcc n acc =
+ if n < 256 then n::acc
+ else
+   let val (d,r) = divmod n 256 in divAcc d (r::acc) end
+
+fun pack_u16 n =
+let val ilist = pad_left 0 2 (divAcc n [])
 in
   String.implode (List.map Char.chr ilist)
 end
+
+fun pack_u32 n =
+let val ilist = pad_left 0 4 (divAcc n [])
+in
+  String.implode (List.map Char.chr ilist)
+end
+
+fun pack_u64 n =
+let val ilist = pad_left 0 8 (divAcc n [])
+in
+  String.implode (List.map Char.chr ilist)
+end
+
+fun pack_byte_array bA = Word8Array.substring bA 0 (Word8Array.length bA);
 
 end (* Utils *)
 
@@ -919,8 +954,11 @@ fun tag_of_tvp t   = case t of TAG_VALID_PAIRRecd tag valid => tag;
 fun valid_of_tvp t = case t of TAG_VALID_PAIRRecd tag valid => valid;
 
 fun tag_of_shm t = case t of SHMRecd len tag prot comm connex payld => tag;
-fun connection_data_of t = case t of SHMRecd len tag prot comm connex payld => connex;
 fun command_of t = case t of SHMRecd len tag prot comm connex payld => comm;
+
+val constCONNECT = 2;
+
+fun connection_data_of t = case t of SHMRecd len tag prot comm connex payld => connex;
 
 fun remote_address_of_allowed t = case t of AllowedElementRecd x raddr => raddr;
 fun remote_address_of_connex t =
@@ -932,31 +970,54 @@ fun printI s i = print (s^Int.toString i^"\n");
 fun printR s d = print (s^Double.toString d^"\n");
 fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
 
+(*---------------------------------------------------------------------------*)
+(* Encoding shms and blocks                                                  *)
+(*---------------------------------------------------------------------------*)
 
-fun encode_shm block = "<ENCODED SHM STUB>"
-fun encode_block block = "<ENCODED BLOCK STUB>"
+val char0 = Char.chr 0
 
-(* encode_array encode_shm block *)
+fun mk_null_string n = String.implode (Utils.copies char0 n)
 
+val spare_4 = mk_null_string 4;
+val spare_6 = mk_null_string 6;
+val spare_7 = mk_null_string 7;
 
-(*
+fun pack_cdata cdata =
+ case cdata
+  of Connection_dataRecd laddr lport raddr rport =>
+   let val laddr_enc = Utils.pack_byte_array laddr
+       val lport_enc = Utils.pack_u16 lport
+       val raddr_enc = Utils.pack_byte_array raddr
+       val rport_enc = Utils.pack_u16 rport
+   in
+     String.concat
+       [laddr_enc, spare_4,
+        lport_enc, spare_6,
+        raddr_enc, spare_4,
+	rport_enc, spare_6]
+   end
 
-fun enc_tid_nums i j =
- let val (d,r1) = Utils.divmod j 256
-     val (d,r2) = Utils.divmod d 256
-     val (d,r3) = Utils.divmod d 256
-  in
-   List.map Word8.fromInt [i,r3,r2,r1]
-  end;
+fun pack_shm shm =
+ case shm
+  of SHMRecd len tag prot comm cdata payld =>
+   let val len_enc   = Utils.pack_u32 len
+       val tag_enc   = Utils.pack_u32 tag
+       val prot_enc  = Utils.pack_u32 prot
+       val comm_enc  = Utils.pack_u8 comm
+       val cdata_enc = if comm = constCONNECT then pack_cdata cdata else ""
+       val payld_enc = Word8Array.substring payld 0 (Word8Array.length payld)
+   in
+    String.concat
+      [len_enc,spare_4,
+       tag_enc, spare_4,
+       prot_enc, spare_4,
+       comm_enc, spare_7,
+       cdata_enc,
+       payld_enc]
+   end
 
-fun encode_targetID ti = (* word8 list *)
- case ti
-  of TargetID_Recd i j => enc_tid_nums i j;
+fun pack_block block = String.concat (Utils.mapArray pack_shm block);
 
-fun array_toList f arr =
- Array.foldr (fn x => fn list => f x :: list) [] arr;
-
-*)
 end (* Gate_Types *)
 
 structure Gate_Parse =
@@ -1149,7 +1210,7 @@ fun mk_payload ptree = mk_byte_array ptree;
 fun mk_shm_elt ptree =
  case ptree
   of ByteContig.RECD
-     (("length", len) :: ("spare1",  _) ::
+     (("length", len) ::  ("spare1",  _) ::
      ("tag",     tag)  :: ("spare2",  _) ::
      ("protocol",prot) :: ("spare3",  _) ::
      ("command", comm) :: ("spare4",  _) :: rst)
@@ -1181,18 +1242,35 @@ struct
 
 val trustedIDs_buffer = Word8Array.array (1 + 8*4) Utils.w8zero;
 val block_buffer      = Word8Array.array (1 + 2080*16) Utils.w8zero;
+val shm_buffer        = Word8Array.array (1 + 2080) Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
 (* Clear buffer, read port into buffer                                       *)
 (*---------------------------------------------------------------------------*)
 
-fun fill_input_buffer () =
-  let val () = Utils.clear_buf input_buffer
-  in  #(api_get_Observed) "" input_buffer
+fun fill_Trusted_IDs_buffer () =
+  let val () = Utils.clear_buf trustedIDs_buffer
+  in  #(api_get_Trusted_IDs) "" trustedIDs_buffer
   end;
 
-fun put_Suspect_Traffic_Out string =
-   #(api_put_Suspect_Traffic_Out) string Utils.emptybuf;
+fun fill_block_buffer () =
+  let val () = Utils.clear_buf block_buffer
+  in  #(api_get_VDTU_Request_Message_In) "" block_buffer
+  end;
+
+fun fill_shm_buffer () =
+  let val () = Utils.clear_buf shm_buffer
+  in  #(api_get_VDTU_Control_Message_In) "" shm_buffer
+  end;
+
+fun send_VDTU_Request_Message_Out string =
+   #(api_send_VDTU_Request_Message_Out) string Utils.emptybuf;
+
+fun send_VDTU_Control_Message_Out string =
+   #(api_send_VDTU_Control_Message_Out) string Utils.emptybuf;
+
+fun send_Health_Out string =
+   #(api_send_Health_Out) string Utils.emptybuf;
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
@@ -1208,6 +1286,7 @@ struct
 
 val trustedIDs_buffer = Word8Array.array (1 + 8*4) Utils.w8zero;
 val block_buffer      = Word8Array.array (1 + 2080*16) Utils.w8zero;
+val shm_buffer        = Word8Array.array (1 + 2080) Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
 (*    #(api_logInfo) s Utils.emptybuf;                                       *)
@@ -1219,10 +1298,15 @@ fun logInfo s = TextIO.output TextIO.stdErr s;
 (* Grab inputs.                                                              *)
 (*---------------------------------------------------------------------------*)
 
-fun api_get_Trusted_IDs emptyString buf = Utils.stub "API.api_get_Observed";
+fun get_Trusted_IDs emptyString buf =
+    Utils.stub "API.get_Trusted_IDs";
 
-fun api_get_VDTU_Request_Message_In emptystring buf =
-    Utils.stub "API.api_get_VDTU_Request_Message_In";
+fun get_VDTU_Request_Message_In emptyString buf =
+    Utils.stub "API.get_VDTU_Request_Message_In";
+
+fun get_VDTU_Control_Message_In emptyString buf =
+    Utils.stub "API.get_VDTU_Control_Message_In";
+
 (*
  case CommandLine.arguments()
   of [fileName] => Utils.file2buf fileName buf
@@ -1239,22 +1323,33 @@ fun api_get_VDTU_Request_Message_In emptystring buf =
 
 fun fill_trustedIDs_buffer () =
   let val () = Utils.clear_buf trustedIDs_buffer
-      val () = api_get_Trusted_IDs "" trustedIDs_buffer
+      val () = get_Trusted_IDs "" trustedIDs_buffer
    in ()
    end
    handle _ =>
-    (logInfo "Monitor failure: unable to fill input buffer.";
+    (logInfo "Monitor failure: unable to fill Trusted_IDs buffer.";
      raise Utils.ERR "fill_input_buffer" ""
     );
 
 
 fun fill_block_buffer () =
   let val () = Utils.clear_buf block_buffer
-      val () = api_get_VDTU_Request_Message_In "" block_buffer
+      val () = get_VDTU_Request_Message_In "" block_buffer
    in ()
    end
    handle _ =>
-    (logInfo "Monitor failure: unable to fill input buffer.";
+    (logInfo "Monitor failure: unable to fill VDTU_Request_Message_In buffer.";
+     raise Utils.ERR "fill_input_buffer" ""
+    );
+
+
+fun fill_shm_buffer () =
+  let val () = Utils.clear_buf shm_buffer
+      val () = get_VDTU_Control_Message_In "" block_buffer
+   in ()
+   end
+   handle _ =>
+    (logInfo "Monitor failure: unable to fill VDTU_Control_Message_In buffer.";
      raise Utils.ERR "fill_input_buffer" ""
     );
 
@@ -1263,6 +1358,12 @@ fun fill_block_buffer () =
 (*---------------------------------------------------------------------------*)
 
 fun send_VDTU_Request_Message_Out string = TextIO.output TextIO.stdOut string;
+
+(*---------------------------------------------------------------------------*)
+(*    #(api_send_VDTU_Control_Message_Out) string Utils.emptybuf             *)
+(*---------------------------------------------------------------------------*)
+
+fun send_VDTU_Control_Message_Out string = TextIO.output TextIO.stdOut string;
 
 (*---------------------------------------------------------------------------*)
 (*    #(api_send_Health_Out) string Utils.emptybuf                           *)
@@ -1540,7 +1641,7 @@ fun stepFn inports stateVars =
                      (get_STALE_TAGS_FROM_SHM_QUEUE
                         (Option.valOf vdtu_Request_Message_In))
                else tag_map
-              val cycle_count = 0
+              val cycle_count = 1
               val () = (initStep := False)
           in
             (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count)
@@ -1595,16 +1696,6 @@ fun stepFn inports stateVars =
 fun trueOpt opt = case opt of Some True => True | otherwise => False;
 
 (*---------------------------------------------------------------------------*)
-(* move from 'a option option to 'a option                                   *)
-(*---------------------------------------------------------------------------*)
-
-fun dropOpt optOpt =
- case optOpt
-  of None => None
-   | Some(Some x) => Some x
-   | Some None => raise Utils.ERR "dropOpt" "Some(None) is an error";
-
-(*---------------------------------------------------------------------------*)
 (*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count)        *)
 (*---------------------------------------------------------------------------*)
 
@@ -1621,40 +1712,53 @@ val trustedID_parseinfo =
 val block_parseinfo =
     (Gate_Contig.vdtu_input_array,Gate_Parse.mk_shm_queue);
 
-fun parse_trustedIDs () =
-  Gate_Parse.eventParse trustedID_parseinfo API.trustedIDs_buffer;
+val shm_parseinfo =
+    (Gate_Contig.shm,Gate_Parse.mk_shm_elt);
 
-fun parse_block () = Gate_Parse.eventParse block_parseinfo API.block_buffer;
+fun parse_trustedIDs () =
+ let val () = API.fill_trustedIDs_buffer ()
+     val tidOpt2 = Gate_Parse.eventParse trustedID_parseinfo API.trustedIDs_buffer
+ in
+     Utils.dropOpt "Parsing of Trusted_IDs port failed" tidOpt2
+ end;
+
+fun parse_block () =
+ let val () = API.fill_block_buffer ()
+     val blockOpt2 = Gate_Parse.eventParse block_parseinfo API.block_buffer
+ in
+    Utils.dropOpt "Parsing of VDTU_Request_Message_In port failed" blockOpt2
+ end;
+
+fun parse_shm () =
+ let val () = API.fill_shm_buffer ()
+     val shmOpt2 = Gate_Parse.eventParse shm_parseinfo API.shm_buffer
+ in
+    Utils.dropOpt "Parsing of VDTU_Control_Message_In port failed" shmOpt2
+ end;
 
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
 
 fun gateFn () =
- let val () = API.fill_trustedIDs_buffer ()
-     val () = API.fill_block_buffer ()
+ let val tidOpt   = parse_trustedIDs()
+     val blockOpt = parse_block()
+     val shmOpt   = parse_shm()
+     val (newState,outOpts) = stepFn (tidOpt,blockOpt) (!theState)
+     val () = (theState := newState)
+     val (blockOut,countOut) = outOpts
  in
- case (parse_trustedIDs(), parse_block())
-  of (Some None,_) => API.logInfo "Monitor warning: unable to parse Trusted_ID input event"
-   | (_,Some None) => API.logInfo "Monitor warning: unable to parse block input event"
-   | (tidOptOpt,blockOptOpt) =>
-     let val tidOpt = dropOpt tidOptOpt
-         val blockOpt = dropOpt blockOptOpt
-         val (newState,outOpts) = stepFn (tidOpt,blockOpt) (!theState)
-         val () = theState := newState
-         val (blockOpt,countOpt) = outOpts
-     in
-       let in
-         case countOpt
-          of None => API.logInfo "Health Output: uninitialized cycle count"
-           | Some i => API.send_Health_Out (Utils.pack_u64 i)
-       end
-       ;
-       case blockOpt
-        of None => ()
-         | Some block =>
-             API.send_VDTU_Request_Message_Out (Gate_Types.encode_block block)
-     end
+    let in
+      case countOut
+       of None => API.logInfo "Health Output: uninitialized cycle count"
+        | Some i => API.send_Health_Out (Utils.pack_u64 i)
+    end
+    ;
+    case blockOut
+     of None => ()
+      | Some block =>
+          API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block)
  end
+
 
 end (* Gate *)

@@ -57,6 +57,6 @@ val shm_Queue_Element = Recd [
       (Bnot (Beq (varloc "command", CONNECT)),
       Recd [("payload", Array (u8, IntLit 2048))])
       ])
-];
+ ];
 
 val vdtu_Message_Block = Array (shm_Queue_Element, IntLit 16);
