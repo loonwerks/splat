@@ -14,6 +14,8 @@ val pow2 = Array.fromList [1,2,4,8,16,32,64,128,256];
 
 fun twoExp n = Array.sub(pow2,n);
 
+fun bitsString list = String.concat (List.map Int.toString list);
+
 fun grab_bits n N =  (* should use dnc *)
  if n <= 0 then []
  else
@@ -54,13 +56,13 @@ fun byteSegment byte i width =
  end;
 
 (*---------------------------------------------------------------------------*)
-(* Extract bits [lo..lo+width-1] from A. Bit endianess = BE.                 *)
+(* Extract bits [lo..lo+width-1] from byte array A. Bit endianess = BE.      *)
 (*---------------------------------------------------------------------------*)
 
 fun bits_of A lo width =
  let val len = Word8Array.length A
      val (loIndex,i) = divmod lo 8
-     val (hiIndex,j) = divmod (lo + width) 8
+     val (hiByteIndex,lastPos) = divmod (lo + width -1) 8
      val _ = assert (0 <= lo andalso 0 < width
                      andalso lo + width <= len * 8) "bits_of"
      val lbyte = Word8Array.sub(A,loIndex)
@@ -69,11 +71,12 @@ fun bits_of A lo width =
      byteSegment lbyte i width
   else
   let val lbits = byteSegment lbyte i (8 - i)
-      val (cbytes,rbyte) = front_last (byteInterval A (loIndex+1) hiIndex)
+      val (cbytes,rbyte) = front_last (byteInterval A (loIndex+1) hiByteIndex)
       val cbits = bytes2bits (List.map Word8.toInt cbytes)
-      val shift = Word.fromInt (8 - j)
+      val rbitsNum = lastPos + 1
+      val shift = Word.fromInt (8 - rbitsNum)
       val rbyte' = Word8.>>(rbyte, shift)
-      val rbits = grab_bits j (Word8.toInt rbyte')
+      val rbits = grab_bits rbitsNum (Word8.toInt rbyte')
   in
     lbits @ cbits @ rbits
   end
@@ -116,11 +119,21 @@ fun chunkBy n list =
  end;
 
 fun bytesValBE blist =
+ let open IntInf
+     fun byte_ii byte = IntInf.fromInt(Word8.toInt byte)
+ in rev_itlist (fn byte => fn acc => byte_ii byte + ii_256 * acc) blist 0
+ end;
+
+(*
+fun bytesValBE blist =
   List.map bitsValBE (chunkBy 8 blist)
   handle e => raise wrap_exn "take_bits" "bytesVal" e;
+*)
 
+(*
 fun stringVal blist =
   String.implode (List.map (Char.chr o IntInf.toInt) (bytesValBE blist));
+*)
 
 fun boolVal 0 = false
   | boolVal 1 = true

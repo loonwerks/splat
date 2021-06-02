@@ -33,19 +33,19 @@ fun phase3_atom_width atm =
   of Bool       => 1
    | Signed i   => i
    | Unsigned i => i
-   | other      => raise ERR "atom_width" "unknown width of Raw"
+   | Blob => raise ERR "atom_width" "unknown width of Raw";
 
 
 (*---------------------------------------------------------------------------*)
 (* Valuation functions                                                       *)
 (*---------------------------------------------------------------------------*)
 
-fun dvalFn atm bits = raise ERR "dvalFn" "undefined";
-
 fun valFn atm bits =
  case atm
   of Signed i => SOME (BitFns.twos_comp bits)
    | otherwise => SOME (BitFns.unsigned bits);
+
+fun dvalFn atm bits = raise ERR "dvalFn" "undefined";
 
 val theEnv = ([],[],phase3_atom_width,valFn,dvalFn)
 
@@ -187,7 +187,7 @@ type traffic_report =
     nacp      : int,
     horizV    : int,
     vertV     : int,
-    heading   : int,
+    heading   : real,
     emitter   : int,
     callSign  : string,
     prio      : int
@@ -250,7 +250,12 @@ fun mk_traffic_report ptree =
       addrType  = mk_int addrType,
       address   = mk_int address,
       lat       = mult_by_factor (180.0 / Real.fromInt twoE23) (mk_int lat),
-      lon       = mult_by_factor (180.0 / Real.fromInt twoE23) (mk_int lon),
+      lon       =
+   let val bits = leaf_bits lon
+       val () = print ("Lon bits = "^BitFns.bitsString bits^"\n")
+       val () = print ("Lon int = "^Int.toString (mk_int lon)^"\n")
+   in mult_by_factor (180.0 / Real.fromInt twoE23) (mk_int lon)
+   end,
       alt       = mk_int alt * 25 - 1000,
       miscInd   = mk_miscInd miscInd,
       nic       = mk_int nic,
@@ -263,7 +268,47 @@ fun mk_traffic_report ptree =
       prio      = mk_int prio}
   | otherwise => raise ERR "mk_traffic_report" ""
 
-val report = adsbParse (traffic_report,mk_traffic_report) A;
+
+fun printB s b = print (s^Bool.toString b^"\n");
+fun printI s i = print (s^Int.toString i^"\n");
+fun printR s d = print (s^Real.toString d^"\n");
+fun printS s1 s2 = print (s1 ^ Lib.quote s2 ^"\n");
+
+fun print_misc{tt_bit0, tt_bit1, reportKind,airborne} =
+    (print  "  Misc Indicators.\n";
+     printB "    tt_bit0 :    " tt_bit0;
+     printB "    tt_bit1 :    " tt_bit1;
+     printB "    reportKind : " reportKind;
+     printB "    airborne :   " airborne
+    )
+;
+
+fun print_traffic_report
+   {messageID, status, addrType, address,
+    lat, lon, alt, miscInd,
+    nic, nacp, horizV, vertV, heading,
+    emitter, callSign, prio} =
+      (print "Traffic Report.\n";
+       printI "  messageID: " messageID ;
+       printI "  status:    " status ;
+       printI "  addrType:  " addrType ;
+       printI "  address:   " address ;
+       printR "  lat:       " lat;
+       printR "  lon:       " lon;
+       printI "  alt:       " alt;
+       print_misc miscInd;
+       printI "  nic:       " nic;
+       printI "  nacp:      " nacp;
+       printI "  horizV:    " horizV;
+       printI "  vertV:     " vertV;
+       printR "  heading:   " heading;
+       printI "  emitter:   " emitter;
+       printS "  callSign:  " callSign;
+       printI "  prio:      " prio;
+       print "End Traffic Report.\n\n"
+     );
+
+val SOME report = adsbParse (traffic_report,mk_traffic_report) A;
 
 
 (*---------------------------------------------------------------------------*)
@@ -318,16 +363,25 @@ val heartbeat = Recd [
    ("Time-Stamp", u16),
    ("Message-Counts", u16)];
 
-val adsb_messages = Recd[
+val adsb_messages = Recd [
   ("Heartbeat", heartbeat),
-  ("Traffic", Array (traffic_report, intLit 150)),
-  ("Ownship", traffic_report)]
+  ("Ownship", traffic_report),
+  ("Traffic", Array (traffic_report, intLit 150))
+ ];
 
 val target_identity = Recd [
   ("spare", Raw(intLit 4)),
   ("Address", u4),
   ("ParticipantAddress", u24)
  ];
+
+fun encode_target_identity i j =
+ let val (d,r1) = divmod j 256
+     val (d,r2) = divmod d 256
+     val (d,r3) = divmod d 256
+  in
+   List.map Word8.fromInt [i,r1,r2,r3]
+  end;
 
 val monitor_report = Recd [
   ("messageID", u8),

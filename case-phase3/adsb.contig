@@ -1,7 +1,9 @@
+(*
 use "BitFns.sml";
 use "BitContig.sml";
 
 open BitContig;
+*)
 
 (*===========================================================================*)
 (* Contiguity types for message buffer parsing                               *)
@@ -14,13 +16,40 @@ open BitContig;
 val bool = Basic Bool;
 val bit  = Basic(Unsigned 1);
 val u4   = Basic(Unsigned 4);
+val u5   = Basic(Unsigned 5);
 val u8   = Basic(Unsigned 8);
 val char = Basic(Unsigned 8);
+val u10  = Basic(Unsigned 10);
 val u12  = Basic(Unsigned 12);
 val u16  = Basic(Unsigned 16);
 val u24  = Basic(Unsigned 24);
 val i12  = Basic(Signed 12);
 val i24  = Basic(Signed 24);
+
+(* -------------------------------------------------------------------------- *)
+(* Bit widths for basic items.                                                *)
+(* -------------------------------------------------------------------------- *)
+
+fun phase3_atom_width atm =
+ case atm
+  of Bool       => 1
+   | Signed i   => i
+   | Unsigned i => i
+   | Blob => raise ERR "atom_width" "unknown width of Raw";
+
+
+(*---------------------------------------------------------------------------*)
+(* Valuation functions                                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun valFn atm bits =
+ case atm
+  of Signed i => SOME (BitFns.twos_comp bits)
+   | otherwise => SOME (BitFns.unsigned bits);
+
+fun dvalFn atm bits = raise ERR "dvalFn" "undefined";
+
+val theEnv = ([],[],phase3_atom_width,valFn,dvalFn)
 
 (*---------------------------------------------------------------------------*)
 (* Miscellaneous Indicators (part of traffic report). Combination of tt_bits *)
@@ -33,8 +62,6 @@ val misc_indicators = Recd [
   ("reportKind", bool),
   ("airborne",   bool)
  ];
-
-val miscIndicators = Declared "misc_indicators";
 
 (*---------------------------------------------------------------------------*)
 (* 28 bytes in length. Interpretations of fields given below in field        *)
@@ -67,7 +94,7 @@ val traffic_report = Recd [
   ("lat",       i24),
   ("lon",       i24),
   ("alt",       u12),
-  ("miscInd",   miscIndicators),
+  ("miscInd",   misc_indicators),
   ("nic",       u4),
   ("nacp",      u4),
   ("horizV",    u12),
@@ -76,10 +103,9 @@ val traffic_report = Recd [
   ("emitter",   u8),
   ("callSign",  Array (char,intLit 8)),
   ("prio",      u4),
-  ("spare",     u4)
+  ("spare",     u4),
+  ("TR-info",   u8)  (* for the FDL protocol *)
 ];
-
-val traffic_report = Declared "traffic_report";
 
 (*---------------------------------------------------------------------------*)
 (* Heartbeat Message. Following is from GDL-90 doc, and probably differs     *)
@@ -131,24 +157,23 @@ val heartbeat = Recd [
        ("reserved", Raw(intLit 4)),
        ("UTC-OK",bit)]),
    ("Time-Stamp", u16),
-   ("Message-Counts", u16)];
+   ("Message-Counts", Recd [
+        ("uplinks", u5),
+        ("ignore",bit),
+        ("basic_and_long", u10)])
+ ];
 
-val heartbeat = Declared "heartbeat";
-
-val adsb_messages = Recd[
+val adsb_messages = Recd [
   ("Heartbeat", heartbeat),
-  ("Traffic", Array (traffic_report, intLit 150)),
-  ("Ownship", traffic_report)];
-
-val adsb_messages = Declared "adsb_messages";
+  ("Ownship", traffic_report),
+  ("Traffic", Array (traffic_report, intLit 150))
+ ];
 
 val target_identity = Recd [
   ("spare", Raw(intLit 4)),
   ("Address", u4),
   ("ParticipantAddress", u24)
  ];
-
-val target_identity = Declared "target_identity";
 
 val monitor_report = Recd [
   ("messageID", u8),
@@ -157,12 +182,24 @@ val monitor_report = Recd [
   ("SuspectTraffic", Array(target_identity, intLit 150))
  ];
 
-val monitor_report = Declared "monitor_report";
+(*
+val misc_indicators = Declared "misc_indicators";
+val traffic_report  = Declared "traffic_report";
+val heartbeat       = Declared "heartbeat";
+val adsb_messages   = Declared "adsb_messages";
+val target_identity = Declared "target_identity";
+val monitor_report  = Declared "monitor_report";
 
 val adsb_decls =
- [("Misc-Indicators", misc_indicators),
+ [("misc_indicators", misc_indicators),
   ("traffic_report", traffic_report),
   ("heartbeat", heartbeat),
-  ("adsb_messages",adsb_message),
+  ("adsb_messages",adsb_messages),
   ("target_identity",target_identity),
   ("monitor_report",monitor_report)];
+
+val basicEnv = ([],[],phase3_atom_width,valFn,dvalFn);
+val adsbEnv  = ([],adsb_decls,phase3_atom_width,valFn,dvalFn);
+
+debug theEnv heartbeat heartbeatArr;
+*)

@@ -1,9 +1,9 @@
-structure BitContig =
+structure ByteContig =
 struct
 
-val ERR = mk_HOL_ERR "BitContig";
+val ERR = mk_HOL_ERR "ByteContig";
 
-type bits = int list;  (* list of 0/1 *)
+type bytes = Word8.word list;
 
 (*---------------------------------------------------------------------------*)
 (* lvals designate locations where data lives. Exps are r-values. Since an   *)
@@ -67,7 +67,7 @@ datatype contig
 (*---------------------------------------------------------------------------*)
 
 datatype ptree
-  = LEAF of atom * bits
+  = LEAF of atom * bytes
   | RECD of (string * ptree) list
   | ARRAY of ptree list
 ;
@@ -109,7 +109,6 @@ fun pp_lval lval =
      | Mult (e1,e2) => pp_binop "*" (pp_exp e1) (pp_exp e2)
 end
 
-
 fun pp_bexp bexp =
  let open PP
      fun pp_real r = add_string(Real.toString r)
@@ -134,8 +133,8 @@ fun pp_atom atom =
  let open PP
  in case atom
      of Bool       => add_string "Bool"
-      | Signed i   => add_string ("i"^Int.toString i)
-      | Unsigned i => add_string ("u"^Int.toString i)
+      | Signed i   => add_string ("i"^Int.toString (i * 8))
+      | Unsigned i => add_string ("u"^Int.toString (i * 8))
       | Blob       => add_string "Raw"
  end;
 
@@ -189,8 +188,8 @@ val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
 (*---------------------------------------------------------------------------*)
 
   type lvalMap   = (lval, atom * (int * int)) Redblackmap.dict;
-  type valFn     = (atom -> bits -> int option);
-  type dvalFn    = (atom -> bits -> real option);
+  type valFn     = (atom -> bytes -> int option);
+  type dvalFn    = (atom -> bytes -> real option);
   type constMap  = (string * int) list;
   type declMap   = (string * contig) list;
   type atomWidth = atom -> int;
@@ -293,10 +292,21 @@ fun firstOpt f [] = NONE
 fun concatOpts optlist =
     SOME(List.concat(List.map Option.valOf optlist)) handle _ => NONE;
 
+fun total_bytes_of A i w =
+ let val top = i+w
+     fun accFn n acc =
+       if n < top then
+          accFn (n+1) (Word8Array.sub(A,n)::acc)
+       else rev acc
+ in if top < Word8Array.length A
+    then SOME (accFn i [])
+    else NONE
+ end;
+
 fun evalExp (E as (Delta,lvalMap,valFn)) A exp =
  let fun locVal A (a,(i,width)) =
        Option.mapPartial (valFn a)
-         (BitFns.total_bits_of A i width)
+         (total_bytes_of A i width)
  in
  case exp
   of Loc lval => Option.mapPartial (locVal A) (lookup(lvalMap,lval))
@@ -316,20 +326,24 @@ fun evalExp (E as (Delta,lvalMap,valFn)) A exp =
 fun orOp a b = a orelse b;
 fun andOp a b = a andalso b;
 
+fun boolVal 0 = false
+  | boolVal 1 = true
+  | boolVal otherwise = raise ERR "boolVal" "";
+
 fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) A bexp =
  let val evalE = evalExp (Delta,lvalMap,valFn) A
      fun blocVal A tuple =
       case tuple
        of (Bool,(i,width)) =>
-          Option.map BitFns.boolVal
+          Option.map boolVal
             (Option.mapPartial (valFn Bool)
-              (BitFns.total_bits_of A i width))
+              (total_bytes_of A i width))
         | otherwise => NONE
    fun evalB bexp =
     case bexp
-     of boolLit b => SOME b
-      | BLoc lval => Option.mapPartial (blocVal A) (lookup(lvalMap,lval))
-      | Bnot b    => Option.map not (evalB b)
+     of boolLit b   => SOME b
+      | BLoc lval   => Option.mapPartial (blocVal A) (lookup(lvalMap,lval))
+      | Bnot b      => Option.map not (evalB b)
       | Bor(b1,b2)  => binopFn orOp evalB b1 b2
       | Band(b1,b2) => binopFn andOp evalB b1 b2
       | Beq (e1,e2) => binopFn (curry op=) evalE e1 e2
@@ -338,19 +352,25 @@ fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) A bexp =
       | Ble (e1,e2) => binopFn (curry op<=) evalE e1 e2
       | Bge (e1,e2) => binopFn (curry op>=) evalE e1 e2
       | DleA (r,Loc lval) =>
-         (case Redblackmap.peek(lvalMap,lval)
-            of SOME (Double,(i,width)) =>
-                (case dvalFn Double (BitFns.bits_of A i width)
-                  of NONE => NONE
-                   | SOME r1 => SOME (Real.<=(r,r1)))
-             | otherwise => NONE)
+        (case lookup(lvalMap,lval)
+          of NONE => NONE
+           | SOME(Double,(i,width)) =>
+         case total_bytes_of A i width
+          of NONE => NONE
+           | SOME bytes =>
+	 case dvalFn Double bytes
+          of NONE => NONE
+          | SOME r1 => SOME (Real.<=(r,r1)))
       | DleB (Loc lval,r) =>
-         (case Redblackmap.peek(lvalMap,lval)
-           of SOME (Double,(i,width)) =>
-               (case dvalFn Double (BitFns.bits_of A i width)
-                  of NONE => NONE
-                  | SOME r1 => SOME (Real.<=(r1,r)))
-            | otherwise => NONE)
+        (case lookup(lvalMap,lval)
+          of NONE => NONE
+           | SOME(Double,(i,width)) =>
+         case total_bytes_of A i width
+          of NONE => NONE
+           | SOME bytes =>
+	 case dvalFn Double bytes
+          of NONE => NONE
+           | SOME r1 => SOME (Real.<=(r1,r)))
       | otherwise => NONE
  in
   evalB bexp
@@ -425,9 +445,11 @@ fun filterOpt P list =
    filt list []
  end;
 
+fun assocOpt x alist = Option.map snd (assoc1 x alist)
+
 (*---------------------------------------------------------------------------*)
 (* substFn is given an assignment for a contig and applies it to the contig, *)
-(* yielding a string of bits.                                                *)
+(* yielding a string of bytes.                                                *)
 (*---------------------------------------------------------------------------*)
 
 fun substFn E A theta path contig =
@@ -435,7 +457,7 @@ fun substFn E A theta path contig =
      fun thetaFn lval =
          (case lookup(theta,lval)
            of NONE => NONE
-            | SOME (a,(i,width)) => SOME (BitFns.bits_of A i width))
+            | SOME (a,(i,width)) => total_bytes_of A i width)
  in
   case contig
    of Void     => NONE
@@ -448,7 +470,10 @@ fun substFn E A theta path contig =
         case evalBexp (Consts,theta,valFn,dvalFn) A b'
          of SOME true => SOME []
           | otherwise => NONE)
-    | Declared name => substFn E A theta path (assoc name Decls)
+    | Declared name =>
+       (case assocOpt name Decls
+        of NONE => NONE
+	 | SOME c => substFn E A theta path c)
     | Recd fields =>
        let fun fieldFn (fName,c) = substFn E A theta (RecdProj(path,fName)) c
        in concatOpts (List.map fieldFn fields)
@@ -480,21 +505,20 @@ fun substFn E A theta path contig =
 fun fieldFn path (fName,c) = (RecdProj(path,fName),c)
 fun indexFn path c i = (ArraySub(path,intLit i),c)
 
-fun assocOpt x alist = Option.map snd (assoc1 x alist)
-
 fun matchFn E A (state as (worklist,pos,theta)) =
  let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
-     val Asize = Word8Array.length A * 8
+     val Asize = Word8Array.length A
  in
  case worklist
   of [] => SOME (pos,theta)
    | (_,Void)::_ => NONE
    | (path,Basic a)::t =>
      let val width = atomWidth a
-     in if Asize < pos + width then
+         val newpos = pos + width
+     in if Asize <= newpos then
           NONE
         else
-          matchFn E A (t,pos + width,
+          matchFn E A (t,newpos,
               Redblackmap.insert(theta,path,(a,(pos,width))))
      end
    | (path,Declared name)::t =>
@@ -508,11 +532,13 @@ fun matchFn E A (state as (worklist,pos,theta)) =
         case evalExp (Consts,theta,valFn) A exp'
          of NONE => NONE
           | SOME width =>
-        if Asize < pos + width then
-           NONE
-        else
-         matchFn E A (t,pos + width,
-                      Redblackmap.insert(theta,path,(Blob,(pos,width)))))
+        let val newpos = pos + width
+        in if Asize <= newpos then
+              NONE
+           else
+              matchFn E A (t,newpos,
+                    Redblackmap.insert(theta,path,(Blob,(pos,width))))
+        end)
    | (path,Assert bexp)::t =>
        (case resolveBexp theta path bexp
         of NONE => NONE
@@ -550,7 +576,7 @@ fun check_match E contig A =
   of NONE => raise ERR "check_match" "no match"
   |  SOME(pos,theta) =>
       case substFn E A theta (VarName"root") contig
-       of SOME bits => (s1^s2 = s)
+       of SOME bytes => (s1^s2 = s)
        |  NONE => raise ERR "check_match" "substFn failed"
 *)
 
@@ -561,18 +587,18 @@ fun check_match E contig A =
 
 fun predFn E A (state as (worklist,pos,theta)) =
  let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
-     val Asize = Word8Array.length A * 8
+     val Asize = Word8Array.length A
  in
  case worklist
   of [] => PASS (pos,theta)
    | (path,Void)::t => FAIL state
    | (path,Basic a)::t =>
      let val width = atomWidth a
-     in if Asize < pos + width then
+         val newpos = pos + width
+     in if Asize <= newpos then
           FAIL state
         else
-          predFn E A (t,pos + width,
-              Redblackmap.insert(theta,path,(a,(pos,width))))
+          predFn E A (t,newpos,Redblackmap.insert(theta,path,(a,(pos,width))))
      end
    | (path,Declared name)::t =>
        (case assocOpt name Decls
@@ -585,11 +611,13 @@ fun predFn E A (state as (worklist,pos,theta)) =
         case evalExp (Consts,theta,valFn) A exp'
          of NONE => FAIL state
           | SOME width =>
-        if Asize < pos + width then
-           FAIL state
-        else
-          predFn E A (t,pos + width,
-                      Redblackmap.insert(theta,path,(Blob,(pos,width)))))
+        let val newpos = pos + width
+        in if Asize <= newpos then
+              FAIL state
+           else
+             predFn E A (t,newpos,
+                   Redblackmap.insert(theta,path,(Blob,(pos,width))))
+        end)
    | (path,Assert bexp)::t =>
        (case resolveBexp theta path bexp
         of NONE => FAIL state
@@ -629,6 +657,9 @@ fun wellformed E contig A =
 (* leaves leaf elements uninterpreted.                                       *)
 (*---------------------------------------------------------------------------*)
 
+fun take_drop n list =
+    SOME(List.take(list, n),List.drop(list, n)) handle _ => NONE;
+
 (*---------------------------------------------------------------------------*)
 (* Environments:                                                             *)
 (*                                                                           *)
@@ -652,17 +683,18 @@ fun wellformed E contig A =
 fun parseFn E A path contig state =
  let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
      val (stk,pos,theta) = state
-     val Asize = Word8Array.length A * 8
+     val Asize = Word8Array.length A
  in
  case contig
   of Void => NONE
    | Basic a =>
        let val width = atomWidth a
-       in if Asize < pos + width then
+           val newpos = pos + width
+       in if Asize <= newpos then
           NONE
           else
-           SOME(LEAF(a,BitFns.bits_of A pos width)::stk,
-                pos+width,
+           SOME(LEAF(a, Option.valOf(total_bytes_of A pos width))::stk,
+                newpos,
                 Redblackmap.insert(theta,path,(a,(pos,width))))
        end
    | Declared name =>
@@ -676,12 +708,14 @@ fun parseFn E A path contig state =
         case evalExp (Consts,theta,valFn) A exp'
          of NONE => NONE
           | SOME width =>
-        if Asize < pos + width then
-           NONE
-        else
-         SOME (LEAF(Blob,BitFns.bits_of A pos width)::stk,
-               pos + width,
-               Redblackmap.insert(theta,path,(Blob,(pos,width)))))
+        let val newpos = pos + width
+        in if Asize <= newpos then
+              NONE
+           else
+            SOME(LEAF(Blob,Option.valOf(total_bytes_of A pos width))::stk,
+                 newpos,
+                 Redblackmap.insert(theta,path,(Blob,(pos,width))))
+        end)
    | Assert bexp =>
        (case resolveBexp theta path bexp
          of NONE => NONE
@@ -700,7 +734,7 @@ fun parseFn E A path contig state =
        in case rev_itlist fieldFn fields (SOME state)
            of NONE => NONE
             | SOME (stk',pos',theta') =>
-          case BitFns.take_drop (length fields') stk'
+          case take_drop (length fields') stk'
            of NONE => NONE
             | SOME(elts,stk'') =>
           SOME(RECD (zip (map fst fields') (rev elts))::stk'', pos', theta')
@@ -717,7 +751,7 @@ fun parseFn E A path contig state =
           case rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
            of NONE => NONE
             | SOME (stk',pos',theta') =>
-          case BitFns.take_drop dim stk'
+          case take_drop dim stk'
            of NONE => NONE
             | SOME(elts,stk'') => SOME(ARRAY (rev elts)::stk'', pos', theta')
        end
@@ -782,4 +816,4 @@ fun add_enum_decl E (s,bindings) =
 *)
 
 
-end (* BitContig *)
+end (* ByteContig *)
