@@ -173,6 +173,29 @@ fun unpack_double buf index =
        (elt (index+4)) (elt (index+5)) (elt (index+6)) (elt (index+7))
  end;
 
+fun int2octal n =
+let fun divAcc n acc =
+      if n < 8 then n::acc
+      else let val (d,r) = divmod n 8 in divAcc d (r::acc) end
+in String.concat
+        (List.map Int.toString (divAcc n []))
+end
+
+fun pad_left x n list =
+ let val d = n - List.length list
+     val _ = assert (d >= 0) "pad_left: list too long"
+ in copies x d @ list
+ end
+
+fun pack_u64 n =
+let fun divAcc n acc =
+      if n < 256 then n::acc
+      else let val (d,r) = divmod n 256 in divAcc d (r::acc) end
+    val ilist = pad_left 0 8 (divAcc n [])
+in
+  String.implode (List.map Char.chr ilist)
+end
+
 end (* Utils *)
 
 structure ByteContig =
@@ -851,7 +874,7 @@ val shm = mkRecd [
 (* VDTU_Request_Message_In input port                                        *)
 (*---------------------------------------------------------------------------*)
 
-val vdtu_input_array = mkArray shm (intLit 8);
+val vdtu_input_array = mkArray shm (intLit 16);
 
 end (* Gate_Contig *)
 
@@ -910,7 +933,8 @@ fun printR s d = print (s^Double.toString d^"\n");
 fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
 
 
-fun encode_block block = "<ENCODED BLOCK STUB"
+fun encode_shm block = "<ENCODED SHM STUB>"
+fun encode_block block = "<ENCODED BLOCK STUB>"
 
 (* encode_array encode_shm block *)
 
@@ -1155,7 +1179,8 @@ end (* Gate_Parse *)
 structure API =
 struct
 
-val input_buffer = Word8Array.array 4386 Utils.w8zero;
+val trustedIDs_buffer = Word8Array.array (1 + 8*4) Utils.w8zero;
+val block_buffer      = Word8Array.array (1 + 2080*16) Utils.w8zero;
 
 (*---------------------------------------------------------------------------*)
 (* Clear buffer, read port into buffer                                       *)
@@ -1234,10 +1259,17 @@ fun fill_block_buffer () =
     );
 
 (*---------------------------------------------------------------------------*)
-(*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
+(*    #(api_send_VDTU_Request_Message_Out) string Utils.emptybuf             *)
 (*---------------------------------------------------------------------------*)
 
-fun put_VDTU_Request_Message_Out string = TextIO.output TextIO.stdOut string;
+fun send_VDTU_Request_Message_Out string = TextIO.output TextIO.stdOut string;
+
+(*---------------------------------------------------------------------------*)
+(*    #(api_send_Health_Out) string Utils.emptybuf                           *)
+(*---------------------------------------------------------------------------*)
+
+fun send_Health_Out string = TextIO.output TextIO.stdOut string;
+
 
 end (* Mock API *)
 
@@ -1472,6 +1504,7 @@ fun update_BLOCK block tag_map =
             else default_SHM_ELEMENT);
 
 fun pre x = x;
+val valOf = Option.valOf;
 
 val initStep = Ref True;
 
@@ -1479,7 +1512,7 @@ fun stepFn inports stateVars =
  let val (trusted_IDs,vdtu_Request_Message_In) = inports
      val event_trusted_IDs = Option.isSome trusted_IDs
      val event_vdtu_Request_Message_In = Option.isSome vdtu_Request_Message_In
-     val (whitelist,previous_tag_map,tag_map,tag_map_wo_close) = stateVars
+     val (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count) = stateVars
 
      (*--------------------------*)
      (* Compute new state values *)
@@ -1507,14 +1540,15 @@ fun stepFn inports stateVars =
                      (get_STALE_TAGS_FROM_SHM_QUEUE
                         (Option.valOf vdtu_Request_Message_In))
                else tag_map
+              val cycle_count = 0
               val () = (initStep := False)
           in
-            (whitelist,previous_tag_map,tag_map,tag_map_wo_close)
+            (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count)
           end
        else
-          let val (whitelist,previous_tag_map,tag_map,tag_map_wo_close) =
-	          (Option.valOf whitelist,Option.valOf previous_tag_map,
-		   Option.valOf tag_map,Option.valOf tag_map_wo_close)
+          let val (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count) =
+	          (valOf whitelist,valOf previous_tag_map,
+		   valOf tag_map,valOf tag_map_wo_close, valOf cycle_count)
               val whitelist =
                 if event_trusted_IDs then Option.valOf trusted_IDs else (pre whitelist)
               val previous_tag_map = pre tag_map_wo_close
@@ -1534,11 +1568,12 @@ fun stepFn inports stateVars =
                       (get_STALE_TAGS_FROM_SHM_QUEUE
                           (Option.valOf vdtu_Request_Message_In))
                 else tag_map
+              val cycle_count = cycle_count + 1
           in
-            (whitelist,previous_tag_map,tag_map,tag_map_wo_close)
+            (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count)
           end
 
-     val (whitelist,previous_tag_map,tag_map,tag_map_wo_close) = newStateVars
+     val (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count) = newStateVars
 
      (*-----------------------*)
      (* Compute output values *)
@@ -1549,10 +1584,12 @@ fun stepFn inports stateVars =
          then Some(update_BLOCK (Option.valOf vdtu_Request_Message_In) tag_map)
          else None
 
+     val health_out = Some cycle_count
+
      val newStateVarOpts = (Some whitelist, Some previous_tag_map,
-                            Some tag_map,Some tag_map_wo_close)
+                            Some tag_map,Some tag_map_wo_close, Some cycle_count)
   in
-    (newStateVarOpts,vdtu_Request_Message_Out)
+    (newStateVarOpts,(vdtu_Request_Message_Out,health_out))
   end
 
 fun trueOpt opt = case opt of Some True => True | otherwise => False;
@@ -1567,11 +1604,16 @@ fun dropOpt optOpt =
    | Some(Some x) => Some x
    | Some None => raise Utils.ERR "dropOpt" "Some(None) is an error";
 
-val theState = Ref (None, None, None,None)
+(*---------------------------------------------------------------------------*)
+(*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count)        *)
+(*---------------------------------------------------------------------------*)
+
+val theState = Ref (None, None, None, None, None)
  : (Gate_Types.whitelist option *
     Gate_Types.tag_ip_pair array option *
     Gate_Types.tag_ip_pair array option *
-    Gate_Types.tag_ip_pair array option) ref;
+    Gate_Types.tag_ip_pair array option *
+    int option) ref;
 
 val trustedID_parseinfo =
     (Gate_Contig.trustedIDs,Gate_Parse.mk_trustedIDs);
@@ -1596,21 +1638,23 @@ fun gateFn () =
   of (Some None,_) => API.logInfo "Monitor warning: unable to parse Trusted_ID input event"
    | (_,Some None) => API.logInfo "Monitor warning: unable to parse block input event"
    | (tidOptOpt,blockOptOpt) =>
-      let val tidOpt = dropOpt tidOptOpt
-          val blockOpt = dropOpt blockOptOpt
-          val (newState,outOpt) = stepFn (tidOpt,blockOpt) (!theState)
-          val () = theState := newState
-      in case outOpt
-          of None => ()
-           | Some block =>
-              let (* val rptBytes = Gate_Types.encode_block block
-                     val rpt_string = String.implode (List.map Utils.w8char rptBytes)
-                  *)
-		  val block_string = Gate_Types.encode_block block
-              in
-                 API.put_VDTU_Request_Message_Out block_string
-              end
-      end
+     let val tidOpt = dropOpt tidOptOpt
+         val blockOpt = dropOpt blockOptOpt
+         val (newState,outOpts) = stepFn (tidOpt,blockOpt) (!theState)
+         val () = theState := newState
+         val (blockOpt,countOpt) = outOpts
+     in
+       let in
+         case countOpt
+          of None => API.logInfo "Health Output: uninitialized cycle count"
+           | Some i => API.send_Health_Out (Utils.pack_u64 i)
+       end
+       ;
+       case blockOpt
+        of None => ()
+         | Some block =>
+             API.send_VDTU_Request_Message_Out (Gate_Types.encode_block block)
+     end
  end
 
 end (* Gate *)

@@ -1,0 +1,62 @@
+use "../../../ByteContig.sml";
+
+open ByteContig;
+
+val IntLit = intLit;
+
+fun varloc s   = ByteContig.Loc (ByteContig.VarName s);
+fun rawBlock i = ByteContig.Raw (intLit i);
+fun unsigned n = ByteContig.Basic(ByteContig.Unsigned n);
+fun signed n   = ByteContig.Basic(ByteContig.Signed n);
+
+val bool = ByteContig.Basic ByteContig.Bool;
+val u8   = unsigned 1;
+val char = unsigned 1;
+val u16  = unsigned 2;
+val u32  = unsigned 4;
+val i32  = signed 4;
+val i64  = signed 8;
+
+
+val ipv4 = Array (u8, IntLit 4);
+
+val allowedElement = Recd [
+ ("protocol", u32),
+ ("remote_address", ipv4)
+ ];
+
+val allowList = Array(allowedElement, IntLit 4);
+
+val connection_data = Recd [
+  ("local_address", ipv4),
+  ("spare1", Raw (IntLit 4)),
+  ("local_port", u16),
+  ("spare2", Raw (IntLit 6)),
+  ("remote_address", ipv4),
+  ("spare3", Raw (IntLit 4)),
+  ("remote_port", u16),
+  ("spare4", Raw (IntLit 6))
+ ];
+
+val CONNECT = IntLit 2;
+
+val shm_Queue_Element = Recd [
+ ("length", u32),
+ ("spare1", Raw (IntLit 4)),
+ ("tag", u32),
+ ("spare2", Raw (IntLit 4)),
+ ("protocol", u32),
+ ("spare3", Raw (IntLit 4)),
+ ("command", u8),
+ ("spare4", Raw (IntLit 7)),
+ ("command_branch",
+   Union [
+     (Beq (varloc "command", CONNECT),
+      Recd [("connection_data", connection_data),
+            ("payload", Array (u8, IntLit 2016))]),
+      (Bnot (Beq (varloc "command", CONNECT)),
+      Recd [("payload", Array (u8, IntLit 2048))])
+      ])
+];
+
+val vdtu_Message_Block = Array (shm_Queue_Element, IntLit 16);
