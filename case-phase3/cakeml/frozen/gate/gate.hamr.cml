@@ -1239,7 +1239,6 @@ end (* Gate_Parse *)
 (* Deployment API                                                            *)
 (*---------------------------------------------------------------------------*)
 
-(*
 structure API =
 struct
 
@@ -1278,104 +1277,6 @@ fun send_Health_Out string =
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
 end
-*)
-
-(*---------------------------------------------------------------------------*)
-(* Mocked-up version of API                                                  *)
-(*---------------------------------------------------------------------------*)
-
-structure API =
-struct
-
-val trustedIDs_buffer = Word8Array.array (1 + 8*4) Utils.w8zero;
-val block_buffer      = Word8Array.array (1 + 2080*16) Utils.w8zero;
-val shm_buffer        = Word8Array.array (1 + 2080) Utils.w8zero;
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_logInfo) s Utils.emptybuf;                                       *)
-(*---------------------------------------------------------------------------*)
-
-fun logInfo s = TextIO.output TextIO.stdErr s;
-
-(*---------------------------------------------------------------------------*)
-(* Grab inputs.                                                              *)
-(*---------------------------------------------------------------------------*)
-
-fun get_Trusted_IDs emptyString buf =
-    Utils.stub "API.get_Trusted_IDs";
-
-fun get_VDTU_Request_Message_In emptyString buf =
-    Utils.stub "API.get_VDTU_Request_Message_In";
-
-fun get_VDTU_Control_Message_In emptyString buf =
-    Utils.stub "API.get_VDTU_Control_Message_In";
-
-(*
- case CommandLine.arguments()
-  of [fileName] => Utils.file2buf fileName buf
-   | otherwise =>
-     (TextIO.print_err"Expected a filename"; raise Utils.ERR "" "");
-*)
-
-(*---------------------------------------------------------------------------*)
-(* Clear buffer, read file into buffer, copy buffer to string. As stub code, *)
-(* it's an elaborate no-op, but enables easy testing. Note that              *)
-(* api_get_filter_in is assumed to raise an exception when the input is too  *)
-(* large for the buffer.                                                     *)
-(*---------------------------------------------------------------------------*)
-
-fun fill_trustedIDs_buffer () =
-  let val () = Utils.clear_buf trustedIDs_buffer
-      val () = get_Trusted_IDs "" trustedIDs_buffer
-   in ()
-   end
-   handle _ =>
-    (logInfo "Monitor failure: unable to fill Trusted_IDs buffer.";
-     raise Utils.ERR "fill_input_buffer" ""
-    );
-
-
-fun fill_block_buffer () =
-  let val () = Utils.clear_buf block_buffer
-      val () = get_VDTU_Request_Message_In "" block_buffer
-   in ()
-   end
-   handle _ =>
-    (logInfo "Monitor failure: unable to fill VDTU_Request_Message_In buffer.";
-     raise Utils.ERR "fill_input_buffer" ""
-    );
-
-
-fun fill_shm_buffer () =
-  let val () = Utils.clear_buf shm_buffer
-      val () = get_VDTU_Control_Message_In "" block_buffer
-   in ()
-   end
-   handle _ =>
-    (logInfo "Monitor failure: unable to fill VDTU_Control_Message_In buffer.";
-     raise Utils.ERR "fill_input_buffer" ""
-    );
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_send_VDTU_Request_Message_Out) string Utils.emptybuf             *)
-(*---------------------------------------------------------------------------*)
-
-fun send_VDTU_Request_Message_Out string = TextIO.output TextIO.stdOut string;
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_send_VDTU_Control_Message_Out) string Utils.emptybuf             *)
-(*---------------------------------------------------------------------------*)
-
-fun send_VDTU_Control_Message_Out string = TextIO.output TextIO.stdOut string;
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_send_Health_Out) string Utils.emptybuf                           *)
-(*---------------------------------------------------------------------------*)
-
-fun send_Health_Out string = TextIO.output TextIO.stdOut string;
-
-
-end (* Mock API *)
 
 
 structure Gate =
@@ -1817,8 +1718,6 @@ fun stepFn inports stateVars =
      (vdtu_Request_Message_Out,vdtu_Control_Message_Out,health_out))
   end
 
-fun trueOpt opt = case opt of Some True => True | otherwise => False;
-
 (*---------------------------------------------------------------------------*)
 (*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close, *)
 (*   control_tag_pair, tag_pairs, merged_tag_pairs,                          *)
@@ -1900,3 +1799,38 @@ fun gateFn () =
 
 
 end (* Gate *)
+
+(*---------------------------------------------------------------------------*)
+(*  Actual setup and invocation                                              *)
+(*---------------------------------------------------------------------------*)
+
+structure Control =
+struct
+
+fun pacer_emit() =
+    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+fun pacer_wait() =
+    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+
+fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
+
+fun loop () =
+  if pacer_wait() then
+    ( receiveInput();
+      Monitor.monFn();
+      sendOutput();
+      pacer_emit();
+      loop()
+    )
+  else
+    loop();
+
+fun start () = (pacer_emit(); loop());
+
+end (* Control *)
+
+val _ = Control.start();
