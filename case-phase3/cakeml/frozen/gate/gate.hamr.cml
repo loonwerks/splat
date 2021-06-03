@@ -1745,7 +1745,7 @@ val shm_parseinfo =
     (Gate_Contig.shm,Gate_Parse.mk_shm_elt);
 
 fun parse_trustedIDs () =
- let val () = API.fill_trustedIDs_buffer ()
+ let val () = API.fill_Trusted_IDs_buffer ()
      val tidOpt2 = Gate_Parse.eventParse trustedID_parseinfo API.trustedIDs_buffer
  in
      Utils.dropOpt "Parsing of Trusted_IDs port failed" tidOpt2
@@ -1821,7 +1821,7 @@ fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
 fun loop () =
   if pacer_wait() then
     ( receiveInput();
-      Monitor.monFn();
+      Gate.gateFn();
       sendOutput();
       pacer_emit();
       loop()
