@@ -1378,8 +1378,19 @@ end (* Mock API *)
 structure Gate =
 struct
 
+val tag_of_tip   = Gate_Types.tag_of_tip;
+val ip_of_tip    = Gate_Types.ip_of_tip;
+val valid_of_tip = Gate_Types.valid_of_tip;
+val tag_of_tvp   = Gate_Types.tag_of_tvp;
+val valid_of_tvp = Gate_Types.valid_of_tvp;
+val tag_of_shm   = Gate_Types.tag_of_shm;
+val command_of   = Gate_Types.command_of;
+val connection_data_of        = Gate_Types.connection_data_of;
+val remote_address_of_connex  = Gate_Types.remote_address_of_connex;
+val remote_address_of_allowed = Gate_Types.remote_address_of_allowed;
+
 val default_PAYLOAD = Utils.byte_array_fromList(List.map Word8.fromInt
-          [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
@@ -1471,22 +1482,38 @@ val default_ALLOW_LIST = Array.fromList
    [default_ALLOW_LIST_ELEMENT,default_ALLOW_LIST_ELEMENT,
     default_ALLOW_LIST_ELEMENT,default_ALLOW_LIST_ELEMENT];
 
-val tag_of_tip   = Gate_Types.tag_of_tip;
-val ip_of_tip    = Gate_Types.ip_of_tip;
-val valid_of_tip = Gate_Types.valid_of_tip;
-val tag_of_tvp   = Gate_Types.tag_of_tvp;
-val valid_of_tvp = Gate_Types.valid_of_tvp;
-val tag_of_shm   = Gate_Types.tag_of_shm;
-val command_of   = Gate_Types.command_of;
-val connection_data_of        = Gate_Types.connection_data_of;
-val remote_address_of_connex  = Gate_Types.remote_address_of_connex;
-val remote_address_of_allowed = Gate_Types.remote_address_of_allowed;
-
 fun found_in_TAGS tag_ip tvpArr =
   Array.exists
     (fn tvp => (tag_of_tvp tvp = tag_of_tip tag_ip) andalso
                (valid_of_tvp tvp = valid_of_tip tag_ip))
     tvpArr;
+
+(*---------------------------------------------------------------------------*)
+(* Need to define this since CakeML equality on arrays constantly returns    *)
+(* true.                                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun w8eq (i:Word8.word) j = (i=j);
+
+fun arrEq eqFn arrA arrB =
+ let val lenA = Word8Array.length arrA
+     val lenB = Word8Array.length arrA
+     fun itFn i =
+       if i < lenA then
+          eqFn (Word8Array.sub arrA i) (Word8Array.sub arrB i)
+	  andalso itFn (i+1)
+       else True
+ in
+   lenA = lenB andalso itFn 0
+ end
+
+fun ipv4_eq ip1 ip2 = arrEq w8eq ip1 ip2;
+
+fun tip_eq tip1 tip2 =
+  (tag_of_tip tip1 = tag_of_tip tip2) andalso
+  ipv4_eq (ip_of_tip tip1) (ip_of_tip tip2) andalso
+  (valid_of_tip tip1 = valid_of_tip tip2);
+
 
 fun found_in_TAG_MAP tag_ip map = Array.exists (fn tip => tip = tag_ip) map;
 
@@ -1494,7 +1521,7 @@ fun found_TAG_IN_TAG_MAP tag map =
     Array.exists (fn i => tag_of_tip i = tag) map;
 
 fun found_in_WHITELIST whitelist ip =
-    Array.exists (fn elt => remote_address_of_allowed elt = ip) whitelist;
+    Array.exists (fn elt => ipv4_eq (remote_address_of_allowed elt) ip) whitelist;
 
 fun is_DATA msg    = (command_of msg = 1);
 fun is_CONNECT msg = (command_of msg = 2);
@@ -1510,7 +1537,7 @@ fun remove_DUPLICATE_TAG_IP_PAIRS map1 map2 =
 fun count_HOLES map hole top =
  List.foldl
   (fn i => fn count =>
-       if i <= top andalso Array.sub map i = hole
+       if i <= top andalso tip_eq (Array.sub map i) hole
           then count + 1
          else count)
   0 (Utils.upto 0 (Array.length map - 1));
@@ -1518,7 +1545,7 @@ fun count_HOLES map hole top =
 fun count_ELEMENTS map hole top =
  List.foldl
   (fn i => fn count =>
-      if i <= top andalso Array.sub map i <> hole
+      if i <= top andalso not (tip_eq (Array.sub map i) hole)
          then count + 1
          else count)
   0 (Utils.upto 0 (Array.length map - 1));
@@ -1542,10 +1569,26 @@ fun merge_TAG_MAPS map1 map2 =
   Array.tabulate
     (Array.length map1)
     (fn i =>
-        if Array.sub map1 i <> default_TAG_IP_Pair then
+        if not (tip_eq (Array.sub map1 i) default_TAG_IP_Pair) then
            Array.sub map1 i
         else ite (get_NTH_ELEM map2 (count_HOLES map1 default_TAG_IP_Pair i))
                  map2 default_TAG_IP_Pair);
+
+fun replace_AT map pair index =
+ (if index > 0 andalso index <= 16 then
+    Array.update map index pair else ();
+  map);
+
+fun find_FIRST map pair =
+  Array.foldli
+   (fn i => fn elt => fn count =>
+      if (count = 0 andalso tip_eq (Array.sub map i) pair)
+        then i
+        else count)
+   0 map;
+
+fun insert_INTO_TAG_MAP map pair =
+  replace_AT map pair (find_FIRST map default_TAG_IP_Pair);
 
 fun remove_DUPLICATE_TAGS map tags =
   Array.tabulate
@@ -1553,6 +1596,15 @@ fun remove_DUPLICATE_TAGS map tags =
     (fn i => if found_in_TAGS (Array.sub map i) tags
               then default_TAG_IP_Pair
               else Array.sub map i);
+
+fun remove_DUPLICATE_TAG map tvp =
+  Array.tabulate
+    (Array.length map)
+    (fn i =>
+       if tag_of_tip (Array.sub map i) = tag_of_tvp tvp andalso
+          valid_of_tip (Array.sub map i) = valid_of_tvp tvp
+       then default_TAG_IP_Pair
+       else Array.sub map i);
 
 fun get_NEW_TAGS_FROM_SHM_QUEUE msgs =
   Array.tabulate
@@ -1610,9 +1662,10 @@ val valOf = Option.valOf;
 val initStep = Ref True;
 
 fun stepFn inports stateVars =
- let val (trusted_IDs,vdtu_Request_Message_In) = inports
+ let val (trusted_IDs,vdtu_Request_Message_In,vdtu_Control_Message_In) = inports
      val event_trusted_IDs = Option.isSome trusted_IDs
      val event_vdtu_Request_Message_In = Option.isSome vdtu_Request_Message_In
+     val event_vdtu_Control_Message_In = Option.isSome vdtu_Control_Message_In
      val (whitelist,previous_tag_map,tag_map,tag_map_wo_close,cycle_count) = stateVars
 
      (*--------------------------*)
@@ -1623,7 +1676,7 @@ fun stepFn inports stateVars =
        if !initStep then
           let val whitelist =
                 if event_trusted_IDs then
-                   Option.valOf trusted_IDs
+                   valOf trusted_IDs
                 else default_ALLOW_LIST
               val previous_tag_map = default_TAG_MAP
               val tag_map =
@@ -1632,14 +1685,14 @@ fun stepFn inports stateVars =
                      (merge_TAG_MAPS previous_tag_map
                         (remove_DUPLICATE_TAG_IP_PAIRS
                            (get_NEW_TAGS_FROM_SHM_QUEUE
-                               (Option.valOf vdtu_Request_Message_In))
+                               (valOf vdtu_Request_Message_In))
                            previous_tag_map)) whitelist
                 else filter_BY_WHITELIST previous_tag_map whitelist
               val tag_map_wo_close =
                 if event_vdtu_Request_Message_In then
                    remove_DUPLICATE_TAGS tag_map
                      (get_STALE_TAGS_FROM_SHM_QUEUE
-                        (Option.valOf vdtu_Request_Message_In))
+                        (valOf vdtu_Request_Message_In))
                else tag_map
               val cycle_count = 1
               val () = (initStep := False)
@@ -1651,7 +1704,7 @@ fun stepFn inports stateVars =
 	          (valOf whitelist,valOf previous_tag_map,
 		   valOf tag_map,valOf tag_map_wo_close, valOf cycle_count)
               val whitelist =
-                if event_trusted_IDs then Option.valOf trusted_IDs else (pre whitelist)
+                if event_trusted_IDs then valOf trusted_IDs else (pre whitelist)
               val previous_tag_map = pre tag_map_wo_close
               val tag_map =
                 if event_vdtu_Request_Message_In then
@@ -1659,7 +1712,7 @@ fun stepFn inports stateVars =
                       (merge_TAG_MAPS previous_tag_map
                          (remove_DUPLICATE_TAG_IP_PAIRS
                             (get_NEW_TAGS_FROM_SHM_QUEUE
-                               (Option.valOf vdtu_Request_Message_In))
+                               (valOf vdtu_Request_Message_In))
                             previous_tag_map))
                       whitelist
                 else filter_BY_WHITELIST previous_tag_map whitelist
@@ -1667,7 +1720,7 @@ fun stepFn inports stateVars =
                 if event_vdtu_Request_Message_In then
                    remove_DUPLICATE_TAGS tag_map
                       (get_STALE_TAGS_FROM_SHM_QUEUE
-                          (Option.valOf vdtu_Request_Message_In))
+                          (valOf vdtu_Request_Message_In))
                 else tag_map
               val cycle_count = cycle_count + 1
           in
@@ -1682,15 +1735,25 @@ fun stepFn inports stateVars =
 
      val vdtu_Request_Message_Out =
        if event_vdtu_Request_Message_In
-         then Some(update_BLOCK (Option.valOf vdtu_Request_Message_In) tag_map)
+         then Some(update_BLOCK (valOf vdtu_Request_Message_In) tag_map)
          else None
+
+     val vdtu_Control_Message_Out =
+       if event_vdtu_Control_Message_In
+       then
+           (if found_TAG_IN_TAG_MAP
+                   (tag_of_shm (valOf vdtu_Control_Message_In)) tag_map
+	      then Some (valOf vdtu_Control_Message_In)
+              else Some default_SHM_ELEMENT)
+       else None
 
      val health_out = Some cycle_count
 
      val newStateVarOpts = (Some whitelist, Some previous_tag_map,
                             Some tag_map,Some tag_map_wo_close, Some cycle_count)
   in
-    (newStateVarOpts,(vdtu_Request_Message_Out,health_out))
+    (newStateVarOpts,
+     (vdtu_Request_Message_Out,vdtu_Control_Message_Out,health_out))
   end
 
 fun trueOpt opt = case opt of Some True => True | otherwise => False;
@@ -1744,9 +1807,9 @@ fun gateFn () =
  let val tidOpt   = parse_trustedIDs()
      val blockOpt = parse_block()
      val shmOpt   = parse_shm()
-     val (newState,outOpts) = stepFn (tidOpt,blockOpt) (!theState)
+     val (newState,outOpts) = stepFn (tidOpt,blockOpt,shmOpt) (!theState)
      val () = (theState := newState)
-     val (blockOut,countOut) = outOpts
+     val (blockOut,shmOut,countOut) = outOpts
  in
     let in
       case countOut
@@ -1754,10 +1817,18 @@ fun gateFn () =
         | Some i => API.send_Health_Out (Utils.pack_u64 i)
     end
     ;
-    case blockOut
+    let in
+      case blockOut
+       of None => ()
+        | Some block =>
+            API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block)
+    end
+    ;
+    case shmOut
      of None => ()
-      | Some block =>
-          API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block)
+      | Some shm =>
+          API.send_VDTU_Control_Message_Out (Gate_Types.pack_shm shm)
+
  end
 
 
