@@ -1,0 +1,7 @@
+Frozen (but evolving to fix bugs) CakeML versions of gate and monitors 1-3
+
+To build and test a monitor (example):
+
+    $ cd mon1
+    $ make mon1.cake
+    $ ./mon1.cake
