@@ -1941,17 +1941,23 @@ fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 3 sus;
 
 fun is_airborne ship = Adsb_Types.airborne_of (Adsb_Types.misc_indicators_of ship);
 
-val latitude_DELTA  = Utils.i2d 1;
-val longitude_DELTA = Utils.i2d 1;
+val d1 = Utils.i2d 1
+val d10 = Utils.i2d 10;
+val zero_point_1 = Double./ d1 d10;
+
+val latitude_DELTA  = zero_point_1;
+val longitude_DELTA = zero_point_1;
+
 val altitude_DELTA  = 2000;
 
 fun in_ZONE_A ownship ship =
-  Double.>= (lat_of ship) (Double.- (lat_of ownship) latitude_DELTA) andalso
-  Double.<= (lat_of ship) (Double.+ (lat_of ownship) latitude_DELTA) andalso
-  Double.>= (lon_of ship) (Double.- (lon_of ownship) longitude_DELTA) andalso
-  Double.<= (lon_of ship) (Double.+ (lon_of ownship) longitude_DELTA) andalso
-  (alt_of ship >= (alt_of ownship - altitude_DELTA)) andalso
-  (alt_of ship <= (alt_of ownship + altitude_DELTA));
+  is_airborne ship andalso
+  Double.> (lat_of ship) (Double.- (lat_of ownship) latitude_DELTA) andalso
+  Double.< (lat_of ship) (Double.+ (lat_of ownship) latitude_DELTA) andalso
+  Double.> (lon_of ship) (Double.- (lon_of ownship) longitude_DELTA) andalso
+  Double.< (lon_of ship) (Double.+ (lon_of ownship) longitude_DELTA) andalso
+  (alt_of ship > (alt_of ownship - altitude_DELTA)) andalso
+  (alt_of ship < (alt_of ownship + altitude_DELTA));
 
 fun present ship reports =
    Array.exists (fn elt => (targetID_of ship = targetID_of elt)) reports;
