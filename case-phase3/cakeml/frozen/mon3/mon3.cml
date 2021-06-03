@@ -1942,8 +1942,8 @@ let val () = Utils.clear_buf input_buffer
 (*    #(api_put_suspect_traffic_out) string Utils.emptybuf                   *)
 (*---------------------------------------------------------------------------*)
 
-fun send_Suspect_Traffic_Out string = () (* TextIO.output TextIO.stdOut string; *)
-fun send_Health_Out string = () (* TextIO.output TextIO.stdOut string; *)
+fun send_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
+fun send_Health_Out string = TextIO.output TextIO.stdOut string;
 
 end (* API *)
 
@@ -1951,11 +1951,11 @@ structure Monitor =
 struct
 
 val targetID_of = Adsb_Types.targetID_of;
-val ownship_of = Adsb_Types.ownship_of;
-val traffic_of = Adsb_Types.traffic_of;
-val lat_of     = Adsb_Types.lat_of;
-val lon_of     = Adsb_Types.lon_of;
-val alt_of     = Adsb_Types.alt_of;
+val ownship_of  = Adsb_Types.ownship_of;
+val traffic_of  = Adsb_Types.traffic_of;
+val lat_of      = Adsb_Types.lat_of;
+val lon_of      = Adsb_Types.lon_of;
+val alt_of      = Adsb_Types.alt_of;
 
 (*---------------------------------------------------------------------------*)
 (* User code for monitor                                                     *)
@@ -2145,7 +2145,7 @@ fun monFn () =
 
 end (* Monitor *)
 
-val _ = Utils.debugLevel := 1;
+val _ = Utils.debugLevel := 1;  (* be verbose *)
 
 (*---------------------------------------------------------------------------*)
 (* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
@@ -2164,7 +2164,7 @@ fun next_test istrm =
 
 fun run_tests fileName =
  let val instrm = TextIO.openIn fileName
-     val () = print ("Teleport Monitor: running tests from file: "^fileName^"\n")
+     val () = Utils.print ("Teleport Monitor: running tests from file: "^fileName^"\n")
      fun rowStep i =
       case next_test instrm
        of None => TextIO.closeIn instrm
@@ -2178,16 +2178,16 @@ fun run_tests fileName =
    rowStep 0
  end
 
-val _ = run_tests "../../tests/tc1.bytes";
+val _ = run_tests "../tests/tc1.bytes";
 val _ = print "\n\n";
-(*
-val _ = run_tests "../../tests/tc2.bytes";
+val _ = run_tests "../tests/tc12.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc3.bytes";
+val _ = run_tests "../tests/tc13.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc4.bytes";
+val _ = run_tests "../tests/tc14.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc5.bytes";
+val _ = run_tests "../tests/tc5.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc6.bytes";
-*)
+val _ = run_tests "../tests/tc6.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc17.bytes";

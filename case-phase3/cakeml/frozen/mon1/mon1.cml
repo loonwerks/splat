@@ -2296,16 +2296,18 @@ fun run_tests fileName =
    rowStep 0
  end
 
+val _ = run_tests "../tests/tc1.bytes";
+val _ = print "\n\n";
 (*
-val _ = run_tests "../../tests/tc1.bytes";
+val _ = run_tests "../tests/tc12.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc2.bytes";
+val _ = run_tests "../tests/tc13.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc3.bytes";
+val _ = run_tests "../tests/tc14.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc4.bytes";
+val _ = run_tests "../tests/tc5.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc5.bytes";
+val _ = run_tests "../tests/tc6.bytes";
 val _ = print "\n\n";
-val _ = run_tests "../../tests/tc6.bytes";
+val _ = run_tests "../tests/tc17.bytes";
 *)
