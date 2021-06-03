@@ -1943,7 +1943,8 @@ let val () = Utils.clear_buf input_buffer
 (*---------------------------------------------------------------------------*)
 
 fun send_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
-fun send_Health_Out string = TextIO.output TextIO.stdOut string;
+fun send_Health_Out string = ();
+ (* TextIO.output TextIO.stdOut string; *)
 
 end (* API *)
 
@@ -1995,17 +1996,33 @@ fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 3 sus;
 
 fun is_airborne ship = Adsb_Types.airborne_of (Adsb_Types.misc_indicators_of ship);
 
-val latitude_DELTA  = Utils.i2d 1;
-val longitude_DELTA = Utils.i2d 1;
+val d1 = Utils.i2d 1
+val d10 = Utils.i2d 10;
+val zero_point_1 = Double./ d1 d10;
+
+val latitude_DELTA  = zero_point_1;
+val longitude_DELTA = zero_point_1;
 val altitude_DELTA  = 2000;
 
+(*
+fun IN_ZONE_A (ownship, ship) : bool =
+ IS_AIRBORNE(ship) and
+ (ship.Latitude > ( ownship.Latitude - LATITUDE_DELTA) ) and
+ (ship.Latitude < ( ownship.Latitude + LATITUDE_DELTA) ) and
+ (ship.Longitude > ( ownship.Longitude - LONGITUDE_DELTA) ) and
+ (ship.Longitude < ( ownship.Longitude + LONGITUDE_DELTA) ) and
+ (ship.Altitude > ( ownship.Altitude - ALTITUDE_DELTA) ) and
+ (ship.Altitude < ( ownship.Altitude + ALTITUDE_DELTA));
+*)
+
 fun in_ZONE_A ownship ship =
-  Double.>= (lat_of ship) (Double.- (lat_of ownship) latitude_DELTA) andalso
-  Double.<= (lat_of ship) (Double.+ (lat_of ownship) latitude_DELTA) andalso
-  Double.>= (lon_of ship) (Double.- (lon_of ownship) longitude_DELTA) andalso
-  Double.<= (lon_of ship) (Double.+ (lon_of ownship) longitude_DELTA) andalso
-  (alt_of ship >= (alt_of ownship - altitude_DELTA)) andalso
-  (alt_of ship <= (alt_of ownship + altitude_DELTA));
+  is_airborne ship andalso
+  Double.> (lat_of ship) (Double.- (lat_of ownship) latitude_DELTA) andalso
+  Double.< (lat_of ship) (Double.+ (lat_of ownship) latitude_DELTA) andalso
+  Double.> (lon_of ship) (Double.- (lon_of ownship) longitude_DELTA) andalso
+  Double.< (lon_of ship) (Double.+ (lon_of ownship) longitude_DELTA) andalso
+  (alt_of ship > (alt_of ownship - altitude_DELTA)) andalso
+  (alt_of ship < (alt_of ownship + altitude_DELTA));
 
 fun present ship reports =
    Array.exists (fn elt => (targetID_of ship = targetID_of elt)) reports;
@@ -2106,6 +2123,11 @@ fun stepFn inports stateVars =
    (newStateVarOpts, (suspect_traffic_out, health_out))
  end;
 
+fun print_inputOpt iOpt =
+ case iOpt
+  of None => Utils.println "No event"
+   | Some msgs => Adsb_Types.print_messageIDs msgs;
+
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
@@ -2119,6 +2141,9 @@ fun monFn () =
  let val () = API.fill_input_buffer ()
      val inputOptOpt = parseInput()
      val inputOpt = Utils.dropOpt "Parsing of input event failed" inputOptOpt
+     val () = if !Utils.debugLevel > 0
+               then print_inputOpt inputOpt
+               else ()
      val (newState,outOpts) = stepFn inputOpt (!theState)
      val () = theState := newState
      val (rptOpt,countOpt) = outOpts
@@ -2180,6 +2205,8 @@ fun run_tests fileName =
 
 val _ = run_tests "../tests/tc1.bytes";
 val _ = print "\n\n";
+
+(*
 val _ = run_tests "../tests/tc12.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc13.bytes";
@@ -2191,3 +2218,4 @@ val _ = print "\n\n";
 val _ = run_tests "../tests/tc6.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc17.bytes";
+*)
