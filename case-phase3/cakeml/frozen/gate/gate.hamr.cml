@@ -353,8 +353,21 @@ fun binopFn f g e1 e2 =
    of (Some v1, Some v2) => Some (f v1 v2)
     | otherwise => None;
 
+(*
 fun total_bytes_of array i w =
  Some (Word8Array.substring array i w) handle _ => None;
+*)
+
+fun total_bytes_of arr i w =
+ let val top = i+w
+     fun accFn n acc =
+       if n < top then
+          accFn (n+1) (Utils.w8char (Word8Array.sub arr n)::acc)
+       else String.implode (List.rev acc)
+ in if top <= Word8Array.length arr
+    then Some (accFn i [])
+    else None
+ end;
 
 
 fun evalExp env bytes =
