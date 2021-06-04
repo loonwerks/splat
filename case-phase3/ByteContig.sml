@@ -515,7 +515,7 @@ fun matchFn E A (state as (worklist,pos,theta)) =
    | (path,Basic a)::t =>
      let val width = atomWidth a
          val newpos = pos + width
-     in if Asize <= newpos then
+     in if Asize < newpos then
           NONE
         else
           matchFn E A (t,newpos,
@@ -533,7 +533,7 @@ fun matchFn E A (state as (worklist,pos,theta)) =
          of NONE => NONE
           | SOME width =>
         let val newpos = pos + width
-        in if Asize <= newpos then
+        in if Asize < newpos then
               NONE
            else
               matchFn E A (t,newpos,
@@ -595,7 +595,7 @@ fun predFn E A (state as (worklist,pos,theta)) =
    | (path,Basic a)::t =>
      let val width = atomWidth a
          val newpos = pos + width
-     in if Asize <= newpos then
+     in if Asize < newpos then
           FAIL state
         else
           predFn E A (t,newpos,Redblackmap.insert(theta,path,(a,(pos,width))))
@@ -612,7 +612,7 @@ fun predFn E A (state as (worklist,pos,theta)) =
          of NONE => FAIL state
           | SOME width =>
         let val newpos = pos + width
-        in if Asize <= newpos then
+        in if Asize < newpos then
               FAIL state
            else
              predFn E A (t,newpos,
@@ -690,7 +690,7 @@ fun parseFn E A path contig state =
    | Basic a =>
        let val width = atomWidth a
            val newpos = pos + width
-       in if Asize <= newpos then
+       in if Asize < newpos then
           NONE
           else
            SOME(LEAF(a, Option.valOf(total_bytes_of A pos width))::stk,
@@ -709,7 +709,7 @@ fun parseFn E A path contig state =
          of NONE => NONE
           | SOME width =>
         let val newpos = pos + width
-        in if Asize <= newpos then
+        in if Asize < newpos then
               NONE
            else
             SOME(LEAF(Blob,Option.valOf(total_bytes_of A pos width))::stk,

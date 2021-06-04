@@ -535,7 +535,7 @@ fun matchFn env byteArr state =
    | (path,Basic a)::t =>
      let val width = atomWidth a
          val nextpos = pos + width
-     in if arrlen <= nextpos then
+     in if arrlen < nextpos then
           None
         else
           matchFn env byteArr (t,nextpos,Map.insert theta path (a,(pos,width)))
@@ -552,7 +552,7 @@ fun matchFn env byteArr state =
          of None => None
           | Some width =>
         let val nextpos = pos + width
-        in if arrlen <= nextpos then
+        in if arrlen < nextpos then
               None
             else
               matchFn env byteArr
@@ -619,7 +619,7 @@ fun predFn env byteArr state =
    | (path,Basic a)::t =>
      let val width = atomWidth a
          val nextpos = pos + width
-     in if arrlen <= nextpos then
+     in if arrlen < nextpos then
            FAIL state
         else
           predFn env byteArr (t,nextpos,Map.insert theta path (a,(pos,width)))
@@ -636,7 +636,7 @@ fun predFn env byteArr state =
          of None => FAIL state
           | Some width =>
         let val nextpos = pos + width
-        in if arrlen <= nextpos then
+        in if arrlen < nextpos then
               FAIL state
            else
              predFn env byteArr
@@ -716,7 +716,7 @@ fun parseFn env byteArr path contig state =
    | Basic a =>
        let val width = atomWidth a
            val nextpos = pos + width
-       in if arrlen <= nextpos then
+       in if arrlen < nextpos then
           None
           else
            Some(LEAF a (Option.valOf (total_bytes_of byteArr pos width))::stk,
@@ -735,7 +735,7 @@ fun parseFn env byteArr path contig state =
          of None => None
           | Some width =>
         let val nextpos = pos + width
-        in if arrlen <= nextpos then
+        in if arrlen < nextpos then
               None
            else
             Some (LEAF Blob (Option.valOf(total_bytes_of byteArr pos width))::stk,
@@ -1027,7 +1027,7 @@ structure Gate_Parse =
 struct
 
 (* -------------------------------------------------------------------------- *)
-(* Widths for basic items,  in bits.                                          *)
+(* Widths for basic items,  in bytes.                                         *)
 (* -------------------------------------------------------------------------- *)
 
 fun gate_atom_width atm =
