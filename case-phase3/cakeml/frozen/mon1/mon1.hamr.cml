@@ -2015,14 +2015,53 @@ val _ =
   Utils.print  "End Bounds.\n");
 *)
 
+(*
+fun HEADING_IN_BOUND(now : real, low : real, high : real) : bool =
+    if (low < high)
+    then
+      low < now and now < high
+    else
+      -- assuming a maximum difference of 180 degrees between low and high,
+      -- low must satisfy 180.0 < low < 360.0
+      if (now > 180.0 and now < 360.0)
+      then
+      (low-360.0) < (now-360.0) and (now-360.0) < high
+      else
+      (low-360.0) < now and now < high;
+*)
+
+val d360 = Utils.i2d 360;
+val d180 = Utils.i2d 180;
+
+
+fun heading_IN_BOUND now low high =
+    if Double.< low high
+    then
+      Double.< low now andalso Double.< now high
+    else
+      (* assuming a maximum difference of 180 degrees between low and high,
+         low must satisfy 180.0 < low < 360.0 *)
+      if Double.> now d180 andalso Double.< now d360
+      then
+         Double.< (Double.- low d360) (Double.- now d360) andalso
+         Double.< (Double.- now d360) high
+      else
+         Double.< (Double.- low d360) now andalso Double.< now high;
+
 fun bounds_VIOLATION now yest bounds =
  let val violation =
         Double.< (int_to_real(horizV_of now)) (hVel_lower_of bounds) orelse
         Double.> (int_to_real(horizV_of now)) (hVel_upper_of bounds) orelse
         Double.< (int_to_real (vertV_of now)) (vVel_lower_of bounds) orelse
         Double.> (int_to_real (vertV_of now)) (vVel_upper_of bounds) orelse
+        not (heading_IN_BOUND (heading_of now)
+                              (heading_lower_of bounds)
+                              (heading_upper_of bounds))
+
+(* previous line replaces
         Double.< (heading_of now) (heading_lower_of bounds) orelse
         Double.> (heading_of now) (heading_upper_of bounds)
+*)
  in
     if violation then
       Adsb_Types.print_violation yest now bounds
