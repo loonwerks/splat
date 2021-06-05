@@ -353,9 +353,8 @@ fun binopFn f g e1 e2 =
    of (Some v1, Some v2) => Some (f v1 v2)
     | otherwise => None;
 
-(*
-fun total_bytes_of array i w =
- Some (Word8Array.substring array i w) handle _ => None;
+(* This should be identical ...
+fun total_bytes_of array i w = Some (Word8Array.substring array i w) handle _ => None;
 *)
 
 fun total_bytes_of arr i w =
@@ -1226,24 +1225,33 @@ fun mk_payload ptree = mk_byte_array ptree;
 fun mk_shm_elt ptree =
  case ptree
   of ByteContig.RECD
-     (("length", len) ::  ("spare1",  _) ::
-     ("tag",     tag)  :: ("spare2",  _) ::
-     ("protocol",prot) :: ("spare3",  _) ::
-     ("command", comm) :: ("spare4",  _) :: rst)
-     => (case rst
+     [("length", len),   ("spare1",  _),
+      ("tag",     tag),  ("spare2",  _),
+      ("protocol",prot), ("spare3",  _),
+      ("command", comm), ("spare4",  _),
+      ("command_branch", ByteContig.RECD thing)]
+     => (case thing
          of [("connection_data", cdata), ("payload", byteA)]
-             => Gate_Types.SHMRecd
-                   (mk_int len) (mk_int tag) (mk_int prot) (mk_int comm)
-                   (mk_connection_data cdata) (mk_payload byteA)
+            => Gate_Types.SHMRecd
+                 (mk_int len)
+                 (mk_int tag)
+                 (mk_int prot)
+                 (mk_int comm)
+                 (mk_connection_data cdata)
+                 (mk_payload byteA)
           | [("payload", byteA)]
-             => Gate_Types.SHMRecd
-                   (mk_int len) (mk_int tag) (mk_int prot) (mk_int comm)
-                   default_connection_data
-                   (mk_payload byteA)
-          | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format")
+            => Gate_Types.SHMRecd
+                 (mk_int len)
+                 (mk_int tag)
+                 (mk_int prot)
+                 (mk_int comm)
+                 default_connection_data
+                 (mk_payload byteA)
+          | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format at end of message"
+        )
    | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format";
 
-fun mk_shm_queue ptree =  mk_array mk_shm_elt ptree;
+fun mk_shm_queue ptree = mk_array mk_shm_elt ptree;
 
 end (* Gate_Parse *)
 
