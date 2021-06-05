@@ -943,7 +943,7 @@ val traffic_report = BitContig.Recd [
 (*    Bit 0: UTC OK                                                          *)
 (*                                                                           *)
 (*  Bytes 4 and 5 (Time Stamp Seconds since 0000Z) bits 15-0 (LS byte first) *)
-(*  Byte 6 aand 7 Message Counts                                             *)
+(*  Byte 6 and 7 Message Counts                                              *)
 (*---------------------------------------------------------------------------*)
 
 val heartbeat = BitContig.Recd [
@@ -973,8 +973,10 @@ val heartbeat = BitContig.Recd [
         ("basic_and_long", u10)])
  ];
 
+val heartbeat_skip = BitContig.Raw (BitContig.IntLit (7 * 8));
+
 val adsb_messages = BitContig.Recd [
-  ("Heartbeat", heartbeat),
+  ("Heartbeat", heartbeat_skip),
   ("Ownship", traffic_report),
   ("Traffic", BitContig.Array traffic_report (BitContig.IntLit 150))
  ];
@@ -1262,9 +1264,14 @@ in
 datatype status_byte_1 = Status_byte_1_Recd bool bool bool bool bool bool bool;
 datatype status_byte_2 = Status_byte_2_Recd bool bool bool bool;
 datatype mesg_counts = Mesg_count_Recd int int;
+datatype heartbeat   = Heartbeat_Recd int status_byte_1 status_byte_2 int mesg_counts;
 
-datatype heartbeat =
-  Heartbeat_Recd int status_byte_1 status_byte_2 int mesg_counts;
+val dummy_status_byte_1 = Status_byte_1_Recd False False False False False False False;
+val dummy_status_byte_2 = Status_byte_2_Recd False False False False;
+val dummy_mesg_counts   = Mesg_count_Recd 0 0 ;
+
+val dummy_heartbeat =
+  Heartbeat_Recd 10 dummy_status_byte_1 dummy_status_byte_2 0 dummy_mesg_counts;
 
 fun print_status_1 s s1a s1b s1c s1d s1e s1f s1g =
  (print (s^"\n");
@@ -1744,7 +1751,7 @@ fun mk_adsb_messages ptree =
   ("Ownship", ownship_report),
   ("Traffic", treports)]
   => Adsb_Types.Adsb_messages_Recd
-       (mk_heartbeat heartbeat)
+       Adsb_Types.dummy_heartbeat  (* (mk_heartbeat heartbeat) *)
        (mk_traffic_report ownship_report)
        (mk_array mk_traffic_report treports)
   | otherwise => raise Utils.ERR "mk_adsb_messages" "";
@@ -1756,7 +1763,6 @@ end (* Adsb_Parse *)
 (* Deployment API                                                            *)
 (*---------------------------------------------------------------------------*)
 
-(*
 structure API =
 struct
 
@@ -1774,64 +1780,12 @@ fun fill_input_buffer () =
 fun send_Suspect_Traffic_Out string =
    #(api_send_Suspect_Traffic_Out) string Utils.emptybuf;
 
-fun send_Health_Out string =
-   #(api_send_Health_Out) string Utils.emptybuf;
+fun send_Cycle_Count_Out string =
+   #(api_send_Cycle_Count_Out) string Utils.emptybuf;
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
 end
-*)
-
-(*---------------------------------------------------------------------------*)
-(* Mocked-up version of API                                                  *)
-(*---------------------------------------------------------------------------*)
-
-structure API =
-struct
-
-val input_buffer = Word8Array.array 4387 Utils.w8zero;
-
-(*---------------------------------------------------------------------------*)
-(*    #(api_logInfo) s Utils.emptybuf;                                       *)
-(*---------------------------------------------------------------------------*)
-
-fun logInfo s = TextIO.output TextIO.stdErr s;
-
-(*---------------------------------------------------------------------------*)
-(* Grab filter input from file.                                              *)
-(*---------------------------------------------------------------------------*)
-
-fun api_get_filter_in emptyString buf =
- case CommandLine.arguments()
-  of [fileName] => Utils.file2buf fileName buf
-   | otherwise =>
-     (TextIO.print_err"Expected a filename"; raise Utils.ERR "" "");
-
-(*---------------------------------------------------------------------------*)
-(* Clear buffer, read file into buffer, copy buffer to string. As stub code, *)
-(* it's an elaborate no-op, but enables easy testing. Note that              *)
-(* api_get_filter_in is assumed to raise an exception when the input is too  *)
-(* large for the buffer.                                                     *)
-(*---------------------------------------------------------------------------*)
-
-fun fill_input_buffer () = ()
-(*
-let val () = Utils.clear_buf input_buffer
-      val () = api_get_filter_in "" input_buffer
-   in ()
-   end
-   handle _ =>
-    (logInfo "Monitor failure: unable to fill input buffer.";
-     raise Utils.ERR "fill_input_buffer" ""
-    );
-*)
-
-fun send_Suspect_Traffic_Out string = TextIO.output TextIO.stdOut string;
-
-fun send_Health_Out string = TextIO.output TextIO.stdOut string;
-
-end (* API *)
-
 
 structure Monitor =
 struct
@@ -2005,72 +1959,37 @@ fun monFn () =
 
 end (* Monitor *)
 
-structure Test =
+(*---------------------------------------------------------------------------*)
+(*  Actual setup and invocation                                              *)
+(*---------------------------------------------------------------------------*)
+
+structure Control =
 struct
 
-(*---------------------------------------------------------------------------*)
-(* Read a chunk of 4387 bytes from istrm into API.input_buffer               *)
-(*---------------------------------------------------------------------------*)
+fun pacer_emit() =
+    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
 
-fun next_test istrm =
- let fun fillAcc n acc =
-     if n = 0 then String.implode (List.rev acc) else
-     case TextIO.input1 istrm
-           of Some b => fillAcc (n-1) (b::acc)
-            | None => raise Utils.ERR "fillAcc" ""
- in
-  Some (Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0)
- end
- handle _ => None;
+fun pacer_wait() =
+    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
+     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
 
-fun run_tests fileName =
- let val instrm = TextIO.openIn fileName handle _
-                  => (print ("run_tests : unable to open file named "^fileName);
-		      raise Utils.ERR "run_tests" "input file not found")
-     val () = print ("Duplication Monitor: running tests from file: "^fileName^"\n")
-     fun rowStep i =
-      case next_test instrm
-       of None => ()
-        | Some _ =>
-          let val istr = Int.toString i
-              val () = print (String.concat ["\nRow ", istr, "\n===========\n"])
-              val () = Monitor.monFn()
-          in rowStep (i+1)
-	  end
- in
-   rowStep 0
- end
+fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
+fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
 
-(*---------------------------------------------------------------------------*)
-(* Most relevant tests for duplication are 5 and 6                           *)
-(*---------------------------------------------------------------------------*)
+fun loop () =
+  if pacer_wait() then
+    ( receiveInput();
+      Monitor.monFn();
+      sendOutput();
+      pacer_emit();
+      loop()
+    )
+  else
+    loop();
 
+fun start () = (pacer_emit(); loop());
 
-fun test1() = run_tests "../tests/tc1.bytes";
-fun test2() = run_tests "../tests/tc12.bytes";
-fun test3() = run_tests "../tests/tc13.bytes";
-fun test4() = run_tests "../tests/tc14.bytes";
-fun test5() = run_tests "../tests/tc5.bytes";
-fun test6() = run_tests "../tests/tc6.bytes";
-fun test7() = run_tests "../tests/tc17.bytes";
+end (* Control *)
 
-fun all_tests() =
- let in
-   test1();
-   print "\n\n";
-   test2();
-   print "\n\n";
-   test3();
-   print "\n\n";
-   test4();
-   print "\n\n";
-   test5();
-   print "\n\n";
-   test6();
-   print "\n\n";
-   test7()
- end;
-
-end (* Test *)
-
-val _ = Test.all_tests();
+val _ = Control.start();

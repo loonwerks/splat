@@ -1005,8 +1005,10 @@ val heartbeat = BitContig.Recd [
         ("basic_and_long", u10)])
  ];
 
+val heartbeat_skip = BitContig.Raw (BitContig.IntLit (7 * 8));
+
 val adsb_messages = BitContig.Recd [
-  ("Heartbeat", heartbeat),
+  ("Heartbeat", heartbeat_skip),
   ("Ownship", traffic_report),
   ("Traffic", BitContig.Array traffic_report (BitContig.IntLit 150))
  ];
@@ -1348,9 +1350,13 @@ fun print_traffic_report rpt =
 datatype status_byte_1 = Status_byte_1_Recd bool bool bool bool bool bool bool;
 datatype status_byte_2 = Status_byte_2_Recd bool bool bool bool;
 datatype mesg_counts = Mesg_count_Recd int int;
+datatype heartbeat   = Heartbeat_Recd int status_byte_1 status_byte_2 int mesg_counts;
 
-datatype heartbeat =
-  Heartbeat_Recd int status_byte_1 status_byte_2 int mesg_counts;
+val dummy_status_byte_1 = Status_byte_1_Recd False False False False False False False;
+val dummy_status_byte_2 = Status_byte_2_Recd False False False False;
+val dummy_mesg_counts   = Mesg_count_Recd 0 0 ;
+val dummy_heartbeat =
+  Heartbeat_Recd 10 dummy_status_byte_1 dummy_status_byte_2 0 dummy_mesg_counts;
 
 fun print_status_1 s s1a s1b s1c s1d s1e s1f s1g =
  (Utils.print (s^"\n");
@@ -1856,7 +1862,7 @@ fun mk_adsb_messages ptree =
   ("Traffic", treports)
  ]
   => Adsb_Types.Adsb_messages_Recd
-       (mk_heartbeat heartbeat)
+       Adsb_Types.dummy_heartbeat  (* (mk_heartbeat heartbeat) *)
        (mk_traffic_report ownship_report)
        (mk_array mk_traffic_report treports)
   | otherwise => raise Utils.ERR "mk_adsb_messages" "";
