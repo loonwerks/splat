@@ -1750,7 +1750,7 @@ fun stepFn inports stateVars =
                            (valOf vdtu_Request_Message_In))
                 else tag_map
               val tag_map_wo_close =
-                if event_vdtu_Request_Message_In andalso
+                if event_vdtu_Control_Message_In andalso
                    is_CLOSE(valOf vdtu_Control_Message_In)
                 then remove_DUPLICATE_TAG
                       tag_map_wo_close_0
@@ -1758,6 +1758,7 @@ fun stepFn inports stateVars =
                         (tag_of_shm (valOf vdtu_Control_Message_In))
                         True)
                 else tag_map_wo_close_0
+
               val cycle_count = 1
               val () = (initStep := False)
           in
@@ -1792,7 +1793,7 @@ fun stepFn inports stateVars =
                            (valOf vdtu_Request_Message_In))
                 else tag_map
               val tag_map_wo_close =
-                if event_vdtu_Request_Message_In andalso
+                if event_vdtu_Control_Message_In andalso
                    is_CLOSE(valOf vdtu_Control_Message_In)
                 then remove_DUPLICATE_TAG
                       tag_map_wo_close_0
