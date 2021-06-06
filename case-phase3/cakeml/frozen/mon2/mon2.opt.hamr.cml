@@ -1788,6 +1788,9 @@ fun fill_input_buffer () =
 fun send_Suspect_Traffic_Out string =
    #(api_send_Suspect_Traffic_Out) string Utils.emptybuf;
 
+fun send_Health_Out string =
+   #(api_send_Health_Out) string Utils.emptybuf;
+
 fun send_Cycle_Count_Out string =
    #(api_send_Cycle_Count_Out) string Utils.emptybuf;
 

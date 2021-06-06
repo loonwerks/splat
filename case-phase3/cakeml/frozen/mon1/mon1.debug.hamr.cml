@@ -8,6 +8,7 @@ structure API =
 struct
 
 val w8zero = Word8.fromInt 0;
+val emptybuf = Word8Array.array 0 w8zero;
 
 fun clear_buf buffer =
  let val len = Word8Array.length buffer
