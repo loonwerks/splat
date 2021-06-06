@@ -7,6 +7,10 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
+val debugLevel = Ref 0;
+
+fun print s = if !debugLevel < 1 then () else TextIO.print s;
+
 fun println s = print (s^"\n");
 
 fun cons h t = h::t;
@@ -866,10 +870,10 @@ val i24  = BitContig.Basic(BitContig.Signed 24);
 (*---------------------------------------------------------------------------*)
 
 val misc_indicators = BitContig.Recd [
-  ("tt_bit0",    bool),
-  ("tt_bit1",    bool),
+  ("airborne",   bool),
   ("reportKind", bool),
-  ("airborne",   bool)
+  ("tt_bit1",    bool),
+  ("tt_bit0",    bool)
  ];
 
 (*---------------------------------------------------------------------------*)
@@ -1017,6 +1021,10 @@ fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
 
 
 datatype miscIndicators = MiscIndicators_Recd bool bool bool bool;
+
+fun airborne_of miscs =
+ case miscs
+  of MiscIndicators_Recd aborne rptkind tt1 tt0 => aborne;
 
 datatype targetID = TargetID_Recd int int;
 
@@ -1193,12 +1201,12 @@ fun fdl_of trpt =
 
 fun print_misc mi =
  case mi
-  of MiscIndicators_Recd tbit0 tbit1 rptkind aborne =>
-    (print  "  Misc Indicators.\n";
-     printB "    tt_bit0 :    " tbit0;
-     printB "    tt_bit1 :    " tbit1;
+  of MiscIndicators_Recd aborne rptkind tt1 tt0 =>
+    (Utils.print  "  Misc Indicators.\n";
+     printB "    airborne :   " aborne;
      printB "    reportKind : " rptkind;
-     printB "    airborne :   " aborne
+     printB "    tt_bit1 :    " tt1;
+     printB "    tt_bit0 :    " tt0
     )
 ;
 
@@ -1641,13 +1649,13 @@ fun mk_array eltFn ptree =
 fun mk_miscInd ptree =
  case ptree
   of BitContig.RECD
-       [("tt_bit0", tt0),
-        ("tt_bit1", tt1),
+       [("airborne", abn),
         ("reportKind", rpt),
-        ("airborne", abn)]
+        ("tt_bit1", tt1),
+        ("tt_bit0", tt0)]
      =>
     Adsb_Types.MiscIndicators_Recd
-       (mk_bool tt0) (mk_bool tt1) (mk_bool rpt) (mk_bool abn)
+       (mk_bool abn) (mk_bool rpt) (mk_bool tt1) (mk_bool tt0)
   | otherwise => raise Utils.ERR "mk_miscInd" "";
 
 fun mk_targetID i1 i2 = Adsb_Types.TargetID_Recd i1 i2;
