@@ -50,7 +50,7 @@ fun assert b s = if b then () else raise ERR s "assertion failure";
 
 val debugLevel = Ref 0;
 
-fun print s = if !debugLevel < 1 then () else API.logInfo s;
+val print = fn s => if !debugLevel < 1 then () else print s;
 
 fun println s = print (s^"\n");
 
