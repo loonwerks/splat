@@ -1624,7 +1624,7 @@ fun print_boundaries bounds =
   Utils.print  "End Bounds.\n\n");
 
 fun printI2 s i1 i2 = Utils.print (s^Int.toString i1^"     "^Int.toString i2^"\n");
-fun printR2 s d1 d2 = Utils.print (s^Double.toString d1^"     "^Double.toString d1^"\n");
+fun printR2 s d1 d2 = Utils.print (s^Double.toString d1^"     "^Double.toString d2^"\n");
 
 fun print_violation rpt1 rpt2 bounds =
  let val aircraft1 = aircraft_num (targetID_of rpt1)
@@ -1672,7 +1672,6 @@ fun phase3_atom_width atm =
    | BitContig.Signed i   => i
    | BitContig.Unsigned i => i
    | other => raise Utils.ERR "phase3_atom_width" "unknown width of Raw";
-
 
 (*---------------------------------------------------------------------------*)
 (* Valuation functions and base environment                                  *)

@@ -1958,7 +1958,11 @@ fun gateFn () =
 
 end (* Gate *)
 
-(*
+
+(*---------------------------------------------------------------------------*)
+(* Testing infrastructure                                                    *)
+(*---------------------------------------------------------------------------*)
+
 fun get_trustedIDs fileName =
   let val istrm = TextIO.openIn fileName
       val () = Utils.clear_buf API.trustedIDs_buffer
@@ -1977,7 +1981,12 @@ fun get_shmQ fileName =
     TextIO.closeIn istrm
   end;
 
-val () = get_trustedIDs "tests/tids1.bytes";
+fun steps tidFile rqtFiles =
+ let val () = get_trustedIDs tidFile
+     val () = get_shmQ "tests/tc1.bytes";
+
+
+ let val () = get_trustedIDs "tests/tids1.bytes";
 val () = get_shmQ "tests/tc1.bytes";
 
 
@@ -2023,6 +2032,86 @@ end
 
 print ("blockOut : length is : "^Int.toString (String.size blockString)^"\n");
 
+(*---------------------------------------------------------------------------*)
+(* Next input                                                                *)
+(*---------------------------------------------------------------------------*)
+
+val () = get_shmQ "tests/tc2.bytes";
+
+val blockOpt2 = Gate_Parse.eventParse Gate.block_parseinfo API.block_buffer
+val blockOpt = Utils.dropOpt "Parsing of VDTU_Request_Message_In port failed" blockOpt2;
+
+val _ =
+  if Option.isSome blockOpt then
+     print "SHM block: parsed into data\n"
+  else
+     print "SHM block: parse failed\n"
+
+val (newState,outOpts) = Gate.stepFn (tidOpt,blockOpt,None) (!Gate.theState);
+
+print "stepFn: made another step\n";
+
+val () = (Gate.theState := newState);
+
+val (blockOut,shmOut,countOut) = outOpts;
+
+val () =
+  case countOut
+       of None => API.logInfo "Health Output: uninitialized cycle count"
+        | Some i => print ("count : "^Int.toString i^"   "^Utils.pack_u64 i^"\n")
+;
+
+val blockString =
+let in
+     case blockOut
+      of None => ""
+       | Some block => Gate_Types.pack_block block
+end
+;
+
+print ("blockOut : length is : "^Int.toString (String.size blockString)^"\n");
+
+
+(*---------------------------------------------------------------------------*)
+(* Next input                                                                *)
+(*---------------------------------------------------------------------------*)
+
+val () = get_shmQ "tests/tc3.bytes";
+
+val blockOpt2 = Gate_Parse.eventParse Gate.block_parseinfo API.block_buffer
+val blockOpt = Utils.dropOpt "Parsing of VDTU_Request_Message_In port failed" blockOpt2;
+
+val _ =
+  if Option.isSome blockOpt then
+     print "SHM block: parsed into data\n"
+  else
+     print "SHM block: parse failed\n"
+
+val (newState,outOpts) = Gate.stepFn (tidOpt,blockOpt,None) (!Gate.theState);
+
+print "stepFn: made another step\n";
+
+val () = (Gate.theState := newState);
+
+val (blockOut,shmOut,countOut) = outOpts;
+
+val () =
+  case countOut
+       of None => API.logInfo "Health Output: uninitialized cycle count"
+        | Some i => print ("count : "^Int.toString i^"   "^Utils.pack_u64 i^"\n")
+;
+
+val blockString =
+let in
+     case blockOut
+      of None => ""
+       | Some block => Gate_Types.pack_block block
+end
+;
+
+print ("blockOut : length is : "^Int.toString (String.size blockString)^"\n");
+
+(*
 case shmOut
      of None => ()
       | Some shm =>

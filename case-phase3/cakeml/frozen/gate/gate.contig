@@ -40,7 +40,7 @@ val connection_data = Recd [
 
 val CONNECT = IntLit 2;
 
-val shm_Queue_Element = Recd [
+val shm_Queue_Element_Slow = Recd [
  ("length", u32),
  ("spare1", Raw (IntLit 4)),
  ("tag", u32),
@@ -59,4 +59,433 @@ val shm_Queue_Element = Recd [
       ])
  ];
 
+val shm_Queue_Element = Recd [
+ ("length", u32),
+ ("spare1", Raw (IntLit 4)),
+ ("tag", u32),
+ ("spare2", Raw (IntLit 4)),
+ ("protocol", u32),
+ ("spare3", Raw (IntLit 4)),
+ ("command", u8),
+ ("spare4", Raw (IntLit 7)),
+ ("command_branch",
+   Union [
+     (Beq (varloc "command", CONNECT),
+      Recd [("connection_data", connection_data),
+            ("payload", Raw (IntLit 2016))]),
+      (Bnot (Beq (varloc "command", CONNECT)),
+      Recd [("payload", Raw (IntLit 2048))])
+      ])
+ ];
+
 val vdtu_Message_Block = Array (shm_Queue_Element, IntLit 16);
+val vdtu_Message_Block_Slow = Array (shm_Queue_Element_Slow, IntLit 16);
+
+(*---------------------------------------------------------------------------*)
+(* Set up parsing                                                            *)
+(*---------------------------------------------------------------------------*)
+
+(* -------------------------------------------------------------------------- *)
+(* Widths for basic items,  in bytes.                                          *)
+(* -------------------------------------------------------------------------- *)
+
+fun gate_atom_width atm =
+ case atm
+  of ByteContig.Bool       => 1
+   | ByteContig.Signed i   => i
+   | ByteContig.Unsigned i => i
+   | other => raise ERR "gate_atom_width" "unknown width of Raw";
+
+(*---------------------------------------------------------------------------*)
+(* Valuation functions and base environment                                  *)
+(*---------------------------------------------------------------------------*)
+
+fun byteValBE bytes =
+ let fun accFn [] acc = acc
+       | accFn (byte::t) acc = accFn t (Word8.toInt byte + 256 * acc)
+ in accFn bytes 0
+ end
+
+val unsigned = byteValBE;
+
+fun twos_comp bytes =
+ let val twoii = IntInf.fromInt 2
+     val sup = IntInf.pow (twoii,List.length bytes)
+     val half = IntInf.toInt (IntInf.div(sup, twoii))
+     val n = unsigned bytes
+  in
+    if n < half then n else n - IntInf.toInt sup
+ end;
+
+fun valFn atm string =
+ case atm
+  of ByteContig.Signed i => SOME (twos_comp string)
+   | ByteContig.Unsigned i => SOME (unsigned string)
+   | otherwise => SOME (unsigned string);
+
+fun dvalFn atm bits = raise ERR "dvalFn" "undefined";
+
+val gateEnv = ([],[],gate_atom_width,valFn,dvalFn);
+
+fun char2byte ch = Word8.fromInt(Char.ord ch);
+
+val check = debug gateEnv allowList;
+
+fun next_input k istrm =
+ let val buf = Word8Array.array(k,Word8.fromInt 0);
+     fun fillBuf i =
+       if i < k then
+          (case TextIO.input1 istrm
+           of SOME ch => (Word8Array.update(buf,i,char2byte ch) ; fillBuf (i+1))
+            | NONE => raise ERR "fillBuff" "")
+       else ()
+ in
+   fillBuf 0; SOME buf
+ end
+ handle _ => NONE;
+
+val instrm = TextIO.openIn "tests/tids1.bytes";
+val SOME buf = next_input 33 instrm ;
+TextIO.closeIn instrm;
+val PASS (pos,theta) = check buf;
+
+val instrm = TextIO.openIn "tests/tids4.bytes";
+val SOME buf = next_input 33 instrm ;
+TextIO.closeIn instrm;
+val PASS (pos,theta) = check buf;
+
+val instrm = TextIO.openIn "tests/tids5.bytes";
+val SOME buf = next_input 33 instrm ;
+TextIO.closeIn instrm;
+val PASS (pos,theta) = check buf;
+
+(*---------------------------------------------------------------------------*)
+(* Request messages                                                          *)
+(*---------------------------------------------------------------------------*)
+
+debug gateEnv vdtu_Message_Block;
+
+val bufsize = (1 + 2080*16);
+
+val instrm = TextIO.openIn "tests/tc1.bytes";
+val SOME buf = next_input bufsize instrm ;
+predFn gateEnv buf ([(VarName"root",vdtu_Message_Block)],1,empty_lvalMap);
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc2.bytes";
+val SOME buf = next_input bufsize instrm ;
+predFn gateEnv buf ([(VarName"root",vdtu_Message_Block)],1,empty_lvalMap);
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc3.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc4.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc5.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc6.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc7.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc8.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc9.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc10.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc11.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc12.bytes";
+val SOME buf = next_input bufsize instrm ;
+parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+val instrm = TextIO.openIn "tests/tc13.bytes";
+val SOME buf = next_input bufsize instrm ;
+val SOME ([ptree],_,_) = parseFn gateEnv buf (VarName"root") vdtu_Message_Block ([],1,empty_lvalMap);
+TextIO.closeIn instrm;
+
+(*---------------------------------------------------------------------------*)
+(* Creating data                                                             *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_int ptree =
+ case ptree
+  of LEAF (a,string) => Option.valOf (valFn a string)
+   | otherwise => raise ERR "Parse.mk_int" "expected a LEAF";
+
+fun mk_byte ptree =
+ case ptree
+  of LEAF (a,string) => Word8.fromInt(Option.valOf (valFn a string))
+   | otherwise => raise ERR "Parse.mk_int" "expected a LEAF";
+
+val mk_bool = boolVal o mk_int;
+
+fun mk_string ptree =
+ case ptree
+  of ARRAY elts => String.implode (List.map (Char.chr o mk_int) elts)
+   | otherwise  => raise ERR "mk_string" "";
+
+fun mk_raw ptree =
+ case ptree
+  of LEAF (Blob,bytes) => Word8Array.fromList bytes
+   | otherwise => raise ERR "Parse.mk_raw" "expected a LEAF";
+
+fun mk_array eltFn ptree =
+ case ptree
+  of ARRAY elts => Array.fromList (List.map eltFn elts)
+   | otherwise  => raise ERR "mk_array" "";
+
+val w8zero = Word8.fromInt 0;
+
+fun byte_array_fromList list =
+ let val arr = Word8Array.array (List.length list, w8zero)
+     fun appFn i list =
+        case list
+         of [] => ()
+          | h::t => (Word8Array.update(arr,i,h); appFn (i+1) t)
+ in appFn 0 list;
+    arr
+ end;
+
+fun mk_byte_array ptree =
+ case ptree
+  of ARRAY elts => byte_array_fromList (List.map mk_byte elts)
+   | otherwise  => raise ERR "mk_byte_array" "";
+
+type byte_array = Word8Array.array;
+
+fun mk_ipv4 ptree = mk_byte_array ptree;
+fun mk_payload ptree = mk_byte_array ptree;
+
+type connection_data =
+  {laddr : byte_array,
+   lport : int,
+   raddr : byte_array,
+   rport : int};
+
+val default_ipv4 = byte_array_fromList [w8zero,w8zero,w8zero,w8zero];
+
+val default_connection_data =
+  {laddr = default_ipv4,
+   lport = 0,
+   raddr = default_ipv4,
+   rport = 0} : connection_data;
+
+fun mk_connection_data ptree =
+ case ptree
+  of RECD [
+      ("local_address", laddr), ("spare1",  _),
+      ("local_port", lport),    ("spare2",  _),
+      ("remote_address", raddr),("spare3",  _),
+      ("remote_port", rport),   ("spare4",  _)]
+      => {laddr = mk_ipv4 laddr,
+ 	  lport = mk_int lport,
+          raddr = mk_ipv4 raddr,
+	  rport = mk_int rport} : connection_data
+   | otherwise => raise ERR "mk_connection_data" "";
+
+type shm =
+   {length : int,
+    tag : int,
+    prot : int,
+    comm: int,
+    conn_data : connection_data,
+    payload : byte_array};
+
+
+fun mk_shm_elt ptree =
+ case ptree
+  of RECD
+     [("length", len),   ("spare1",  _),
+      ("tag",     tag),  ("spare2",  _),
+      ("protocol",prot), ("spare3",  _),
+      ("command", comm), ("spare4",  _),
+      ("command_branch", RECD thing)]
+     => (case thing
+         of [("connection_data", cdata), ("payload", byteA)]
+            => {length = mk_int len,
+                tag = mk_int tag,
+                prot = mk_int prot,
+                comm = mk_int comm,
+                conn_data = mk_connection_data cdata,
+                payload = mk_raw byteA} : shm
+          | [("payload", byteA)]
+            => {length = mk_int len,
+                tag = mk_int tag,
+                prot = mk_int prot,
+                comm = mk_int comm,
+                conn_data = default_connection_data,
+                payload = mk_raw byteA}
+          | otherwise => raise ERR "mk_shm_elt" "unexpected format"
+        )
+   | otherwise => raise ERR "mk_shm_elt" "unexpected format";
+
+
+fun mk_shm_elt_slow ptree =
+ case ptree
+  of RECD
+     [("length", len),   ("spare1",  _),
+      ("tag",     tag),  ("spare2",  _),
+      ("protocol",prot), ("spare3",  _),
+      ("command", comm), ("spare4",  _),
+      ("command_branch", RECD thing)]
+     => (case thing
+         of [("connection_data", cdata), ("payload", byteA)]
+            => {length = mk_int len,
+                tag = mk_int tag,
+                prot = mk_int prot,
+                comm = mk_int comm,
+                conn_data = mk_connection_data cdata,
+                payload = mk_payload byteA} : shm
+          | [("payload", byteA)]
+            => {length = mk_int len,
+                tag = mk_int tag,
+                prot = mk_int prot,
+                comm = mk_int comm,
+                conn_data = default_connection_data,
+                payload = mk_payload byteA} : shm
+          | otherwise => raise ERR "mk_shm_elt" "unexpected format at end of message"
+        )
+   | otherwise => raise ERR "mk_shm_elt" "unexpected format";
+
+fun mk_shm_queue ptree = mk_array mk_shm_elt ptree;
+fun mk_shm_queue_slow ptree = mk_array mk_shm_elt_slow ptree;
+
+fun is_event byteA =
+  0 < Word8Array.length byteA andalso
+  Word8Array.sub(byteA,0) = Word8.fromInt 1;
+
+fun eventParse p byteA =
+ if not(is_event byteA) then
+    NONE
+ else
+  let val (contig,mk_data) = p
+  in case parseFn
+            gateEnv byteA (VarName"root") contig
+              ([],1,empty_lvalMap)
+      of SOME([ptree],_,_) => SOME (total mk_data ptree)
+       | otherwise => SOME NONE
+  end;
+
+val shm_block_parser = eventParse (vdtu_Message_Block,mk_shm_queue);
+val slow_shm_block_parser = eventParse (vdtu_Message_Block_Slow,mk_shm_queue_slow);
+
+val bufsize = 1 + 2080 * 16;
+
+fun test parser fileName =
+ let val instrm = TextIO.openIn fileName
+     val SOME buf = next_input bufsize instrm
+     val opt2 = time parser buf
+     val () = TextIO.closeIn instrm
+ in if Option.isSome opt2
+      then let val opt = Option.valOf opt2
+           in if Option.isSome opt2 then Option.valOf opt else
+              raise ERR "test" "failed parse"
+           end
+      else raise ERR "test" "not an event"
+ end
+
+fun tester parser fileName = (test parser fileName; ());
+
+tester slow_shm_block_parser "tests/tc1.bytes";
+tester slow_shm_block_parser "tests/tc2.bytes";
+tester slow_shm_block_parser "tests/tc3.bytes";
+tester slow_shm_block_parser "tests/tc4.bytes";
+tester slow_shm_block_parser "tests/tc5.bytes";
+tester slow_shm_block_parser "tests/tc6.bytes";
+tester slow_shm_block_parser "tests/tc7.bytes";
+tester slow_shm_block_parser "tests/tc8.bytes";
+tester slow_shm_block_parser "tests/tc9.bytes";
+tester slow_shm_block_parser "tests/tc10.bytes";
+tester slow_shm_block_parser "tests/tc11.bytes";
+tester slow_shm_block_parser "tests/tc12.bytes";
+tester slow_shm_block_parser "tests/tc13.bytes";
+
+tester shm_block_parser "tests/tc1.bytes";
+tester shm_block_parser "tests/tc2.bytes";
+tester shm_block_parser "tests/tc3.bytes";
+tester shm_block_parser "tests/tc4.bytes";
+tester shm_block_parser "tests/tc5.bytes";
+tester shm_block_parser "tests/tc6.bytes";
+tester shm_block_parser "tests/tc7.bytes";
+tester shm_block_parser "tests/tc8.bytes";
+tester shm_block_parser "tests/tc9.bytes";
+tester shm_block_parser "tests/tc10.bytes";
+tester shm_block_parser "tests/tc11.bytes";
+tester shm_block_parser "tests/tc12.bytes";
+tester shm_block_parser "tests/tc13.bytes";
+
+val tc1_out = test shm_block_parser "tests/tc1.bytes";
+val tc2_out = test shm_block_parser "tests/tc2.bytes";
+val tc3_out = test shm_block_parser "tests/tc3.bytes";
+val tc4_out = test shm_block_parser "tests/tc4.bytes";
+val tc5_out = test shm_block_parser "tests/tc5.bytes";
+val tc6_out = test shm_block_parser "tests/tc6.bytes";
+val tc7_out = test shm_block_parser "tests/tc7.bytes";
+val tc8_out = test shm_block_parser "tests/tc8.bytes";
+val tc9_out = test shm_block_parser "tests/tc9.bytes";
+val tc10_out = test shm_block_parser "tests/tc10.bytes";
+val tc11_out = test shm_block_parser "tests/tc11.bytes";
+val tc12_out = test shm_block_parser "tests/tc12.bytes";
+val tc13_out = test shm_block_parser "tests/tc13.bytes";
+
+val SOME(SOME tc1_out) = test slow_shm_block_parser "tests/tc1.bytes";
+val shm = Array.sub(tc1_out,0);
+val payld = #payload shm;
+Word8Array.length payld;
+
+fun eventParse p byteA =
+ if not(is_event byteA) then
+    NONE
+ else
+  let val (contig,mk_data) = p
+  in case parseFn
+            gateEnv byteA (VarName"root") contig
+              ([],1,empty_lvalMap)
+      of SOME([ptree],_,_) => SOME (total mk_data ptree)
+       | otherwise => SOME NONE
+  end;
+
+val shm_block_parser = eventParse (vdtu_Message_Block,mk_shm_queue);
+
+fun mapArray f array =
+  let val elts = Array.foldr (op::) [] array
+  in List.map f elts
+  end;
+
+val instrm = TextIO.openIn "tests/tc1.bytes";
+val SOME buf = next_input bufsize instrm;
+TextIO.closeIn instrm;
+val SOME (SOME shmA) = shm_block_parser buf;
+
+List.map Word8Array.length(mapArray (fn shm => #payload shm) shmA);
