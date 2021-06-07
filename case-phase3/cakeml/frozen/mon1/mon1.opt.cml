@@ -142,6 +142,17 @@ fun array_existsI pred arr =
     else List.exists pred (upto 0 (len - 1))
  end
 
+fun mapArray f array =
+  let val elts = Array.foldr cons [] array
+  in List.map f elts
+  end;
+
+fun mapiArray fi array =
+  let fun consi i x list = (i,x)::list
+      val elts = Array.foldri consi [] array
+  in List.map fi elts
+  end;
+
 val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
@@ -2168,6 +2179,18 @@ fun suspectIDs today unexpected_today unexpected_yest unexpected_two =
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 1 sus;
 
+fun print_int_array arr =
+ let val sints = Utils.mapArray Int.toString arr
+     val str = String.concatWith " " sints ^"\n"
+ in print str
+ end;
+
+fun print_unexpected s arr =
+ (Utils.print s;
+  print_int_array arr;
+  Utils.print "\n");
+
+
 (* val default_unexpected = Array.tabulate 150 (fn i => ~1); *)
 
 (*---------------------------------------------------------------------------*)
@@ -2266,6 +2289,10 @@ fun stepFn inports stateVars =
       val (yesterday, yest_len, today,
            unexpected_today, unexpected_yest, unexpected_two,
 	   abnormal, cycle_count) = newStateVars
+
+      val _ = print_unexpected "Unexpected Today       : " unexpected_today
+      val _ = print_unexpected "Unexpected Yesterday   : " unexpected_yest
+      val _ = print_unexpected "Unexpected Two Days Ago: " unexpected_two
 
       (*-----------------------*)
       (* Compute output values *)
