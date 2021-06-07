@@ -2290,10 +2290,11 @@ fun stepFn inports stateVars =
            unexpected_today, unexpected_yest, unexpected_two,
 	   abnormal, cycle_count) = newStateVars
 
+(*
       val _ = print_unexpected "Unexpected Today       : " unexpected_today
       val _ = print_unexpected "Unexpected Yesterday   : " unexpected_yest
       val _ = print_unexpected "Unexpected Two Days Ago: " unexpected_two
-
+*)
       (*-----------------------*)
       (* Compute output values *)
       (*-----------------------*)
