@@ -213,6 +213,15 @@ in String.concat
         (List.map Int.toString (divAcc n []))
 end
 
+fun prefixLenRight pred array =
+ let val top = Array.length array
+     fun descend i =
+       if i < 0 then i else
+       if pred (Array.sub array i) then descend (i-1)
+       else i
+  in 1 + descend (top-1)
+  end;
+
 end (* Utils *)
 
 structure BitFns =
@@ -1965,6 +1974,7 @@ fun send_Health_Out string = () (* TextIO.output TextIO.stdOut string; *)
 end (* API *)
 
 
+
 structure Monitor =
 struct
 
@@ -2179,6 +2189,7 @@ fun suspectIDs today unexpected_today unexpected_yest unexpected_two =
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 1 sus;
 
+(*
 fun print_int_array arr =
  let val sints = Utils.mapArray Int.toString arr
      val str = String.concatWith " " sints ^"\n"
@@ -2189,9 +2200,7 @@ fun print_unexpected s arr =
  (Utils.print s;
   print_int_array arr;
   Utils.print "\n");
-
-
-(* val default_unexpected = Array.tabulate 150 (fn i => ~1); *)
+*)
 
 (*---------------------------------------------------------------------------*)
 (* State vector:                                                             *)
@@ -2354,7 +2363,6 @@ fun monFn () =
           API.send_Suspect_Traffic_Out rpt_string
        end
  end;
-
 
 end (* Monitor *)
 
