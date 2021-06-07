@@ -2138,7 +2138,8 @@ fun stepFn inports stateVars =
      (*-----------------------*)
 
      val suspect_traffic_out =
-       if event_observed andalso abnormal then
+       (* if event_observed andalso abnormal andalso not(yesterday = default_TRAFFIC_REPORT_ARRAY) then *)
+       if event_observed andalso abnormal then 
           Some
              (mk_monitor_report
                (suspectIDs
