@@ -142,6 +142,17 @@ fun array_existsI pred arr =
     else List.exists pred (upto 0 (len - 1))
  end
 
+fun mapArray f array =
+  let val elts = Array.foldr cons [] array
+  in List.map f elts
+  end;
+
+fun mapiArray fi array =
+  let fun consi i x list = (i,x)::list
+      val elts = Array.foldri consi [] array
+  in List.map fi elts
+  end;
+
 val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
@@ -1448,7 +1459,7 @@ fun mk_set list =
 
 val println = Utils.println;
 
-fun non_default report = not (is_default_targetID (targetID_of report));
+fun non_default rpt = not (is_default_targetID (targetID_of rpt));
 
 fun static_info_of report = (targetID_of report, callSign_of report);
 
@@ -1604,7 +1615,7 @@ fun print_boundaries bounds =
   Utils.print  "End Bounds.\n\n");
 
 fun printI2 s i1 i2 = Utils.print (s^Int.toString i1^"     "^Int.toString i2^"\n");
-fun printR2 s d1 d2 = Utils.print (s^Double.toString d1^"     "^Double.toString d1^"\n");
+fun printR2 s d1 d2 = Utils.print (s^Double.toString d1^"     "^Double.toString d2^"\n");
 
 fun print_violation rpt1 rpt2 bounds =
  let val aircraft1 = aircraft_num (targetID_of rpt1)
@@ -1652,7 +1663,6 @@ fun phase3_atom_width atm =
    | BitContig.Signed i   => i
    | BitContig.Unsigned i => i
    | other => raise Utils.ERR "phase3_atom_width" "unknown width of Raw";
-
 
 (*---------------------------------------------------------------------------*)
 (* Valuation functions and base environment                                  *)
@@ -1929,6 +1939,18 @@ val is_latched = False;
 
 val default_TARGET_ID = Adsb_Types.TargetID_Recd 0 0;
 
+fun is_neg_one i = (i = ~1);
+fun is_def_target_id i = (i = default_TARGET_ID);
+
+fun prefixLenRight pred array =
+ let val top = Array.length array
+     fun descend i =
+       if i < 0 then i else
+       if pred (Array.sub array i) then descend (i-1)
+       else i
+  in 1 + descend (top-1)
+  end;
+
 fun find_LENGTH arr =
  case Array.findi (fn i => fn rpt => targetID_of rpt = default_TARGET_ID) arr
   of None => Array.length arr
@@ -1991,7 +2013,6 @@ fun pack_args a b c d e f =
   Word8Array.substring arg_buffer 0 48
  end
 
-
 fun compute_BOUNDS a b c d e f =
  let val arg_string = pack_args a b c d e f
      val () = Utils.clear_buf return_buffer
@@ -2052,7 +2073,6 @@ fun bounds_VIOLATION now yest bounds =
         not (heading_IN_BOUND (heading_of now)
                               (heading_lower_of bounds)
                               (heading_upper_of bounds))
-
  in
     if violation then
       Adsb_Types.print_violation yest now bounds
@@ -2077,47 +2097,33 @@ fun unexpected now yest =
 
 fun is_default_report rpt = Adsb_Types.is_default_targetID (targetID_of rpt);
 
-fun suspectFn
-   todayElt yesterday two_days_ago three_days_ago yest_len two_len three_len
-  =
- Utils.array_existsI
-   (fn i =>
-        i < yest_len andalso
-        not (is_default_report (Array.sub yesterday i)) andalso
-        unexpected todayElt (Array.sub yesterday i) andalso
-        Utils.array_existsI
-         (fn j  =>
-             j < two_len andalso
-             not (is_default_report (Array.sub two_days_ago j)) andalso
-             unexpected (Array.sub yesterday i) (Array.sub two_days_ago j) andalso
-             Utils.array_existsI
-              (fn k =>
-                  k < three_len andalso
-                  not (is_default_report (Array.sub three_days_ago k)) andalso
-                  unexpected (Array.sub two_days_ago j) (Array.sub three_days_ago k))
-              three_days_ago)
-            two_days_ago)
-   yesterday;
+fun get_unexpectedAux curr past past_len =
+ if is_default_report curr
+ then
+   ~1
+ else
+   Array.foldli
+     (fn j => fn x => fn result =>
+        if result = ~1 andalso j < past_len andalso unexpected curr (Array.sub past j)
+          then j
+          else result)
+    ~1 past;
 
-fun abnormFn
-   today yesterday two_days_ago three_days_ago yest_len two_len three_len
- =
- Array.exists
-  (fn todayElt =>
-      not (is_default_report todayElt) andalso
-      suspectFn todayElt yesterday two_days_ago three_days_ago
-                     yest_len two_len three_len)
-  today;
+fun get_unexpected curr past past_len =
+  Array.tabulate
+     (Array.length curr)
+     (fn i => get_unexpectedAux (Array.sub curr i) past past_len);
 
-fun suspectIDs
-   today yesterday two_days_ago three_days_ago yest_len two_len three_len
- =
+fun suspectIDs today unexpected_today unexpected_yest unexpected_two =
   Array.tabulate
      (Array.length today)
      (fn i =>
-        if not (is_default_report (Array.sub today i)) andalso
-           suspectFn (Array.sub today i) yesterday two_days_ago three_days_ago
-                     yest_len two_len three_len
+        if Array.sub unexpected_today i > ~1 andalso
+           Array.sub unexpected_yest
+                (Array.sub unexpected_today i) > ~1 andalso
+           Array.sub unexpected_two
+                (Array.sub unexpected_yest
+                   (Array.sub unexpected_today i)) > ~1
         then
            targetID_of (Array.sub today i)
         else default_TARGET_ID);
@@ -2129,20 +2135,33 @@ fun suspectIDs
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 1 sus;
 
+(*
+fun print_int_array arr =
+ let val sints = Utils.mapArray Int.toString arr
+     val str = String.concatWith " " sints ^"\n"
+ in print str
+ end;
+
+fun print_unexpected s arr =
+ (Utils.print s;
+  print_int_array arr;
+  Utils.print "\n");
+*)
+
 (*---------------------------------------------------------------------------*)
 (* State vector:                                                             *)
-(*   (three_days_ago, three_len, two_days_ago, two_len, yesterday, yest_len, *)
-(*    today, abnormal, cycle_count)                                          *)
+(*   (yesterday, yest_len, today,                                            *)
+(*    unexpected_today, unexpected_yest, unexpected_two,                     *)
+(*    abnormal, cycle_count)                                                 *)
 (*---------------------------------------------------------------------------*)
 
-val theState = Ref (None, None, None, None, None, None, None, None, None)
+val theState = Ref (None, None, None, None,None, None, None, None)
  : (Adsb_Types.traffic_report array option *
     int option *
     Adsb_Types.traffic_report array option *
-    int option *
-    Adsb_Types.traffic_report array option *
-    int option *
-    Adsb_Types.traffic_report array option *
+    int array option *
+    int array option *
+    int array option *
     bool option *
     int option) ref;
 
@@ -2154,8 +2173,9 @@ val println = Utils.println;
 fun stepFn inports stateVars =
  let val observed = inports
      val event_observed = Option.isSome observed
-     val (three_days_ago,three_len,two_days_ago, two_len,
-          yesterday, yest_len, today, abnormal, cycle_count) = stateVars
+     val (yesterday, yest_len, today,
+          unexpected_today, unexpected_yest, unexpected_two,
+	  abnormal, cycle_count) = stateVars
 
      (*--------------------------*)
      (* Compute new state values *)
@@ -2168,61 +2188,89 @@ fun stepFn inports stateVars =
 		     traffic_of (valOf observed)
                    else default_TRAFFIC_REPORT_ARRAY
                val yesterday      = default_TRAFFIC_REPORT_ARRAY
-               val two_days_ago   = default_TRAFFIC_REPORT_ARRAY
-               val three_days_ago = default_TRAFFIC_REPORT_ARRAY
-               val three_len      = 0
-               val two_len        = 0
                val yest_len       = 0
+               val unexpected_today = get_unexpected
+	                                 default_TRAFFIC_REPORT_ARRAY
+                                         default_TRAFFIC_REPORT_ARRAY 0
+	       val unexpected_yest = get_unexpected
+	                                 default_TRAFFIC_REPORT_ARRAY
+                                         default_TRAFFIC_REPORT_ARRAY 0
+               val unexpected_two = get_unexpected
+	                                 default_TRAFFIC_REPORT_ARRAY
+                                         default_TRAFFIC_REPORT_ARRAY 0
                val abnormal       = False
                val cycle_count    = 1
                val ()             = (initStep := False)
            in
-             (three_days_ago,three_len,two_days_ago, two_len,
-              yesterday, yest_len, today, abnormal, cycle_count)
+             (yesterday, yest_len, today,
+              unexpected_today, unexpected_yest, unexpected_two, abnormal, cycle_count)
            end
          else
-           let val (three_days_ago,three_len,two_days_ago, two_len,
-                    yesterday, yest_len, today, abnormal, cycle_count) =
-                   (valOf three_days_ago,valOf three_len,valOf two_days_ago, valOf two_len,
-                    valOf yesterday, valOf yest_len, valOf today, valOf abnormal, valOf cycle_count)
-               val three_days_ago = if event_observed then two_days_ago else three_days_ago
-               val two_days_ago = if event_observed then yesterday else two_days_ago
+           let val (yesterday, yest_len, today,
+                    unexpected_today, unexpected_yest, unexpected_two,
+                    abnormal, cycle_count) =
+                   (valOf yesterday, valOf yest_len, valOf today,
+                    valOf unexpected_today, valOf unexpected_yest, valOf unexpected_two,
+                   valOf abnormal, valOf cycle_count)
                val yesterday = if event_observed then today else yesterday
                val today = if event_observed then
                               traffic_of (valOf observed)
 	                   else today
-               val three_len = if event_observed then two_len else three_len
-               val two_len   = if event_observed then yest_len else two_len
-               val yest_len  = if event_observed then find_LENGTH yesterday else yest_len
-	       val abnormal = abnormFn today yesterday two_days_ago three_days_ago
-                                       yest_len two_len three_len
+               (* val yest_len  = if event_observed then find_LENGTH yesterday else yest_len *)
+               val yest_len  = if event_observed then (prefixLenRight is_default_report yesterday) else yest_len
+               val unexpected_two = if event_observed then unexpected_yest else unexpected_two
+	       val unexpected_yest = if event_observed then unexpected_today else unexpected_yest
+               val unexpected_today =
+                   if event_observed then
+                      get_unexpected today yesterday yest_len
+                   else unexpected_today
+
+               val abnormal =
+                   event_observed andalso
+                   Utils.array_existsI
+                    (fn i =>
+                        Array.sub unexpected_today i > ~1 andalso
+                        Array.sub unexpected_yest
+                            (Array.sub unexpected_today i) > ~1 andalso
+                        Array.sub unexpected_two
+                            (Array.sub unexpected_yest
+                               (Array.sub unexpected_today i)) > ~1)
+                    unexpected_today
                val cycle_count = cycle_count + 1
            in
-             (three_days_ago,three_len,two_days_ago, two_len,
-              yesterday, yest_len, today, abnormal, cycle_count)
+             (yesterday, yest_len, today,
+              unexpected_today, unexpected_yest, unexpected_two, abnormal, cycle_count)
            end
 
-      val (three_days_ago,three_len,two_days_ago, two_len,
-           yesterday, yest_len, today, abnormal, cycle_count) = newStateVars
+      val (yesterday, yest_len, today,
+           unexpected_today, unexpected_yest, unexpected_two,
+	   abnormal, cycle_count) = newStateVars
+
+(*
+      val _ = print_unexpected "Unexpected Today       : " unexpected_today
+      val _ = print_unexpected "Unexpected Yesterday   : " unexpected_yest
+      val _ = print_unexpected "Unexpected Two Days Ago: " unexpected_two
+*)
 
       (*-----------------------*)
       (* Compute output values *)
       (*-----------------------*)
 
       val suspect_traffic_out =
-          if event_observed andalso abnormal andalso cycle_count > 3
-           then
-             Some (mk_monitor_report
-                    (suspectIDs today yesterday two_days_ago three_days_ago
-                                yest_len two_len three_len))
+         if cycle_count > 3 andalso event_observed andalso abnormal
+         then
+           Some (mk_monitor_report
+                  (suspectIDs
+                     today unexpected_today unexpected_yest unexpected_two))
            else
              None
 
       val health_out = Some cycle_count
 
       val newStateVarOpts =
-          (Some three_days_ago,Some three_len,Some two_days_ago, Some two_len,
-           Some yesterday, Some yest_len, Some today, Some abnormal, Some cycle_count)
+          (Some yesterday, Some yest_len,
+           Some today, Some unexpected_today, Some unexpected_yest, Some unexpected_two,
+	   Some abnormal, Some cycle_count)
   in
     (newStateVarOpts,(suspect_traffic_out,health_out))
   end;
@@ -2255,7 +2303,7 @@ fun monFn () =
    case rptOpt
     of None => ()
      | Some monitor_report =>
-       let val () = Utils.println "  Duplicates found."
+       let val () = Utils.println "  Abnormalities found."
            val () = Adsb_Types.print_monitor_report monitor_report
            val rptBytes = Adsb_Types.encode_monitor_report monitor_report
            val rpt_string = String.implode (List.map Utils.w8char rptBytes)
