@@ -1,0 +1,48 @@
+val _ = Utils.debugLevel := 1;
+
+(*---------------------------------------------------------------------------*)
+(* Read a chunk of 4387 bytes from instrm into API.input_buffer              *)
+(*---------------------------------------------------------------------------*)
+
+fun next_test istrm =
+ let fun fillAcc n acc =
+     if n = 0 then String.implode (List.rev acc) else
+     case TextIO.input1 istrm
+           of Some b => fillAcc (n-1) (b::acc)
+            | None => raise Utils.ERR "fillAcc" ""
+ in
+  Some (Word8Array.copyVec (fillAcc 4387 []) 0 4387 API.input_buffer 0)
+ end
+ handle _ => None;
+
+fun run_tests fileName =
+ let val instrm = TextIO.openIn fileName
+                  handle e => (TextIO.print "Unable to find test file!"; raise e)
+     val () = print ("Physics Monitor: running tests from file: "^fileName^"\n")
+     fun rowStep i =
+      case next_test instrm
+       of None => TextIO.closeIn instrm
+        | Some _ =>
+          let val istr = Int.toString i
+              val () = Utils.print (String.concat ["\nRow ", istr, "\n===========\n"])
+              val () = Monitor.monFn()
+          in rowStep (i+1)
+	  end
+ in
+   rowStep 0
+ end
+
+
+val _ = run_tests "../../tests/tc1.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../../tests/tc12.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../../tests/tc13.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../../tests/tc14.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../../tests/tc5.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../../tests/tc6.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../../tests/tc17.bytes";
