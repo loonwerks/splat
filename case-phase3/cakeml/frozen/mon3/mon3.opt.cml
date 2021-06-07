@@ -2034,6 +2034,7 @@ fun in_ZONE_A ownship ship =
   (alt_of ship > (alt_of ownship - altitude_DELTA)) andalso
   (alt_of ship < (alt_of ownship + altitude_DELTA));
 
+(*
 fun bexists pred top arr =
  let fun iter n =
       if n < top then
@@ -2048,6 +2049,10 @@ fun present ship reports reports_len =
  in
     bexists is_ship reports_len reports
  end
+*)
+
+fun present ship reports reports_len =
+   Array.exists (fn elt => (targetID_of ship = targetID_of elt)) reports;
 
 fun suspect ownship ship previous previous_len =
   in_ZONE_A ownship ship andalso
