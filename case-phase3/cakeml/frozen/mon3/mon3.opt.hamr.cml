@@ -897,6 +897,11 @@ val i24  = BitContig.Basic(BitContig.Signed 24);
 (* gives track status.                                                       *)
 (*---------------------------------------------------------------------------*)
 
+(*---------------------------------------------------------------------------*)
+(* Miscellaneous Indicators (part of traffic report). Combination of tt_bits *)
+(* gives track status.                                                       *)
+(*---------------------------------------------------------------------------*)
+
 val misc_indicators = BitContig.Recd [
   ("airborne",   bool),
   ("reportKind", bool),
@@ -1862,7 +1867,7 @@ fun mk_adsb_messages ptree =
   ("Traffic", treports)
  ]
   => Adsb_Types.Adsb_messages_Recd
-         Adsb_Types.dummy_heartbeat  (* (mk_heartbeat heartbeat) *)
+       Adsb_Types.dummy_heartbeat  (* (mk_heartbeat heartbeat) *)
        (mk_traffic_report ownship_report)
        (mk_array mk_traffic_report treports)
   | otherwise => raise Utils.ERR "mk_adsb_messages" "";
@@ -1903,11 +1908,11 @@ structure Monitor =
 struct
 
 val targetID_of = Adsb_Types.targetID_of;
-val ownship_of = Adsb_Types.ownship_of;
-val traffic_of = Adsb_Types.traffic_of;
-val lat_of     = Adsb_Types.lat_of;
-val lon_of     = Adsb_Types.lon_of;
-val alt_of     = Adsb_Types.alt_of;
+val ownship_of  = Adsb_Types.ownship_of;
+val traffic_of  = Adsb_Types.traffic_of;
+val lat_of      = Adsb_Types.lat_of;
+val lon_of      = Adsb_Types.lon_of;
+val alt_of      = Adsb_Types.alt_of;
 
 (*---------------------------------------------------------------------------*)
 (* User code for monitor                                                     *)
@@ -1948,10 +1953,14 @@ val default_TRAFFIC_REPORT_ARRAY = Array.array 150 default_TRAFFIC_REPORT;
 (* first default element is used to compute length of non-default elts.      *)
 (*---------------------------------------------------------------------------*)
 
-fun find_LENGTH arr =
- case Array.findi (fn i => fn rpt => targetID_of rpt = default_TARGET_ID) arr
-  of None => Array.length arr
-   | Some (i,elt) => i;
+fun prefixLenRight pred array =
+ let val top = Array.length array
+     fun descend i =
+       if i < 0 then i else
+       if pred (Array.sub array i) then descend (i-1)
+       else i
+  in 1 + descend (top-1)
+  end;
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 3 sus;
 
@@ -2033,7 +2042,7 @@ fun stepFn inports stateVars =
        	           if event_observed then
 		     traffic_of (valOf observed)
                    else default_TRAFFIC_REPORT_ARRAY
-                val yest_len = find_LENGTH yesterday
+                val yest_len = prefixLenRight is_default_report yesterday
                 val today =
        	           if event_observed then
 		     traffic_of (valOf observed)
@@ -2049,7 +2058,7 @@ fun stepFn inports stateVars =
                     (valOf yesterday, valOf yest_len, valOf today,
 		     valOf abnormal, valOf cycle_count)
                 val yesterday = if event_observed then today else yesterday
-                val yest_len = find_LENGTH yesterday
+                val yest_len = prefixLenRight is_default_report yesterday
                 val today = if event_observed then
                               traffic_of (valOf observed)
 	                   else today
@@ -2092,6 +2101,11 @@ fun stepFn inports stateVars =
    (newStateVarOpts, (suspect_traffic_out, health_out))
  end;
 
+fun print_inputOpt iOpt =
+ case iOpt
+  of None => Utils.println "No event"
+   | Some msgs => Adsb_Types.print_messageIDs msgs;
+
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
@@ -2105,6 +2119,9 @@ fun monFn () =
  let val () = API.fill_input_buffer ()
      val inputOptOpt = parseInput()
      val inputOpt = Utils.dropOpt "Parsing of input event failed" inputOptOpt
+     val () = if !Utils.debugLevel > 0
+               then print_inputOpt inputOpt
+               else ()
      val (newState,outOpts) = stepFn inputOpt (!theState)
      val () = theState := newState
      val (rptOpt,countOpt) = outOpts
@@ -2120,7 +2137,7 @@ fun monFn () =
    case rptOpt
     of None => ()
      | Some monitor_report =>
-       let val () = Utils.println "  Duplicates found."
+       let val () = Utils.println "  Abnormalities found."
            val () = Adsb_Types.print_monitor_report monitor_report
            val rptBytes = Adsb_Types.encode_monitor_report monitor_report
            val rpt_string = String.implode (List.map Utils.w8char rptBytes)
