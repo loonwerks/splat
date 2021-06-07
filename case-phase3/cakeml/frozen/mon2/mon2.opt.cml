@@ -1861,6 +1861,17 @@ val is_latched = False;
 
 val default_TARGET_ID = Adsb_Types.TargetID_Recd 0 0;
 
+fun is_default_report rpt = Adsb_Types.is_default_targetID (targetID_of rpt);
+
+fun prefixLenRight pred array =
+ let val top = Array.length array
+     fun descend i =
+       if i < 0 then i else
+       if pred (Array.sub array i) then descend (i-1)
+       else i
+  in 1 + descend (top-1)
+  end;
+
 fun find_LENGTH arr =
  case Array.findi (fn i => fn rpt => targetID_of rpt = default_TARGET_ID) arr
   of None => Array.length arr
@@ -1956,11 +1967,13 @@ fun stepFn inports stateVars =
           if event_observed andalso
              lcDUPLICATE_IN_REPORT
                  (Option.valOf observed)
-	         (find_LENGTH (traffic_of (Option.valOf observed)))
+	         (* (find_LENGTH (traffic_of (Option.valOf observed))) *)
+	         (prefixLenRight is_default_report (traffic_of (Option.valOf observed)))
             then
              Some (lcUPDATE_SUSPECT_IDS
                      (Option.valOf observed)
-                     (find_LENGTH (traffic_of (Option.valOf observed))))
+                     (* (find_LENGTH (traffic_of (Option.valOf observed)))) *)
+		     (prefixLenRight is_default_report (traffic_of (Option.valOf observed)))
           else
              None
 
