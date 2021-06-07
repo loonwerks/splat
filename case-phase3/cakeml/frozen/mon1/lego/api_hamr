@@ -1,0 +1,38 @@
+(*---------------------------------------------------------------------------*)
+(* HAMR API                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+structure API =
+struct
+
+val w8zero = Word8.fromInt 0;
+val emptybuf = Word8Array.array 0 w8zero;
+
+fun clear_buf buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+val input_buffer = Word8Array.array 4387 w8zero;
+
+(*---------------------------------------------------------------------------*)
+(* Clear buffer, read port into buffer                                       *)
+(*---------------------------------------------------------------------------*)
+
+fun fill_input_buffer () =
+  let val () = clear_buf input_buffer
+  in  #(api_get_Observed) "" input_buffer
+  end;
+
+fun send_Suspect_Traffic_Out string =
+   #(api_send_Suspect_Traffic_Out) string emptybuf;
+
+fun send_Health_Out string =
+   #(api_send_Health_Out) string emptybuf;
+
+fun logInfo s = #(api_logInfo) s emptybuf;
+
+end
