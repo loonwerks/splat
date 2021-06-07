@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include "monitorBoundaries.h"
 
-// cSpell:ignore debugf vcalc dcalc
+// cSpell:ignore debugf vcalc dcalc DARPA smush smushes smushed
 
 // ********** helper/debug functions *************
 
@@ -52,13 +52,60 @@ double degreesToRadians(double degrees)
     return rads;
 }
 
+///<summary>Mod for positive doubles - avoiding library/target specific includes & compiles flags.
+///This is a mod (%) function.  It does not really on any math libraries.
+///It is untested for negative values.
+///</summary>
+///<param name ="num"> double on which to perform the mod</param>
+///<param name ="div"> double divisor used to divide 'num'</param>
+///<returns> remainder of num/div as double</returns>
+double casemod(double num, double div)
+{
+    double rem = num;
+    //subtract divisor until the value is less than the divisor.
+    while (rem > div)
+    {
+        rem -= div;
+    }
+    
+    //what's left is the remainder.
+    return rem;
+}
+
+
+///<summary>Angle Mod 360 -
+///Takes and angle and smushes it to a value between 0.0 and 359.999999...
+///Algorithm: Adds 360.0 to the angle until is is positive. Then do a mod on of 360 on it.
+///           Double mods can be odd, so check to see if the value is 360.0 after the mod and set to 0.0.
+///</summary>
+///<param name ="angle">angle (double) to smush to 0.0 to 359.999...</param>
+///<returns> smushed angle</returns>
+double angMod360(double angle)
+{
+    double boundAng = angle;
+    // add 360.0 until the value is positive.
+    while (boundAng < 0.0)
+    {
+        boundAng += 360.0;
+    }
+
+    // mod the angle by 360.0
+    boundAng = casemod (boundAng, 360.0);
+    
+    // double mods can have odd results on exact values, so check that 360.0 % 360.0 is not 360.0
+    if (boundAng >= 360.0) boundAng = 0.0;
+    
+    return boundAng;
+    
+}
+
 ///<summary>Calculate the +/- offset for betaCalc
 ///This also determines the minimum denominator in the equation.
 ///This prevents a divide-by-zero error.
 ///</summary>
 ///<param name ="dCalc"> Previously calculated dCalc variable in NM/s.</param>
 ///<returns>
-///Offset value in degrees to be added or subtracted to
+///Offset value in degrees to be added or subtracted to 
 ///betaCalc to get the lower or upper boundaryRec.
 ///</returns>
 double calculateBetaCalcBoundaryOffset(double dCalc)
@@ -66,7 +113,7 @@ double calculateBetaCalcBoundaryOffset(double dCalc)
     /* Equation:
         (HALF_G_TAN_ROLL_ANGLE / max(dCalc_ftPerSec + DCALC_DENOM_OFFSET, MIN_DENOM) + ORIENTATION_REF_ERROR);
         where max is the greater of the two values.  This also prevents divide-by-zero
-        Note: as of 4/25/2021, the equations in "DAPRA CASE Phase 3 Monitor HAC Logic.pdf" have not been updated
+        Note: as of 4/25/2021, the equations in "DARPA CASE Phase 3 Monitor HAC Logic.pdf" have not been updated
               with the DCALC_DENOM_OFFSET nor the using MIN_DENOM as the lowest possible denominator.
     */
 
@@ -103,7 +150,7 @@ double calculateBetaCalcBoundaryOffset(double dCalc)
 
 /// <summary> Returns DCalc, an intermediate value in other formala. Units: Feet</summary>
 /// <params> Location in Radians: lat1/lon1 are the previous position; lat2/lon2 are the current position</params>
-/// <remarks>
+/// <remarks> 
 /// This is the bulk of the work for the vCalcHorz boundary calculations.
 /// </remarks>
 /// <returns>dCalc value in feet.</returns>
@@ -115,7 +162,7 @@ double calculateDCalcNmPerSec(double latRad1, double latRad2, double lonRad1, do
     // = EARTH_RADIUS_NM * squareRootValue
     // = DCalcNmPerSec
     */
-
+    debugf("dCalc comps:\n");
     debugf("=EARTH_RADIUS_NM * SqrRoot( cos(%f)^2 * (%f - %f)^2 + (%f - %f)^2 )\n", latRad2, lonRad2, lonRad1, latRad2, latRad1);
 
     debugf("=%f * SqrRoot( cos(%f)^2 * (%f - %f)^2 + (%f - %f)^2 )\n", EARTH_RADIUS_NM, latRad2, lonRad2, lonRad1, latRad2, latRad1);
@@ -153,7 +200,7 @@ double calculateVCalcHorzFromDCalc(double dCalc_NmPerSec)
     vCalcHorzKts = dCalc_NmPerSec * NM_PER_SEC_TO_KTS;
 
     debugf("vCalcHorz_kts = %f\n", vCalcHorzKts);
-
+    
     return vCalcHorzKts;
 }
 
@@ -163,7 +210,7 @@ double calculateVCalcHorzFromDCalc(double dCalc_NmPerSec)
 ///<returns> boolean indicating if there was a divide-by-zero (DIVIDE-BY-ZERO == true)</returns>
 bool checkBetaCalcForDivideByZero(double lat1, double lat2, double lon1, double lon2)
 {
-    // Equation for betaCalc denominator:
+    // Equation for betaCalc denominator: 
     //(lat2 - lat1) + BETA_CALC_DENOM_COEFF * (lon2 - lon1)^2
 
     bool divideByZero = false;
@@ -191,16 +238,16 @@ bool checkBetaCalcForDivideByZero(double lat1, double lat2, double lon1, double 
 double calculatebetaCalc(double lat1, double lat2, double lon1, double lon2)
 {
     //betaCalc = ATAN( ( (1.214795 - 0.642788 * lat2) * (lon2 - lon1)  )
-    //                            /
+    //                            / 
     //                 ( (lat2 - lat1) + DENOM_COEFF  * (lon2 - lon1)^2)
     //               )
     //         * (180/PI) + (180 if lat1 > lat2)
     //
     //         = ATAN( ( (numer1_arg1)                *  (numer1_arg2) )
-    //                            /
-    //                 (  denom1_arg1  + DENOM_COEFF * (denom1_arg2)^2))
+    //                            / 
+    //                 (  denom1_arg1  + DENOM_COEFF * (denom1_arg2)^2)) 
     //         * DEG2RAD +?180
-    //
+    //   
     //         = ATAN( numerator / denominator ) * DEG2RAD +?180
     //
     //         Where +?180 is only applied if lat1 > lat2
@@ -226,9 +273,9 @@ double calculatebetaCalc(double lat1, double lat2, double lon1, double lon2)
         }
 
         betaCalc = atan( ( (NUMER_COEFF1 - NUMER_COEFF2 * lat2) * (lon2 - lon1) )
-                        /
+                        / 
                         (denom1_arg1 + BETA_CALC_DENOM_COEFF * pow((denom1_arg2), 2.0) )
-                    )
+                    )        
                 * RAD2DEG + oneEightyOffset;
 
     } //end NOT divide-by-zero
@@ -249,8 +296,8 @@ double calculateVCalcHorzLowBound(double vCalcHorz)
 {
     double vCalcHorzBound = 0.0;
 
-    vCalcHorzBound = vCalcHorz - VCALC_BOUNDARY_THRESHOLD;
-
+    vCalcHorzBound = vCalcHorz - VCALC_HORZ_BOUNDARY_THRESHOLD;
+    
     return vCalcHorzBound;
 }
 
@@ -261,8 +308,8 @@ double calculateVCalcHorzHighBound(double vCalcHorz)
 {
     double vCalcHorzBound = 0.0;
 
-    vCalcHorzBound = vCalcHorz + VCALC_BOUNDARY_THRESHOLD;
-
+    vCalcHorzBound = vCalcHorz + VCALC_HORZ_BOUNDARY_THRESHOLD;
+    
     return vCalcHorzBound;
 }
 
@@ -274,14 +321,18 @@ double calculateVCalcHorzHighBound(double vCalcHorz)
 double calculateBetaCalcLowBound(double betaCalc, double dCalc)
 {
     double betaCalcBound = 0.0;
-    double offset = 0.0;
-
-    offset = calculateBetaCalcBoundaryOffset(dCalc);
+    double offset = BETA_CALC_BOUNDARY_THRESHOLD;
+    
+    // if defined, use a more complex threshold calculation using dCalc
+    if (USE_COMPLEX_BETA_CALC_THRESHOLD)
+    {
+        offset = calculateBetaCalcBoundaryOffset(dCalc);
+    }
 
     betaCalcBound = betaCalc - offset;
 
     debugf("betaCalc Lower Bound:%f\n", betaCalcBound);
-
+    
     return betaCalcBound;
 }
 
@@ -292,14 +343,18 @@ double calculateBetaCalcLowBound(double betaCalc, double dCalc)
 double calculateBetaCalcHighBound(double betaCalc, double dCalc)
 {
     double betaCalcBound = 0.0;
-    double offset = 0.0;
-
-    offset = calculateBetaCalcBoundaryOffset(dCalc);
+    double offset = BETA_CALC_BOUNDARY_THRESHOLD;
+    
+    // if defined, use a more complex threshold calculation using dCalc
+    if (USE_COMPLEX_BETA_CALC_THRESHOLD)
+    {
+        offset = calculateBetaCalcBoundaryOffset(dCalc);
+    }
 
     betaCalcBound = betaCalc + offset;
 
     debugf("betaCalc Upper Bound:%f\n", betaCalcBound);
-
+    
     return betaCalcBound;
 }
 
@@ -311,10 +366,10 @@ double calculateVCalcVertLowBound(double height1, double height2)
 {
     double vCalcVertBound = 0.0;
 
-    vCalcVertBound = (height2 - height1) * 60. - 840.0;
+    vCalcVertBound = (height2 - height1) * 60.0 - VCALC_VERT_BOUNDARY_THRESHOLD;
 
     debugf("vCalcVertBound Lower Bound:%f\n", vCalcVertBound);
-
+    
     return vCalcVertBound;
 }
 
@@ -326,10 +381,10 @@ double calculateVCalcVertHighBound(double height1, double height2)
 {
     double vCalcVertBound = 0.0;
 
-    vCalcVertBound = (height2 - height1) * 60. + 840.0;
+    vCalcVertBound = (height2 - height1) * 60.0 + VCALC_VERT_BOUNDARY_THRESHOLD;
 
     debugf("vCalcVertBound Upper Bound:%f\n", vCalcVertBound);
-
+    
     return vCalcVertBound;
 }
 
@@ -347,7 +402,7 @@ double calculateVCalcVertHighBound(double height1, double height2)
 Boundary_s calculateBoundaries(double lat1, double lat2,
                                double lon1, double lon2,
                                double height1, double height2)
-{
+{       
     //return struct
     Boundary_s boundaryRec;
 
@@ -355,9 +410,11 @@ Boundary_s calculateBoundaries(double lat1, double lat2,
     double dCalc_NmPerSec = 0.0;
     bool divideByZero = false;
     double betaCalc = 0.0;
+    double betaCalcLb = 0.0;
+    double betaCalcHb = 0.0;
     double vCalcHorz_kts = 0.0;
-
-
+    double heightDiff = 0.0;
+    
     //convert degrees to radians:
     double latRad1 = degreesToRadians(lat1);
     double latRad2 = degreesToRadians(lat2);
@@ -373,18 +430,23 @@ Boundary_s calculateBoundaries(double lat1, double lat2,
     // if DIV-BY-ZERO, then use pre-determined values.
     if (divideByZero)
     {
-        boundaryRec.betaCalcLowBound = BETA_CALC_DIV_BY_ZERO_LOW_DEFAULT;
-        boundaryRec.betaCalcHighBound = BETA_CALC_DIV_BY_ZERO_HI_DEFAULT;
+        betaCalcLb= BETA_CALC_MIN_BOUND_DEFAULT;
+        betaCalcHb = BETA_CALC_MAX_BOUND_DEFAULT;
     }
     else //use normal calculations
     {
         betaCalc = calculatebetaCalc(latRad1, latRad2, lonRad1, lonRad2);
 
         //calculate lower and upper boundaries for betaCalc
-        boundaryRec.betaCalcLowBound = calculateBetaCalcLowBound(betaCalc, dCalc_NmPerSec);
-        boundaryRec.betaCalcHighBound = calculateBetaCalcHighBound(betaCalc, dCalc_NmPerSec);
+        betaCalcLb = calculateBetaCalcLowBound(betaCalc, dCalc_NmPerSec);
+        betaCalcHb = calculateBetaCalcHighBound(betaCalc, dCalc_NmPerSec);  
 
     } //end-if DIV-BY-ZERO
+    
+    //"Angle-mod-PI" it to ensure the value is 0.0-359.999etc
+    
+    boundaryRec.betaCalcLowBound = angMod360(betaCalcLb);
+    boundaryRec.betaCalcHighBound = angMod360(betaCalcHb);
 
     //convert to Kts
     vCalcHorz_kts = calculateVCalcHorzFromDCalc(dCalc_NmPerSec);
@@ -393,9 +455,45 @@ Boundary_s calculateBoundaries(double lat1, double lat2,
     boundaryRec.vCalcHorzLowBound = calculateVCalcHorzLowBound(vCalcHorz_kts);
     boundaryRec.vCalcHorzHighBound = calculateVCalcHorzHighBound(vCalcHorz_kts);
 
-    //calculate boundaries for vCalcVert
-    boundaryRec.vCalcVertLowBound = calculateVCalcVertLowBound(height1, height2);
-    boundaryRec.vCalcVertHighBound = calculateVCalcVertHighBound(height1, height2);
+    // if altitude is invalid, use pretermined boundaries
+    if (height1 >= INVALID_HEIGHT || height2 >= INVALID_HEIGHT)
+    {
+        boundaryRec.vCalcVertLowBound = VCALC_VERT_MIN_BOUND_DEFAULT;
+        boundaryRec.vCalcVertHighBound = VCALC_VERT_MAX_BOUND_DEFAULT;
+    }
+    else // calculate as "normal""
+    {
+        // the 25 LSB was throwing off the monitors, so a very simple way has been created:
+        if (USE_SIMPLE_VCALC_VERT)
+        {
+            heightDiff = height2 - height1;
+            // if they are "equal"
+            if (fabs(heightDiff) < 0.0000000000000000001)
+            {
+                boundaryRec.vCalcVertLowBound  = -1600.0;
+                boundaryRec.vCalcVertHighBound = +1600.0;
+            }
+            else if (heightDiff > 0.0)
+            {
+                boundaryRec.vCalcVertLowBound  = 0.0;
+                boundaryRec.vCalcVertHighBound = VCALC_VERT_MAX_BOUND_DEFAULT;
+            }
+            else // heightDiff < 0
+            {
+                boundaryRec.vCalcVertLowBound  = VCALC_VERT_MIN_BOUND_DEFAULT;
+                boundaryRec.vCalcVertHighBound = 0.0;
+
+            } //end-if-elseif-else block for heighDiff   
+        }
+        else // the normal-normal way
+        {
+            //calculate boundaries for vCalcVert
+            boundaryRec.vCalcVertLowBound = calculateVCalcVertLowBound(height1, height2);
+            boundaryRec.vCalcVertHighBound = calculateVCalcVertHighBound(height1, height2);
+        
+        } //end-if normal vs simple vCalcVert
+    
+    } //end-if check for invalid height
 
     //debug
     debugf("Boundary Record:\n");

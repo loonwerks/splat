@@ -2339,10 +2339,10 @@ fun run_tests fileName =
    rowStep 0
  end
 
-val _ = run_tests "../tests/tc1.bytes";
+val _ = run_tests "../tests/tc12.bytes";
 val _ = print "\n\n";
 (*
-val _ = run_tests "../tests/tc12.bytes";
+val _ = run_tests "../tests/tc1.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc13.bytes";
 val _ = print "\n\n";

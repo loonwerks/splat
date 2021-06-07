@@ -2061,7 +2061,15 @@ fun run_tests fileName =
 (* Most relevant tests for duplication are 5 and 6                           *)
 (*---------------------------------------------------------------------------*)
 
+fun test() = run_tests "../tests/test";
 
+fun all_tests() =
+ let in
+   test();
+   print "\n\n"
+ end;
+
+(*
 fun test1() = run_tests "../tests/tc1.bytes";
 fun test2() = run_tests "../tests/tc12.bytes";
 fun test3() = run_tests "../tests/tc13.bytes";
@@ -2086,6 +2094,7 @@ fun all_tests() =
    print "\n\n";
    test7()
  end;
+*)
 
 end (* Test *)
 

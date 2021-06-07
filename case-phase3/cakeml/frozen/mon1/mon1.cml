@@ -1588,14 +1588,16 @@ fun heading_upper_of bd =
 fun print_boundaries bounds =
  case bounds
   of Boundaries_Recd hlo hhi vlo vhi olo ohi =>
- (Utils.print "Bounds: \n";
+ (
+  Utils.print "Bounds: \n";
   printR "  hVel_lower_bound : " hlo;
   printR "  hVel_upper_bound : " hhi;
   printR "  vVel_lower_bound : " vlo;
   printR "  vVel_upper_bound : " vhi;
   printR "  heading_lower_bound : " olo;
   printR "  heading_upper_bound : " ohi;
-  Utils.print  "End Bounds.\n\n");
+  Utils.print  "End Bounds.\n\n"
+  );
 
 fun printI2 s i1 i2 = Utils.print (s^Int.toString i1^"     "^Int.toString i2^"\n");
 fun printR2 s d1 d2 = Utils.print (s^Double.toString d1^"     "^Double.toString d1^"\n");
@@ -2335,18 +2337,5 @@ fun run_tests fileName =
    rowStep 0
  end
 
-val _ = run_tests "../tests/tc1.bytes";
+val _ = run_tests "../tests/test";
 val _ = print "\n\n";
-(*
-val _ = run_tests "../tests/tc12.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc13.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc14.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc5.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc6.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc17.bytes";
-*)

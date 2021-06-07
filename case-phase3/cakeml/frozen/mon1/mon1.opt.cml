@@ -2133,14 +2133,14 @@ fun is_default_report rpt = Adsb_Types.is_default_targetID (targetID_of rpt);
 fun get_unexpectedAux curr past past_len =
  if is_default_report curr
  then
-   0
+   ~1
  else
    Array.foldli
      (fn j => fn x => fn result =>
-        if result = 0 andalso j < past_len andalso unexpected curr (Array.sub past j)
+        if result = ~1 andalso j < past_len andalso unexpected curr (Array.sub past j)
            then j
           else result)
-    0 past;
+    ~1 past;
 
 fun get_unexpected curr past past_len =
   Array.tabulate
@@ -2151,12 +2151,12 @@ fun suspectIDs today unexpected_today unexpected_yest unexpected_two =
   Array.tabulate
      (Array.length today)
      (fn i =>
-        if Array.sub unexpected_today i > 0 andalso
+        if Array.sub unexpected_today i > ~1 andalso
            Array.sub unexpected_yest
-                (Array.sub unexpected_today i) > 0 andalso
+                (Array.sub unexpected_today i) > ~1 andalso
            Array.sub unexpected_two
                 (Array.sub unexpected_yest
-                   (Array.sub unexpected_today i)) > 0
+                   (Array.sub unexpected_today i)) > ~1
         then
            targetID_of (Array.sub today i)
         else default_TARGET_ID);
@@ -2168,7 +2168,7 @@ fun suspectIDs today unexpected_today unexpected_yest unexpected_two =
 
 fun mk_monitor_report sus = Adsb_Types.Monitor_Report_Recd 100 1 sus;
 
-val default_unexpected = Array.tabulate 150 (fn i => 0);
+(* val default_unexpected = Array.tabulate 150 (fn i => ~1); *)
 
 (*---------------------------------------------------------------------------*)
 (* State vector:                                                             *)
@@ -2250,12 +2250,12 @@ fun stepFn inports stateVars =
                    event_observed andalso
                    Utils.array_existsI
                     (fn i =>
-                        Array.sub unexpected_today i > 0 andalso
+                        Array.sub unexpected_today i > ~1 andalso
                         Array.sub unexpected_yest
-                            (Array.sub unexpected_today i) > 0 andalso
+                            (Array.sub unexpected_today i) > ~1 andalso
                         Array.sub unexpected_two
                             (Array.sub unexpected_yest
-                               (Array.sub unexpected_today i)) > 0)
+                               (Array.sub unexpected_today i)) > ~1)
                     unexpected_today
                val cycle_count = cycle_count + 1
            in

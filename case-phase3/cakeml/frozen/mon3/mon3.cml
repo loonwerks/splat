@@ -1049,7 +1049,8 @@ datatype miscIndicators = MiscIndicators_Recd bool bool bool bool;
 
 fun airborne_of miscs =
  case miscs
-  of MiscIndicators_Recd tt0 tt1 rptkind aborne => aborne;
+  (* of MiscIndicators_Recd tt0 tt1 rptkind aborne => aborne; *)
+  of MiscIndicators_Recd tt0 tt1 rptkind aborne => tt0;
 
 datatype targetID = TargetID_Recd int int;
 
@@ -2203,19 +2204,5 @@ fun run_tests fileName =
    rowStep 0
  end
 
-val _ = run_tests "../tests/tc1.bytes";
+val _ = run_tests "../tests/test";
 val _ = print "\n\n";
-
-(*
-val _ = run_tests "../tests/tc12.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc13.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc14.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc5.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc6.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc17.bytes";
-*)

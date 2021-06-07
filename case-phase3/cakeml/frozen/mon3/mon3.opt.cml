@@ -2245,6 +2245,8 @@ val _ = run_tests "../tests/tc5.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc6.bytes";
 val _ = print "\n\n";
+val _ = run_tests "../tests/tc17.bytes";
 *)
 
-val _ = run_tests "../tests/tc17.bytes";
+val _ = run_tests "../tests/test";
+val _ = print "\n\n";

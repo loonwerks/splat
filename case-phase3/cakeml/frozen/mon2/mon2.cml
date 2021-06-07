@@ -2033,6 +2033,8 @@ fun run_tests fileName =
 (*---------------------------------------------------------------------------*)
 
 
+fun test() = run_tests "../tests/test";
+(*
 fun test1() = run_tests "../tests/tc1.bytes";
 fun test2() = run_tests "../tests/tc12.bytes";
 fun test3() = run_tests "../tests/tc13.bytes";
@@ -2040,22 +2042,12 @@ fun test4() = run_tests "../tests/tc14.bytes";
 fun test5() = run_tests "../tests/tc5.bytes";
 fun test6() = run_tests "../tests/tc6.bytes";
 fun test7() = run_tests "../tests/tc17.bytes";
+*)
 
 fun all_tests() =
  let in
-   test1();
-   print "\n\n";
-   test2();
-   print "\n\n";
-   test3();
-   print "\n\n";
-   test4();
-   print "\n\n";
-   test5();
-   print "\n\n";
-   test6();
-   print "\n\n";
-   test7()
+   test();
+   print "\n\n"
  end;
 
 end (* Test *)

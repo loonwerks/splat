@@ -11,7 +11,10 @@
 #define RAD2DEG (180.0 / M_PI)
 #define NM_PER_SEC_TO_KTS pow(60.0, 2.0)
 #define NM_TO_FT 1852.0 * (1.0 / 0.3048)
-#define VCALC_BOUNDARY_THRESHOLD 5.33
+#define VCALC_HORZ_BOUNDARY_THRESHOLD 25.0
+#define VCALC_VERT_BOUNDARY_THRESHOLD 1600.0
+#define USE_COMPLEX_BETA_CALC_THRESHOLD 0 // Set to 1 to use complex calc in calculateBetaCalcLowBound
+#define BETA_CALC_BOUNDARY_THRESHOLD 12.0 // Otherwise use this value.
 #define ORIENTATION_REF_ERROR 31.0
 #define HALF_G_TAN_ROLL_ANGLE 1597.0
 #define BETA_CALC_DENOM_COEFF 0.246202
@@ -19,8 +22,17 @@
 #define DIV_BY_ZERO_THRESHOLD 0.0000000000000000001
 //                              1234567890123456789
 #define DIVIDE_BY_0_INDICATOR 0.0
-#define BETA_CALC_DIV_BY_ZERO_LOW_DEFAULT -180.0
-#define BETA_CALC_DIV_BY_ZERO_HI_DEFAULT 180.0
+#define BETA_CALC_MIN_BOUND_DEFAULT 0.0    //Also used when the calculation causes DIV-BY-ZERO
+#define BETA_CALC_MAX_BOUND_DEFAULT 359.9999999  //Also used when the calculation causes DIV-BY-ZERO
+#define VCALC_HORZ_MIN_BOUND_DEFAULT 0.0
+#define VCALC_HORZ_MAX_BOUND_DEFAULT 5000.0
+#define VCALC_VERT_MIN_BOUND_DEFAULT -132000.0
+#define VCALC_VERT_MAX_BOUND_DEFAULT 132000.0
+
+#define USE_SIMPLE_VCALC_VERT 1
+
+#define INVALID_HEIGHT 101375.0
+#define INVALID_VERTICAL_VEL -131072.0 #//TODO int or double?
 
 /* note:
     phi = latitude
@@ -40,7 +52,7 @@ typedef struct Boundary_s
     double vCalcVertHighBound;
 } Boundary_s;
 
-/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** 
  * REFERENCE THE .C FILE FOR FUNCTION COMMENTS AND USAGE   *** ***
  * *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***/
 
