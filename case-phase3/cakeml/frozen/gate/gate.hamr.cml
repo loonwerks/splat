@@ -32,6 +32,9 @@ fun front_last list =
  in flacc list []
  end
 
+val w8char = Char.chr o Word8.toInt;
+val charw8 = Word8.fromInt o Char.ord;
+
 fun divmod i n = (Int.div i n, Int.mod i n);
 
 fun rev_itlist f list acc =
@@ -102,6 +105,8 @@ end;
 val w8zero = Word8.fromInt 0;
 val w64FF = Word64.fromInt 255;
 
+fun bytes2string bytes = String.implode (List.map w8char bytes);
+
 fun byte_array_fromList list =
  let val arr = Word8Array.array (List.length list) w8zero
      fun appFn i list =
@@ -155,8 +160,6 @@ fun array_existsI pred arr =
  in if len = 0 then False
     else List.exists pred (upto 0 (len - 1))
  end
-
-val w8char = Char.chr o Word8.toInt;
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
 
@@ -281,7 +284,7 @@ datatype contig
   | Union ((bexp * contig) list)
 
 datatype ptree
-  = LEAF atom string
+  = LEAF atom (Word8.word list)
   | RECD ((string * ptree) list)
   | ARRAY (ptree list)
 ;
@@ -353,9 +356,9 @@ fun binopFn f g e1 e2 =
    of (Some v1, Some v2) => Some (f v1 v2)
     | otherwise => None;
 
-(* This should be identical ...
-fun total_bytes_of array i w = Some (Word8Array.substring array i w) handle _ => None;
-*)
+(*
+fun total_bytes_of array i w =
+ Some (Word8Array.substring array i w) handle _ => None;
 
 fun total_bytes_of arr i w =
  let val top = i+w
@@ -363,6 +366,17 @@ fun total_bytes_of arr i w =
        if n < top then
           accFn (n+1) (Utils.w8char (Word8Array.sub arr n)::acc)
        else String.implode (List.rev acc)
+ in if top <= Word8Array.length arr
+    then Some (accFn i [])
+    else None
+ end;
+*)
+
+fun total_bytes_of arr i w =
+ let val top = i+w
+     fun accFn n acc =
+       if n < top then accFn (n+1) (Word8Array.sub arr n::acc)
+       else List.rev acc
  in if top <= Word8Array.length arr
     then Some (accFn i [])
     else None
@@ -388,7 +402,6 @@ fun evalExp env bytes =
    evalE
  end
 ;
-
 
 fun equal x y = (x = y);
 fun orOp x y = (x orelse y);
@@ -494,7 +507,9 @@ fun substFn env byteArr theta path contig =
      fun thetaFn lval =
          (case Map.lookup theta lval
            of None => None
-            | Some (a,(i,width)) => total_bytes_of byteArr i width)
+            | Some (a,(i,width)) =>
+                Option.map Utils.bytes2string
+	            (total_bytes_of byteArr i width))
  in
   case contig
    of Void     => None
@@ -600,7 +615,6 @@ fun matchFn env byteArr state =
        end
  end
 ;
-
 
 fun match env contig byteArr =
   matchFn env byteArr ([(VarName"root",contig)],0,empty_lvalMap());
@@ -718,6 +732,7 @@ fun wellformed env contig byteArr =
 (* which is wrapped in the error monad.                                      *)
 (*---------------------------------------------------------------------------*)
 
+
 fun parseFn env byteArr path contig state =
  let val (consts,decls,atomWidth,valFn,dvalFn) = env
      val (stk,pos,theta) = state
@@ -811,7 +826,6 @@ fun parseFn env byteArr path contig state =
  end
 ;
 
-
 fun parse env contig byteArr =
  case parseFn env byteArr (VarName"root") contig ([],0,empty_lvalMap())
   of Some ([ptree],pos,theta) => (ptree,pos,theta)
@@ -823,7 +837,6 @@ fun add_contig_decl (s,d) env =
  let val (consts,decls,aW,vFn,dvFn) = env
  in (consts,(s,d)::decls,aW,vFn,dvFn)
  end
-
 
 end (* ByteContig *)
 
@@ -877,10 +890,10 @@ val allowedElement = mkRecd [
 val trustedIDs = mkArray allowedElement (intLit 4);
 
 val connection_data = mkRecd [
-  ("local_address", ipv4), ("spare1", rawBlock 4), ("local_port", u16),
-  ("spare2", rawBlock 6),
-  ("remote_address", ipv4),("spare3", rawBlock 4), ("remote_port", u16),
-  ("spare4", rawBlock 6)
+  ("local_address", ipv4), ("spare1", rawBlock 4),
+  ("local_port", u16),     ("spare2", rawBlock 6),
+  ("remote_address", ipv4),("spare3", rawBlock 4),
+  ("remote_port", u16),    ("spare4", rawBlock 6)
  ];
 
 (*---------------------------------------------------------------------------*)
@@ -891,12 +904,11 @@ val connection_data = mkRecd [
 (*   connect -> 2                                                            *)
 (*   close   -> 3                                                            *)
 (*                                                                           *)
-(* if connect or close then connection_data and payload (=2048) is there     *)
-(* othewise zeroed out.                                                      *)
-(*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
+val constDATA    = intLit 1;
 val constCONNECT = intLit 2;
+val constCLOSE   = intLit 3;
 
 val shm = mkRecd [
  ("length",   u32),
@@ -911,9 +923,9 @@ val shm = mkRecd [
    mkUnion [
      (beq (varloc "command") constCONNECT,
          mkRecd [("connection_data", connection_data),
-                 ("payload", mkArray u8 (intLit 2016))]),
+                 ("payload", rawBlock 2016)]),
      (bnot (beq (varloc "command") constCONNECT),
-         mkRecd [("payload", mkArray u8 (intLit 2048))])
+         mkRecd [("payload", rawBlock 2048)])
       ])
 ];
 
@@ -924,7 +936,6 @@ val shm = mkRecd [
 val vdtu_input_array = mkArray shm (intLit 16);
 
 end (* Gate_Contig *)
-
 
 (*---------------------------------------------------------------------------*)
 (* Types used by the Gate implementation                                     *)
@@ -970,7 +981,10 @@ fun tag_of_shm t  = case t of SHMRecd len tag prot comm connex payld => tag;
 fun prot_of_shm t = case t of SHMRecd len tag prot comm connex payld => prot;
 fun command_of t  = case t of SHMRecd len tag prot comm connex payld => comm;
 
+val constDEFAULT = 0;
+val constDATA    = 1;
 val constCONNECT = 2;
+val constCLOSE   = 3;
 
 fun connection_data_of t = case t of SHMRecd len tag prot comm connex payld => connex;
 
@@ -1012,6 +1026,14 @@ fun pack_cdata cdata =
 	rport_enc, spare_6]
    end
 
+fun string_of_comm i =
+  if i = constDEFAULT then "DEFAULT" else
+  if i = constCONNECT then "CONNECT" else
+  if i = constDATA then "DATA" else
+  if i = constCLOSE then "CLOSE"
+  else String.concat ["<UNKNOWN-COMMAND : code ", Int.toString i, ">"];
+
+
 fun pack_shm shm =
  case shm
   of SHMRecd len tag prot comm cdata payld =>
@@ -1019,12 +1041,21 @@ fun pack_shm shm =
        val tag_enc   = Utils.pack_u32 tag
        val prot_enc  = Utils.pack_u32 prot
        val comm_enc  = Utils.pack_u8 comm
-       val cdata_enc = if comm = constCONNECT then pack_cdata cdata else ""
+       val cdata_enc = if comm = constCONNECT orelse comm = constDEFAULT then
+                        pack_cdata cdata else ""
        val payld_enc = Word8Array.substring payld 0 (Word8Array.length payld)
+       val connexLen = String.size cdata_enc
+       val payldLen = String.size payld_enc
+
+       val _ = print ("Command : "^string_of_comm comm^"\n")
+       val _ = print "Connection-Data-Len     Payload-Len\n"
+       val _ = print (String.concat
+               ["        ", Int.toString connexLen, "                ",
+                Int.toString payldLen,"\n\n"])
    in
     String.concat
-      [len_enc,spare_4,
-       tag_enc, spare_4,
+      [len_enc,  spare_4,
+       tag_enc,  spare_4,
        prot_enc, spare_4,
        comm_enc, spare_7,
        cdata_enc,
@@ -1035,11 +1066,12 @@ fun pack_block block = String.concat (Utils.mapArray pack_shm block);
 
 end (* Gate_Types *)
 
+
 structure Gate_Parse =
 struct
 
 (* -------------------------------------------------------------------------- *)
-(* Widths for basic items,  in bits.                                          *)
+(* Widths for basic items,  in bytes.                                         *)
 (* -------------------------------------------------------------------------- *)
 
 fun gate_atom_width atm =
@@ -1049,36 +1081,36 @@ fun gate_atom_width atm =
    | ByteContig.Unsigned i => i
    | other => raise Utils.ERR "gate_atom_width" "unknown width of Raw";
 
+
+
 (*---------------------------------------------------------------------------*)
 (* Valuation functions and base environment                                  *)
 (*---------------------------------------------------------------------------*)
 
-fun byteValBE string =
- let val len = String.size string
-     fun accFn i acc =
-       if i < len then
-         let val byte = Char.ord (String.sub string i)
-	 in accFn (i+1) (byte + 256 * acc)
-         end
-       else acc
- in accFn 0 0
+fun byteValBE bytes =
+ let fun accFn list acc =
+         case list
+          of [] => acc
+           | byte::t => accFn t (Word8.toInt byte + 256 * acc)
+ in accFn bytes 0
  end
 
 val unsigned = byteValBE;
 
-fun twos_comp string =
- let val sup = Utils.twoExp (String.size string)
-     val half = Int.div sup 2
-     val n = unsigned string
+fun twos_comp bytes =
+ let val sup = Utils.twoExp (List.length bytes)
+     val half = sup div 2
+     val n = unsigned bytes
   in
     if n < half then n else n - sup
  end;
 
-fun valFn atm string =
+
+fun valFn atm bytes =
  case atm
-  of ByteContig.Signed i => Some (twos_comp string)
-   | ByteContig.Unsigned i => Some (unsigned string)
-   | otherwise => Some (unsigned string);
+  of ByteContig.Signed i => Some (twos_comp bytes)
+   | ByteContig.Unsigned i => Some (unsigned bytes)
+   | otherwise => Some (unsigned bytes);
 
 fun dvalFn atm bits = raise Utils.ERR "dvalFn" "undefined";
 
@@ -1145,6 +1177,11 @@ fun mk_byte ptree =
 
 val mk_bool = Utils.boolVal o mk_int;
 
+fun mk_raw ptree =
+ case ptree
+   of ByteContig.LEAF ByteContig.Blob bytes => Utils.byte_array_fromList bytes
+    | otherwise => raise Utils.ERR "mk_raw" "expected a LEAF";
+
 fun mk_string ptree =
  case ptree
   of ByteContig.ARRAY elts => String.implode (List.map (Char.chr o mk_int) elts)
@@ -1202,10 +1239,6 @@ fun mk_trustedIDs ptree = mk_array mk_allowed_element ptree;
 val default_connection_data =
   Gate_Types.Connection_dataRecd default_ipv4 0 default_ipv4 0;
 
-val batm = ByteContig.Unsigned 1;
-val zet = ByteContig.LEAF batm (String.str(Char.chr 0));
-val x = mk_ipv4 (ByteContig.ARRAY [zet,zet,zet,zet])
-
 fun mk_connection_data ptree =
  case ptree
   of ByteContig.RECD [
@@ -1220,41 +1253,45 @@ fun mk_connection_data ptree =
 	    (mk_int rport)
    | otherwise => raise Utils.ERR "mk_connection_data" "";
 
-fun mk_payload ptree = mk_byte_array ptree;
 
 fun mk_shm_elt ptree =
  case ptree
   of ByteContig.RECD
-     [("length", len),   ("spare1",  _),
+     [("length",  len),  ("spare1",  _),
       ("tag",     tag),  ("spare2",  _),
       ("protocol",prot), ("spare3",  _),
       ("command", comm), ("spare4",  _),
-      ("command_branch", ByteContig.RECD thing)]
-     => (case thing
-         of [("connection_data", cdata), ("payload", byteA)]
-            => Gate_Types.SHMRecd
-                 (mk_int len)
-                 (mk_int tag)
-                 (mk_int prot)
-                 (mk_int comm)
-                 (mk_connection_data cdata)
-                 (mk_payload byteA)
-          | [("payload", byteA)]
-            => Gate_Types.SHMRecd
-                 (mk_int len)
-                 (mk_int tag)
-                 (mk_int prot)
-                 (mk_int comm)
-                 default_connection_data
-                 (mk_payload byteA)
-          | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format at end of message"
-        )
+      ("command_branch", ByteContig.RECD thing)] =>
+     let val lenVal  = mk_int len
+         val tagVal  = mk_int tag
+         val protVal = mk_int prot
+         val commVal = mk_int comm
+         val _ = print ("(mk_shm_elt) command value is : "^Int.toString commVal^"\n")
+     in
+       case thing
+        of [("connection_data", cdata), ("payload", byteA)] =>
+           let val cnnxVal = mk_connection_data cdata
+               val payldVal = mk_raw byteA
+	       val () = print (String.concat [
+                         "(mk_shm_elt) payload size is : ",
+			 Int.toString (Word8Array.length payldVal), "\n"])
+	   in Gate_Types.SHMRecd lenVal tagVal protVal commVal cnnxVal payldVal
+           end
+         | [("payload", byteA)] =>
+           let val cnnxVal = default_connection_data
+               val payldVal = mk_raw byteA
+	       val () = print (String.concat [
+                         "(mk_shm_elt) payload size is : ",
+			 Int.toString (Word8Array.length payldVal), "\n"])
+	   in Gate_Types.SHMRecd lenVal tagVal protVal commVal cnnxVal payldVal
+           end
+         | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format at end of message"
+     end
    | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format";
 
 fun mk_shm_queue ptree = mk_array mk_shm_elt ptree;
 
 end (* Gate_Parse *)
-
 
 (*---------------------------------------------------------------------------*)
 (* Deployment API                                                            *)
@@ -1298,7 +1335,6 @@ fun send_Health_Out string =
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
 end
-
 
 structure Gate =
 struct
@@ -1658,6 +1694,7 @@ fun stepFn inports stateVars =
                         (tag_of_shm (valOf vdtu_Control_Message_In))
                         True)
                 else tag_map_wo_close_0
+
               val cycle_count = 1
               val () = (initStep := False)
           in
@@ -1739,10 +1776,11 @@ fun stepFn inports stateVars =
      (vdtu_Request_Message_Out,vdtu_Control_Message_Out,health_out))
   end
 
+fun trueOpt opt = case opt of Some True => True | otherwise => False;
+
 (*---------------------------------------------------------------------------*)
 (*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close, *)
-(*   control_tag_pair, tag_pairs, merged_tag_pairs,                          *)
-(*   cycle_count)                                                            *)
+(*   control_tag_pair, tag_pairs, merged_tag_pairs, cycle_count)             *)
 (*---------------------------------------------------------------------------*)
 
 val theState = Ref (None, None, None, None, None, None, None, None, None)
@@ -1766,7 +1804,7 @@ val shm_parseinfo =
     (Gate_Contig.shm,Gate_Parse.mk_shm_elt);
 
 fun parse_trustedIDs () =
- let val () = API.fill_Trusted_IDs_buffer ()
+ let val () = API.fill_trustedIDs_buffer ()
      val tidOpt2 = Gate_Parse.eventParse trustedID_parseinfo API.trustedIDs_buffer
  in
      Utils.dropOpt "Parsing of Trusted_IDs port failed" tidOpt2
@@ -1817,7 +1855,6 @@ fun gateFn () =
           API.send_VDTU_Control_Message_Out (Gate_Types.pack_shm shm)
 
  end
-
 
 end (* Gate *)
 
