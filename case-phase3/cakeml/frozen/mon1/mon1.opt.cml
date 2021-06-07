@@ -213,15 +213,6 @@ in String.concat
         (List.map Int.toString (divAcc n []))
 end
 
-fun prefixLenRight pred array =
- let val top = Array.length array
-     fun descend i =
-       if i < 0 then i else
-       if pred (Array.sub array i) then descend (i-1)
-       else i
-  in 1 + descend (top-1)
-  end;
-
 end (* Utils *)
 
 structure BitFns =
@@ -2005,6 +1996,18 @@ val is_latched = False;
 
 val default_TARGET_ID = Adsb_Types.TargetID_Recd 0 0;
 
+fun is_neg_one i = (i = ~1);
+fun is_def_target_id i = (i = default_TARGET_ID);
+
+fun prefixLenRight pred array =
+ let val top = Array.length array
+     fun descend i =
+       if i < 0 then i else
+       if pred (Array.sub array i) then descend (i-1)
+       else i
+  in 1 + descend (top-1)
+  end;
+
 fun find_LENGTH arr =
  case Array.findi (fn i => fn rpt => targetID_of rpt = default_TARGET_ID) arr
   of None => Array.length arr
@@ -2159,7 +2162,7 @@ fun get_unexpectedAux curr past past_len =
    Array.foldli
      (fn j => fn x => fn result =>
         if result = ~1 andalso j < past_len andalso unexpected curr (Array.sub past j)
-           then j
+          then j
           else result)
     ~1 past;
 
@@ -2270,7 +2273,8 @@ fun stepFn inports stateVars =
                val today = if event_observed then
                               traffic_of (valOf observed)
 	                   else today
-               val yest_len  = if event_observed then find_LENGTH yesterday else yest_len
+               (* val yest_len  = if event_observed then find_LENGTH yesterday else yest_len *)
+               val yest_len  = if event_observed then (prefixLenRight is_default_report yesterday) else yest_len
                val unexpected_two = if event_observed then unexpected_yest else unexpected_two
 	       val unexpected_yest = if event_observed then unexpected_today else unexpected_yest
                val unexpected_today =
@@ -2304,6 +2308,7 @@ fun stepFn inports stateVars =
       val _ = print_unexpected "Unexpected Yesterday   : " unexpected_yest
       val _ = print_unexpected "Unexpected Two Days Ago: " unexpected_two
 *)
+
       (*-----------------------*)
       (* Compute output values *)
       (*-----------------------*)
@@ -2399,9 +2404,11 @@ fun run_tests fileName =
    rowStep 0
  end
 
-val _ = run_tests "../tests/tc1.bytes";
+val _ = run_tests "../tests/test";
 val _ = print "\n\n";
 (*
+val _ = run_tests "../tests/tc1.bytes";
+val _ = print "\n\n";
 val _ = run_tests "../tests/tc12.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc13.bytes";
