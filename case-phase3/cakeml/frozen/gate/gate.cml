@@ -1697,6 +1697,7 @@ fun found_in_WHITELIST whitelist prot ip =
               prot_of_allowed elt = prot)
  whitelist;
 
+
 fun is_DATA msg    = (command_of msg = 1);
 fun is_CONNECT msg = (command_of msg = 2);
 fun is_CLOSE msg   = (command_of msg = 3);
@@ -1710,7 +1711,7 @@ fun remove_DUPLICATE_TAG_IP_PAIRS map1 map2 =
 
 fun count_HOLES map hole top =
  List.foldl
-  (fn i => fn count =>
+  (fn count => fn i =>
        if i <= top andalso tip_eq (Array.sub map i) hole
           then count + 1
          else count)
@@ -1718,21 +1719,31 @@ fun count_HOLES map hole top =
 
 fun count_ELEMENTS map hole top =
  List.foldl
-  (fn i => fn count =>
+  (fn count => fn i =>
       if i <= top andalso not (tip_eq (Array.sub map i) hole)
          then count + 1
          else count)
   0 (Utils.upto 0 (Array.length map - 1));
 
+val println = Utils.println;
+
 fun get_NTH_ELEM map n =
-  if count_ELEMENTS map default_TAG_IP_Pair 16 < n then
-     -1
+  (if count_ELEMENTS map default_TAG_IP_Pair 16 < n then
+     ~1
   else
-   List.foldl (fn i => fn index =>
-      if count_ELEMENTS map default_TAG_IP_Pair i = n
+   List.foldl (fn index => fn i =>
+     let val cnt = count_ELEMENTS map default_TAG_IP_Pair i
+         val () = println ("---> (get_NTH_ELEM): n = "^ Int.toString n)
+         val () = println ("---> (get_NTH_ELEM): i = "^ Int.toString i)
+         val () = println ("---> (get_NTH_ELEM): index = "^ Int.toString index)
+         val () = println
+                   ("---> (get_NTH_ELEM): count_ELEMENTS map default_TAG_IP_Pair i = "^ Int.toString cnt)
+     in if index <0 andalso cnt = n
          then i
-         else index)
-    -1 (Utils.upto 0 (Array.length map - 1));
+         else index
+     end)
+    ~1 (Utils.upto 0 (Array.length map - 1))
+ );
 
 fun ite index map default =
   if index >= 0 andalso index < 16 then
@@ -1745,21 +1756,28 @@ fun merge_TAG_MAPS map1 map2 =
     (fn i =>
         if not (tip_eq (Array.sub map1 i) default_TAG_IP_Pair) then
            Array.sub map1 i
-        else ite (get_NTH_ELEM map2 (count_HOLES map1 default_TAG_IP_Pair i))
-                 map2 default_TAG_IP_Pair);
+        else
+	 let val x = count_HOLES map1 default_TAG_IP_Pair i
+             val y = get_NTH_ELEM map2 x
+             val () = println ("---> count_HOLES map1 default_TAG_IP_Pair i = "^Int.toString x)
+	     val () = println ("---> get_NTH_ELEM map2 (-) = "^Int.toString y)
+         in
+            ite y map2 default_TAG_IP_Pair
+         end)
+;
 
 fun replace_AT map pair index =
- (if index >=0 andalso index < 16 then
-    Array.update map index pair else ()
+ (if index >= 0 andalso index < 16 then Array.update map index pair else ()
+  ;
   map);
 
 fun find_FIRST map pair =
   Array.foldli
    (fn i => fn elt => fn count =>
-      if (count = -1 andalso tip_eq (Array.sub map i) pair)
+      if (count = ~1 andalso tip_eq (Array.sub map i) pair)
         then i
         else count)
-   -1 map;
+   ~1 map;
 
 fun insert_INTO_TAG_MAP map pair =
   replace_AT map pair (find_FIRST map default_TAG_IP_Pair);
@@ -1886,7 +1904,7 @@ fun stepFn inports stateVars =
                 if not (tip_eq control_tag_pair default_TAG_IP_Pair)
                   then insert_INTO_TAG_MAP tag_pairs control_tag_pair
                   else tag_pairs
-              val merged_tag_map = 
+              val merged_tag_map =
                 if event_vdtu_Request_Message_In then
                      (merge_TAG_MAPS previous_tag_map
                         (remove_DUPLICATE_TAG_IP_PAIRS
@@ -1894,7 +1912,7 @@ fun stepFn inports stateVars =
                                (valOf vdtu_Request_Message_In))
                            previous_tag_map))
                 else default_TAG_MAP
-              val stale_tags_shmq =  
+              val stale_tags_shmq =
                 if event_vdtu_Request_Message_In
 		  then get_STALE_TAGS_FROM_SHM_QUEUE (valOf vdtu_Request_Message_In)
                   else default_TAG_VALID_PAIR_ARRAY
@@ -1955,11 +1973,13 @@ fun stepFn inports stateVars =
               val cycle_count = cycle_count + 1
           in
             (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-	     control_tag_pair,tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count)
+	     control_tag_pair,tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq,
+             cycle_count)
           end
 
      val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-          control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count) = newStateVars
+          control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq,
+          cycle_count) = newStateVars
 
      val () = print "  Previous Tag Map:\n"
      val () = println (Gate_Types.string_of_tip_array previous_tag_map)
@@ -2020,7 +2040,8 @@ fun stepFn inports stateVars =
      val newStateVarOpts =
          (Some whitelist, Some previous_tag_map, Some tag_map,
 	  Some tag_map_wo_close_0,Some tag_map_wo_close,
-	  Some control_tag_pair, Some tag_pairs, Some merged_tag_pairs, Some merged_tag_map, Some stale_tags_shmq,
+	  Some control_tag_pair, Some tag_pairs, Some merged_tag_pairs,
+	  Some merged_tag_map, Some stale_tags_shmq,
           Some cycle_count)
   in
     (newStateVarOpts,
@@ -2199,3 +2220,5 @@ val () = steps 1 "tests/tids1.bytes" ["tests/tc1.bytes","tests/tc2.bytes","tests
 val () = steps 2 "tests/tids4.bytes" ["tests/tc1.bytes","tests/tc2.bytes","tests/tc3.bytes"];
 
 val () = steps 3 "tests/tids5.bytes" ["tests/tc1.bytes","tests/tc3.bytes","tests/tc2.bytes"];
+
+val () = steps 4 "tests/tids1.bytes" ["tests/tc1.bytes","tests/tc3.bytes","tests/tc2.bytes"];
