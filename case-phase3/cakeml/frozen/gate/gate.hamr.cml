@@ -9,6 +9,12 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
+val debugLevel = Ref 0;
+
+fun print s = if !debugLevel < 1 then () else TextIO.print s;
+
+fun println s = print (s^"\n");
+
 fun cons h t = h::t;
 
 fun first pred list =
@@ -52,6 +58,15 @@ fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
 fun mapArray f array =
   let val elts = Array.foldr cons [] array
   in List.map f elts
+  end;
+
+fun mapByteArray f array =
+  let val top = Word8Array.length array
+      fun itFn i acc =
+          if i < top then
+	     itFn (i+1) (f (Word8Array.sub array i)::acc)
+          else List.rev acc
+  in itFn 0 []
   end;
 
 fun firstOpt f list =
@@ -937,6 +952,7 @@ val vdtu_input_array = mkArray shm (intLit 16);
 
 end (* Gate_Contig *)
 
+
 (*---------------------------------------------------------------------------*)
 (* Types used by the Gate implementation                                     *)
 (*---------------------------------------------------------------------------*)
@@ -969,6 +985,11 @@ datatype tag_valid_pair = TAG_VALID_PAIRRecd int bool;
 (* Projections                                                               *)
 (*---------------------------------------------------------------------------*)
 
+fun prot_of_allowed t =
+   case t of AllowedElementRecd p raddr => p;
+fun remote_address_of_allowed t =
+   case t of AllowedElementRecd x raddr => raddr;
+
 fun tag_of_tip t   = case t of TAG_IP_PairRecd tag prot ip valid => tag;
 fun prot_of_tip t  = case t of TAG_IP_PairRecd tag prot ip valid => prot;
 fun ip_of_tip t    = case t of TAG_IP_PairRecd tag prot ip valid => ip;
@@ -977,27 +998,143 @@ fun valid_of_tip t = case t of TAG_IP_PairRecd tag prot ip valid => valid;
 fun tag_of_tvp t   = case t of TAG_VALID_PAIRRecd tag valid => tag;
 fun valid_of_tvp t = case t of TAG_VALID_PAIRRecd tag valid => valid;
 
-fun tag_of_shm t  = case t of SHMRecd len tag prot comm connex payld => tag;
-fun prot_of_shm t = case t of SHMRecd len tag prot comm connex payld => prot;
-fun command_of t  = case t of SHMRecd len tag prot comm connex payld => comm;
+fun len_of_shm t     = case t of SHMRecd len tag prot comm connex payld => len;
+fun tag_of_shm t     = case t of SHMRecd len tag prot comm connex payld => tag;
+fun prot_of_shm t    = case t of SHMRecd len tag prot comm connex payld => prot;
+fun command_of t     = case t of SHMRecd len tag prot comm connex payld => comm;
+fun connex_of_shm t  = case t of SHMRecd len tag prot comm connex payld => connex;
+fun payload_of_shm t = case t of SHMRecd len tag prot comm connex payld => payld;
+fun connection_data_of t = connex_of_shm t;
+
+fun local_address_of_connex t =
+                case t of Connection_dataRecd laddr lport raddr rport => laddr;
+fun local_port_of_connex t =
+                case t of Connection_dataRecd laddr lport raddr rport => lport;
+fun remote_address_of_connex t =
+                case t of Connection_dataRecd laddr lport raddr rport => raddr;
+fun remote_port_of_connex t =
+                case t of Connection_dataRecd laddr lport raddr rport => rport;
 
 val constDEFAULT = 0;
 val constDATA    = 1;
 val constCONNECT = 2;
 val constCLOSE   = 3;
 
-fun connection_data_of t = case t of SHMRecd len tag prot comm connex payld => connex;
-
-fun prot_of_allowed t = case t of AllowedElementRecd p raddr => p;
-fun remote_address_of_allowed t = case t of AllowedElementRecd x raddr => raddr;
-fun remote_address_of_connex t =
-  case t
-   of Connection_dataRecd laddr lport raddr rport => raddr;
-
+fun paren s = String.concat ["(",s,")"];
+fun brack s = String.concat ["[",s,"]"];
+fun brace s = String.concat ["{",s,"}"];
 fun printB s b = print (s^Bool.toString b^"\n");
 fun printI s i = print (s^Int.toString i^"\n");
 fun printR s d = print (s^Double.toString d^"\n");
 fun printS s1 s2 = print (s1 ^ Utils.quote s2 ^"\n");
+
+fun string_of_ipv4 array =
+ String.concatWith "."
+      (Utils.mapByteArray (Int.toString o Word8.toInt) array);
+
+fun string_of_allowed elt =
+ let val prot = prot_of_allowed elt
+     val raddr = remote_address_of_allowed elt
+     val protstr = Int.toString prot
+     val raddrstr = string_of_ipv4 raddr
+ in
+  brack (String.concatWith ", " [protstr,raddrstr])
+ end
+
+fun string_of_whitelist eltArray =
+ let val estrs = Utils.mapArray string_of_allowed eltArray
+ in
+    "Whitelist: [<protocol>, <remote-address>]\n   "^String.concatWith "\n   " estrs
+ end
+
+fun tag_of_tip t   = case t of TAG_IP_PairRecd tag prot ip valid => tag;
+fun prot_of_tip t  = case t of TAG_IP_PairRecd tag prot ip valid => prot;
+fun ip_of_tip t    = case t of TAG_IP_PairRecd tag prot ip valid => ip;
+fun valid_of_tip t = case t of TAG_IP_PairRecd tag prot ip valid => valid;
+fun dest_tip t =
+  case t of TAG_IP_PairRecd tag prot ip valid => (tag,prot,ip,valid);
+
+fun dest_tvp t =
+  case t of TAG_VALID_PAIRRecd tag valid => (tag,valid);
+
+fun string_of_tip tip =
+ let val (tag,prot,ip,valid) = dest_tip tip
+     val tagstr = Int.toString tag
+     val protstr = Int.toString prot
+     val ipstr = string_of_ipv4 ip
+     val validstr = Bool.toString valid
+ in
+  brace (String.concatWith ",   " [tagstr, protstr, ipstr, validstr])
+ end;
+
+fun string_of_tvp tvp =
+ let val (tag,valid) = dest_tvp tvp
+     val tagstr = Int.toString tag
+     val validstr = Bool.toString valid
+ in
+     brack (String.concatWith ";" [tagstr, validstr])
+ end
+
+fun string_of_tip_array array =
+ let val eltstrs = Utils.mapArray string_of_tip array
+     val fmt = "   {<tag>, <protocol>, <IP>, <valid>}"
+ in
+   fmt^String.concatWith "\n   " ("\n   "::eltstrs)
+ end
+
+fun string_of_tvp_array array =
+ let val eltstrs = Utils.mapArray string_of_tvp array
+ in
+   String.concatWith "\n  " ("  "::eltstrs)
+ end
+
+fun string_of_comm i =
+  if i = constDEFAULT then "DEFAULT" else
+  if i = constCONNECT then "CONNECT" else
+  if i = constDATA then "DATA" else
+  if i = constCLOSE then "CLOSE"
+  else String.concat ["<UNKNOWN-COMMAND : code ", Int.toString i, ">"];
+
+fun string_of_connex c =
+ let val laddr = local_address_of_connex c
+     val lport = local_port_of_connex c
+     val raddr = remote_address_of_connex c
+     val rport = remote_port_of_connex c
+     val laddrstr = string_of_ipv4 laddr
+     val lportstr = Int.toString lport
+     val raddrstr = string_of_ipv4 raddr
+     val rportstr = Int.toString rport
+ in
+  paren (String.concatWith ", " [laddrstr, lportstr, raddrstr, rportstr])
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Printing shms and blocks                                                  *)
+(*---------------------------------------------------------------------------*)
+
+fun string_of_shm shm =
+ let val len = len_of_shm shm
+     val tag = tag_of_shm shm
+     val prot = prot_of_shm shm
+     val comm = command_of shm
+     val connex = connex_of_shm shm
+     val payld = payload_of_shm shm
+     val lenstr = Int.toString len
+     val tagstr = Int.toString tag
+     val protstr = Int.toString prot
+     val commstr = string_of_comm comm
+     val connexstr = string_of_connex connex
+     val payloadstr = "<payload>"
+ in
+  brack (String.concatWith "  "
+           [commstr, tagstr, protstr, connexstr, lenstr, payloadstr])
+ end
+
+fun string_of_shm_array shmQ =
+ let val shmstrs = Utils.mapArray string_of_shm shmQ
+     val header = " (Format: [<comm> <tag> <prot> (<laddr>,<lport>,<raddr>,<rport>) <len> <payload>])\n\n"
+ in header ^"   " ^ String.concatWith "\n   " shmstrs
+ end
 
 (*---------------------------------------------------------------------------*)
 (* Encoding shms and blocks                                                  *)
@@ -1026,14 +1163,6 @@ fun pack_cdata cdata =
 	rport_enc, spare_6]
    end
 
-fun string_of_comm i =
-  if i = constDEFAULT then "DEFAULT" else
-  if i = constCONNECT then "CONNECT" else
-  if i = constDATA then "DATA" else
-  if i = constCLOSE then "CLOSE"
-  else String.concat ["<UNKNOWN-COMMAND : code ", Int.toString i, ">"];
-
-
 fun pack_shm shm =
  case shm
   of SHMRecd len tag prot comm cdata payld =>
@@ -1046,12 +1175,6 @@ fun pack_shm shm =
        val payld_enc = Word8Array.substring payld 0 (Word8Array.length payld)
        val connexLen = String.size cdata_enc
        val payldLen = String.size payld_enc
-
-       val _ = print ("Command : "^string_of_comm comm^"\n")
-       val _ = print "Connection-Data-Len     Payload-Len\n"
-       val _ = print (String.concat
-               ["        ", Int.toString connexLen, "                ",
-                Int.toString payldLen,"\n\n"])
    in
     String.concat
       [len_enc,  spare_4,
@@ -1080,8 +1203,6 @@ fun gate_atom_width atm =
    | ByteContig.Signed i   => i
    | ByteContig.Unsigned i => i
    | other => raise Utils.ERR "gate_atom_width" "unknown width of Raw";
-
-
 
 (*---------------------------------------------------------------------------*)
 (* Valuation functions and base environment                                  *)
@@ -1207,19 +1328,6 @@ val default_ipv4 =
 
 fun mk_ipv4 ptree = mk_byte_array ptree;
 
-(*
-val batm = ByteContig.Unsigned 1;
-val zet = ByteContig.LEAF batm (String.str(Char.chr 0));
-val x = mk_ipv4 (ByteContig.ARRAY [zet,zet,zet,zet])
-
-fun print_byte_array arr =
- let val s = Word8Array.substring arr 0 (Word8Array.length arr)
-     val chars = String.explode s
-     fun pchar ch = print(String.concat["\\", Int.toString(Char.ord ch)])
- in List.app pchar chars
- end;
-*)
-
 fun mk_allowed_element ptree =
  case ptree
   of ByteContig.RECD [("protocol", prot), ("remote_address", ra)] =>
@@ -1266,23 +1374,16 @@ fun mk_shm_elt ptree =
          val tagVal  = mk_int tag
          val protVal = mk_int prot
          val commVal = mk_int comm
-         val _ = print ("(mk_shm_elt) command value is : "^Int.toString commVal^"\n")
      in
        case thing
         of [("connection_data", cdata), ("payload", byteA)] =>
            let val cnnxVal = mk_connection_data cdata
                val payldVal = mk_raw byteA
-	       val () = print (String.concat [
-                         "(mk_shm_elt) payload size is : ",
-			 Int.toString (Word8Array.length payldVal), "\n"])
 	   in Gate_Types.SHMRecd lenVal tagVal protVal commVal cnnxVal payldVal
            end
          | [("payload", byteA)] =>
            let val cnnxVal = default_connection_data
                val payldVal = mk_raw byteA
-	       val () = print (String.concat [
-                         "(mk_shm_elt) payload size is : ",
-			 Int.toString (Word8Array.length payldVal), "\n"])
 	   in Gate_Types.SHMRecd lenVal tagVal protVal commVal cnnxVal payldVal
            end
          | otherwise => raise Utils.ERR "mk_shm_elt" "unexpected format at end of message"
@@ -1292,6 +1393,7 @@ fun mk_shm_elt ptree =
 fun mk_shm_queue ptree = mk_array mk_shm_elt ptree;
 
 end (* Gate_Parse *)
+
 
 (*---------------------------------------------------------------------------*)
 (* Deployment API                                                            *)
@@ -1453,8 +1555,8 @@ fun found_in_TAGS tag_ip tvpArr =
     tvpArr;
 
 (*---------------------------------------------------------------------------*)
-(* Need to define this since CakeML equality on arrays constantly returns    *)
-(* true.                                                                     *)
+(* Need to define this since CakeML equality on arrays is defined to         *)
+(* constantly return true.                                                   *)
 (*---------------------------------------------------------------------------*)
 
 fun w8eq (i:Word8.word) j = (i=j);
@@ -1629,6 +1731,8 @@ fun update_BLOCK block tag_map =
 
 fun pre x = x;
 val valOf = Option.valOf;
+val print = Utils.print;
+val println = Utils.println;
 
 val initStep = Ref True;
 
@@ -1746,6 +1850,10 @@ fun stepFn inports stateVars =
      val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
           control_tag_pair, tag_pairs, merged_tag_pairs, cycle_count) = newStateVars
 
+     val () = print "  Tag Map:\n"
+     val () = println (Gate_Types.string_of_tip_array tag_map)
+     val () = println "  End Tag Map.\n"
+
      (*-----------------------*)
      (* Compute output values *)
      (*-----------------------*)
@@ -1776,11 +1884,11 @@ fun stepFn inports stateVars =
      (vdtu_Request_Message_Out,vdtu_Control_Message_Out,health_out))
   end
 
-fun trueOpt opt = case opt of Some True => True | otherwise => False;
 
 (*---------------------------------------------------------------------------*)
 (*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close, *)
-(*   control_tag_pair, tag_pairs, merged_tag_pairs, cycle_count)             *)
+(*   control_tag_pair, tag_pairs, merged_tag_pairs,                          *)
+(*   cycle_count)                                                            *)
 (*---------------------------------------------------------------------------*)
 
 val theState = Ref (None, None, None, None, None, None, None, None, None)
@@ -1804,7 +1912,7 @@ val shm_parseinfo =
     (Gate_Contig.shm,Gate_Parse.mk_shm_elt);
 
 fun parse_trustedIDs () =
- let val () = API.fill_Trusted_IDs_buffer ()
+ let val () = API.fill_trustedIDs_buffer ()
      val tidOpt2 = Gate_Parse.eventParse trustedID_parseinfo API.trustedIDs_buffer
  in
      Utils.dropOpt "Parsing of Trusted_IDs port failed" tidOpt2
@@ -1846,7 +1954,9 @@ fun gateFn () =
       case blockOut
        of None => ()
         | Some block =>
-            API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block)
+           (Utils.println "VDTU_Request_Message_Out:";
+	    Utils.println (Gate_Types.string_of_shm_array block);
+            API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block))
     end
     ;
     case shmOut
