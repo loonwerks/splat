@@ -2145,6 +2145,8 @@ fun steps n tidFile rqtFiles =
    Utils.print "\n\n"
  end
 
+(* Tests *)
+
 val () = steps 1 "tests/tids1.bytes" ["tests/tc1.bytes","tests/tc2.bytes","tests/tc3.bytes"];
 
 val () = steps 2 "tests/tids4.bytes" ["tests/tc1.bytes","tests/tc2.bytes","tests/tc3.bytes"];
