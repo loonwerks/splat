@@ -1640,6 +1640,12 @@ val default_TAG_MAP = Array.fromList
   default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,
   default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair,default_TAG_IP_Pair];
 
+val default_TAG_VALID_PAIR_ARRAY = Array.fromList
+ [default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,
+  default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,
+  default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,
+  default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR,default_TAG_VALID_PAIR];
+
 val default_ALLOW_LIST_ELEMENT = Gate_Types.AllowedElementRecd 0 default_IP;
 
 val default_ALLOW_LIST = Array.fromList
@@ -1720,16 +1726,16 @@ fun count_ELEMENTS map hole top =
 
 fun get_NTH_ELEM map n =
   if count_ELEMENTS map default_TAG_IP_Pair 16 < n then
-     0
+     -1
   else
    List.foldl (fn i => fn index =>
       if count_ELEMENTS map default_TAG_IP_Pair i = n
          then i
          else index)
-    0 (Utils.upto 0 (Array.length map - 1));
+    -1 (Utils.upto 0 (Array.length map - 1));
 
 fun ite index map default =
-  if index > 0 andalso index <= 16 then
+  if index >= 0 andalso index < 16 then
      Array.sub map index
      else default;
 
@@ -1743,17 +1749,17 @@ fun merge_TAG_MAPS map1 map2 =
                  map2 default_TAG_IP_Pair);
 
 fun replace_AT map pair index =
- (if index > 0 andalso index <= 16 then
-    Array.update map index pair else ();
+ (if index >=0 andalso index < 16 then
+    Array.update map index pair else ()
   map);
 
 fun find_FIRST map pair =
   Array.foldli
    (fn i => fn elt => fn count =>
-      if (count = 0 andalso tip_eq (Array.sub map i) pair)
+      if (count = -1 andalso tip_eq (Array.sub map i) pair)
         then i
         else count)
-   0 map;
+   -1 map;
 
 fun insert_INTO_TAG_MAP map pair =
   replace_AT map pair (find_FIRST map default_TAG_IP_Pair);
@@ -1840,7 +1846,7 @@ fun stepFn inports stateVars =
      val event_vdtu_Request_Message_In = Option.isSome vdtu_Request_Message_In
      val event_vdtu_Control_Message_In = Option.isSome vdtu_Control_Message_In
      val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-          control_tag_pair, tag_pairs, merged_tag_pairs, cycle_count) = stateVars
+          control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count) = stateVars
 
      (*--------------------------*)
      (* Compute new state values *)
@@ -1864,51 +1870,58 @@ fun stepFn inports stateVars =
                 else filter_BY_WHITELIST previous_tag_map whitelist
 	      val control_tag_pair =
                 if event_vdtu_Control_Message_In andalso
-                   is_CONNECT(valOf vdtu_Control_Message_In)
-                 then Gate_Types.TAG_IP_PairRecd
+                    is_CONNECT(valOf vdtu_Control_Message_In)
+                  then Gate_Types.TAG_IP_PairRecd
                           (tag_of_shm (valOf vdtu_Control_Message_In))
                           (prot_of_shm (valOf vdtu_Control_Message_In))
                           (remote_address_of_connex
                              (connection_data_of (valOf vdtu_Control_Message_In)))
                           True
-                 else default_TAG_IP_Pair
+                  else default_TAG_IP_Pair
 	      val tag_pairs =
                 if event_vdtu_Request_Message_In
-                 then get_NEW_TAGS_FROM_SHM_QUEUE(valOf vdtu_Request_Message_In)
-                 else default_TAG_MAP
+                  then get_NEW_TAGS_FROM_SHM_QUEUE(valOf vdtu_Request_Message_In)
+                  else default_TAG_MAP
 	      val merged_tag_pairs =
                 if not (tip_eq control_tag_pair default_TAG_IP_Pair)
                   then insert_INTO_TAG_MAP tag_pairs control_tag_pair
                   else tag_pairs
-              val tag_map_wo_close_0 =
+              val merged_tag_map = 
+                if event_vdtu_Request_Message_In then
+                     (merge_TAG_MAPS previous_tag_map
+                        (remove_DUPLICATE_TAG_IP_PAIRS
+                           (get_NEW_TAGS_FROM_SHM_QUEUE
+                               (valOf vdtu_Request_Message_In))
+                           previous_tag_map))
+                else default_TAG_MAP
+              val stale_tags_shmq =  
                 if event_vdtu_Request_Message_In
-                then remove_DUPLICATE_TAGS
-                        tag_map
-                        (get_STALE_TAGS_FROM_SHM_QUEUE
-                           (valOf vdtu_Request_Message_In))
-                else tag_map
+		  then get_STALE_TAGS_FROM_SHM_QUEUE (valOf vdtu_Request_Message_In)
+                  else default_TAG_VALID_PAIR_ARRAY
+              val tag_map_wo_close_0 =
+                remove_DUPLICATE_TAGS tag_map stale_tags_shmq
               val tag_map_wo_close =
-                if event_vdtu_Control_Message_In andalso
-                   is_CLOSE(valOf vdtu_Control_Message_In)
-                then remove_DUPLICATE_TAG
+                if event_vdtu_Control_Message_In andalso is_CLOSE(valOf vdtu_Control_Message_In)
+                  then
+                    remove_DUPLICATE_TAG
                       tag_map_wo_close_0
                       (Gate_Types.TAG_VALID_PAIRRecd
                         (tag_of_shm (valOf vdtu_Control_Message_In))
                         True)
-                else tag_map_wo_close_0
+                  else tag_map_wo_close_0
 
               val cycle_count = 1
               val () = (initStep := False)
           in
             (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-	     control_tag_pair,tag_pairs, merged_tag_pairs, cycle_count)
+	     control_tag_pair,tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count)
           end
        else
           let val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-                   control_tag_pair,tag_pairs, merged_tag_pairs,cycle_count) =
+                   control_tag_pair,tag_pairs, merged_tag_pairs,merged_tag_map,stale_tags_shmq,cycle_count) =
 	          (valOf whitelist,valOf previous_tag_map,
 		   valOf tag_map,valOf tag_map_wo_close_0,valOf tag_map_wo_close,
-		   valOf control_tag_pair, valOf tag_pairs, valOf merged_tag_pairs,
+		   valOf control_tag_pair, valOf tag_pairs, valOf merged_tag_pairs, valOf merged_tag_map, valOf stale_tags_shmq,
 		   valOf cycle_count)
               val whitelist =
                 if event_trusted_IDs then valOf trusted_IDs else (pre whitelist)
@@ -1942,15 +1955,47 @@ fun stepFn inports stateVars =
               val cycle_count = cycle_count + 1
           in
             (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-             control_tag_pair, tag_pairs, merged_tag_pairs, cycle_count)
+	     control_tag_pair,tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count)
           end
 
      val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-          control_tag_pair, tag_pairs, merged_tag_pairs, cycle_count) = newStateVars
+          control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count) = newStateVars
+
+     val () = print "  Previous Tag Map:\n"
+     val () = println (Gate_Types.string_of_tip_array previous_tag_map)
+     val () = println "  End Previous Tag Map.\n"
+
+     val () = print "  Control Tag Pair:\n"
+     val () = println (Gate_Types.string_of_tip control_tag_pair)
+     val () = println "  End Control Tag Pair.\n"
+
+     val () = print "  Tag Pairs:\n"
+     val () = println (Gate_Types.string_of_tip_array tag_pairs)
+     val () = println "  End Tag Pairs.\n"
+
+     val () = print "  Merged Tag Pairs:\n"
+     val () = println (Gate_Types.string_of_tip_array merged_tag_pairs)
+     val () = println "  End Merged Tag Pairs.\n"
+
+     val () = print "  Stale Tag Pairs:\n"
+     val () = println (Gate_Types.string_of_tvp_array stale_tags_shmq)
+     val () = println "  End Stale Tag Pairs.\n"
+
+     val () = print "  Merged Tag Map:\n"
+     val () = println (Gate_Types.string_of_tip_array merged_tag_map)
+     val () = println "  End Merged Tag Map.\n"
 
      val () = print "  Tag Map:\n"
      val () = println (Gate_Types.string_of_tip_array tag_map)
      val () = println "  End Tag Map.\n"
+
+     val () = print "  Tag Map Without Control Close:\n"
+     val () = println (Gate_Types.string_of_tip_array tag_map_wo_close_0)
+     val () = println "  End Tag Map Without Control Close.\n"
+
+     val () = print "  Tag Map Without All Close:\n"
+     val () = println (Gate_Types.string_of_tip_array tag_map_wo_close)
+     val () = println "  End Tag Map Without All Close.\n"
 
      (*-----------------------*)
      (* Compute output values *)
@@ -1975,7 +2020,7 @@ fun stepFn inports stateVars =
      val newStateVarOpts =
          (Some whitelist, Some previous_tag_map, Some tag_map,
 	  Some tag_map_wo_close_0,Some tag_map_wo_close,
-	  Some control_tag_pair, Some tag_pairs, Some merged_tag_pairs,
+	  Some control_tag_pair, Some tag_pairs, Some merged_tag_pairs, Some merged_tag_map, Some stale_tags_shmq,
           Some cycle_count)
   in
     (newStateVarOpts,
@@ -1985,11 +2030,11 @@ fun stepFn inports stateVars =
 
 (*---------------------------------------------------------------------------*)
 (*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close, *)
-(*   control_tag_pair, tag_pairs, merged_tag_pairs,                          *)
+(*   control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq          *)
 (*   cycle_count)                                                            *)
 (*---------------------------------------------------------------------------*)
 
-val theState = Ref (None, None, None, None, None, None, None, None, None)
+val theState = Ref (None, None, None, None, None, None, None, None, None, None, None)
  : (Gate_Types.whitelist option *
     Gate_Types.tag_ip_pair array option *
     Gate_Types.tag_ip_pair array option *
@@ -1998,6 +2043,8 @@ val theState = Ref (None, None, None, None, None, None, None, None, None)
     Gate_Types.tag_ip_pair option *
     Gate_Types.tag_ip_pair array option *
     Gate_Types.tag_ip_pair array option *
+    Gate_Types.tag_ip_pair array option *
+    Gate_Types.tag_valid_pair array option *
     int option) ref;
 
 val trustedID_parseinfo =
