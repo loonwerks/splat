@@ -2001,4 +2001,6 @@ fun start () = (pacer_emit(); loop());
 
 end (* Control *)
 
+val _ = Utils.debugLevel := 1;
+
 val _ = Control.start();
