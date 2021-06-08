@@ -1410,7 +1410,7 @@ val shm_buffer        = Word8Array.array (1 + 2080) Utils.w8zero;
 (* Clear buffer, read port into buffer                                       *)
 (*---------------------------------------------------------------------------*)
 
-fun fill_Trusted_IDs_buffer () =
+fun fill_trustedIDs_buffer () =
   let val () = Utils.clear_buf trustedIDs_buffer
   in  #(api_get_Trusted_IDs) "" trustedIDs_buffer
   end;
