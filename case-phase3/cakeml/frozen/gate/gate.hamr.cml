@@ -2892,9 +2892,8 @@ fun send_Health_Out string =
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
-end
+end (* Deployment  API *)
 
-end (* Mock API *)
 
 structure Gate =
 struct
