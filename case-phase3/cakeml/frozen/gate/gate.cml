@@ -9,6 +9,8 @@ fun total f x = Some (f x) handle _ => None;
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
+val shm_is_LE = Ref True;
+
 val debugLevel = Ref 0;
 
 fun print s = if !debugLevel < 1 then () else TextIO.print s;
@@ -247,9 +249,31 @@ in
   String.implode (List.map Char.chr ilist)
 end
 
+fun pack_u16LE n =
+let val ilist = pad_left 0 2 (divAcc n [])
+in
+  String.implode
+    (List.map Char.chr (List.rev ilist))
+end
+
+fun pack_u32LE n =
+let val ilist = pad_left 0 4 (divAcc n [])
+in
+  String.implode
+     (List.map Char.chr (List.rev ilist))
+end
+
+fun pack_u64LE n =
+let val ilist = pad_left 0 8 (divAcc n [])
+in
+  String.implode
+    (List.map Char.chr (List.rev ilist))
+end
+
 fun pack_byte_array bA = Word8Array.substring bA 0 (Word8Array.length bA);
 
 end (* Utils *)
+
 
 structure ByteContig =
 struct
@@ -1148,13 +1172,17 @@ val spare_4 = mk_null_string 4;
 val spare_6 = mk_null_string 6;
 val spare_7 = mk_null_string 7;
 
+
+fun pack_u16 n = if !Utils.shm_is_LE then Utils.pack_u16LE n else Utils.pack_u16 n;
+fun pack_u32 n = if !Utils.shm_is_LE then Utils.pack_u32LE n else Utils.pack_u32 n;
+
 fun pack_cdata cdata =
  case cdata
   of Connection_dataRecd laddr lport raddr rport =>
    let val laddr_enc = Utils.pack_byte_array laddr
-       val lport_enc = Utils.pack_u16 lport
+       val lport_enc = pack_u16 lport
        val raddr_enc = Utils.pack_byte_array raddr
-       val rport_enc = Utils.pack_u16 rport
+       val rport_enc = pack_u16 rport
    in
      String.concat
        [laddr_enc, spare_4,
@@ -1166,15 +1194,13 @@ fun pack_cdata cdata =
 fun pack_shm shm =
  case shm
   of SHMRecd len tag prot comm cdata payld =>
-   let val len_enc   = Utils.pack_u32 len
-       val tag_enc   = Utils.pack_u32 tag
-       val prot_enc  = Utils.pack_u32 prot
+   let val len_enc   = pack_u32 len
+       val tag_enc   = pack_u32 tag
+       val prot_enc  = pack_u32 prot
        val comm_enc  = Utils.pack_u8 comm
        val cdata_enc = if comm = constCONNECT orelse comm = constDEFAULT then
                         pack_cdata cdata else ""
        val payld_enc = Word8Array.substring payld 0 (Word8Array.length payld)
-       val connexLen = String.size cdata_enc
-       val payldLen = String.size payld_enc
    in
     String.concat
       [len_enc,  spare_4,
@@ -1208,7 +1234,7 @@ fun gate_atom_width atm =
 (* Valuation functions and base environment                                  *)
 (*---------------------------------------------------------------------------*)
 
-fun byteValBE bytes =
+fun unsignedBE bytes =
  let fun accFn list acc =
          case list
           of [] => acc
@@ -1216,26 +1242,51 @@ fun byteValBE bytes =
  in accFn bytes 0
  end
 
-val unsigned = byteValBE;
-
-fun twos_comp bytes =
+fun twos_compBE bytes =
  let val sup = Utils.twoExp (List.length bytes)
      val half = sup div 2
-     val n = unsigned bytes
+     val n = unsignedBE bytes
   in
     if n < half then n else n - sup
  end;
 
-
-fun valFn atm bytes =
+fun valFnBE atm bytes =
  case atm
-  of ByteContig.Signed i => Some (twos_comp bytes)
-   | ByteContig.Unsigned i => Some (unsigned bytes)
-   | otherwise => Some (unsigned bytes);
+  of ByteContig.Signed i => Some (twos_compBE bytes)
+   | ByteContig.Unsigned i => Some (unsignedBE bytes)
+   | otherwise => Some (unsignedBE bytes);
+
+
+(*---------------------------------------------------------------------------*)
+(* Contortion: the SHM inputs are coming from a little-endian machine in the *)
+(* actual test system. So integer elements in the SHM record should be parsed*)
+(* in LE order. However, it seems that the generated test data came from a   *)
+(* BE system. Thus, gate.cml will implement all valFnLE calls as valFnBE,    *)
+(* and gate.hamr.cml will implement valFnLE call by reversing the byte order *)
+(* I hope this is an accurate picture of what is going on, and produces the  *)
+(* right results in both component and system testing.                       *)
+(*---------------------------------------------------------------------------*)
+
+fun unsignedLE bytes =
+  if !Utils.shm_is_LE then
+     unsignedBE (List.rev bytes)
+  else unsignedBE bytes;
+
+fun twos_compLE bytes =
+  if !Utils.shm_is_LE then
+     twos_compBE (List.rev bytes)
+  else unsignedBE bytes;
+
+fun valFnLE atm bytes =
+ case atm
+  of ByteContig.Signed i   => Some (twos_compLE bytes)
+   | ByteContig.Unsigned i => Some (unsignedLE bytes)
+   | otherwise             => Some (unsignedLE bytes);
 
 fun dvalFn atm bits = raise Utils.ERR "dvalFn" "undefined";
 
-val gateEnv = ([],[],gate_atom_width,valFn,dvalFn)
+val whitelistEnv = ([],[],gate_atom_width,valFnBE,dvalFn)
+val shmEnv       = ([],[],gate_atom_width,valFnLE,dvalFn)
 
 (*---------------------------------------------------------------------------*)
 (* Takes a contig and a decoder and combines them into a parser.             *)
@@ -1243,16 +1294,16 @@ val gateEnv = ([],[],gate_atom_width,valFn,dvalFn)
 
 fun genParse env p byteArr i =
  let val (contig,mk_data) = p
+     val path = ByteContig.VarName "root"
+     val state = ([],i,ByteContig.empty_lvalMap())
  in
- case ByteContig.parseFn
-        env byteArr (ByteContig.VarName"root") contig
-        ([],i,ByteContig.empty_lvalMap())
+ case ByteContig.parseFn env byteArr path contig state
   of Some ([ptree],_,_) =>
-     (print "genParse: generated ptree\n"; Utils.total mk_data ptree)
+     (Utils.print "genParse: generated ptree\n"; Utils.total mk_data ptree)
    | otherwise => None
  end;
 
-fun gateParse p byteArr = genParse gateEnv p byteArr 0;
+fun gateParse p byteArr = genParse shmEnv p byteArr 0;
 
 (*---------------------------------------------------------------------------*)
 (* Parse a message prefixed with a byte which tells if it's an event.        *)
@@ -1276,7 +1327,7 @@ fun eventParse p byteA =
  else
   let val (contig,mk_data) = p
   in case ByteContig.parseFn
-            gateEnv byteA (ByteContig.VarName"root") contig
+            shmEnv byteA (ByteContig.VarName"root") contig
               ([],1,ByteContig.empty_lvalMap())
       of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
        | otherwise => Some None
@@ -1286,17 +1337,22 @@ fun eventParse p byteA =
 (* Interpretation support                                                    *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_int ptree =
+fun mk_intBE ptree =
  case ptree
-  of ByteContig.LEAF a string => Option.valOf (valFn a string)
-   | otherwise => raise Utils.ERR "Parse.mk_int" "expected a LEAF";
+  of ByteContig.LEAF a string => Option.valOf (valFnBE a string)
+   | otherwise => raise Utils.ERR "Gate_Parse.mk_int" "expected a LEAF";
+
+fun mk_intLE ptree =
+ case ptree
+  of ByteContig.LEAF a string => Option.valOf (valFnLE a string)
+   | otherwise => raise Utils.ERR "Gate_Parse.mk_int" "expected a LEAF";
 
 fun mk_byte ptree =
  case ptree
-  of ByteContig.LEAF a string => Word8.fromInt(Option.valOf (valFn a string))
-   | otherwise => raise Utils.ERR "Parse.mk_int" "expected a LEAF";
+  of ByteContig.LEAF a string => Word8.fromInt(Option.valOf (valFnBE a string))
+   | otherwise => raise Utils.ERR "Gate_Parse.mk_byte" "expected a LEAF";
 
-val mk_bool = Utils.boolVal o mk_int;
+val mk_bool = Utils.boolVal o mk_intBE;
 
 fun mk_raw ptree =
  case ptree
@@ -1305,7 +1361,7 @@ fun mk_raw ptree =
 
 fun mk_string ptree =
  case ptree
-  of ByteContig.ARRAY elts => String.implode (List.map (Char.chr o mk_int) elts)
+  of ByteContig.ARRAY elts => String.implode (List.map (Char.chr o mk_intBE) elts)
    | otherwise  => raise Utils.ERR "mk_string" "";
 
 fun mk_array eltFn ptree =
@@ -1328,11 +1384,15 @@ val default_ipv4 =
 
 fun mk_ipv4 ptree = mk_byte_array ptree;
 
+(*---------------------------------------------------------------------------*)
+(* Whitelist elements are Big-endian.                                        *)
+(*---------------------------------------------------------------------------*)
+
 fun mk_allowed_element ptree =
  case ptree
   of ByteContig.RECD [("protocol", prot), ("remote_address", ra)] =>
-     Gate_Types.AllowedElementRecd (mk_int prot) (mk_ipv4 ra)
-  | otherwise => raise Utils.ERR "mk_allowed_element" "";
+     Gate_Types.AllowedElementRecd (mk_intBE prot) (mk_ipv4 ra)
+   | otherwise => raise Utils.ERR "mk_allowed_element" "";
 
 (*---------------------------------------------------------------------------*)
 (* Trusted IDs input port                                                    *)
@@ -1341,7 +1401,7 @@ fun mk_allowed_element ptree =
 fun mk_trustedIDs ptree = mk_array mk_allowed_element ptree;
 
 (*---------------------------------------------------------------------------*)
-(* Construct SHM array                                                       *)
+(* Construct SHM array. Numbers here are little-endian                       *)
 (*---------------------------------------------------------------------------*)
 
 val default_connection_data =
@@ -1356,9 +1416,9 @@ fun mk_connection_data ptree =
       ("remote_port", rport),   ("spare4",  _)]
       => Gate_Types.Connection_dataRecd
             (mk_ipv4 laddr)
- 	    (mk_int lport)
+ 	    (mk_intLE lport)
 	    (mk_ipv4 raddr)
-	    (mk_int rport)
+	    (mk_intLE rport)
    | otherwise => raise Utils.ERR "mk_connection_data" "";
 
 
@@ -1370,10 +1430,10 @@ fun mk_shm_elt ptree =
       ("protocol",prot), ("spare3",  _),
       ("command", comm), ("spare4",  _),
       ("command_branch", ByteContig.RECD thing)] =>
-     let val lenVal  = mk_int len
-         val tagVal  = mk_int tag
-         val protVal = mk_int prot
-         val commVal = mk_int comm
+     let val lenVal  = mk_intLE len
+         val tagVal  = mk_intLE tag
+         val protVal = mk_intLE prot
+         val commVal = mk_intLE comm
      in
        case thing
         of [("connection_data", cdata), ("payload", byteA)] =>
@@ -1728,22 +1788,25 @@ fun count_ELEMENTS map hole top =
 val println = Utils.println;
 
 fun get_NTH_ELEM map n =
-  (if count_ELEMENTS map default_TAG_IP_Pair 16 < n then
+ if count_ELEMENTS map default_TAG_IP_Pair 16 < n then
      ~1
-  else
+ else
    List.foldl (fn index => fn i =>
      let val cnt = count_ELEMENTS map default_TAG_IP_Pair i
+(*
          val () = println ("---> (get_NTH_ELEM): n = "^ Int.toString n)
          val () = println ("---> (get_NTH_ELEM): i = "^ Int.toString i)
          val () = println ("---> (get_NTH_ELEM): index = "^ Int.toString index)
          val () = println
-                   ("---> (get_NTH_ELEM): count_ELEMENTS map default_TAG_IP_Pair i = "^ Int.toString cnt)
+                   ("---> (get_NTH_ELEM): count_ELEMENTS map default_TAG_IP_Pair i = "
+                          ^Int.toString cnt)
+*)
      in if index <0 andalso cnt = n
          then i
          else index
      end)
-    ~1 (Utils.upto 0 (Array.length map - 1))
- );
+    ~1 (Utils.upto 0 (Array.length map - 1));
+
 
 fun ite index map default =
   if index >= 0 andalso index < 16 then
@@ -1759,8 +1822,10 @@ fun merge_TAG_MAPS map1 map2 =
         else
 	 let val x = count_HOLES map1 default_TAG_IP_Pair i
              val y = get_NTH_ELEM map2 x
+(*
              val () = println ("---> count_HOLES map1 default_TAG_IP_Pair i = "^Int.toString x)
 	     val () = println ("---> get_NTH_ELEM map2 (-) = "^Int.toString y)
+*)
          in
             ite y map2 default_TAG_IP_Pair
          end)
@@ -1864,7 +1929,8 @@ fun stepFn inports stateVars =
      val event_vdtu_Request_Message_In = Option.isSome vdtu_Request_Message_In
      val event_vdtu_Control_Message_In = Option.isSome vdtu_Control_Message_In
      val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-          control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count) = stateVars
+          control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map,
+          stale_tags_shmq, cycle_count) = stateVars
 
      (*--------------------------*)
      (* Compute new state values *)
@@ -1936,11 +2002,12 @@ fun stepFn inports stateVars =
           end
        else
           let val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-                   control_tag_pair,tag_pairs, merged_tag_pairs,merged_tag_map,stale_tags_shmq,cycle_count) =
+                   control_tag_pair,tag_pairs, merged_tag_pairs,merged_tag_map,
+                   stale_tags_shmq,cycle_count) =
 	          (valOf whitelist,valOf previous_tag_map,
 		   valOf tag_map,valOf tag_map_wo_close_0,valOf tag_map_wo_close,
-		   valOf control_tag_pair, valOf tag_pairs, valOf merged_tag_pairs, valOf merged_tag_map, valOf stale_tags_shmq,
-		   valOf cycle_count)
+		   valOf control_tag_pair, valOf tag_pairs, valOf merged_tag_pairs,
+                   valOf merged_tag_map, valOf stale_tags_shmq, valOf cycle_count)
               val whitelist =
                 if event_trusted_IDs then valOf trusted_IDs else (pre whitelist)
               val previous_tag_map = pre tag_map_wo_close
@@ -2135,6 +2202,9 @@ fun gateFn () =
 end (* Gate *)
 
 val _ = Utils.debugLevel := 1;
+
+val _ = Utils.shm_is_LE := False;
+
 
 (*---------------------------------------------------------------------------*)
 (* Testing infrastructure                                                    *)
