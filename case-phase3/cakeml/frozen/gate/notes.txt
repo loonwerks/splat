@@ -1,0 +1,22 @@
+ So there is some contortion arising from the fact that the SHM
+inputs are coming from a little-endian machine in the actual test
+system. Accordingly, integer elements in the SHM_Request need to
+be parsed in LE order.
+
+ However, I suspect that the generated test data, for both the
+whitelist and SHM queue came from a BE system. I think this means
+that, on Unix, to test with the currently generated dataset means
+treating numbers in the SHM queue elements as being
+big-endian (on input and output). In contrast, on the test rig,
+SHM elements will be LE while whitelist elements remain BE. There
+is a flag
+
+  Utils.shm_is_LE : bool ref
+
+that controls the direction in which parsing and printing numbers
+in SHM elements.
+
+This flag is set to False in gate.cml, while it is True in
+gate.hamr.cml. I hope this is an accurate picture of what is
+going on, and produces the right results in both component and
+system testing.
