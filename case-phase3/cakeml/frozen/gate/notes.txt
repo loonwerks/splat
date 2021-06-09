@@ -13,8 +13,8 @@ is a flag
 
   Utils.shm_is_LE : bool ref
 
-that controls the direction in which parsing and printing numbers
-in SHM elements.
+that controls the direction in which parsing and printing treats
+numbers in SHM elements.
 
 This flag is set to False in gate.cml, while it is True in
 gate.hamr.cml. I hope this is an accurate picture of what is
