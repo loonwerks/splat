@@ -1,0 +1,8 @@
+In this directory, relevant numbers in the test data are
+little-endian. This holds for both whitelist elements and queue
+elements.
+
+Whitelist inputs are documented in file "Trusted ID List TCs.txt, and broken out into
+files
+
+   tids1.{csv,bytes}, ... ,tids9.{csv,bytes}

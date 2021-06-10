@@ -1,0 +1,63 @@
+The following TCs represent different permutations of how the protocol
+and remote IP address of the attested device may be reported to the
+Gate high assurance component within the trusted ID list. For testing
+purposes, the "expected" device protocol and IP address is 1 and
+10.145.22.99 respectively. By contrast, the "unexpected" protocol and
+IP address is 26 and 10.145.22.100. These specific values as well as
+the permutations presented below can be modified if desired.
+
+In summary, the test cases are configured as follows.
+TC1: Expected protocol and IP address appear in the Object #1 location (within first eight bytes)
+TC2: Expected protocol and IP address appear in the Object #2 location (within second eight bytes)
+TC3: Expected protocol and IP address appear in the Object #3 location (within third eight bytes)
+TC4: Expected protocol and IP address appear in the Object #4 location (within fourth eight bytes)
+TC5: Trusted ID list is empty
+TC6: Expected protocol and IP address appear in both the Object #1 and 2 location
+TC7: Expected protocol and unexpected IP address appear in the Object #1 location
+TC8: Unexpected protocol and expected IP address appear in the Object #1 location
+TC9: Unexpected protocol and IP address appear in the Object #1 location
+
+
+
+TC1:
+01000000010A911663000000000000000000000000000000000000000000000000
+
+
+
+TC2:
+010000000000000000000000010A91166300000000000000000000000000000000
+
+
+
+TC3:
+0100000000000000000000000000000000000000010A9116630000000000000000
+
+
+
+TC4:
+01000000000000000000000000000000000000000000000000000000010A911663
+
+
+
+TC5:
+010000000000000000000000000000000000000000000000000000000000000000
+
+
+
+TC6:
+01000000010A911663000000010A91166300000000000000000000000000000000
+
+
+
+TC7:
+01000000010A911664000000000000000000000000000000000000000000000000
+
+
+
+TC8:
+010000001A0A911663000000000000000000000000000000000000000000000000
+
+
+
+TC9:
+010000001A0A911664000000000000000000000000000000000000000000000000
