@@ -1285,7 +1285,7 @@ fun valFnLE atm bytes =
 
 fun dvalFn atm bits = raise Utils.ERR "dvalFn" "undefined";
 
-val whitelistEnv = ([],[],gate_atom_width,valFnBE,dvalFn)
+val whitelistEnv = ([],[],gate_atom_width,valFnLE,dvalFn)
 val shmEnv       = ([],[],gate_atom_width,valFnLE,dvalFn)
 
 (*---------------------------------------------------------------------------*)
@@ -1391,7 +1391,7 @@ fun mk_ipv4 ptree = mk_byte_array ptree;
 fun mk_allowed_element ptree =
  case ptree
   of ByteContig.RECD [("protocol", prot), ("remote_address", ra)] =>
-     Gate_Types.AllowedElementRecd (mk_intBE prot) (mk_ipv4 ra)
+     Gate_Types.AllowedElementRecd (mk_intLE prot) (mk_ipv4 ra)
    | otherwise => raise Utils.ERR "mk_allowed_element" "";
 
 (*---------------------------------------------------------------------------*)
@@ -2203,9 +2203,6 @@ end (* Gate *)
 
 val _ = Utils.debugLevel := 1;
 
-val _ = Utils.shm_is_LE := False;
-
-
 (*---------------------------------------------------------------------------*)
 (* Testing infrastructure                                                    *)
 (*---------------------------------------------------------------------------*)
@@ -2285,10 +2282,10 @@ fun steps n tidFile rqtFiles =
 
 (* Tests *)
 
-val () = steps 1 "tests/tids1.bytes" ["tests/tc1.bytes","tests/tc2.bytes","tests/tc3.bytes"];
+val () = steps 1 "testsLE/tids1.bytes" ["testsLE/tc1.bytes","testsLE/tc2.bytes","testsLE/tc3.bytes"];
 
-val () = steps 2 "tests/tids4.bytes" ["tests/tc1.bytes","tests/tc2.bytes","tests/tc3.bytes"];
+val () = steps 2 "testsLE/tids4.bytes" ["testsLE/tc1.bytes","testsLE/tc2.bytes","testsLE/tc3.bytes"];
 
-val () = steps 3 "tests/tids5.bytes" ["tests/tc1.bytes","tests/tc3.bytes","tests/tc2.bytes"];
+val () = steps 3 "testsLE/tids5.bytes" ["testsLE/tc1.bytes","testsLE/tc3.bytes","testsLE/tc2.bytes"];
 
-val () = steps 4 "tests/tids1.bytes" ["tests/tc1.bytes","tests/tc3.bytes","tests/tc2.bytes"];
+val () = steps 4 "testsLE/tids1.bytes" ["testsLE/tc1.bytes","testsLE/tc3.bytes","testsLE/tc2.bytes"];
