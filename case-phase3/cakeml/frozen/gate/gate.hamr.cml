@@ -1068,7 +1068,7 @@ fun string_of_allowed elt =
 fun string_of_whitelist eltArray =
  let val estrs = Utils.mapArray string_of_allowed eltArray
  in
-    "Whitelist: [<protocol>, <remote-address>]\n   "^String.concatWith "\n   " estrs
+    "(Format: [<protocol>, <remote-address>])\n   "^String.concatWith "\n   " estrs
  end
 
 fun tag_of_tip t   = case t of TAG_IP_PairRecd tag prot ip valid => tag;
@@ -1696,14 +1696,15 @@ fun get_NTH_ELEM map n =
  else
    List.foldl (fn index => fn i =>
      let val cnt = count_ELEMENTS map default_TAG_IP_Pair i
-(*
-         val () = println ("---> (get_NTH_ELEM): n = "^ Int.toString n)
-         val () = println ("---> (get_NTH_ELEM): i = "^ Int.toString i)
-         val () = println ("---> (get_NTH_ELEM): index = "^ Int.toString index)
-         val () = println
-                   ("---> (get_NTH_ELEM): count_ELEMENTS map default_TAG_IP_Pair i = "
-                          ^Int.toString cnt)
-*)
+         val () = if !Utils.debugLevel < 2 then ()
+          else let
+            val () = println ("---> (get_NTH_ELEM): n = "^ Int.toString n)
+            val () = println ("---> (get_NTH_ELEM): i = "^ Int.toString i)
+            val () = println ("---> (get_NTH_ELEM): index = "^ Int.toString index)
+            val () = println
+                      ("---> (get_NTH_ELEM): count_ELEMENTS map default_TAG_IP_Pair i = "
+                             ^Int.toString cnt)
+            in () end
      in if index <0 andalso cnt = n
          then i
          else index
@@ -1725,10 +1726,10 @@ fun merge_TAG_MAPS map1 map2 =
         else
 	 let val x = count_HOLES map1 default_TAG_IP_Pair i
              val y = get_NTH_ELEM map2 x
-(*
-             val () = println ("---> count_HOLES map1 default_TAG_IP_Pair i = "^Int.toString x)
-	     val () = println ("---> get_NTH_ELEM map2 (-) = "^Int.toString y)
-*)
+         val () = if !Utils.debugLevel < 2 then ()
+          else let val () = println ("---> count_HOLES map1 default_TAG_IP_Pair i = "^Int.toString x)
+                   val () = println ("---> get_NTH_ELEM map2 (-) = "^Int.toString y)
+               in () end
          in
             ite y map2 default_TAG_IP_Pair
          end)
@@ -1901,7 +1902,8 @@ fun stepFn inports stateVars =
               val () = (initStep := False)
           in
             (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
-	     control_tag_pair,tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq, cycle_count)
+	     control_tag_pair,tag_pairs, merged_tag_pairs, merged_tag_map,
+	     stale_tags_shmq, cycle_count)
           end
        else
           let val (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close,
@@ -1951,41 +1953,47 @@ fun stepFn inports stateVars =
           control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq,
           cycle_count) = newStateVars
 
-     val () = print "  Previous Tag Map:\n"
-     val () = println (Gate_Types.string_of_tip_array previous_tag_map)
-     val () = println "  End Previous Tag Map.\n"
+     val () = if !Utils.debugLevel < 2 then ()
+             else
+          let
+          val () = print "  Previous Tag Map:\n"
+          val () = println (Gate_Types.string_of_tip_array previous_tag_map)
+          val () = println "  End Previous Tag Map.\n"
 
-     val () = print "  Control Tag Pair:\n"
-     val () = println (Gate_Types.string_of_tip control_tag_pair)
-     val () = println "  End Control Tag Pair.\n"
+          val () = println "  Control Tag Pair:"
+          val () = println ("  "^Gate_Types.string_of_tip control_tag_pair)
+          val () = println "  End Control Tag Pair.\n"
 
-     val () = print "  Tag Pairs:\n"
-     val () = println (Gate_Types.string_of_tip_array tag_pairs)
-     val () = println "  End Tag Pairs.\n"
+          val () = print "  Tag Pairs:\n"
+          val () = println (Gate_Types.string_of_tip_array tag_pairs)
+          val () = println "  End Tag Pairs.\n"
 
-     val () = print "  Merged Tag Pairs:\n"
-     val () = println (Gate_Types.string_of_tip_array merged_tag_pairs)
-     val () = println "  End Merged Tag Pairs.\n"
+          val () = print "  Merged Tag Pairs:\n"
+          val () = println (Gate_Types.string_of_tip_array merged_tag_pairs)
+          val () = println "  End Merged Tag Pairs.\n"
 
-     val () = print "  Stale Tag Pairs:\n"
-     val () = println (Gate_Types.string_of_tvp_array stale_tags_shmq)
-     val () = println "  End Stale Tag Pairs.\n"
+          val () = print "  Stale Tag Pairs:\n"
+          val () = println (Gate_Types.string_of_tvp_array stale_tags_shmq)
+          val () = println "  End Stale Tag Pairs.\n"
 
-     val () = print "  Merged Tag Map:\n"
-     val () = println (Gate_Types.string_of_tip_array merged_tag_map)
-     val () = println "  End Merged Tag Map.\n"
+          val () = print "  Merged Tag Map:\n"
+          val () = println (Gate_Types.string_of_tip_array merged_tag_map)
+          val () = println "  End Merged Tag Map.\n"
 
-     val () = print "  Tag Map:\n"
-     val () = println (Gate_Types.string_of_tip_array tag_map)
-     val () = println "  End Tag Map.\n"
+          val () = print "  Tag Map:\n"
+          val () = println (Gate_Types.string_of_tip_array tag_map)
+          val () = println "  End Tag Map.\n"
 
-     val () = print "  Tag Map Without Control Close:\n"
-     val () = println (Gate_Types.string_of_tip_array tag_map_wo_close_0)
-     val () = println "  End Tag Map Without Control Close.\n"
+          val () = print "  Tag Map Without Control Close:\n"
+          val () = println (Gate_Types.string_of_tip_array tag_map_wo_close_0)
+          val () = println "  End Tag Map Without Control Close.\n"
 
-     val () = print "  Tag Map Without All Close:\n"
-     val () = println (Gate_Types.string_of_tip_array tag_map_wo_close)
-     val () = println "  End Tag Map Without All Close.\n"
+          val () = print "  Tag Map Without All Close:\n"
+          val () = println (Gate_Types.string_of_tip_array tag_map_wo_close)
+          val () = println "  End Tag Map Without All Close.\n"
+          in
+            ()
+          end
 
      (*-----------------------*)
      (* Compute output values *)
@@ -2021,11 +2029,12 @@ fun stepFn inports stateVars =
 
 (*---------------------------------------------------------------------------*)
 (*  (whitelist,previous_tag_map,tag_map,tag_map_wo_close_0,tag_map_wo_close, *)
-(*   control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map, stale_tags_shmq          *)
-(*   cycle_count)                                                            *)
+(*   control_tag_pair, tag_pairs, merged_tag_pairs, merged_tag_map,          *)
+(*   stale_tags_shmq, cycle_count)                                           *)
 (*---------------------------------------------------------------------------*)
 
-val theState = Ref (None, None, None, None, None, None, None, None, None, None, None)
+val initState =
+ (None, None, None, None, None, None, None, None, None, None, None)
  : (Gate_Types.whitelist option *
     Gate_Types.tag_ip_pair array option *
     Gate_Types.tag_ip_pair array option *
@@ -2036,7 +2045,15 @@ val theState = Ref (None, None, None, None, None, None, None, None, None, None, 
     Gate_Types.tag_ip_pair array option *
     Gate_Types.tag_ip_pair array option *
     Gate_Types.tag_valid_pair array option *
-    int option) ref;
+    int option);
+
+val theState = Ref initState;
+
+fun resetState() =
+ let in
+    theState := initState;
+    initStep := True
+ end;
 
 val trustedID_parseinfo =
     (Gate_Contig.trustedIDs,Gate_Parse.mk_trustedIDs);
@@ -2068,6 +2085,77 @@ fun parse_shm () =
     Utils.dropOpt "Parsing of VDTU_Control_Message_In port failed" shmOpt2
  end;
 
+fun print_gate_inputs tidOpt blockOpt shmOpt =
+ if !Utils.debugLevel < 1 then ()
+ else
+ (Utils.println "GATE INPUTS:";
+  Utils.println "------------\n"
+  ;
+  let in
+    case tidOpt
+     of None => Utils.println "Trusted IDs: No event this cycle."
+      | Some tids =>
+               (Utils.println "Trusted IDs:";
+                Utils.println (Gate_Types.string_of_whitelist tids);
+                Utils.println"End Trusted_IDs.\n")
+
+  end
+  ;
+  let in
+    case blockOpt
+     of None => Utils.println "VDTU_Request_Message_In: No event this cycle."
+      | Some block =>
+               (Utils.println "VDTU_Request_Message_In:";
+                Utils.println (Gate_Types.string_of_shm_array block);
+                Utils.println"End VDTU_Request_Message_In.\n")
+  end
+  ;
+  let in
+    case shmOpt
+     of None => Utils.println "VDTU_Control_Message_In: No event this cycle."
+      | Some shm =>
+               (Utils.println "VDTU_Control_Message_In:";
+                Utils.println (Gate_Types.string_of_shm shm);
+                Utils.println"End VDTU_Control_Message_In.\n")
+  end
+  ;
+  Utils.println "\nEND GATE INPUTS.";
+  Utils.println "----------------\n"
+ );
+
+fun print_gate_outputs countOut blockOut shmOut =
+ if !Utils.debugLevel < 1 then ()
+ else
+  (Utils.println "GATE OUTPUTS:";
+   Utils.println "-------------\n"
+   ;
+   let in
+     case countOut
+      of None => Utils.println "Health_Out: uninitialized cycle count"
+       | Some i => println ("Health_Out (cycle count) : "^Int.toString i^"\n")
+   end
+    ;
+   let in
+     case blockOut
+      of None => Utils.println "VDTU_Request_Message_Out: No output."
+       | Some block =>
+           (Utils.println "VDTU_Request_Message_Out:";
+	    Utils.println (Gate_Types.string_of_shm_array block);
+            Utils.println"End VDTU_Request_Message_Out.\n")
+    end
+    ;
+    case shmOut
+     of None => Utils.println "VDTU_Control_Message_Out: No output."
+      | Some shm =>
+           (Utils.println "VDTU_Control_Message_Out:";
+	    Utils.println (Gate_Types.string_of_shm shm);
+            Utils.println"End VDTU_Control_Message_Out.\n")
+  ;
+   Utils.println "END GATE OUTPUTS." ;
+   Utils.println "-----------------\n"
+ );
+
+
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
@@ -2076,9 +2164,11 @@ fun gateFn () =
  let val tidOpt   = parse_trustedIDs()
      val blockOpt = parse_block()
      val shmOpt   = parse_shm()
+     val ()       = print_gate_inputs tidOpt blockOpt shmOpt
      val (newState,outOpts) = stepFn (tidOpt,blockOpt,shmOpt) (!theState)
      val () = (theState := newState)
      val (blockOut,shmOut,countOut) = outOpts
+     val () = print_gate_outputs countOut blockOut shmOut
  in
     let in
       case countOut
@@ -2090,9 +2180,7 @@ fun gateFn () =
       case blockOut
        of None => ()
         | Some block =>
-           (Utils.println "VDTU_Request_Message_Out:";
-	    Utils.println (Gate_Types.string_of_shm_array block);
-            API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block))
+            API.send_VDTU_Request_Message_Out (Gate_Types.pack_block block)
     end
     ;
     case shmOut
@@ -2137,6 +2225,14 @@ fun start () = (pacer_emit(); loop());
 
 end (* Control *)
 
-val _ = Utils.debugLevel := 1;
+(*---------------------------------------------------------------------------*)
+(* Set degree of printed output                                              *)
+(*  0 = no output                                                            *)
+(*  1 = show input and output port values                                    *)
+(*  2 = show selected elements of the state                                  *)
+(*  3 = show intermediate values in function calls                           *)
+(*---------------------------------------------------------------------------*)
+
+val _ = Utils.debugLevel := 3;
 
 val _ = Control.start();
