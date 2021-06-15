@@ -1,0 +1,61 @@
+SPLAT Syntax.
+-----------------
+
+Splat takes in architecture models in a restricted subset of
+AADL+AGREE. If Splat is given a model whose syntax is outside this
+subset it will certainly fail to produce code the from the model.
+
+Briefly:
+
+ - Basic AADL types (booleans, numbers, characters, records, arrays,
+   variants) and constants and definitions over those types are
+   handled properly.
+
+   [Restrictions? E.G. array initialization ...]
+
+ - Basic AGREE types (int, real) denote mathematical numbers and so
+   are unbounded. Splat will map an int to a default bitwidth
+   (currently 32), settable when Splat is invoked.
+
+ - Splat doesn't currently support
+
+      * Temporal logic constructs
+      * Lustre node definitions
+
+
+Code Guarantees.
+----------------
+
+A "Code Guarantee" is a guarantee able to be interpreted by the Splat
+code generator. It specifies how the component outputs are to be
+produced. There are 3 possible forms expected for a code guarantee,
+depending on the output port type.
+
+1. Event port. The expected form is
+
+      event(port) = exp
+
+    This indicates that port is an event port and it will be set (or not)
+    according to the value of exp, which is boolean.
+
+2. Data port. The expected form is
+
+      port = exp
+
+    This indicates that port is a data port and that the value of exp
+    will be written to it.
+
+3. Event data port. The expected form is
+
+      if exp1 then
+        event (port) and port = exp2
+      else not (event port)
+
+    This checks the condition exp1 to see whether an event on port will
+    happen, and exp2 gives the output value if so. Note that any input
+    event (or event data) port p occurring in exp2 must be guaranteed to
+    have an event by event(-) checks in exp1.
+
+In all of 1,2,3, the expressions should not mention any output ports,
+i.e. the value to be sent out is determined by a computation over input
+ports and state variables only.
