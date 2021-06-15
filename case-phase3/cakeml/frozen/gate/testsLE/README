@@ -2,7 +2,11 @@ In this directory, relevant numbers in the test data are
 little-endian. This holds for both whitelist elements and queue
 elements.
 
-Whitelist inputs are documented in file "Trusted ID List TCs.txt, and broken out into
-files
+Whitelist inputs are documented in file "itdsII.txt, and broken out
+into files
 
    tids1.{csv,bytes}, ... ,tids9.{csv,bytes}
+
+The conversion has been done with "convert.sml", found in
+
+   .../frozen/tests.
