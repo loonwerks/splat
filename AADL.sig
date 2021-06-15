@@ -21,13 +21,12 @@ sig
     = FilterDec (* (name,ports,props) *)
         of qid * (string * ty * string * string) list * (string * exp) list
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,policy,guars)  *)
+ datatype monitor  (*  (name,ports,latched,decs,ivars,guars)  *)
     = MonitorDec of qid
                  * (string * ty * string * string) list
                  * bool
                  * tmdec list
                  * (string * ty * exp) list
-                 * ((string * exp) option * (string * exp) list)
                  * (string * string * exp) list
 
  type decls =

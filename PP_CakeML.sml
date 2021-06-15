@@ -69,6 +69,7 @@ fun pp_exp depth pkgName exp =
       | Binop(Or,e1,e2) => pp_infix depth pkgName ("orelse",e1,e2)
       | Binop(And,e1,e2) => pp_infix depth pkgName ("andalso",e1,e2)
       | Binop(Equal,e1,e2) => pp_infix depth pkgName ("=",e1,e2)
+      | Binop(NotEqual,e1,e2) => pp_infix depth pkgName ("<>",e1,e2)
       | Binop(Greater,e1,e2) => pp_infix depth pkgName (">",e1,e2)
       | Binop(GreaterEqual,e1,e2) => pp_infix depth pkgName (">=",e1,e2)
       | Binop(Less,e1,e2) => pp_infix depth pkgName ("<",e1,e2)
@@ -324,7 +325,7 @@ fun convert_tmdec tmdec =
 
 fun tmdecs_of_mon mondec =
  case mondec
-  of MonitorDec(qid,ports,latched,decs,ivars,policy,guars) => decs
+  of MonitorDec(qid,ports,latched,decs,ivars,guars) => decs
 ;
 
 fun pkg_to_package (pkg:AADL.pkg) =
@@ -497,19 +498,15 @@ fun transRval_filter E filterdec =
       end handle e => raise wrap_exn "PP_CakeML" "transRval_filter" e;
 
 fun transRval_monitor E mondec =
-  let fun ivar_decFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
-      fun policyFn (bindOpt,binds) =
-           (Option.map (I##transRval (E,empty_varE)) bindOpt,
-            List.map (I##transRval (E,empty_varE)) binds)
+  let fun ivarFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
       fun guarFn (a,b,e) = (a,b,transRval (E,empty_varE) e)
   in
    case mondec
-    of MonitorDec (qid,ports,latched,decs,ivardecs,policy,guars) =>
+    of MonitorDec (qid,ports,latched,decs,ivardecs,guars) =>
         let val decs' = map (transRval_decl E) decs
-            val ivardecs' = map ivar_decFn ivardecs
-            val policy' = policyFn policy
+            val ivardecs' = map ivarFn ivardecs
             val guars' = map guarFn guars
-        in MonitorDec(qid,ports,latched,decs',ivardecs',policy',guars')
+        in MonitorDec(qid,ports,latched,decs',ivardecs',guars')
         end
   end
   handle e => raise wrap_exn "PP_CakeML" "transRval_monitor" e;
@@ -811,7 +808,7 @@ fun mk_predFn_call inputs =
 *)
 
 fun mk_mon_stepFn mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
      val stepFn_name = "stepFn"
      val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
      val inputs    = map feature2port inports
@@ -905,7 +902,7 @@ fun mk_output ports (gName,docstring,code) =
 
 
 fun mk_mon_cycleFn mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
      val inputsVar = VarExp "inputs"
      val theStateVar = VarExp "theState"
      val stateValsVar = VarExp "stateVals"
@@ -977,7 +974,7 @@ fun mk_stateVardecs n =
 (*---------------------------------------------------------------------------*)
 
 fun pp_monitor depth mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,policy,outCode) = mondec
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
      val stepFn = mk_mon_stepFn mondec
      val cycleFn = mk_mon_cycleFn mondec
      val dataports = filter is_data_port ports
@@ -1003,10 +1000,10 @@ fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
     PrettyBlock(2,true,[],
         [PrettyString ("structure "^pkgName^" = "), Line_Break,
          PrettyString "struct", Line_Break_2,
-         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types,   Line_Break,
          end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts', Line_Break,
-         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters, Line_Break,
-         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors, Line_Break,
+         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters,        Line_Break,
+         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors,      Line_Break,
          PrettyString "end"
         ])
  end
@@ -1082,6 +1079,14 @@ end;
 
 fun numBytes n = 1 + Int.div(n,8);
 
+fun dest_namedTy (NamedTy qid) = qid
+  | dest_namedTy other = raise ERR "dest_namedTy" "";
+
+fun dest_intLit exp =
+ case exp
+  of ConstExp(IntLit{value,kind = AST.Int NONE}) => value
+   | otherwise => raise ERR "dest_intLit" "";
+
 fun isIn (name,ty,"in",style) = true
   | isIn otherwise = false
 
@@ -1148,12 +1153,14 @@ fun mk_output_calls oports =
 (* Instantiate monitor template with monitor-specific info                   *)
 (*---------------------------------------------------------------------------*)
 
+fun export_cakeml_monitors s list monlist = ();
+
 (*
 fun inst_monitor_template dir const_alist mondec =
  let open Substring
  in
  case mondec
-  of MonitorDec (qid,ports,latched,decs,ivardecs,policy,guars) =>
+  of MonitorDec (qid,ports,latched,decs,ivardecs,guars) =>
      let val () = stdErr_print ("-> "^qid_string qid^"\n")
          val (inports, outports) = Lib.partition isIn ports
          val inportNames = map #1 inports
@@ -1161,7 +1168,6 @@ fun inst_monitor_template dir const_alist mondec =
          val inbufNames = map fst inbuf_decls
          val inbuf_decl_string = String.concatWith "\n\n" (map snd inbuf_decls)^"\n"
          val fill_inputs_decl = mk_fill_inbufs inportNames inbufNames
-
          val outFns = mk_output_calls outports
    | otherwise => raise ERR "inst_monitor_template" "expected a MonitorDec"
  end

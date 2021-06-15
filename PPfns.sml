@@ -49,4 +49,24 @@ fun spliceList ob [] = []
   | spliceList ob [x] = [x,ob]
   | spliceList ob (h::t) = h::ob::spliceList ob t
 
+
+fun pp_ostrm ostrm pretty =
+ let fun outFn s = TextIO.output(ostrm,s)
+ in PolyML.prettyPrint (outFn, 75) pretty
+ end
+
+fun pp_file fileName pretty =
+    let val ostrm = TextIO.openOut fileName
+    in pp_ostrm ostrm pretty;
+       TextIO.closeOut ostrm
+    end
+
+fun pp_string pretty =
+    let val strlist = ref [] : string list ref
+        fun outFn s = (strlist := (s :: !strlist))
+        val () = PolyML.prettyPrint (outFn, 75) pretty
+    in
+      String.concat (List.rev (!strlist))
+    end
+
 end

@@ -1356,6 +1356,32 @@ fun drop_bound ty =
    | otherwise => raise ERR "ty_of" "drop_bound: expected a numeric type";
 
 (*---------------------------------------------------------------------------*)
+(* Replace implications by conditionals in an exp. Note that this can be     *)
+(* seen as imposing an order of evaluation where the antecedent is evaluated *)
+(* first.                                                                    *)
+(*---------------------------------------------------------------------------*)
+
+fun elim_imp p =
+ case p
+  of Binop(Imp,a,b) =>
+      let val a' = elim_imp a
+          val b' = elim_imp b
+      in Fncall(("","IfThenElse"),[a',b',ConstExp (BoolLit true)])
+      end
+     | VarExp _ => p
+     | ConstExp _ => p
+     | Unop (f,x) => Unop (f, elim_imp x)
+     | Binop (f,x,y) => Binop (f, elim_imp x, elim_imp y)
+     | ArrayExp elist => ArrayExp (List.map elim_imp elist)
+     | ArrayIndex (A,dims) => ArrayIndex (elim_imp A, map elim_imp dims)
+     | RecdExp (qid,fields) => RecdExp (qid,List.map (I##elim_imp) fields)
+     | RecdProj(recd,fname) => RecdProj(elim_imp recd,fname)
+     | Fncall (qid,args) => Fncall(qid,map elim_imp args)
+     | ConstrExp(qid, constr,argOpt) => ConstrExp(qid, constr,Option.map elim_imp argOpt)
+     | Quantified(q,vars,e) => Quantified(q,vars,elim_imp e)
+;
+
+(*---------------------------------------------------------------------------*)
 (* Typecheck a package. This is duplicated in the frontend. We have to       *)
 (* visit every sub{type,term,stmt,decl} in the package.                      *)
 (*---------------------------------------------------------------------------*)

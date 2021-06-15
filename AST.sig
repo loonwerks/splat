@@ -201,6 +201,7 @@ sig
   val is_bounded   : ty -> bool
   val flip_sign    : uop -> ty -> ty
   val drop_bound   : ty -> ty
+  val elim_imp     : exp -> exp
 
   val pkg_varDecs  : package -> (string * vdec list) list
 

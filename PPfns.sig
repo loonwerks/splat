@@ -28,4 +28,8 @@ sig
   val pp_space_list : ('a -> pretty) -> 'a list -> pretty
 
   val spliceList : 'a -> 'a list -> 'a list
+
+  val pp_ostrm  : TextIO.outstream -> pretty -> unit
+  val pp_file   : string -> pretty -> unit
+  val pp_string : pretty -> string
 end
