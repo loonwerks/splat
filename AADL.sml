@@ -33,13 +33,12 @@ in end;
            (string * ty * string * string) list *
            (string * exp) list
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,policy,props,guars)  *)
+ datatype monitor  (*  (name,ports,latched,decs,ivars,props,guars)  *)
     = MonitorDec of qid
                  * (string * ty * string * string) list
                  * bool
                  * tmdec list
                  * (string * ty * exp) list
-                 * ((string * exp) option * (string  * exp) list)
                  * (string * string * exp) list
 
 datatype port
@@ -90,6 +89,8 @@ fun dimensions_of (AList alist) = assoc "dimensions" alist;
 fun subcomponents_of (AList alist) = assoc "subcomponents" alist;
 fun label_of (AList alist) = dropString (assoc "label" alist);
 fun expr_of (AList alist) = assoc "expr" alist;
+fun category_of (AList alist) = assoc "category" alist;
+fun is_data_comp comp = (dropString (category_of comp) = "data");
 
 fun ty_occurs ty1 ty2 =
  case ty2
@@ -103,16 +104,14 @@ fun ty_occurs ty1 ty2 =
 
 fun dest_qid s =
  let val chunks = String.tokens (fn c => equal #"." c orelse equal #":" c) s
+     val isImpl = C mem ["Impl", "impl", "i"]
  in case Lib.front_last chunks
-     of ([a,b],"Impl") => (a,b)
-      | ([a],"Impl") => ("",a)
-      | ([],"Impl") => raise ERR "dest_qid" "unexpected format"
-      | ([a,b],"i") => (a,b)
-      | ([a],"i") => ("",a)
-      | ([],"i") => raise ERR "dest_qid" "unexpected format"
-      | ([a],b) => (a,b)
-      | ([],b)  => ("",b)
-      | otherwise => raise ERR "dest_qid" "unexpected format"
+     of ([a,b],x) =>
+          if isImpl x then (a,b) else raise ERR "dest_qid" "unexpected format"
+      | ([a],x) => if isImpl x then ("",a) else (a,x)
+      | ([],x)  =>
+          if isImpl x then raise ERR "dest_qid" "unexpected format" else ("",x)
+      | otherwise  => raise ERR "dest_qid" "unexpected format"
  end;
 
 val qid_compare = Lib.pair_compare (String.compare,String.compare);
@@ -126,7 +125,7 @@ fun tmdec_qid (ConstDec (qid,_,_)) = qid
   | tmdec_qid (FnDec (qid,_,_,_)) = qid
 
 fun filtdec_qid (FilterDec (qid,_,_)) = qid
-fun mondec_qid (MonitorDec (qid,_,_,_,_,_,_)) = qid
+fun mondec_qid (MonitorDec (qid,_,_,_,_,_)) = qid
 
 (* Principled approach, doing a one-for-one mapping between AADL integer types and,
    eventually, HOL types. Not sure how well it will work with all AGREE specs limited
@@ -200,8 +199,18 @@ fun dest_tyqid dotid =
    | (_,"Char")    => BaseTy CharTy
    | (_,"Float_32") => BaseTy FloatTy
    | (_,"Float_64") => BaseTy DoubleTy
-   | (a,b)         => NamedTy (a,b)
+   | (a,b)          => NamedTy (a,b)
 ;
+
+val boolTy = BaseTy BoolTy;
+
+fun mk_intLit i = ConstExp(IntLit{value=i, kind=AST.Int NONE});
+
+fun mk_int str =
+  case Int.fromString str
+   of SOME i => mk_intLit i
+    | NONE =>
+       raise ERR "mk_int" ("expected an int constant, but got: "^Lib.quote str)
 
 fun get_tyinfo tyinfo =
  case tyinfo
@@ -227,6 +236,10 @@ fun get_tyinfo tyinfo =
      => BaseTy(IntTy (AST.Int NONE))
    | [("kind", String "PrimType"), ("primType", String "real")]
      => BaseTy FloatTy
+   | [("kind", String "ArrayType"),
+      ("size", String decString),
+      ("arrayType", String dcolon)]
+     => ArrayTy(dest_tyqid dcolon,[mk_int decString])
    | otherwise => raise ERR "get_tyinfo" "unable to construct type";
 
 fun dest_ty ty =
@@ -264,6 +277,7 @@ fun mk_binop (opr,e1,e2) =
          | ">="  => GreaterEqual
 	 | "=>"  => Imp
          | "="   => Equal
+         | "<>"  => NotEqual
          | "<=>" => Equal
          | "and" => And
          | "or"  => Or
@@ -272,14 +286,6 @@ fun mk_binop (opr,e1,e2) =
                ("unknown binary operator "^Lib.quote other)
  in Binop(oexp,e1,e2)
  end
-
-fun mk_intLit i = ConstExp(IntLit{value=i, kind=AST.Int NONE});
-
-fun mk_int str =
-  case Int.fromString str
-   of SOME i => mk_intLit i
-    | NONE =>
-       raise ERR "mk_int" ("expected an int constant, but got: "^Lib.quote str)
 
 fun mk_floatLit r = ConstExp(FloatLit r)
 
@@ -313,6 +319,7 @@ val _ = defaultNumKind := AST.Int NONE;
 fun dropImpl s =
      case String.tokens (equal #".") s
       of [x,"i"] => SOME x
+       | [x,"impl"] => SOME x
        | [x,"Impl"] => SOME x
        | otherwise => NONE;
 
@@ -367,6 +374,18 @@ fun dest_exp e =
             ("array", jarr),
             ("expr", jexp)]
        => mk_fncall ("","Array_Exists",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
+   | AList [("kind", String "FlatmapExpr"),
+            ("binding", String bvarname),
+            ("array", jarr),
+            ("expr", jexp)]
+       => (case dest_exp jexp
+            of ArrayExp [elt] =>
+                mk_fncall ("","Array_Tabulate",[VarExp bvarname, dest_exp jarr, elt])
+             | exp => mk_fncall ("","Array_Flatmap",
+                                 [VarExp bvarname, dest_exp jarr, exp]))
+   | AList [("kind", String "ArrayLiteralExpr"),
+            ("elems", List elist)]
+       => ArrayExp (map dest_exp elist)
    | AList [("kind", String "IfThenElseExpr"),
             ("if", e1),
             ("then",e2),
@@ -378,9 +397,23 @@ fun dest_exp e =
        => mk_fncall ("","Prev",[dest_exp e1, dest_exp e2])
    | AList [("kind", String "PreExpr"), ("expr", e)]
        => mk_fncall("","pre",[dest_exp e])
+   | AList [("kind", String "RealCast"), ("expr", e)]
+       => mk_fncall("","int_to_real",[dest_exp e])
    | AList [("kind", String "GetPropertyExpr"), ("property", String pname),_]
-       => mk_fncall("","getProperty",[VarExp pname])
-   | other => raise ERR "dest_exp" "unexpected expression form"
+     => mk_fncall("","getProperty",[VarExp pname])
+   | AList [("kind", String "IndicesExpr"), ("array", e)]
+     => dest_exp e
+   | AList [("kind", String "FoldLeftExpr"),
+            ("binding", e1), ("array", e2), ("accumulator",e3), ("initial",e4), ("expr",e5)]
+     => mk_fncall("","FoldLeft",
+             [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
+              dest_exp e2, dest_exp e4])
+   | AList [("kind", String "FoldRightExpr"),
+            ("binding", e1), ("array", e2), ("accumulator",e3), ("initial",e4), ("expr",e5)]
+     => mk_fncall("","FoldRight",
+             [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
+              dest_exp e2, dest_exp e4])
+| other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);
 
@@ -390,16 +423,27 @@ fun dest_param param =
    | otherwise => raise ERR "dest_param" "unexpected input";
 
 fun mk_fun_def compName json =
- case json
-  of AList (("kind", String "FnDef")::binds) =>
-      (case (assoc "name" binds,
-             assoc "args" binds,
-             assoc "type" binds,
-             assoc "expr" binds)
-       of (String fname, List params, ty, body) =>
-           FnDec((compName,fname), map dest_param params, dest_ty ty, dest_exp body)
-       |  otherwise => raise ERR "mk_fun_def" "unexpected input")
-   | otherwise => raise ERR "mk_fun_def" "unexpected input";
+ let fun dest_binds binds =
+         FnDec ((compName,dropString (assoc "name" binds)),
+                map dest_param (dropList (assoc "args" binds)),
+                dest_ty (assoc "type" binds),
+                dest_exp (assoc "expr" binds))
+         handle _ => raise ERR "mk_fun_def" "unexpected format"
+     fun dest_uninterp_binds binds =
+       let val fname = dropString (assoc "name" binds)
+           val args = map dest_param (dropList (assoc "args" binds))
+       in
+         FnDec ((compName,fname),args,
+                dest_ty (assoc "type" binds),
+                Fncall(("FFI",fname),map (VarExp o fst) args))
+       end handle _ => raise ERR "mk_fun_def" "unexpected format"
+ in
+   case json
+    of AList (("kind", String "FnDef")::binds) => dest_binds binds
+     | AList (("kind", String "UninterpretedFnDef")::binds) =>
+           dest_uninterp_binds binds
+     | otherwise => raise ERR "mk_fun_def" "unexpected function kind"
+ end;
 
 fun mk_const_def compName json =
  case json
@@ -450,9 +494,9 @@ fun mk_eq_stmt_def compName features (AList alist) =
   | mk_eq_stmt_def any other thing = raise ERR "mk_eq_stmt_def" "unexpected syntax"
 ;
 
-fun mk_def compName features json =
-  mk_const_def compName json    handle HOL_ERR _ =>
-  mk_fun_def compName json      handle HOL_ERR _ =>
+fun mk_def compName features dec =
+  mk_const_def compName dec    handle HOL_ERR _ =>
+  mk_fun_def compName dec      handle HOL_ERR _ =>
 (*
   mk_property_stmt_def compName features json handle HOL_ERR _ =>
   mk_eq_stmt_def compName features json handle HOL_ERR _ =>
@@ -545,11 +589,13 @@ fun is_monitor props =
  let fun isaMon prop =
       (propName prop = "CASE_Properties::Monitoring"
        orelse
+       propName prop = "CASE_Properties::Gating"
+       orelse
        mem (propName prop)
            ["CASE_Properties::Component_Type","CASE_Properties::COMP_TYPE"]
        andalso
        mem (dropString(propValue prop))
-           ["MONITOR","Monitoring"]) handle _ => false
+           ["MONITOR","Monitoring","Gating"]) handle _ => false
  in exists isaMon props
  end
 
@@ -849,9 +895,10 @@ fun tydec_usedBy tydec1 tydec2 =
 (*---------------------------------------------------------------------------*)
 
 fun get_tydecls pkgName complist =
- let val uqids = union_qids complist
-     val udecs = mapfilter (union_decl uqids) complist
-     val comps0 = drop_seen_comps uqids complist
+ let val datacomps = filter is_data_comp complist
+     val uqids = union_qids datacomps
+     val udecs = mapfilter (union_decl uqids) datacomps
+     val comps0 = drop_seen_comps uqids datacomps
      val (enum_decs,comps1) = enum_decls comps0 ([],[])
      val eqids = map tydec_qid enum_decs
      val comps2 = drop_seen_comps eqids comps1
@@ -1006,6 +1053,7 @@ fun get_latched properties =
  in tryfind getLatch properties
  end
 
+(*
 fun get_policy policyName jlist =
  let fun property (AList list) =
           if dropString(assoc "name" list) = policyName then
@@ -1014,6 +1062,7 @@ fun get_policy policyName jlist =
        | property otherwise = raise ERR "get_policy" ""
  in tryfind property jlist
  end
+*)
 
 fun dest_property_stmt (AList alist) =
     (case (assoc "kind" alist, assoc "name" alist, assoc "expr" alist)
@@ -1033,6 +1082,27 @@ fun dest_eq_stmt (AList alist) =
   | dest_eq_stmt any_other_thing = raise ERR "dest_eq_stmt" "unexpected syntax"
 ;
 
+fun dest_eq_or_property_stmt (AList alist) =
+ (case assoc "kind" alist
+   of String "EqStatement" =>
+            (case (assoc "left" alist, assoc "expr" alist)
+              of (List [AList LHS], e) =>
+                  let val eqName = dropString(assoc "name" LHS)
+                      val lhs_ty = dest_ty (assoc "type" LHS)
+                  in (eqName,lhs_ty,dest_exp e)
+                  end
+               |  otherwise => raise ERR "dest_eq_or_property_stmtm" "")
+    | String "PropertyStatement" =>
+            (case (assoc "name" alist, assoc "expr" alist)
+              of (name,e) =>
+                  let val eqName = dropString name
+                  in (eqName,boolTy,elim_imp (dest_exp e))
+                  end)
+    |  otherwise => raise ERR "dest_eq_or_property_stmtm" "")
+  | dest_eq_or_property_stmt any_other_thing =
+    raise ERR "dest_eq__or_property_stmt" "unexpected syntax"
+;
+
 fun dest_guar_stmt stmt =
  if dropString (kind_of stmt) = "GuaranteeStatement" then
     ((dropString (name_of stmt), label_of stmt, dest_exp (expr_of stmt))
@@ -1046,7 +1116,7 @@ val constFalse = mk_bool_const "false";
 
 fun is_pure_dec json =
   let val id = dropString(kind_of json)
-  in mem id ["ConstStatement","FnDef"]
+  in mem id ["ConstStatement","FnDef","UninterpretedFnDef"]
   end
   handle HOL_ERR _ => false;
 
@@ -1055,6 +1125,7 @@ fun get_monitor comp =
      val _ = if is_monitor properties then ()
              else raise ERR "get_monitor" "unable to find MONITOR property"
      val qid = dest_qid (dropString (name_of comp))
+     val (pkgName,monName) = qid
      val ports = map get_monitor_port(dropList (features_of comp))
      val annexL = dropList (annexes_of comp)
      val annex = (case annexL
@@ -1063,19 +1134,20 @@ fun get_monitor comp =
      val codespecNames = get_spec_names properties
      val is_latched = get_latched properties handle _ => false (* might not be an alert line *)
      val stmts = get_annex_stmts annex
-     val (jdecs,others) = Lib.partition is_pure_dec stmts
-     val decs = map (mk_def (fst qid) []) jdecs  (* consts and fndecs *)
-     val eq_stmts   = mapfilter dest_eq_stmt others
+     val (jdecs,others) = List.partition is_pure_dec stmts
+     val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
+     val eq_stmts   = mapfilter dest_eq_or_property_stmt others
      val guar_stmts = mapfilter dest_guar_stmt others
-     val prop_stmts = mapfilter dest_property_stmt others
+(*
      fun is_policy(s,_) = last (String.tokens (equal #"_") s) = "policy"
      val props =  (* no longer sure what this is for *)
         (case total (pluck is_policy) prop_stmts
           of NONE => (NONE,prop_stmts)
           | SOME (pol,rst) => (SOME pol,rst))
+*)
      val code_guars = filter (C mem codespecNames o #1) guar_stmts
  in
-     MonitorDec(qid, ports, is_latched, decs, eq_stmts, props, code_guars)
+     MonitorDec(qid, ports, is_latched, decs, eq_stmts, code_guars)
  end
  handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
 ;
@@ -1140,7 +1212,7 @@ fun dest_propertyConst json =
    | otherwise => raise ERR "dest_propertyConst" ""
 
 
-fun decs_of_monitor (MonitorDec(qid, ports, is_latched, decs, eq_stmts, props, guars)) = decs;
+fun decs_of_monitor (MonitorDec(qid, ports, is_latched, decs, eq_stmts, guars)) = decs;
 
 fun scrape pkg =
  case pkg
@@ -1176,7 +1248,6 @@ fun uptoWith string lo hi =
      ["[", String.concatWith ","
             (map (fn i => string^Int.toString i) (upto lo hi)),
      "]\n"]);
-
 
 (*
 uptoWith "comp" 1 108;
@@ -1329,8 +1400,14 @@ val (opkgs as
 
 val pkgNames = map name_of opkgs;
 
+val pkg = last opkgs;  (* SW *)
 val pkg = el 7 opkgs;  (* CMASI *)
 val pkg = el 13 opkgs;  (* SW *)
+val pkg = el 14 opkgs;  (* CASE_Proxies *)
+
+val pkg_adsb = el 8 opkgs;  (* adsb-types *)
+val pkg_case_props = el 10 opkgs;  (* case_props *)
+val vpm = last opkgs;  (* VPM *)
 
 val modlist = mapfilter scrape opkgs
 val modlist' = replace_null_fields modlist
@@ -1454,16 +1531,12 @@ fun amn_filter_dec fdec =
 fun amn_monitor_dec fdec =
  let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
      fun amn_eq_stmt (s,ty,e) = (s,amn_ty ty,amn_exp e)
-     fun amn_policy (s,e) = (s,amn_exp e)
-     fun amn_props (NONE,list) = (NONE,map amn_policy list)
-       | amn_props (SOME p,list) = (SOME (amn_policy p), map amn_policy list)
      fun amn_cprop (s1,s2,e) = (s1,s2,amn_exp e)
  in case fdec
-     of MonitorDec(qid, ports, latched, decs, eq_stmts, policy, cprops) =>
+     of MonitorDec(qid, ports, latched, decs, eq_stmts, cprops) =>
         MonitorDec(qid, map amn_port ports, latched,
                    map amn_tmdec decs,
                    map amn_eq_stmt eq_stmts,
-                   amn_props policy,
 		   map amn_cprop cprops)
  end
 ;
@@ -2376,8 +2449,8 @@ val pkglist = map Pkg pkgs;
 val (pkgName,(tydecs,tmdecs,fdecs,mondecs)) = pkg5;
 val [mondec1,mondec2] = mondecs;
 
-val MonitorDec(qid,features,latched,decs,eq_stmts,policy,props) = mondec1;
-val MonitorDec(qid,features,latched,decs,eq_stmts,policy,props) = mondec2;
+val MonitorDec(qid,features,latched,decs,eq_stmts,guars) = mondec1;
+val MonitorDec(qid,features,latched,decs,eq_stmts,guars) = mondec2;
 
 val stepFn1 = mk_monitor_stepFn mondec1;
 val stepFn2 = mk_monitor_stepFn mondec2;

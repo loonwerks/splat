@@ -1,104 +1,60 @@
 (*---------------------------------------------------------------------------*)
-(* Maps from Json representation of AADL to AST and then to HOL. Originallly *)
-(* aimed at extracting filter properties, plus support definitions. Has      *)
-(* evolved to also generate code and test harnesses.                         *)
+(* Maps from Json representation of AADL to AST and then to CakeML code.     *)
 (*---------------------------------------------------------------------------*)
 
-open Lib Feedback HolKernel boolLib MiscLib;
+open Lib Feedback HolKernel boolLib MiscLib bossLib;
 
-open AADL;
+(*
+load "intrealSyntax";
+*)
+
+local open
+   AADL regexpLib regexpSyntax realLib realSyntax intrealSyntax PP_CakeML Gen_Contig
+in end
 
 val ERR = Feedback.mk_HOL_ERR "splat";
 
 fun printHelp() =
-  stdErr_print
-    ("Usage: splat [-alevel (basic | cake | hol | full)]\n\
-     \             [-codegen (C | SML | Ada | Slang | Java | CakeML)]\n\
-     \             [-checkprops]\n\
+  MiscLib.stdErr_print
+    ("Usage: splat [-target (hamr | standalone)]\n\
      \             [-outdir <dirname>]\n\
-     \             [-intwidth <int> [optimize]]\n\
+     \             [-intwidth <int>]\n\
      \             [-endian (LSB | MSB)]\n\
-     \             [-encoding (Unsigned | Twos_comp | Sign_mag | ZigZag)]\n\
-     \             [-preserve_model_nums]\n\
      \             <name>.json\n")
 
 fun fail() = (printHelp(); MiscLib.fail())
 
 fun failwithERR e =
-  (stdErr_print (Feedback.exn_to_string e^"\n\n"); MiscLib.fail());
-
-(*---------------------------------------------------------------------------*)
-(* Assurance levels.                                                         *)
-(*                                                                           *)
-(*   Basic: PolyML regexp compiler (generated from HOL model) builds DFA,    *)
-(*        from which {C,Ada,Java,SML,...} can be generated. Defaults to C    *)
-(*        source code being generated.                                       *)
-(*                                                                           *)
-(*   Cake: Input regexp constructed by splat frontend; then passed via       *)
-(*        hol2deep sexp interface. Then off-the-shelf cake binary loaded     *)
-(*        with compiled regexp compiler applied to regexp to get DFA and     *)
-(*        then binary.                                                       *)
-(*                                                                           *)
-(*   HOL: HOL regexp compiler run inside logic to get DFA. DFA then pushed   *)
-(*        through hol2deep, generating DFA.sexp, then CakeML binary invoked. *)
-(*                                                                           *)
-(*   Full: As in HOL, except that the CakeML compiler is applied inside-     *)
-(*        the-logic so that correctness of regexp compilation can be joined  *)
-(*        to the ML compiler correctness theorem to get an end-to-end        *)
-(*        correctness theorem. So no invocation of hol2deep or generation of *)
-(*        .sexp version or invocation of off-the-shelf compilers.            *)
-(*                                                                           *)
-(* Basic will be fast, and Cake should be decent as well. HOL can be slow    *)
-(* on larger messages, and Full will definitely take the most time.          *)
-(*---------------------------------------------------------------------------*)
-
-datatype assurance = Basic | Cake | HOL | Full;
+  (MiscLib.stdErr_print (Feedback.exn_to_string e^"\n\n"); MiscLib.fail());
 
 val FLAGS =
-  {checkprops = ref NONE : bool option ref,
-   alevel     = ref NONE : assurance option ref,
-   codegen    = ref NONE : string option ref,
-   testgen    = ref NONE : bool option ref,
-   outDir     = ref NONE : string option ref,
-   intwidth   = ref NONE : splatLib.shrink option ref,
-   endian     = ref NONE : Regexp_Numerics.endian option ref,
-   encoding   = ref NONE : Regexp_Numerics.encoding option ref,
+  {target   = ref NONE : string option ref,
+   codegen  = ref NONE : string option ref,
+   outDir   = ref NONE : string option ref,
+   intwidth = ref NONE : int option ref,
+   endian   = ref NONE : Regexp_Numerics.endian option ref,
+   encoding = ref NONE : Regexp_Numerics.encoding option ref,
    preserve_model_nums = ref NONE : bool option ref};
-
-fun set_checkprops b =
- case !(#checkprops FLAGS)
-  of NONE => (#checkprops FLAGS := SOME b)
-   | SOME _ => ()
-
-fun set_testgen b =
- case !(#testgen FLAGS)
-  of NONE => (#testgen FLAGS := SOME b)
-   | SOME _ => ()
-
-fun s2alevel "basic" = Basic
-  | s2alevel "cake"  = Cake
-  | s2alevel "hol"   = HOL
-  | s2alevel "full"  = Full
-  | s2alevel otherwise = fail();
-
-fun set_alevel alevel =
- case !(#alevel FLAGS)
-  of NONE => (#alevel FLAGS := SOME (s2alevel alevel))
-   | SOME _ => ()
-
-fun set_codegen lang =
- let val _ =
-    if mem lang ["C","SML","Ada","Java","Slang"]
-    then () else fail()
- in case !(#codegen FLAGS)
-     of NONE => (#codegen FLAGS := SOME lang)
-      | SOME _ => ()
- end
 
 (*---------------------------------------------------------------------------*)
 (* If directory does not exist, create it. Also check that dir has rwe       *)
 (* permissions.                                                              *)
 (*---------------------------------------------------------------------------*)
+
+fun set_target s =
+  case !(#target FLAGS)
+    of NONE => (#target FLAGS := SOME "Standalone")
+     | SOME "standalone" => ()
+     | SOME "hamr" => ()
+     | SOME other => fail()
+
+fun set_codegen lang =
+ let val _ =
+    if mem lang ["CakeML"] then () else fail()
+ in case !(#codegen FLAGS)
+     of NONE => (#codegen FLAGS := SOME lang)
+      | SOME _ => ()
+ end
 
 fun set_outDir d =
  let open FileSys
@@ -114,19 +70,17 @@ fun set_outDir d =
      | SOME _ => ()
  end
 
-fun set_intwidth s b =
- let open splatLib
- in case !(#intwidth FLAGS)
-     of NONE =>
-        (case Int.fromString s
-          of SOME i =>
-              if i < 8 orelse not (i mod 8 = 0)
-                then fail()
-              else (#intwidth FLAGS := SOME
-                      (if b then Optimize i else Uniform i))
-          |  NONE => fail())
+fun set_intwidth s =
+ case !(#intwidth FLAGS)
+  of NONE =>
+      (case Int.fromString s
+        of SOME i =>
+           if i < 8 orelse not (i mod 8 = 0)
+              then fail()
+              else (#intwidth FLAGS := SOME i)
+         |  NONE => fail())
    | SOME _ => ()
- end
+;
 
 fun set_preserve_model_nums b =
  case !(#preserve_model_nums FLAGS)
@@ -179,24 +133,19 @@ fun parse_args args =
        case list
         of [] =>
            let in
-              set_alevel "basic";
-              set_codegen "C";
-              set_testgen false;
-              set_checkprops false;
+              set_target "Standalone";
+              set_codegen "CakeML";
               set_outDir "./splat_outputs";
-              set_intwidth "32" false;
-              set_endian "LSB";
+              set_intwidth "32";
+              set_endian "MSB";
               set_encoding "Twos_comp";
               set_preserve_model_nums false
             end
-         | "-checkprops" :: t => (set_checkprops true; set_flags t)
-         | "-testgen"    :: t => (set_testgen true;    set_flags t)
-         | "-alevel"   :: d :: t => (set_alevel d;     set_flags t)
-         | "-codegen"  :: d :: t => (set_codegen d;    set_flags t)
-         | "-outdir"   :: d :: t => (set_outDir d;     set_flags t)
-         | "-intwidth" :: d :: "optimize" :: t => (set_intwidth d true; set_flags t)
-         | "-intwidth" :: d :: t => (set_intwidth d false; set_flags t)
-         | "-endian"   :: d :: t => (set_endian d; set_flags t)
+         | "-target"   :: d :: t => (set_target d;   set_flags t)
+         | "-codegen"  :: d :: t => (set_codegen d;  set_flags t)
+         | "-outdir"   :: d :: t => (set_outDir d;   set_flags t)
+         | "-intwidth" :: d :: t => (set_intwidth d; set_flags t)
+         | "-endian"   :: d :: t => (set_endian d;   set_flags t)
          | "-encoding" :: d :: t => (set_encoding d; set_flags t)
          | "-preserve_model_nums"::t => (set_preserve_model_nums true; set_flags t)
          | otherwise => fail()
@@ -205,66 +154,17 @@ fun parse_args args =
    ; jfile
  end
 
-fun prove_filter_props {name,regexp,implicit_constraints,manifest,tv} =
- let val fieldreps = map snd manifest
- in store_thm(name^"_TV",tv,splatLib.TV_TAC fieldreps)
-  ; ()
- end;
+fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
+     let open AADL
+         fun dest_const_dec (ConstDec ((_,cname),ty,i)) = (cname,i)
+     in mapfilter dest_const_dec fndecs
+     end
+  | extract_consts otherwise = raise ERR "extract_consts" "unable to find package CM_Property_Set"
 
-fun deconstruct {certificate, final, matchfn, start, table,aux} =
- let fun toList V = List.map (curry Vector.sub V) (upto 0 (Vector.length V - 1))
- in (certificate,start, toList final, toList (Vector.map toList table))
- end;
+fun extract_filters (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
+fun extract_monitors (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = mondecs;
 
-fun mk_matcher name certificate =
- let open numSyntax stringSyntax bossLib
-     val SOME thm = certificate
-     val eqn = snd(dest_forall(concl thm))
-     val (exec_dfa,[finals,table,start,s]) = strip_comb(lhs eqn)
-     val finals_name = name^"_finals"
-     val table_name = name^"_table"
-     val start_name = name^"_start"
-     val finals_var = mk_var(finals_name,type_of finals)
-     val table_var  = mk_var(table_name,type_of table)
-     val start_var  = mk_var(start_name,type_of start)
-     val finals_def = Define `^finals_var = ^finals`
-     val table_def  = Define `^table_var = ^table`
-     val start_def  = Define `^start_var = ^start`
-     val thm' = CONV_RULE
-        (BINDER_CONV
-          (LHS_CONV
-            (REWRITE_CONV [GSYM finals_def, GSYM table_def, GSYM start_def]))) thm
-     val CT = current_theory()
-     val finals_const = prim_mk_const{Thy=CT,Name=finals_name}
-     val table_const = prim_mk_const{Thy=CT,Name=table_name}
-     val start_const = prim_mk_const{Thy=CT,Name=start_name}
-
-     val match_stateName = name^"_match_state"
-     val match_stateVar = mk_var(match_stateName, num --> string_ty --> bool)
-     val match_state_def =
-            Define `^match_stateVar = exec_dfa ^finals_const ^table_const`
-     val match_state_const = prim_mk_const{Thy=CT, Name=match_stateName}
-     (* translate this, not match_state_def *)
-     val match_state_thm = Q.store_thm
-      (match_stateName^"_thm",
-       `^match_state_const n s =
-          if s="" then
-            sub ^finals_const n
-          else case sub (sub ^table_const n) (ORD (HD s)) of
-                 | NONE => F
-                 | SOME k => ^match_state_const k (TL s)`,
-      rw_tac list_ss [match_state_def]
-       >- rw_tac list_ss [regexp_compilerTheory.exec_dfa_def]
-       >- (`?h t. s = h::t` by metis_tac [listTheory.list_CASES]
-	    >> rw_tac list_ss [Once regexp_compilerTheory.exec_dfa_def]))
-     val matchName = name^"_match"
-     val v = mk_var(matchName, string_ty --> bool)
-     val match_def = Define `^v = ^match_state_const ^start_const`
- in
-    (match_state_thm, match_def)
- end
- handle _ => (TRUTH,TRUTH);
-
+(*
 fun process_filter intformat flags ((pkgName,fname),thm) =
  let open FileSys
      val _ = stdErr_print ("\nProcessing filter "^Lib.quote fname^".\n")
@@ -322,52 +222,100 @@ fun process_filter intformat flags ((pkgName,fname),thm) =
    ;
      filter_artifacts
  end
+*)
 
 (*
-val args = ["examples/PC-2.json"]
+val args = ["examples/SW.json"];
+val thyName = "uxaslite";
+val dir = ".";
+
+val args = ["examples/uxaslite.json"];
+val thyName = "uxaslite";
+val dir = ".";
+
+val args = ["examples/gate.json"];
+val thyName = "VPM";
+val dir = ".";
+
+val args = ["examples/mon3a.json"];
+val thyName = "VPM";
+val dir = ".";
+
+val args = ["examples/mon4a.json"];
+val thyName = "VPM";
+val dir = ".";
+
+val args = ["examples/mon5a.json"];
+val thyName = "VPM";
+val dir = ".";
+
+val args = ["examples/UAS.json"];
+val thyName = "UAS";
+val dir = ".";
+
+val jsonfile = parse_args args;
+val ([jpkg],ss) = Json.fromFile jsonfile;
+open AADL;
+
+val pkgs = scrape_pkgs jpkg;
+
+val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = pkgs;
+
+val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg7;
+
+val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg5;
+val [mondec1,mondec2,mondec3] = mondecs;
+val [filtdec1,filtdec2,filtdec3,filtdec4] = filtdecs;
+
+val const_alist = tryfind extract_consts pkgs
+
+val MonitorDec(qid,features,latched,decs,eq_stmts,outCode) = mondec1;
+val MonitorDec(qid,features,latched,decs,eq_stmts,outCode) = mondec2;
+val MonitorDec(qid,features,latched,decs,eq_stmts,outCode) = mondec3;
+
+val plist = map Pkg pkgs;
+val plist' = transRval_pkglist plist ;
 *)
+
+(*
+HAMR::Bit_Codec_Max_Size: It is attached to the types declared for the channel.
+
+val args = ["examples_monitor/req_resp_monitor.json"];
+val args = ["examples_monitor/geo_monitor.json"];
+val args = ["examples_monitor/Coord-Mon.json"];
+val args = ["examples_monitor/Resp-Mon.json"];
+val args = ["examples_monitor/Coord-Mon.json"];
+val args = ["examples_monitor/SW-Mon-1.json"];
+val args = ["examples_monitor/SW-Mon.json"];
+val args = ["examples_monitor/RunTimeMonitor_Simple_Example_V1.json"];
+val args = ["examples_monitor/Datacentric_monitor.json"];
+*)
+
 fun main () =
- let val _ = stdErr_print "splat: \n"
+ let val _ = stdErr_print "splat-mon: \n"
      val args = CommandLine.arguments()
      val jsonfile = parse_args args
-     val {alevel,checkprops,outDir,testgen,codegen,
-          intwidth,endian,encoding,preserve_model_nums} = FLAGS
-     val invocDir = FileSys.getDir()
-     val _ = stdErr_print
-               (String.concat ["splat invoked in directory ", invocDir, ".\n"])
-     val workingDir = valOf(!outDir)
-     val _ = stdErr_print
-               (String.concat ["output directory is ", workingDir, ".\n"])
-     val _ = FileSys.chDir workingDir
      val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonfile
 	   ("Parsing "^jsonfile^" ... ") "succeeded.\n"
      val pkgs = apply_with_chatter AADL.scrape_pkgs jpkg
                   "Converting Json to AST ... " "succeeded.\n"
-     val pkgs1 = if valOf(!preserve_model_nums) = true then
-                    pkgs
-                 else map AADL.abstract_model_nums pkgs
-     val thyName = fst (last pkgs1)
-     val _ = new_theory thyName
-     val logic_defs = apply_with_chatter (AADL.pkgs2hol thyName) pkgs1
-	   "Converting AST to logic ...\n" "---> succeeded.\n"
-     fun filters_of (a,b,c,d,e) = d
-     val filter_spec_thms = filters_of logic_defs
-     val intformat = (valOf(!intwidth),valOf(!endian),valOf(!encoding))
-     val otherflags = (valOf(!checkprops),
-                       valOf(!codegen),
-                       valOf(!testgen),
-                       valOf(!alevel))
-     val results = map (process_filter intformat otherflags) filter_spec_thms
-     val _ = Theory.export_theory()
-     val _ = if invocDir = workingDir then ()
-             else stdErr_print ("Returning to "^invocDir^".\n")
-     val _ = FileSys.chDir invocDir
-     val _ = stdErr_print "Finished.\n"
+     val thyName = "SPLAT"  (* Need something better: get it from modelUnits from jpkg *)
+
+     val filter_decs = List.concat (map extract_filters pkgs)
+     val monitor_decs = List.concat (map extract_monitors pkgs)
+     val _ = stdErr_print ("Found "^Int.toString (List.length filter_decs)^" filter declarations.\n")
+     val _ = stdErr_print ("Found "^Int.toString (List.length monitor_decs)^" monitor declarations.\n")
+     val const_alist = tryfind extract_consts pkgs
+
+(*
+     val _ = AADL.export_cakeml_monitors dir const_alist monitor_decs
+     val _ = AADL.export_cakeml_filters dir const_alist filter_decs
+*)
   in
     MiscLib.succeed()
  end
  handle e =>
     let open MiscLib
-    in stdErr_print "\n\nSPLAT FAILED!!\n\n";
+    in stdErr_print "\n\nSPLAT-MON FAILED!!\n\n";
        failwithERR e
     end
