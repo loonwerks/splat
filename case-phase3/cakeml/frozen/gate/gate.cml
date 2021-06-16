@@ -2406,7 +2406,7 @@ fun test testName list =
 (*  3 = show intermediate values in function calls                           *)
 (*---------------------------------------------------------------------------*)
 
-val _ = Utils.debugLevel := 3;
+val _ = Utils.debugLevel := 1;
 
 (*---------------------------------------------------------------------------*)
 (* In the following tests, the whitelist and the SHM queue are both read in  *)
