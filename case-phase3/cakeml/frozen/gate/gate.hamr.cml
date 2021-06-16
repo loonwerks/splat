@@ -1652,7 +1652,7 @@ fun tip_eq tip1 tip2 =
 fun found_in_TAG_MAP tag_ip map = Array.exists (fn tip => tip = tag_ip) map;
 
 fun found_TAG_IN_TAG_MAP tag map =
-    Array.exists (fn i => tag_of_tip i = tag) map;
+    Array.exists (fn i => tag_of_tip i = tag andalso valid_of_tip i) map;
 
 fun found_in_WHITELIST whitelist prot ip =
  Array.exists
