@@ -16,6 +16,7 @@ TC6: Expected protocol and IP address appear in both the Object #1 and 2 locatio
 TC7: Expected protocol and unexpected IP address appear in the Object #1 location
 TC8: Unexpected protocol and expected IP address appear in the Object #1 location
 TC9: Unexpected protocol and IP address appear in the Object #1 location
+TC10: Protocol 1 and 2 identified with expected IP address appearing in Object #1 and 2 locations
 
 
 
@@ -61,3 +62,8 @@ TC8:
 
 TC9:
 011A0000000A911664000000000000000000000000000000000000000000000000
+
+
+
+TC10:
+01010000000A911663020000000A91166300000000000000000000000000000000
