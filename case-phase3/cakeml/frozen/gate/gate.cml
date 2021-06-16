@@ -1748,8 +1748,10 @@ fun tip_eq tip1 tip2 =
 
 fun found_in_TAG_MAP tag_ip map = Array.exists (fn tip => tip = tag_ip) map;
 
-fun found_TAG_IN_TAG_MAP tag map =
-    Array.exists (fn i => tag_of_tip i = tag andalso valid_of_tip i) map;
+fun found_TAG_IN_TAG_MAP tag protocol map =
+    Array.exists (fn i => tag_of_tip i = tag andalso
+      prot_of_tip i = protocol andalso
+      valid_of_tip i) map;
 
 fun found_in_WHITELIST whitelist prot ip =
  Array.exists
@@ -1772,7 +1774,7 @@ fun remove_DUPLICATE_TAG_IP_PAIRS map1 map2 =
 fun count_HOLES map hole top =
  List.foldl
   (fn count => fn i =>
-       if i <= top andalso tip_eq (Array.sub map i) hole
+       if i < top andalso tip_eq (Array.sub map i) hole
           then count + 1
          else count)
   0 (Utils.upto 0 (Array.length map - 1));
@@ -1780,7 +1782,7 @@ fun count_HOLES map hole top =
 fun count_ELEMENTS map hole top =
  List.foldl
   (fn count => fn i =>
-      if i <= top andalso not (tip_eq (Array.sub map i) hole)
+      if i < top andalso not (tip_eq (Array.sub map i) hole)
          then count + 1
          else count)
   0 (Utils.upto 0 (Array.length map - 1));
@@ -1912,7 +1914,10 @@ fun update_BLOCK block tag_map =
                 orelse
                   is_CLOSE (Array.sub block i)
                ) andalso
-                 found_TAG_IN_TAG_MAP (tag_of_shm(Array.sub block i)) tag_map
+                 found_TAG_IN_TAG_MAP
+                   (tag_of_shm(Array.sub block i))
+                   (prot_of_shm(Array.sub block i))
+                   tag_map
             then
               Array.sub block i
             else default_SHM_ELEMENT);
@@ -1944,6 +1949,10 @@ fun stepFn inports stateVars =
                    valOf trusted_IDs
                 else default_ALLOW_LIST
               val previous_tag_map = default_TAG_MAP
+(*            
+              -- Commented out (rewritten a few lines below),
+              -- since this does not reflect the changes in the AGREE spec
+              -- to incorporate the control tag(s) into the tag_map.
               val tag_map =
                 if event_vdtu_Request_Message_In then
                    filter_BY_WHITELIST
@@ -1953,6 +1962,7 @@ fun stepFn inports stateVars =
                                (valOf vdtu_Request_Message_In))
                            previous_tag_map)) whitelist
                 else filter_BY_WHITELIST previous_tag_map whitelist
+*)
 	      val control_tag_pair =
                 if event_vdtu_Control_Message_In andalso
                     is_CONNECT(valOf vdtu_Control_Message_In)
@@ -1975,10 +1985,10 @@ fun stepFn inports stateVars =
                 if event_vdtu_Request_Message_In then
                      (merge_TAG_MAPS previous_tag_map
                         (remove_DUPLICATE_TAG_IP_PAIRS
-                           (get_NEW_TAGS_FROM_SHM_QUEUE
-                               (valOf vdtu_Request_Message_In))
+                           merged_tag_pairs
                            previous_tag_map))
                 else default_TAG_MAP
+              val tag_map = filter_BY_WHITELIST merged_tag_map whitelist
               val stale_tags_shmq =
                 if event_vdtu_Request_Message_In
 		  then get_STALE_TAGS_FROM_SHM_QUEUE (valOf vdtu_Request_Message_In)
@@ -2013,6 +2023,10 @@ fun stepFn inports stateVars =
               val whitelist =
                 if event_trusted_IDs then valOf trusted_IDs else (pre whitelist)
               val previous_tag_map = pre tag_map_wo_close
+(*
+              -- Commented out (rewritten a few lines below),
+              -- since this does not reflect the changes in the AGREE spec
+              -- to incorporate the control tag(s) into the tag_map.
               val tag_map =
                 if event_vdtu_Request_Message_In then
                    filter_BY_WHITELIST
@@ -2023,6 +2037,33 @@ fun stepFn inports stateVars =
                             previous_tag_map))
                       whitelist
                 else filter_BY_WHITELIST previous_tag_map whitelist
+*)
+	      val control_tag_pair =
+                if event_vdtu_Control_Message_In andalso
+                    is_CONNECT(valOf vdtu_Control_Message_In)
+                  then Gate_Types.TAG_IP_PairRecd
+                          (tag_of_shm (valOf vdtu_Control_Message_In))
+                          (prot_of_shm (valOf vdtu_Control_Message_In))
+                          (remote_address_of_connex
+                             (connection_data_of (valOf vdtu_Control_Message_In)))
+                          True
+                  else default_TAG_IP_Pair
+	      val tag_pairs =
+                if event_vdtu_Request_Message_In
+                  then get_NEW_TAGS_FROM_SHM_QUEUE(valOf vdtu_Request_Message_In)
+                  else default_TAG_MAP
+	      val merged_tag_pairs =
+                if not (tip_eq control_tag_pair default_TAG_IP_Pair)
+                  then insert_INTO_TAG_MAP tag_pairs control_tag_pair
+                  else tag_pairs
+              val merged_tag_map =
+                if event_vdtu_Request_Message_In then
+                     (merge_TAG_MAPS previous_tag_map
+                        (remove_DUPLICATE_TAG_IP_PAIRS
+                           merged_tag_pairs
+                           previous_tag_map))
+                else default_TAG_MAP
+	      val tag_map = filter_BY_WHITELIST merged_tag_map whitelist
               val tag_map_wo_close_0 =
                 if event_vdtu_Request_Message_In
                 then remove_DUPLICATE_TAGS
@@ -2105,7 +2146,9 @@ fun stepFn inports stateVars =
        if event_vdtu_Control_Message_In
        then
            (if found_TAG_IN_TAG_MAP
-                   (tag_of_shm (valOf vdtu_Control_Message_In)) tag_map
+                   (tag_of_shm (valOf vdtu_Control_Message_In))
+                   (prot_of_shm (valOf vdtu_Control_Message_In))
+                   tag_map
 	      then Some (valOf vdtu_Control_Message_In)
               else Some default_SHM_ELEMENT)
        else None
