@@ -1749,7 +1749,7 @@ fun tip_eq tip1 tip2 =
 fun found_in_TAG_MAP tag_ip map = Array.exists (fn tip => tip = tag_ip) map;
 
 fun found_TAG_IN_TAG_MAP tag map =
-    Array.exists (fn i => tag_of_tip i = tag) map;
+    Array.exists (fn i => tag_of_tip i = tag andalso valid_of_tip i) map;
 
 fun found_in_WHITELIST whitelist prot ip =
  Array.exists
@@ -2414,6 +2414,78 @@ val _ = Utils.debugLevel := 1;
 (* specified as not having happened.                                         *)
 (*---------------------------------------------------------------------------*)
 
+val () = test "1"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc2.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None)
+   ];
+
+val () = test "2"
+   [(Some "testsLE/tids4.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc2.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None)
+   ];
+
+val () = test "3"
+   [(Some "testsLE/tids5.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc2.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None)
+   ];
+
+val () = test "4"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None),
+    (None,                       Some "testsLE/tc2.bytes", None)
+   ];
+
+val () = test "5"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc5.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None)
+   ];
+
+val () = test "6"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc6.bytes", None)
+   ];
+
+val () = test "7"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc7.bytes", None)
+   ];
+
+val () = test "8"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc8.bytes", None)
+   ];
+
+val () = test "9"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc9.bytes", None)
+   ];
+
+val () = test "10"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc10.bytes", None),
+    (None,                       Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc10.bytes", None),
+    (None,                       Some "testsLE/tc2.bytes", None),
+    (None,                       Some "testsLE/tc10.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None)
+   ];
+
+val () = test "11"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc11.bytes", None)
+   ];
+
+val () = test "12"
+   [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc12.bytes", None),
+    (None,                       Some "testsLE/tc13.bytes", None)
+   ];
+
+val () = test "13"
+   [(Some "testsLE/tids8.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                       Some "testsLE/tc2.bytes", None),
+    (None,                       Some "testsLE/tc3.bytes", None)
+   ];
+
+(*
 val () = test "A"
    [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
     (None,                       Some "testsLE/tc2.bytes", None),
@@ -2446,3 +2518,6 @@ val () = test "D"
     (None,                       Some "testsLE/tc3.bytes", None),
     (None,                       Some "testsLE/tc2.bytes", None)
    ];
+*)
+
+
