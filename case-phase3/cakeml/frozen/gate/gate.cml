@@ -1982,12 +1982,13 @@ fun stepFn inports stateVars =
                   then insert_INTO_TAG_MAP tag_pairs control_tag_pair
                   else tag_pairs
               val merged_tag_map =
-                if event_vdtu_Request_Message_In then
-                     (merge_TAG_MAPS previous_tag_map
-                        (remove_DUPLICATE_TAG_IP_PAIRS
-                           merged_tag_pairs
-                           previous_tag_map))
-                else default_TAG_MAP
+                if event_vdtu_Request_Message_In orelse event_vdtu_Control_Message_In
+		then
+                  (merge_TAG_MAPS previous_tag_map
+                     (remove_DUPLICATE_TAG_IP_PAIRS
+                        merged_tag_pairs
+                        previous_tag_map))
+		else previous_tag_map
               val tag_map = filter_BY_WHITELIST merged_tag_map whitelist
               val stale_tags_shmq =
                 if event_vdtu_Request_Message_In
@@ -1998,11 +1999,13 @@ fun stepFn inports stateVars =
               val tag_map_wo_close =
                 if event_vdtu_Control_Message_In andalso is_CLOSE(valOf vdtu_Control_Message_In)
                   then
-                    remove_DUPLICATE_TAG
-                      tag_map_wo_close_0
-                      (Gate_Types.TAG_VALID_PAIRRecd
+                    filter_BY_WHITELIST
+                      (remove_DUPLICATE_TAG
+                        tag_map_wo_close_0
+                        (Gate_Types.TAG_VALID_PAIRRecd
                         (tag_of_shm (valOf vdtu_Control_Message_In))
-                        True)
+                        True))
+                      whitelist
                   else tag_map_wo_close_0
 
               val cycle_count = 1
@@ -2057,12 +2060,13 @@ fun stepFn inports stateVars =
                   then insert_INTO_TAG_MAP tag_pairs control_tag_pair
                   else tag_pairs
               val merged_tag_map =
-                if event_vdtu_Request_Message_In then
-                     (merge_TAG_MAPS previous_tag_map
-                        (remove_DUPLICATE_TAG_IP_PAIRS
-                           merged_tag_pairs
-                           previous_tag_map))
-                else default_TAG_MAP
+                if event_vdtu_Request_Message_In orelse event_vdtu_Control_Message_In
+		then
+                  (merge_TAG_MAPS previous_tag_map
+                     (remove_DUPLICATE_TAG_IP_PAIRS
+                        merged_tag_pairs
+                        previous_tag_map))
+		else previous_tag_map
 	      val tag_map = filter_BY_WHITELIST merged_tag_map whitelist
               val tag_map_wo_close_0 =
                 if event_vdtu_Request_Message_In
@@ -2074,11 +2078,14 @@ fun stepFn inports stateVars =
               val tag_map_wo_close =
                 if event_vdtu_Control_Message_In andalso
                    is_CLOSE(valOf vdtu_Control_Message_In)
-                then remove_DUPLICATE_TAG
+                then
+                  filter_BY_WHITELIST
+                    (remove_DUPLICATE_TAG
                       tag_map_wo_close_0
                       (Gate_Types.TAG_VALID_PAIRRecd
-                        (tag_of_shm (valOf vdtu_Control_Message_In))
-                        True)
+                      (tag_of_shm (valOf vdtu_Control_Message_In))
+                      True))
+                    whitelist
                 else tag_map_wo_close_0
               val cycle_count = cycle_count + 1
           in
@@ -2457,6 +2464,7 @@ val _ = Utils.debugLevel := 1;
 (* specified as not having happened.                                         *)
 (*---------------------------------------------------------------------------*)
 
+(*
 val () = test "1"
    [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
     (None,                       Some "testsLE/tc2.bytes", None),
@@ -2528,7 +2536,23 @@ val () = test "13"
     (None,                       Some "testsLE/tc3.bytes", None)
    ];
 
-(*
+val () = test "14"
+   [(Some "testsLE/tids10.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                        None,                     Some "testsLE/control1.bytes"),
+    (None,                        Some "testsLE/tc2.bytes", None),
+    (None,                        None,                     Some "testsLE/control2.bytes"),
+    (None,                        Some "testsLE/tc3.bytes", None),
+    (None,                        None,                     Some "testsLE/control3.bytes")
+   ];
+
+val () = test "15"
+   [(Some "testsLE/tids10.bytes", Some "testsLE/tc1.bytes", None),
+    (None,                        Some "testsLE/tc2.bytes", Some "testsLE/control1.bytes"),
+    (Some "testsLE/tids1.bytes",  Some "testsLE/tc3.bytes", Some "testsLE/control2.bytes"),
+    (Some "testsLE/tids10.bytes", None,                     Some "testsLE/control3.bytes")
+   ];
+*)
+
 val () = test "A"
    [(Some "testsLE/tids1.bytes", Some "testsLE/tc1.bytes", None),
     (None,                       Some "testsLE/tc2.bytes", None),
@@ -2561,6 +2585,5 @@ val () = test "D"
     (None,                       Some "testsLE/tc3.bytes", None),
     (None,                       Some "testsLE/tc2.bytes", None)
    ];
-*)
 
 
