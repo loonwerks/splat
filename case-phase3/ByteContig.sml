@@ -1,6 +1,8 @@
 structure ByteContig =
 struct
 
+open Lib Feedback;
+
 val ERR = mk_HOL_ERR "ByteContig";
 
 type bytes = Word8.word list;
@@ -298,7 +300,7 @@ fun total_bytes_of A i w =
        if n < top then
           accFn (n+1) (Word8Array.sub(A,n)::acc)
        else rev acc
- in if top < Word8Array.length A
+ in if top <= Word8Array.length A
     then SOME (accFn i [])
     else NONE
  end;

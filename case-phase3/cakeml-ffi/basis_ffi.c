@@ -264,6 +264,14 @@ void ffifloat2double(unsigned char *parameter, long parameterSizeBytes,
   memcpy(output, (unsigned char*) &result, sizeof(double));
 }
 
+void ffidouble_of_int (unsigned char *arg, long argLen,
+                       unsigned char *output, long oLen)
+{ assert(argLen == 8);
+  int i = byte8_to_int(arg);
+  double result = (double) i;
+  memcpy(output, (unsigned char*) &result, sizeof(double));
+}
+
 void ffiradcos(unsigned char *input, long ilen,
                unsigned char *output, long olen) {
 

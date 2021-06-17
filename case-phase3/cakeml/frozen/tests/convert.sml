@@ -95,6 +95,44 @@ convert false "tc12.csv" "tc12.bytes";
 convert false "tc13.csv" "tc13.bytes";
 convert false "tc14.csv" "tc14.bytes";
 convert false "tc17.csv" "tc17.bytes";
+convert false "tc24.csv" "tc24.bytes";
+
+(* Gate tests *)
+
+convert false "tids1.csv" "tids1.bytes";
+convert false "tids2.csv" "tids2.bytes";
+convert false "tids3.csv" "tids3.bytes";
+convert false "tids4.csv" "tids4.bytes";
+convert false "tids5.csv" "tids5.bytes";
+convert false "tids6.csv" "tids6.bytes";
+convert false "tids7.csv" "tids7.bytes";
+convert false "tids8.csv" "tids8.bytes";
+convert false "tids9.csv" "tids9.bytes";
+convert false "tids10.csv" "tids10.bytes";
+
+convert false "control1.csv" "control1.bytes";
+convert false "control2.csv" "control2.bytes";
+convert false "control3.csv" "control3.bytes";
+
+convert false "tc1.csv" "tc1.bytes";
+convert false "tc1-nonzero-pad.csv" "tc1-nonzero-pad.bytes";
+convert false "tc2.csv" "tc2.bytes";
+convert false "tc3.csv" "tc3.bytes";
+(* convert false "tc4.csv" "tc4.bytes"; *)
+convert false "tc5.csv" "tc5.bytes";
+convert false "tc6.csv" "tc6.bytes";
+convert false "tc7.csv" "tc7.bytes";
+convert false "tc8.csv" "tc8.bytes";
+convert false "tc9.csv" "tc9.bytes";
+convert false "tc10.csv" "tc10.bytes";
+convert false "tc11.csv" "tc11.bytes";
+convert false "tc12.csv" "tc12.bytes";
+convert false "tc13.csv" "tc13.bytes";
+convert false "tc14.csv" "tc14.bytes";
+convert false "tc17.csv" "tc17.bytes";
+convert false "tc24.csv" "tc24.bytes";
+convert false "tc28.csv" "tc28.bytes";
+
 
 use "../../BitFns.sml";
 use "../../BitContig.sig";

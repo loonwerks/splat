@@ -54,9 +54,8 @@ fun byte_of (a,b) = Word8.fromInt (hexchar2int a * 16 + hexchar2int b);
 
 fun mk_bytes addEventByte row =
   let val suffix = List.map byte_of (chunk2 (String.explode row))
-  in if addEventByte
-     then EventByte::suffix
-     else suffix
+  in
+     if addEventByte then EventByte::suffix else suffix
   end
 
 fun row2w8array addEventByte row =
@@ -68,7 +67,12 @@ fun csv2byteA addEventByte fileName =
   List.map (row2w8array addEventByte)
            (get_rows fileName);
 
-(* Usage: convert false file1 file2 if file1 already has the eventByte prefixed *)
+(*---------------------------------------------------------------------------*)
+(* Usage: (when srcFile already has the eventByte prefixed)                  *)
+(*                                                                           *)
+(*   convert false srcFile targetFile                                        *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
 
 fun convert addEventByte file1 file2 =
  let val byteArrays = csv2byteA addEventByte file1
@@ -181,5 +185,23 @@ val blist =
 
 10, 11, 12, 13, 14, 15
  A,  B,  C,  D,  E,  F
+
+*)
+
+(*
+fun divmod n b = (Int.div(n,b), Int.mod(n,b));
+
+fun int2octal n =
+ let fun divAcc n acc =
+      if n < 8 then n::acc
+      else let val (d,r) = divmod n 8 in divAcc d (r::acc) end
+ in String.concat
+        (List.map Int.toString (divAcc n []))
+ end
+
+fun readOct s =
+   fst
+    (Option.valOf
+      (Int.scan StringCvt.OCT Substring.getc (Substring.full s)));
 
 *)

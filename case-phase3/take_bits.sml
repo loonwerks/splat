@@ -1,4 +1,7 @@
-val ERR = mk_HOL_ERR "take_bits";
+structure BitFns =
+struct
+
+val ERR = mk_HOL_ERR "BitFns";
 
 fun assert b s = if b then () else raise ERR s "assertion failure";
 
@@ -120,3 +123,5 @@ fun stringVal blist =
 fun boolVal 0 = false
   | boolVal 1 = true
   | boolVal otherwise = raise ERR "boolVal" "";
+
+end
