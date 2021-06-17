@@ -300,51 +300,6 @@ fun pp_tydec depth pkgName tydec =
 (* Replace all record field projections with explicit function calls.        *)
 (*---------------------------------------------------------------------------*)
 
-(*
-fun convert_tydec tydec =
- let open AST
- in
-  case tydec
-   of EnumDec (qid, enames) => DatatypeDecl (snd qid, map (fn s => (s,[])) enames)
-    | RecdDec (qid, fields) => RecdDecl(snd qid, fields)
-    | ArrayDec (qid, ty)    => TyAbbrevDecl (snd qid,ty)
-    | UnionDec (qid, constrs) =>
-        DatatypeDecl (snd qid, map (fn (s,ty) => (s,[ty])) constrs)
- end
-
-fun convert_tmdec tmdec =
- let open AST
- in
-  case tmdec
-   of ConstDec (qid,ty,exp) => ConstDecl(snd qid,ty,exp)
-    | FnDec (qid, args, rty, body) =>
-      FnDecl(snd qid, map In args,
-             SOME ("retVal",rty),[],
-             [Assign(VarExp"retVal",body)])
- end
-
-fun tmdecs_of_mon mondec =
- case mondec
-  of MonitorDec(qid,ports,latched,decs,ivars,guars) => decs
-;
-
-fun pkg_to_package (pkg:AADL.pkg) =
- let val Pkg (pkgName,(tydecs,tmdecs,filters,monitors)) = pkg
-     val tydecls = map convert_tydec tydecs
-     val mondecs = List.concat (map tmdecs_of_mon monitors)
-     val tmdecs' = tmdecs @ mondecs
-     val tmdecls = map convert_tmdec tmdecs'
- in
-    (pkgName, tydecls@tmdecls) : AST.package
- end
-
-val plist = map (pkg_to_package o Pkg) pkgs;
-
-val tyE = tyEnvs pkg
-
-val tyE = itlist (fn p => fn E =>
-*)
-
 (*---------------------------------------------------------------------------*)
 (* Type of array elements.                                                   *)
 (*---------------------------------------------------------------------------*)
@@ -431,10 +386,22 @@ fun proj_intro (E as ((tyE,constE),varE)) exp =
   in raise wrap_exn "PP_CakeML" ("proj_intro on expression : "^expString)  e
   end;
 
+fun empty_varE _ = NONE;
+
+fun assocFn alist x =
+ case assoc1 x alist
+  of NONE => NONE
+   | SOME (a,b) => SOME b;
+
 fun extendE env (v,u) x =
  case env x
   of SOME y => SOME y
    | NONE => if x = v then SOME u else NONE;
+
+fun mergeE env1 env2 x =
+  case env1 x
+   of SOME y => SOME y
+    | NONE => env2 x;
 
 fun dest_varExp (VarExp id) = id
   | dest_varExp otherwise = raise ERR "dest_varExp" "expected a VarExp";
@@ -474,14 +441,6 @@ fun transRval E e =
    | otherwise => fst(proj_intro E e)
 ;
 
-fun empty_varE _ = NONE;
-
-fun assocFn alist x =
- case assoc1 x alist
-  of NONE => NONE
-   | SOME (a,b) => SOME b;
-
-
 fun transRval_decl E tmdec =
  case tmdec
   of ConstDec (qid,ty,exp)
@@ -490,12 +449,24 @@ fun transRval_decl E tmdec =
        => FnDec (qid,params,ty, transRval (E,assocFn params) exp)
 ;
 
+(*---------------------------------------------------------------------------*)
+(* Superseded by code in splat.sml                                           *)
+(*---------------------------------------------------------------------------*)
+
 fun transRval_filter E filterdec =
- case filterdec
- of FilterDec (qid,ports,props) =>
-      let val props' = map (I##transRval (E,empty_varE)) props
-      in FilterDec (qid,ports,props')
-      end handle e => raise wrap_exn "PP_CakeML" "transRval_filter" e;
+ let fun ivarFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
+     fun guarFn (a,b,e) = (a,b,transRval (E,empty_varE) e)
+ in case filterdec
+     of FilterDec (qid,ports,tmdecs,ivars,props) =>
+      let val ivars' = map ivarFn ivars
+          val props' = map guarFn props
+      in FilterDec (qid,ports,tmdecs,ivars',props')
+      end
+ end handle e => raise wrap_exn "PP_CakeML" "transRval_filter" e;
+
+(*---------------------------------------------------------------------------*)
+(* Superseded by code in splat.sml                                           *)
+(*---------------------------------------------------------------------------*)
 
 fun transRval_monitor E mondec =
   let fun ivarFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
@@ -510,6 +481,10 @@ fun transRval_monitor E mondec =
         end
   end
   handle e => raise wrap_exn "PP_CakeML" "transRval_monitor" e;
+
+(*---------------------------------------------------------------------------*)
+(* Superseded by code in splat.sml                                           *)
+(*---------------------------------------------------------------------------*)
 
 fun transRval_pkg E (Pkg (pkgName,(tydecs,tmdecs,filters,monitors))) =
  Pkg(pkgName,
@@ -535,9 +510,20 @@ fun mk_tyE pkglist =
 
 fun is_const_dec (ConstDec _) = true | is_const_dec other = false;
 
+fun cdecs_of (Pkg(pkgName,(tys,tmdecs,filters,monitors))) =
+ let fun filter_consts (FilterDec(_,_,tmdecs,_,_)) =
+         filter is_const_dec tmdecs
+     fun monitor_consts (MonitorDec(_,_,_,tmdecs,_,_)) =
+           filter is_const_dec tmdecs
+ in
+  List.concat
+    [filter is_const_dec tmdecs,
+     List.concat (map filter_consts filters),
+     List.concat (map monitor_consts monitors)]
+ end;
+
 fun mk_constE pkglist =
- let fun cdecs_of (Pkg(pkgName,(tys,consts,filters,monitors))) = consts
-     val all_cdecs = List.concat (map cdecs_of pkglist)
+ let val all_cdecs = List.concat (map cdecs_of pkglist)
      val all_const_decs = filter is_const_dec all_cdecs
      fun mk_const_bind (ConstDec(qid,ty,e)) = (snd qid,ty)
        | mk_const_bind otherwise = raise ERR "mk_constE" "expected a ConstDec"
@@ -627,7 +613,7 @@ fun pp_tmdec depth pkgName tmdec =
  end;
 
 
-fun pp_filter depth (FilterDec (qid,ports,props)) =
+fun pp_filter depth (FilterDec (qid,ports,tmdecs,ivars,props)) =
  let open PolyML
  in if depth = 0 then PrettyString "<decl>"
     else
@@ -732,13 +718,25 @@ fun split_fby exp =
    of Binop(Fby,e1,e2) => (e1,e2)
     | otherwise => (exp,exp);
 
+(*---------------------------------------------------------------------------*)
+(* Looking for:                                                              *)
+(*                                                                           *)
+(*  event port <=> e, or                                                     *)
+(*                                                                           *)
+(*  if e1 then event(port) and port = e2 else not(event port)                *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
 fun outCode_target (gName,docstring,codeG) =
  case codeG
   of Binop(Equal,e1,e2) =>
       (case e1
         of Fncall(("","event"),[VarExp p]) => p
          | VarExp p => p
-         | otherwise => raise ERR "outCode_target" "unexpected syntax")
+         | otherwise =>
+             case e2
+              of Fncall(("","event"),[VarExp p]) => p
+              | _ => raise ERR "outCode_target" "unexpected syntax")
    | Fncall(("","IfThenElse"),[b,e1,e2]) =>
       (case e1
         of Binop(And,Fncall(("","event"),[VarExp p]),
@@ -901,7 +899,7 @@ fun mk_output ports (gName,docstring,code) =
    | otherwise => raise ERR "mk_output" "unexpected syntax in output port code spec"
 
 
-fun mk_mon_cycleFn mondec =
+fun mk_monFn mondec =
  let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
      val inputsVar = VarExp "inputs"
      val theStateVar = VarExp "theState"
@@ -917,7 +915,7 @@ fun mk_mon_cycleFn mondec =
      val bodyExp = letExp [inputsBind,inbufsBind,stepRetBind,
                            fill_outbufs,update_state,outputsBind] unitExp
  in
-    FnDec((fst qid,"cycleFn"), [], dummyTy, bodyExp)
+    FnDec((fst qid,"monFn"), [], dummyTy, bodyExp)
  end
 
 (*---------------------------------------------------------------------------*)
@@ -974,18 +972,19 @@ fun mk_stateVardecs n =
 (*---------------------------------------------------------------------------*)
 
 fun pp_monitor depth mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,guars) = mondec
      val stepFn = mk_mon_stepFn mondec
-     val cycleFn = mk_mon_cycleFn mondec
+     val monFn = mk_monFn mondec
      val dataports = filter is_data_port ports
      val iobufdecs = map (mk_buf (fst qid)) dataports
      val infiller_dec = mk_fillFn (filter is_inport dataports)
      val stateVars_dec = mk_stateVardecs (length ivardecs)
-     val decs1 = iobufdecs @ [infiller_dec,stateVars_dec] @ decs @ [stepFn,cycleFn]
+     val decs1 = iobufdecs @ [infiller_dec,stateVars_dec] @ decs @ [stepFn,monFn]
      val decs2 = stateVars_dec :: (decs @ [stepFn])
  in
   end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
  end
+
 (*---------------------------------------------------------------------------*)
 (* Add in projection functions, and tranform expressions with field          *)
 (* projections.                                                              *)

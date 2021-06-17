@@ -28,12 +28,14 @@ in end;
     | FnDec of qid * (string * ty) list * ty * exp;
 
  datatype filter
-    = FilterDec   (* (name,ports,props,bufsize) *)
+    = FilterDec   (* (name,ports,decs,ivars,guars) *)
         of qid *
            (string * ty * string * string) list *
-           (string * exp) list
+           tmdec list *
+           (string * ty * exp) list *
+           (string * string * exp) list
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,props,guars)  *)
+ datatype monitor  (*  (name,ports,latched,decs,ivars,guars)  *)
     = MonitorDec of qid
                  * (string * ty * string * string) list
                  * bool
@@ -124,7 +126,7 @@ fun tydec_qid (EnumDec (qid,_)) = qid
 fun tmdec_qid (ConstDec (qid,_,_)) = qid
   | tmdec_qid (FnDec (qid,_,_,_)) = qid
 
-fun filtdec_qid (FilterDec (qid,_,_)) = qid
+fun filtdec_qid (FilterDec (qid,_,_,_,_)) = qid
 fun mondec_qid (MonitorDec (qid,_,_,_,_,_)) = qid
 
 (* Principled approach, doing a one-for-one mapping between AADL integer types and,
@@ -939,7 +941,7 @@ fun get_named_props name_equivFn rnames stmts =
 (*---------------------------------------------------------------------------*)
 (* This enables "Req001_Filter" to be equal to "Req001_RadioDriver_Filter"   *)
 (*---------------------------------------------------------------------------*)
-
+(*
 fun filter_req_name_eq js1 js2 =
  let val s1 = dropString js1
      val s2 = dropString js2
@@ -983,10 +985,11 @@ fun get_filter decl =
             val glist = get_named_props filter_req_name_eq rqtNames stmts
        in if null glist then
               raise ERR "get_filter" "no properties!"
-           else FilterDec (dest_qid fname, map get_port ports, glist)
+           else FilterDec (dest_qid fname, map get_port ports, [],[],glist)
        end
        else raise ERR "get_filter" "unable to scrape filter information"
    | otherwise => raise ERR "get_filter" "not a filter thread";
+*)
 
 (*
 fun get_monitor_guarantee (AList(("kind", String thing)::binds)) =
@@ -1138,18 +1141,35 @@ fun get_monitor comp =
      val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
      val eq_stmts   = mapfilter dest_eq_or_property_stmt others
      val guar_stmts = mapfilter dest_guar_stmt others
-(*
-     fun is_policy(s,_) = last (String.tokens (equal #"_") s) = "policy"
-     val props =  (* no longer sure what this is for *)
-        (case total (pluck is_policy) prop_stmts
-          of NONE => (NONE,prop_stmts)
-          | SOME (pol,rst) => (SOME pol,rst))
-*)
      val code_guars = filter (C mem codespecNames o #1) guar_stmts
  in
      MonitorDec(qid, ports, is_latched, decs, eq_stmts, code_guars)
  end
  handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
+;
+
+fun get_filter comp =
+ let val properties = dropList(properties_of comp)
+     val _ = if is_filter properties then ()
+             else raise ERR "get_filter" "unable to find FILTER property"
+     val qid = dest_qid (dropString (name_of comp))
+     val (pkgName,filtName) = qid
+     val ports = map get_monitor_port(dropList (features_of comp))
+     val annexL = dropList (annexes_of comp)
+     val annex = (case annexL
+                  of [x] => x
+		   | otherwise => raise ERR "get_filter" "unexpected annex structure")
+     val codespecNames = get_spec_names properties
+     val stmts = get_annex_stmts annex
+     val (jdecs,others) = List.partition is_pure_dec stmts
+     val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
+     val eq_stmts   = mapfilter dest_eq_or_property_stmt others
+     val guar_stmts = mapfilter dest_guar_stmt others
+     val code_guars = filter (C mem codespecNames o #1) guar_stmts
+ in
+     FilterDec(qid, ports, decs, eq_stmts, code_guars)
+ end
+ handle e => raise wrap_exn "get_filter" "unexpected syntax" e
 ;
 
 fun dest_publist plist =
@@ -1520,11 +1540,14 @@ fun amn_tmdec tdec =
 
 fun amn_filter_dec fdec =
  let fun amn_port (s1,ty,s2,s3) = (s1,amn_ty ty,s2,s3)
-     fun amn_cprop (s,e) = (s,amn_exp e)
+     fun amn_eq_stmt (s,ty,e) = (s,amn_ty ty,amn_exp e)
+     fun amn_cprop (s1,s2,e) = (s1,s2,amn_exp e)
  in case fdec
-     of FilterDec(qid, ports, cprops) =>
+     of FilterDec(qid, ports, decs,eq_stmts,guars) =>
         FilterDec(qid, map amn_port ports,
-                  map amn_cprop cprops)
+                   map amn_tmdec decs,
+                   map amn_eq_stmt eq_stmts,
+                   map amn_cprop guars)
  end
 ;
 
@@ -2284,7 +2307,7 @@ fun declare_hol_term tyEnv dec =
            ("failed to define "^Lib.quote (snd(tmdec_qid dec)))
 
 fun mk_filter_spec (thyName,tyEnv,fn_defs)
-		   (FilterDec ((pkgName,fname), ports, cprops)) =
+		   (FilterDec ((pkgName,fname), ports, decs, eq_stmts, cprops)) =
     let val outport = Lib.first (fn (_,_,dir,_) => (dir = "out")) ports
 	val inport = Lib.first (fn (_,_,dir,_) => (dir = "in")) ports
         val iname = #1 inport
@@ -2292,7 +2315,7 @@ fun mk_filter_spec (thyName,tyEnv,fn_defs)
         val ty = transTy tyEnv (#2 outport)
         val varIn = (iname,mk_var(iname,ty))
         val varOut = (oname,mk_var(oname,ty))
-        val prop = end_itlist mk_and (map #2 cprops)
+        val prop = end_itlist mk_and (map #3 cprops)
         val spec = transExp thyName [varIn,varOut] (Expected bool) prop
         val wf_message_thm = PURE_REWRITE_CONV fn_defs spec
         val array_forall_expanded =
@@ -2633,7 +2656,7 @@ fun inst_filter_template targetDir const_alist dec =
  let open Substring
  in
  case dec
-  of FilterDec (qid, ports as _::_, props as _::_) =>
+  of FilterDec (qid, ports as _::_, _,_, props as _::_) =>
     (let val () = stdErr_print ("-> "^qid_string qid^"\n")
          val ([(inportName,ty,dir,style)], outports) = classify ports
          val (pname,tyName) = dest_namedTy ty
@@ -2649,7 +2672,7 @@ fun inst_filter_template targetDir const_alist dec =
          val bufsize_origin = pname^"."^sizeName
          val fill_input_decl = mk_fill_input_buffer inportName
          val outFns = mk_output_calls outports
-         val wf_qid = wf_of_code_guar (snd(hd props))
+         val wf_qid = wf_of_code_guar (#3(hd props))
          val () = stdErr_print (String.concat
              ["    Well-formedness predicate : ",qid_string wf_qid, "\n"])
          val contig_qid = assoc wf_qid filterMap

@@ -165,6 +165,197 @@ fun extract_filters (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
 fun extract_monitors (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = mondecs;
 
 (*
+fun decls_qids decls =
+ let val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = decls
+     val supplied_qids = Lib.union (supplied_tydec_qids tydecs) (supplied_tmdec_qids tmdecs)
+     val mentioned_qids = MiscLib.bigU [mentioned_tydec_qids, mentiond_tmdec_qids,
+                                        mentioned_filter_qids, mentioned_monitor_qids]
+ in
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Transform to a set of "components", each of the form                      *)
+(*                                                                           *)
+(*  ([pkg_1,...,pkg_n],dec)                                                  *)
+(*                                                                           *)
+(*  where the pkg_i are packages used in dec, and dec is a filter, monitor,  *)
+(*  or gate. The pkg_i can be trimmed to be minimal.                         *)
+(*---------------------------------------------------------------------------*)
+
+open AST AADL;
+
+type port = string * ty * string * string;  (* (id,ty,dir,kind) *)
+
+type ivardec = string * ty * exp
+
+type guar = string * string * exp;
+
+type decs = tydec list * tmdec list;
+
+type support = (string * decs) list;
+
+datatype gadget =
+ Gadget of qid
+           * support
+           * tydec list
+           * tmdec list
+           * (port list * bool * ivardec list * guar list);
+
+
+fun elim_monitor support (MonitorDec mondec) =
+ let val (qid,ports,latched,tmdecs,ivardecs,guars) = mondec
+     val tydecs = []  (* Will change *)
+ in Gadget (qid, support, tydecs, tmdecs, (ports,latched,ivardecs,guars))
+ end;
+
+fun elim_filter support (FilterDec filtdec) =
+ let val (qid,ports,tmdecs, ivardecs, guars) = filtdec
+     val latched = false
+     val tydecs = []
+ in Gadget (qid, support, tydecs, tmdecs, (ports,latched,ivardecs,guars))
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* A "decls" thing represents an AADL package (roughly).                     *)
+(*---------------------------------------------------------------------------*)
+
+fun configure decls (support,gadgets) =
+ let val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = decls
+     val support' = (pkgName,(tydecs,tmdecs)) :: support
+     val filter_gadgets = List.map (elim_filter support') filtdecs
+     val monitor_gadgets = List.map (elim_monitor support') mondecs
+ in
+     (support',
+      filter_gadgets @ monitor_gadgets @ gadgets)
+end
+
+fun mk_gadgets pkgs = snd (rev_itlist configure pkgs ([],[]));
+
+val empty_varE = PP_CakeML.empty_varE;
+val assocFn = PP_CakeML.assocFn;
+val transRval = PP_CakeML.transRval;
+val transRval_decl = PP_CakeML.transRval_decl;
+val mk_tyE = PP_CakeML.mk_tyE;
+val mk_constE = PP_CakeML.mk_constE;
+val mk_recd_projns = PP_CakeML.mk_recd_projns;
+
+fun catE env1 env2 x =
+  case env1 x
+   of NONE => env2 x
+    | SOME y => SOME y;
+
+fun transRval_dec E tmdec =
+ case tmdec
+  of ConstDec (qid,ty,exp) => ConstDec (qid,ty,transRval (E,empty_varE) exp)
+   | FnDec (qid,params,ty,exp) =>
+     FnDec (qid,params,ty, transRval (E,assocFn params) exp)
+;
+
+fun trans_ivardec E (s,ty,e) = (s,ty,transRval E e)
+fun trans_guar E (s1,s2,e) = (s1,s2,transRval E e)
+
+fun trans_support E support = map (I##(I##map (transRval_decl E))) support;
+
+fun portE ports =
+ let fun dest_port (id,ty,_,_) = (id,ty)
+ in assocFn (map dest_port ports)
+ end
+
+fun ivarE ivars =
+ let fun dest_ivar (id,ty,_) = (id,ty)
+ in assocFn (map dest_ivar ivars)
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Add synthesized projn fn defs after eliminating record projections. This  *)
+(* is currently needed because the projection eliminator doesn't handle the  *)
+(* case syntax properly.                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun transRval_gadget E gadget =
+ let val Gadget (qid,support, tydecs, tmdecs,
+                 (ports,latched,ivardecs,guars)) = gadget
+     val support' = trans_support E support
+     val projFn_decs = mk_recd_projns tydecs
+     val tmdecs' = projFn_decs @ map (transRval_decl E) tmdecs
+     val varE = catE (portE ports) (ivarE ivardecs)
+     val ivardecs' = map (trans_ivardec (E,varE)) ivardecs
+     val guars' = map (trans_guar (E,varE)) guars
+ in
+    Gadget (qid, support', tydecs, tmdecs', (ports,latched,ivardecs',guars'))
+ end
+
+fun elim_projections pkgs gdts =
+ let val tyE = mk_tyE pkgs
+     val constE = mk_constE pkgs
+ in
+   map (transRval_gadget (tyE,constE)) gdts
+ end
+
+fun atomic_width atom =
+let open ByteContig
+ in case atom
+     of Bool => 1
+      | Signed i => i
+      | Unsigned i => i
+      | Blob => raise ERR "atomic_width" "Blob"
+end;
+
+val trivEnv = ([],[],atomic_width);
+
+fun gadget_qid (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = qid;
+fun ports_of (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = ports;
+
+fun foo env (id,ty,dir,kind) =
+ let val
+
+fun add_APIs gdts =
+let fun api_of gdt =
+     let val qid = gadget_qid gdt
+         val ports = ports_of gdt
+
+         val contigs = map (Gen_Contig.contig_of env)
+
+in
+end;
+fun CakeML_names pkgs = pkgs;
+
+fun process_model jsonFile =
+ let val ([jpkg],ss) = Json.fromFile jsonFile
+     val pkgs = scrape_pkgs jpkg
+     val gdts1 = mk_gadgets pkgs
+     val gdts2 = elim_projections (map Pkg pkgs) gdts1
+     val gdts3 = add_API gdts2
+     val gdts4 = CakeML_names gdts3
+ in
+    gdts4
+ end;
+
+(*
+val jsonFile = "examples/SW.json";
+val args = [jsonFile];
+val thyName = "SW";
+val dir = ".";
+
+val ([jpkg],ss) = Json.fromFile (parse_args args)
+
+val gadgets = process_model "examples/SW.json";
+
+val [gadget1, gadget2, gadget3] = gdts1;
+
+
+open AADL;
+
+val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = pkgs;
+
+val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg7;
+
+val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg5;
+val [mondec1,mondec2,mondec3] = mondecs;
+val [filtdec1,filtdec2,filtdec3,filtdec4] = filtdecs;
+*)
+
+(*
 fun process_filter intformat flags ((pkgName,fname),thm) =
  let open FileSys
      val _ = stdErr_print ("\nProcessing filter "^Lib.quote fname^".\n")
@@ -225,9 +416,6 @@ fun process_filter intformat flags ((pkgName,fname),thm) =
 *)
 
 (*
-val args = ["examples/SW.json"];
-val thyName = "uxaslite";
-val dir = ".";
 
 val args = ["examples/uxaslite.json"];
 val thyName = "uxaslite";

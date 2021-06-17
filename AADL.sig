@@ -17,9 +17,13 @@ sig
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp
 
- datatype filter
-    = FilterDec (* (name,ports,props) *)
-        of qid * (string * ty * string * string) list * (string * exp) list
+ datatype filter (*  (name,ports,decs,ivars,guars)  *)
+    = FilterDec
+        of qid
+        * (string * ty * string * string) list
+        * tmdec list
+        * (string * ty * exp) list
+        * (string * string * exp) list
 
  datatype monitor  (*  (name,ports,latched,decs,ivars,guars)  *)
     = MonitorDec of qid
