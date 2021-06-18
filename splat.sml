@@ -202,6 +202,12 @@ datatype gadget =
            * (port list * bool * ivardec list * guar list);
 
 
+fun tydecs_of_support (support:support) = List.concat (map (fst o snd) support);
+fun tmdecs_of_support (support:support) = List.concat (map (snd o snd) support);
+
+val sort_tydecs = AADL.sort_tydecs
+val sort_tmdecs = AADL.sort_tmdecs;
+
 fun elim_monitor support (MonitorDec mondec) =
  let val (qid,ports,latched,tmdecs,ivardecs,guars) = mondec
      val tydecs = []  (* Will change *)
@@ -221,7 +227,9 @@ fun elim_filter support (FilterDec filtdec) =
 
 fun configure decls (support,gadgets) =
  let val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = decls
-     val support' = (pkgName,(tydecs,tmdecs)) :: support
+     val tydecs' = sort_tydecs tydecs
+     val tmdecs' = sort_tmdecs tmdecs
+     val support' = (pkgName,(tydecs',tmdecs')) :: support
      val filter_gadgets = List.map (elim_filter support') filtdecs
      val monitor_gadgets = List.map (elim_monitor support') mondecs
  in
@@ -238,6 +246,7 @@ val transRval_decl = PP_CakeML.transRval_decl;
 val mk_tyE = PP_CakeML.mk_tyE;
 val mk_constE = PP_CakeML.mk_constE;
 val mk_recd_projns = PP_CakeML.mk_recd_projns;
+val tydec_to_ty = PP_CakeML.tydec_to_ty
 
 fun catE env1 env2 x =
   case env1 x
@@ -254,7 +263,13 @@ fun transRval_dec E tmdec =
 fun trans_ivardec E (s,ty,e) = (s,ty,transRval E e)
 fun trans_guar E (s1,s2,e) = (s1,s2,transRval E e)
 
-fun trans_support E support = map (I##(I##map (transRval_decl E))) support;
+fun trans_support E support =
+ let fun transFn (s,(tydecs,tmdecs)) =
+       let val tmdecs' = map (transRval_dec E) tmdecs
+       in (s,(tydecs, mk_recd_projns tydecs @ tmdecs'))
+       end
+ in map transFn support
+ end
 
 fun portE ports =
  let fun dest_port (id,ty,_,_) = (id,ty)
@@ -276,13 +291,14 @@ fun transRval_gadget E gadget =
  let val Gadget (qid,support, tydecs, tmdecs,
                  (ports,latched,ivardecs,guars)) = gadget
      val support' = trans_support E support
-     val projFn_decs = mk_recd_projns tydecs
-     val tmdecs' = projFn_decs @ map (transRval_decl E) tmdecs
-     val varE = catE (portE ports) (ivarE ivardecs)
+     val tydecs'  = sort_tydecs tydecs
+     val tmdecs'  = sort_tmdecs (map (transRval_decl E) tmdecs)
+     val tmdecs'' = mk_recd_projns tydecs' @ tmdecs'
+     val varE     = catE (portE ports) (ivarE ivardecs)
      val ivardecs' = map (trans_ivardec (E,varE)) ivardecs
-     val guars' = map (trans_guar (E,varE)) guars
+     val guars'    = map (trans_guar (E,varE)) guars
  in
-    Gadget (qid, support', tydecs, tmdecs', (ports,latched,ivardecs',guars'))
+    Gadget (qid, support', tydecs', tmdecs'', (ports,latched,ivardecs',guars'))
  end
 
 fun elim_projections pkgs gdts =
@@ -296,6 +312,9 @@ fun atomic_width atom =
 let open ByteContig
  in case atom
      of Bool => 1
+      | Char => 1
+      | Float => 4
+      | Double => 8
       | Signed i => i
       | Unsigned i => i
       | Blob => raise ERR "atomic_width" "Blob"
@@ -304,20 +323,57 @@ end;
 val trivEnv = ([],[],atomic_width);
 
 fun gadget_qid (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = qid;
-fun ports_of (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = ports;
+fun gadget_ports (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = ports;
+fun gadget_support (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = supp;
 
-fun foo env (id,ty,dir,kind) =
- let val
+fun gadget_tyE gdt =
+ let val Gadget (_,support, tydecs, _,_) = gdt
+     val all_tydecs = tydecs_of_support support @ tydecs
+     fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
+     val tydec_alist = map mk_tydec_bind all_tydecs
+ in assocFn tydec_alist
+ end
 
-fun add_APIs gdts =
-let fun api_of gdt =
-     let val qid = gadget_qid gdt
-         val ports = ports_of gdt
 
-         val contigs = map (Gen_Contig.contig_of env)
+fun port_ty (id,ty,dir,kind) = ty;
+fun is_in_port (id,ty,"in",kind) = true
+  | is_in_port otherwise = false;
+fun is_out_port (id,ty,"out",kind) = true
+  | is_out_port otherwise = false;
+fun is_event (id,ty,dir,"DataPort") = false
+  | is_event otherwise = true;
 
+fun API_of gdt =
+let val qid = gadget_qid gdt
+    val ports = gadget_ports gdt
+    val inports = filter is_in_port ports
+    val outports = filter is_out_port ports
+    val tyE = gadget_tyE gdt
+    fun mk_inport_buf (iport as (id,ty,dir,kind)) =
+      let val contig = Gen_Contig.contig_of tyE (port_ty iport)
+          val size = Gen_Contig.size_of trivEnv contig
+          val esize = if kind = "EventDataPort" then size+1 else size
+      in
+       (id^"_buffer", esize)
+      end
+    val inport_bufs = map mk_inport_buf inports
+    fun mk_fillFn (iport as (id,ty,dir,kind)) =
+     let val bufName = id^"_buffer"
+         val api_call = String.concat ["#(api_get_",id,") \"\" ", bufName]
+     in ("fill_"^bufName, api_call)
+     end
+    val fillFns = map mk_fillFn inports
+    fun mk_sendFn (oport as (id,ty,dir,kind)) =
+      let val fnName = "send_"^id
+          val api_call = String.concat["#(api_send_",id,") string Utils.emptybuf"]
+      in (fnName, "string", api_call)
+      end
+    val sendFns = map mk_sendFn outports
+    val logInfo = "fun logInfo s = #(api_logInfo) s Utils.emptybuf"
 in
+   (inport_bufs,fillFns,sendFns,logInfo)
 end;
+
 fun CakeML_names pkgs = pkgs;
 
 fun process_model jsonFile =
@@ -325,10 +381,12 @@ fun process_model jsonFile =
      val pkgs = scrape_pkgs jpkg
      val gdts1 = mk_gadgets pkgs
      val gdts2 = elim_projections (map Pkg pkgs) gdts1
-     val gdts3 = add_API gdts2
+     val apis = APIs_of gdts2
+     val stepFns = stepFns_of gdts2
+     val gadgetFns = gadgetFns_of gdts2
      val gdts4 = CakeML_names gdts3
  in
-    gdts4
+    (apis,stepFns,gadgetFns,gdts4)
  end;
 
 (*
@@ -337,12 +395,13 @@ val args = [jsonFile];
 val thyName = "SW";
 val dir = ".";
 
-val ([jpkg],ss) = Json.fromFile (parse_args args)
-
 val gadgets = process_model "examples/SW.json";
 
-val [gadget1, gadget2, gadget3] = gdts1;
+val [gdt1, gdt2, gdt3] = gdts2;
+val [gdt1, gdt2, gdt3] = gadgets;
 
+
+val ([jpkg],ss) = Json.fromFile (parse_args args)
 
 open AADL;
 

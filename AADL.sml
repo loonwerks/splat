@@ -896,6 +896,8 @@ fun tydec_usedBy tydec1 tydec2 =
 (* handling record declarations.                                             *)
 (*---------------------------------------------------------------------------*)
 
+val sort_tydecs = topsort tydec_usedBy;
+
 fun get_tydecls pkgName complist =
  let val datacomps = filter is_data_comp complist
      val uqids = union_qids datacomps
@@ -2429,6 +2431,8 @@ fun mapFail f list =
  in mapf list []
  end
 ;
+
+fun sort_tmdecs list = topsort called_by list;
 
 fun mk_pkg_defs thyName tyEnv (pkgName,(tydecs,tmdecs,filters,monitors)) =
  let val (tyEnv',rst) = revitFail declare_hol_type tydecs tyEnv

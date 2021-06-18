@@ -30,19 +30,35 @@ fun contig_of env ty =
  let open ByteContig
  in case ty
      of BaseTy BoolTy => Basic Bool
-      | BaseTy CharTy => Basic (Unsigned 1)
+      | BaseTy CharTy => Basic Char
       | BaseTy (IntTy (Nat (SOME bits))) => Basic (Unsigned (bits_to_bytes bits))
       | BaseTy (IntTy (Int (SOME bits))) => Basic (Signed (bits_to_bytes bits))
       | BaseTy (IntTy (Nat NONE)) => Basic (Unsigned (current_default_num_width()))
       | BaseTy (IntTy (Int NONE)) => Basic (Signed (current_default_num_width()))
-      | BaseTy FloatTy  => raise ERR "FloatTy" "not handled yet"
-      | BaseTy DoubleTy => raise ERR "DoubleTy" "not handled yet"
+      | BaseTy FloatTy  => Basic Float
+      | BaseTy DoubleTy => Basic Double
       | BaseTy other    => raise ERR "contig_of" "unhandled base type"
-      | NamedTy qid => assoc qid env
+      | NamedTy qid =>
+          (case env qid
+            of NONE => raise ERR "contig_of" ("unknown type: "^qid_string qid)
+             | SOME ty => contig_of env ty)
       | RecdTy (qid, fields) => Recd (map (I##contig_of env) fields)
       | ArrayTy (elty,[dim]) => Array (contig_of env elty, intLit (dest_dim dim))
       | ArrayTy (elty,otherdims) => raise ERR "contig_of" "only single-dimension arrays handled"
  end
+
+(*
+fun mk_contig_env tydecs =
+ let fun itFn tydec env =
+       case tydec
+        of EnumDec (qid,slist) => (qid, Basic(Unsigned 1))
+         | RecdDec (qid,fields) => (qid, contig_of env (RecdTy(qid,fields)))
+         | ArrayDec (qid,ty) => ??
+         | UnionDec (qid,choices) =>
+
+ in rev_itlist itFn [] tydecs
+ end
+*)
 
 fun sumlist [] = 0
   | sumlist (h::t) = h + sumlist t;

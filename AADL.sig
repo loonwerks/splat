@@ -10,7 +10,7 @@ sig
  datatype tydec
     = EnumDec of qid * string list
     | RecdDec of qid * (string * ty) list
-    | ArrayDec of qid * ty
+    | ArrayDec of qid * ty   (* ty is an ArrayTy *)
     | UnionDec of qid * (string * ty) list
 
  datatype tmdec
@@ -74,4 +74,6 @@ sig
  val tydec_qid : tydec -> qid
  val tmdec_qid : tmdec -> qid
 
+ val sort_tydecs : tydec list -> tydec list
+ val sort_tmdecs : tmdec list -> tmdec list
 end
