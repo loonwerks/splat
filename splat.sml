@@ -381,13 +381,15 @@ fun process_model jsonFile =
      val pkgs = scrape_pkgs jpkg
      val gdts1 = mk_gadgets pkgs
      val gdts2 = elim_projections (map Pkg pkgs) gdts1
-     val apis = APIs_of gdts2
-     val stepFns = stepFns_of gdts2
+     val apis = map API_of gdts2
+ in
+    (apis,gdts2)
+ end;
+
+(*     val stepFns = stepFns_of gdts2
      val gadgetFns = gadgetFns_of gdts2
      val gdts4 = CakeML_names gdts3
- in
-    (apis,stepFns,gadgetFns,gdts4)
- end;
+*)
 
 (*
 val jsonFile = "examples/SW.json";
@@ -395,9 +397,10 @@ val args = [jsonFile];
 val thyName = "SW";
 val dir = ".";
 
-val gadgets = process_model "examples/SW.json";
+val (apis,gadgets) = process_model "examples/SW.json";
 
 val [gdt1, gdt2, gdt3] = gdts2;
+val [api1,api2,api3] = apis
 val [gdt1, gdt2, gdt3] = gadgets;
 
 

@@ -90,6 +90,10 @@ fun pp_exp depth pkgName exp =
                | trans exp (d::dims) = trans (Fncall (("Array","sub"),[exp,d])) dims
          in pp_exp depth pkgName (trans A dims)
          end
+      | Fncall ((_,"List"),elist) => PrettyBlock(0,true,[],
+          [PrettyString"[",
+            pp_list_with_style false Comma [emptyBreak] (pp_exp (depth-1) pkgName ) elist,
+            PrettyString"]"])
       | Fncall ((_,"Comment"),elist) =>
             gen_pp_list emptyString [Line_Break] (pp_exp (depth-1) pkgName) elist
       | Fncall ((_,"unitExp"),[]) => PrettyString "()"

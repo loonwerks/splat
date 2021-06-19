@@ -46,6 +46,9 @@ datatype bexp
 
 datatype atom
   = Bool
+  | Char
+  | Float
+  | Double
   | Signed of int
   | Unsigned of int
   | Blob;
@@ -135,6 +138,9 @@ fun pp_atom atom =
  let open PP
  in case atom
      of Bool       => add_string "Bool"
+      | Char       => add_string "Char"
+      | Float      => add_string "Float"
+      | Double     => add_string "Double"
       | Signed i   => add_string ("i"^Int.toString (i * 8))
       | Unsigned i => add_string ("u"^Int.toString (i * 8))
       | Blob       => add_string "Raw"
@@ -356,21 +362,21 @@ fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) A bexp =
       | DleA (r,Loc lval) =>
         (case lookup(lvalMap,lval)
           of NONE => NONE
-           | SOME(Double,(i,width)) =>
+           | SOME(dkind,(i,width)) =>
          case total_bytes_of A i width
           of NONE => NONE
            | SOME bytes =>
-	 case dvalFn Double bytes
+	 case dvalFn dkind bytes
           of NONE => NONE
           | SOME r1 => SOME (Real.<=(r,r1)))
       | DleB (Loc lval,r) =>
         (case lookup(lvalMap,lval)
           of NONE => NONE
-           | SOME(Double,(i,width)) =>
+           | SOME(dkind,(i,width)) =>
          case total_bytes_of A i width
           of NONE => NONE
            | SOME bytes =>
-	 case dvalFn Double bytes
+	 case dvalFn dkind bytes
           of NONE => NONE
            | SOME r1 => SOME (Real.<=(r1,r)))
       | otherwise => NONE
