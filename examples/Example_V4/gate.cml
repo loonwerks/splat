@@ -1200,7 +1200,7 @@ fun fill_TrustedIds_buffer () =
   in  #(api_get_TrustedIds) "" lcTrustedIds_buffer
   end;
 
-fun send_MissionCommand_out string = ()
+fun send_MissionCommand_out string =
   #(api_send_MissionCommand_out) string Utils.emptybuf;
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
