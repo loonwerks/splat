@@ -15,6 +15,15 @@ fun pp_pkg_qid pkgName (pkg,s) =
     if pkg=pkgName then pp_qid ("",s) else pp_qid (pkg,s);
 
 (*---------------------------------------------------------------------------*)
+(* CakeML Prettyprinters for Contig Types                                    *)
+(*---------------------------------------------------------------------------*)
+(*
+fun pp_contig depth contig =
+ let open ByteContig
+ in case contig
+     of
+*)
+(*---------------------------------------------------------------------------*)
 (* CakeML Prettyprinters for AST                                             *)
 (*---------------------------------------------------------------------------*)
 
@@ -37,7 +46,16 @@ fun pp_ty depth pkgName ty =
          PrettyBlock(2,true,[],
             [PrettyString"(",
              pp_ty (depth-1) pkgName eltype, PrettyBreak (1,0), PrettyString "array)"])
-     | RecdTy(qid,fields) => PrettyString"<RecdTy>!?"
+     | RecdTy(qid,fields) =>
+       let fun pp_field(s,ty) = PrettyBlock(2,true,[],
+                 [PrettyString s, Space, PrettyString ": ", pp_ty (depth-1) pkgName ty])
+       in PrettyBlock(3,true,[],
+           [PrettyString ("("^qid_string qid^")"), Line_Break,
+            PrettyString "{",
+            PrettyBlock(1,true,[],
+                 [pp_list_with_style false Line_Break [emptyBreak] pp_field fields]),
+            PrettyString"}"])
+       end
  end
 
 fun pp_exp depth pkgName exp =
@@ -90,6 +108,13 @@ fun pp_exp depth pkgName exp =
                | trans exp (d::dims) = trans (Fncall (("Array","sub"),[exp,d])) dims
          in pp_exp depth pkgName (trans A dims)
          end
+      | Fncall ((_,"App"),elist) =>
+         if null elist then PrettyString "<APP(empty)>"
+         else
+          PrettyBlock(2,false,[],
+           [PrettyString"(",
+            pp_list_with_style false Space [emptyBreak] (pp_exp (depth-1) pkgName) elist,
+            PrettyString")"])
       | Fncall ((_,"List"),elist) => PrettyBlock(0,true,[],
           [PrettyString"[",
             pp_list_with_style false Comma [emptyBreak] (pp_exp (depth-1) pkgName ) elist,
@@ -111,6 +136,27 @@ fun pp_exp depth pkgName exp =
                Space, PrettyString"in",
                Space, pp_exp (depth-1) pkgName res,
                Line_Break, PrettyString "end"])
+	end
+      | Fncall(("","raise"),list) =>
+         PrettyBlock(2,true,[],
+              [PrettyString"raise ",
+               gen_pp_list emptyString [Line_Break]
+                      (pp_exp (depth-1) pkgName) list])
+      | Fncall ((_,"CASE"),elist) =>
+        if length elist < 2 then
+           PrettyString "<MALFORMED CASE EXPRESSION>"
+        else
+	let fun dest_clause exp =
+		case exp
+                 of Fncall(("","App"),[e1,e2]) => (e1,e2)
+                  |  otherwise  =>  raise ERR "pp_exp" "CASE badly formed"
+            val scrutinee = hd elist
+            val clauses = enumerate 1 (map dest_clause (tl elist))
+        in PrettyBlock(3,true,[],
+              [PrettyString"case ", pp_exp (depth-1) pkgName scrutinee, Line_Break,
+               PrettyBlock(0,true,[],
+                 [gen_pp_list emptyString [Line_Break]
+                      (pp_case_clause (depth-1) pkgName) clauses])])
 	end
       | Fncall(("","Tuple"),list) =>
           if null list then
@@ -189,6 +235,13 @@ and pp_valbind d pkgName (Binop(Equal,e1,e2)) =
                         pp_exp (d-1) pkgName e2])
     end
   | pp_valbind other input stuff = PolyML.PrettyString"!!<MALFORMED LET BINDING>!!"
+and
+   pp_case_clause d pkgName (n,(e1,e2)) =
+    let open PolyML
+    in PrettyBlock(3,true,[],
+        [if n = 1 then PrettyString "of " else PrettyString " | ",
+         pp_exp (d-1) pkgName e1, PrettyString " =>", Space, pp_exp (d-1) pkgName e2])
+    end
 ;
 
 fun pp_decl depth pkgName decl =
@@ -987,6 +1040,47 @@ fun pp_monitor depth mondec =
      val decs2 = stateVars_dec :: (decs @ [stepFn])
  in
   end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
+ end
+
+fun pp_api depth (structName,inbufs,fillFns,sendFns,logInfo) =
+ let open PolyML
+     fun pp_inbuf d (bufName,n) =
+         PrettyBlock(2,true,[],
+           [PrettyString "val ", PrettyString bufName, PrettyString " = " ,
+            PrettyString "Word8Array.array ", PrettyString (Int.toString n),
+            PrettyString " Utils.w8zero;"
+           ])
+     fun pp_fillFn d (bufName,api_call) =
+         PrettyBlock(2,true,[],
+           [PrettyString"fun ", PrettyString ("fill_"^bufName), PrettyString " () = " ,
+            Line_Break,
+            PrettyBlock(0,true,[],
+               [PrettyString "let val () = Utils.clear_buf ",
+                PrettyString bufName, Line_Break,
+                 PrettyString "in ", PrettyString api_call, Line_Break,
+                 PrettyString "end;"])
+           ])
+     fun pp_sendFn d (portName,api_call) =
+         PrettyBlock(2,true,[],
+           [PrettyString"fun ", PrettyString ("send_"^portName), PrettyString " string = " ,
+            PrettyString api_call
+           ])
+ in
+ if depth = 0 then PrettyString "<API-structure>"
+   else
+    PrettyBlock(2,true,[],
+        [PrettyString ("structure "^structName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         end_pp_list Line_Break Line_Break (pp_inbuf  (depth-1)) inbufs,  Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_fillFn (depth-1)) fillFns, Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_sendFn (depth-1)) sendFns, Line_Break,
+	 Line_Break,
+         PrettyString logInfo,      Line_Break,
+	 Line_Break,
+         PrettyString "end"
+        ])
  end
 
 (*---------------------------------------------------------------------------*)

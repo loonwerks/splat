@@ -301,12 +301,8 @@ fun transRval_gadget E gadget =
     Gadget (qid, support', tydecs', tmdecs'', (ports,latched,ivardecs',guars'))
  end
 
-fun elim_projections pkgs gdts =
- let val tyE = mk_tyE pkgs
-     val constE = mk_constE pkgs
- in
-   map (transRval_gadget (tyE,constE)) gdts
- end
+fun elim_projections tyE tmE gdts =
+   map (transRval_gadget (tyE,tmE)) gdts
 
 fun atomic_width atom =
 let open ByteContig
@@ -331,9 +327,9 @@ fun gadget_tyE gdt =
      val all_tydecs = tydecs_of_support support @ tydecs
      fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
      val tydec_alist = map mk_tydec_bind all_tydecs
- in assocFn tydec_alist
+ in
+   tydec_alist
  end
-
 
 fun port_ty (id,ty,dir,kind) = ty;
 fun is_in_port (id,ty,"in",kind) = true
@@ -348,7 +344,7 @@ let val qid = gadget_qid gdt
     val ports = gadget_ports gdt
     val inports = filter is_in_port ports
     val outports = filter is_out_port ports
-    val tyE = gadget_tyE gdt
+    val tyE = assocFn (gadget_tyE gdt)
     fun mk_inport_buf (iport as (id,ty,dir,kind)) =
       let val contig = Gen_Contig.contig_of tyE (port_ty iport)
           val size = Gen_Contig.size_of trivEnv contig
@@ -360,18 +356,19 @@ let val qid = gadget_qid gdt
     fun mk_fillFn (iport as (id,ty,dir,kind)) =
      let val bufName = id^"_buffer"
          val api_call = String.concat ["#(api_get_",id,") \"\" ", bufName]
-     in ("fill_"^bufName, api_call)
+     in (bufName, api_call)
      end
     val fillFns = map mk_fillFn inports
     fun mk_sendFn (oport as (id,ty,dir,kind)) =
-      let val fnName = "send_"^id
-          val api_call = String.concat["#(api_send_",id,") string Utils.emptybuf"]
-      in (fnName, "string", api_call)
+      let val api_call = String.concat["#(api_send_",id,") string Utils.emptybuf;"]
+      in (id, api_call)
       end
     val sendFns = map mk_sendFn outports
-    val logInfo = "fun logInfo s = #(api_logInfo) s Utils.emptybuf"
+    val logInfo = "fun logInfo s = #(api_logInfo) s Utils.emptybuf;"
+    val fodder = ("API",inport_bufs,fillFns,sendFns,logInfo)
+    val pretty = PP_CakeML.pp_api ~1 fodder
 in
-   (inport_bufs,fillFns,sendFns,logInfo)
+  pretty
 end;
 
 fun CakeML_names pkgs = pkgs;
@@ -379,17 +376,14 @@ fun CakeML_names pkgs = pkgs;
 fun process_model jsonFile =
  let val ([jpkg],ss) = Json.fromFile jsonFile
      val pkgs = scrape_pkgs jpkg
+     val tyE = mk_tyE (map Pkg pkgs)
+     val tmE = mk_constE (map Pkg pkgs)
      val gdts1 = mk_gadgets pkgs
-     val gdts2 = elim_projections (map Pkg pkgs) gdts1
+     val gdts2 = elim_projections tyE tmE gdts1
      val apis = map API_of gdts2
  in
     (apis,gdts2)
  end;
-
-(*     val stepFns = stepFns_of gdts2
-     val gadgetFns = gadgetFns_of gdts2
-     val gdts4 = CakeML_names gdts3
-*)
 
 (*
 val jsonFile = "examples/SW.json";
@@ -398,11 +392,18 @@ val thyName = "SW";
 val dir = ".";
 
 val (apis,gadgets) = process_model "examples/SW.json";
-
-val [gdt1, gdt2, gdt3] = gdts2;
-val [api1,api2,api3] = apis
 val [gdt1, gdt2, gdt3] = gadgets;
+val [api1,api2,api3] = apis
 
+List.app (print o PPfns.pp_string) apis;
+
+val support = hd (gadget_support gdt1);
+val tydecs = fst(snd support);
+val tys = map tydec_to_ty tydecs;
+
+contig_of tyE (hd tys);
+
+val gdt1_tyE = gadget_tyE gdt1;
 
 val ([jpkg],ss) = Json.fromFile (parse_args args)
 

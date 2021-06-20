@@ -4,6 +4,8 @@ struct
 open Lib Feedback MiscLib AST;
 open ByteContig;
 
+local open PP_CakeML in end;
+
 
 val ERR = mk_HOL_ERR "Gen_Contig";
 
@@ -68,33 +70,18 @@ let open ByteContig
       | Union choices => maxlist (map (size_of env o snd) choices)
 end;
 
-(*
-val indty = Type.ind;
-val _ = new_type("ptree",0);
-val ptree = mk_type("ptree",[]);
-
-fun mk_array_term eltFn_term =
- let val mk_array = mk_var("mk_array", (ptree --> ind) --> ptree --> ind)
- in mk_comb(mk_array,eltFn_term)
- end;
-
-val mk_bool_term = mk_var ("mk_bool", ptree --> ind)
-val mk_char_term = mk_var ("mk_char", ptree --> ind)
-val mk_intLE_term = mk_var ("mk_intLE", ptree --> ind)
-val mk_floatLE_term = mk_var ("mk_floatLE", ptree --> ind);
-*)
-val mk_bool_node = ConstExp(IdConst("Decode","mk_bool"));
-val mk_char_node = ConstExp(IdConst("Decode","mk_char"));
-val mk_intLE_node = ConstExp(IdConst("Decode","mk_intLE"));
-val mk_floatLE_node = ConstExp(IdConst("Decode","mk_floatLE"));
-fun mk_array_node eltFn = Fncall(("Decode","mk_array"),[eltFn]);
+val mk_bool_node = VarExp"mk_bool"
+val mk_char_node = VarExp "mk_char"
+val mk_intLE_node = VarExp "mk_intLE"
+val mk_floatLE_node = VarExp "mk_floatLE"
+fun mk_array_node eltFn = Fncall(("ByteContig","mk_array"),[eltFn]);
 
 (*---------------------------------------------------------------------------*)
 (* The decoder will be given a parse tree where the leaves are annotated     *)
 (* with atoms telling what kind of interpretation to give.                   *)
 (*---------------------------------------------------------------------------*)
 
-fun decoder_of decodeE ty =
+fun decoder_of tyE decodeE ty =
  case ty
   of BaseTy BoolTy    => mk_bool_node
    | BaseTy CharTy    => mk_char_node
@@ -102,54 +89,87 @@ fun decoder_of decodeE ty =
    | BaseTy FloatTy   => mk_floatLE_node
    | BaseTy DoubleTy  => mk_floatLE_node
    | BaseTy other => raise ERR "decoder_of" "unhandled base type"
-   | ArrayTy (elty,dims) => mk_array_node (decoder_of decodeE elty)
+   | ArrayTy (elty,dims) => mk_array_node (decoder_of tyE decodeE elty)
    | NamedTy qid =>
-       (case decodeE qid
+       (case tyE qid
          of NONE => raise ERR "decoder_of" ("unknown type: "^qid_string qid)
-          | SOME decoder => decoder)
+          | SOME ty' => decoder_of tyE decodeE ty')
    | RecdTy (qid, fields) =>
        (case decodeE qid
          of NONE => raise ERR "decoder_of" ("unknown type: "^qid_string qid)
           | SOME decoder => decoder)
 ;
 
-(*---------------------------------------------------------------------------*)
-(*  (qid,[f1:ty1, ..., fn:tyn]) => mk_qid [|ty1|] ...  [|tyn|]               *)
-(*---------------------------------------------------------------------------*)
-
-fun ptrees_of_recd ptree =
- case ptree
-  of RECD fields => map snd fields
-   | otherwise => raise ERR "ptrees_of_RECD" "expected a RECD";
-
-fun appFn f x = f x;
-
-val decodeE = PP_CakeML.assocFn [] : qid -> AST.exp option;
-
 fun listLit elts = Fncall(("","List"), elts);
 
-fun recd_decoder_def ty decodeE =
- let open listSyntax
+fun uptoFn f lo hi =
+  let fun iter i = if i > hi then [] else f i::iter (i+1)
+  in iter lo
+  end
+
+fun AppExp elist = Fncall(("","App"), elist);
+
+(*---------------------------------------------------------------------------*)
+(*  fun decode_X ptree =                                                     *)
+(*    case ptree                                                             *)
+(*     of RECD [a,...,k] => X (decode1 (snd a) ... (decodek (snd k))         *)
+(*      | otherwise => raise Utils.ERR "decode_X" "expected a RECD"          *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun mk_decoder_def tyE decodeE ty =
+ let val dummyTy = NamedTy("","dummyTy")
  in
  case ty
   of RecdTy (qid, fields) =>
-     let val field_decoders = map (decoder_of decodeE o snd) fields
+     let val decoderName = "decode_"^snd qid
+         val field_decoders = map (decoder_of tyE decodeE o snd) fields
+         val vars = uptoFn (fn i => VarExp("v"^Int.toString i)) 1 (length fields)
+         val varspat = listLit vars
+         val recdpat = Fncall(("ByteContig","RECD"),[varspat])
          val recdName = snd qid
-         fun recd_constr e = Fncall(("Decode",recdName^"Recd"),[e])
+         fun mk_recd elist = Fncall(("Types",recdName^"Recd"),elist)
+         fun mk_decode_app d v = AppExp [d, Fncall(("","snd"),[v])]
+         val case_rhs = mk_recd (map2 mk_decode_app field_decoders vars)
+         val main_clause = (recdpat,case_rhs)
+         val errpat = VarExp"otherwise"
+         val err_rhs = Fncall(("","raise"),
+                       [VarExp"Utils.ERR",ConstExp(StringLit decoderName),
+                        ConstExp(StringLit "unexpected parse tree")])
          val ptreeVar = VarExp "ptree"
-         val decoder_LHS = Fncall(("Decode","decode_"^snd qid),[ptreeVar])
-         val ptrees_app = Fncall(("Decode","ptrees_of_recd"),[ptreeVar])
-         val appFn_node = ConstExp(IdConst("Utils","appFn"))
-         val map2node =
-	     Fncall(("Utils","map2"),
-                    [appFn_node, listLit field_decoders,ptrees_app])
+         val case_exp = Fncall(("","CASE"),
+                         [ptreeVar,AppExp[recdpat,case_rhs],AppExp[errpat,err_rhs]])
+         val decoder_LHS = Fncall(("Parse",decoderName),[ptreeVar])
      in
-       Binop(Equal,decoder_LHS, recd_constr map2node)
+        AADL.FnDec(("",decoderName),[("ptree",dummyTy)],NamedTy qid,case_exp)
      end
   | otherwise => raise ERR "recd_decoder_def" "expected a RecdTy"
  end;
 
 val tydec_to_ty = PP_CakeML.tydec_to_ty;
+val assocFn = PP_CakeML.assocFn;
+
+fun qid_of_recdTy (RecdTy(qid,_)) = qid
+  | qid_of_recdTy other = raise ERR "qid_of_recdTy" "";
+
+val is_recd_ty = Lib.can qid_of_recdTy;
+
+fun mk_decodeE tylist =
+  let fun munge (qid as(pkgName,tyName)) =
+         (qid,ConstExp(IdConst("Parse","decode_"^tyName)))
+  in mapfilter (munge o qid_of_recdTy) tylist
+  end;
+
+fun decoders tyE tylist =
+ let val decodeE = assocFn(mk_decodeE tylist)
+     fun itFn ty defs =
+       if is_recd_ty ty then
+          mk_decoder_def tyE decodeE ty::defs
+       else defs
+ in
+   List.rev(rev_itlist itFn tylist [])
+ end
+
 
 (*
 fun atomic_width atom =
