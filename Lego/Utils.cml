@@ -1,0 +1,293 @@
+structure Utils =
+struct
+
+exception ERR string string;
+
+fun stub s = raise ERR s "stub";
+
+fun total f x = Some (f x) handle _ => None;
+
+fun assert b s = if b then () else raise ERR s "assertion failure";
+
+val debugLevel = Ref 0;
+
+fun print s = if !debugLevel < 1 then () else TextIO.print s;
+
+fun println s = print (s^"\n");
+
+fun cons h t = h::t;
+
+fun first pred list =
+ case list
+  of [] => raise ERR "first" ""
+   | h::t => if pred h then h else first pred t;
+
+fun quote s = String.concat ["\"",s,"\""];
+
+fun take_drop n list =
+ if n <= List.length list
+  then Some(List.take list n,List.drop list n)
+  else None;
+
+fun front_last list =
+ let val _ = assert (not (List.null list)) "front_last: null input list"
+     fun flacc l acc =
+      case l
+       of [x] => (List.rev acc,x)
+        | h::t => flacc t (h::acc)
+ in flacc list []
+ end
+
+val w8char = Char.chr o Word8.toInt;
+val charw8 = Word8.fromInt o Char.ord;
+
+fun divmod i n = (Int.div i n, Int.mod i n);
+
+fun rev_itlist f list acc =
+ case list
+  of [] => acc
+   | h::t => rev_itlist f t (f h acc);
+
+fun itlist f list b =
+ case list
+  of [] => b
+   | h::t => f h (itlist f t b);
+
+fun upto lo hi = if lo > hi then [] else lo::upto(lo+1) hi;
+
+fun mapArray f array =
+  let val elts = Array.foldr cons [] array
+  in List.map f elts
+  end;
+
+fun mapByteArray f array =
+  let val top = Word8Array.length array
+      fun itFn i acc =
+          if i < top then
+	     itFn (i+1) (f (Word8Array.sub array i)::acc)
+          else List.rev acc
+  in itFn 0 []
+  end;
+
+fun firstOpt f list =
+ case list
+  of [] => None
+   | h::t =>
+ case f h
+  of None => firstOpt f t
+   | Some x => Some h;
+
+fun concatOpts optlist =
+    Some(List.concat(List.map Option.valOf optlist)) handle _ => None;
+
+fun strcatOpts optlist =
+    Some(String.concat(List.map Option.valOf optlist)) handle _ => None;
+
+fun filterOpt pred list = let
+   fun accFn list acc =
+    case list
+     of [] => Some (List.rev acc)
+      | h::t =>
+        case pred h
+         of None => None
+          | Some True => accFn t (h::acc)
+          | Some False => accFn t acc
+ in
+   accFn list []
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* move from 'a option option to 'a option                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun dropOpt errstring optOpt =
+ case optOpt
+  of None => None
+   | Some(Some x) => Some x
+   | Some None => raise ERR "dropOpt" errstring;
+
+fun pow b k =
+ let fun accFn k acc = if k <= 0 then acc else accFn (k-1) (acc * b)
+ in accFn k 1
+ end
+
+local
+   val pow2Arr = Array.fromList (List.map (pow 2) (upto 0 512));
+in
+fun twoExp n = Array.sub pow2Arr n handle _ => pow 2 n
+end;
+
+val w8zero = Word8.fromInt 0;
+val w64FF = Word64.fromInt 255;
+
+fun bytes2string bytes = String.implode (List.map w8char bytes);
+
+fun byte_array_fromList list =
+ let val arr = Word8Array.array (List.length list) w8zero
+     fun appFn i list =
+        case list
+         of [] => ()
+          | h::t => (Word8Array.update arr i h; appFn (i+1) t)
+ in appFn 0 list;
+    arr
+ end;
+
+val emptybuf = Word8Array.array 0 w8zero;
+val singlebuf = Word8Array.array 1 (Word8.fromInt 0);
+
+fun clear_buf buffer =
+ let val len = Word8Array.length buffer
+     fun zero i = Word8Array.update buffer i w8zero
+     fun loop j = if j < len then (zero j; loop (j+1)) else ()
+ in
+    loop 0
+ end;
+
+fun buf2string buf = Word8Array.substring buf 0 (Word8Array.length buf);
+
+fun string2buf s buf =
+ if String.size s <= Word8Array.length buf then
+   Word8Array.copyVec s 0 (String.size s) buf 0
+ else
+   raise ERR "string2buf" "string too big for buffer";
+
+fun file2buf fileName buf =
+    let val istrm = TextIO.openIn fileName
+        val () = print(String.concat
+                     ["Taking input from file : ",fileName,".\n"])
+        val s = TextIO.inputAll istrm
+        val () = TextIO.closeIn istrm
+    in
+       string2buf s buf
+    end
+
+fun tilde_to_uminus ch = if ch = #"~" then #"-" else ch;
+
+fun i2d i =
+ let val s = Int.toString i
+     val s' = String.translate tilde_to_uminus s
+ in
+  Double.fromString (s' ^ ".0")
+ end
+
+fun array_existsI pred arr =
+ let val len = Array.length arr
+ in if len = 0 then False
+    else List.exists pred (upto 0 (len - 1))
+ end
+
+fun copies x n = if n <= 0 then [] else x::copies x (n-1);
+
+fun boolVal n =
+  if n = 0 then False else
+  if n = 1 then True
+  else raise ERR "boolVal" "";
+
+fun byteAt w n =
+  Word8.fromInt
+    (Word64.toInt
+      (Word64.andb (Word64.>> w (n*8)) w64FF));
+
+fun pack_double buf index d =
+ let fun write n x = Word8Array.update buf n x
+ in
+    write index (byteAt d 0)
+  ; write (index+1) (byteAt d 1)
+  ; write (index+2) (byteAt d 2)
+  ; write (index+3) (byteAt d 3)
+  ; write (index+4) (byteAt d 4)
+  ; write (index+5) (byteAt d 5)
+  ; write (index+6) (byteAt d 6)
+  ; write (index+7) (byteAt d 7)
+ end;
+
+fun unpack_double buf index =
+ let fun elt n = Word8Array.sub buf n
+ in  Word64.concatAll
+       (elt index)     (elt (index+1)) (elt (index+2)) (elt (index+3))
+       (elt (index+4)) (elt (index+5)) (elt (index+6)) (elt (index+7))
+ end;
+
+fun int2octal n =
+let fun divAcc n acc =
+      if n < 8 then n::acc
+      else let val (d,r) = divmod n 8 in divAcc d (r::acc) end
+in String.concat
+        (List.map Int.toString (divAcc n []))
+end
+
+fun pack_u8 n = String.str (Char.chr n);
+
+fun pad_left x n list =
+ let val d = n - List.length list
+     val _ = assert (d >= 0) "pad_left: list too long"
+ in copies x d @ list
+ end
+
+fun divAcc n acc =
+ if n < 256 then n::acc
+ else
+   let val (d,r) = divmod n 256 in divAcc d (r::acc) end
+
+fun pack_u16 n =
+let val ilist = pad_left 0 2 (divAcc n [])
+in
+  String.implode (List.map Char.chr ilist)
+end
+
+fun pack_u32 n =
+let val ilist = pad_left 0 4 (divAcc n [])
+in
+  String.implode (List.map Char.chr ilist)
+end
+
+fun pack_u64 n =
+let val ilist = pad_left 0 8 (divAcc n [])
+in
+  String.implode (List.map Char.chr ilist)
+end
+
+fun pack_u16LE n =
+let val ilist = pad_left 0 2 (divAcc n [])
+in
+  String.implode
+    (List.map Char.chr (List.rev ilist))
+end
+
+fun pack_u32LE n =
+let val ilist = pad_left 0 4 (divAcc n [])
+in
+  String.implode
+     (List.map Char.chr (List.rev ilist))
+end
+
+fun pack_u64LE n =
+let val ilist = pad_left 0 8 (divAcc n [])
+in
+  String.implode
+    (List.map Char.chr (List.rev ilist))
+end
+
+fun pack_byte_array bA = Word8Array.substring bA 0 (Word8Array.length bA);
+
+fun unsignedBE bytes =
+ let fun accFn list acc =
+         case list
+          of [] => acc
+           | byte::t => accFn t (Word8.toInt byte + 256 * acc)
+ in accFn bytes 0
+ end
+
+fun twos_compBE bytes =
+ let val sup = twoExp (List.length bytes)
+     val half = sup div 2
+     val n = unsignedBE bytes
+  in
+    if n < half then n else n - sup
+ end;
+
+fun unsignedLE bytes = unsignedBE (List.rev bytes)
+fun twos_compLE bytes = twos_compBE (List.rev bytes)
+
+
+end (* Utils *)
