@@ -3,6 +3,9 @@ struct
 
 open Lib Feedback MiscLib PPfns AST AADL;
 
+type contig = ByteContig.contig;
+type inport = string * ty * string * string;
+
 val ERR = mk_HOL_ERR "PP_CakeML";
 fun unimplemented s = ERR s "unimplemented";
 
@@ -11,18 +14,66 @@ fun pp_qid ("",s) = s
 
 fun qid_string p = pp_qid p;
 
-fun pp_pkg_qid pkgName (pkg,s) =
+fun pp_pkg_qid pkgName (qid as (pkg,s)) =
+ if pkg = "" then pp_qid qid else
+ if pkgName="Defs" then pp_qid ("",s) else pp_qid ("Defs",s);
+
+(*fun pp_pkg_qid pkgName (pkg,s) =
     if pkg=pkgName then pp_qid ("",s) else pp_qid (pkg,s);
+ *)
+
+fun AppExp elist = Fncall(("","App"), elist);
+fun listLit elts = Fncall(("","List"), elts);
+fun mk_tuple elts = Fncall(("","Tuple"), elts);
+val boolTy = BaseTy BoolTy;
+val dummyTy = NamedTy("","dummyTy");
+fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
+fun mk_tuple list = Fncall(("","Tuple"),list)
+fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
+
+fun letExp binds exp =
+    let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
+    in Fncall(("","LET"),eqs@[exp])
+    end;
 
 (*---------------------------------------------------------------------------*)
-(* CakeML Prettyprinters for Contig Types                                    *)
+(* Translate contig types into AST expressions                               *)
 (*---------------------------------------------------------------------------*)
-(*
-fun pp_contig depth contig =
+
+fun atom_to_exp atm =
+ let open ByteContig
+     fun mkC s = AST.ConstExp (AST.IdConst("",s))
+ in case atm
+     of Bool => mkC "bool"
+      | Char => mkC "char"
+      | Float => mkC "f32"
+      | Double => mkC "f64"
+      | Signed n => mkC ("i"^Int.toString (n * 8))
+      | Unsigned n => mkC("u"^Int.toString (n * 8))
+      | Blob => mkC"Blob"
+ end
+
+fun contig_to_exp decEnv contig =
  let open ByteContig
  in case contig
-     of
-*)
+     of Void => ConstExp (IdConst("ByteContig","Void"))
+      | Basic atm => atom_to_exp atm
+      | Declared s => contig_to_exp decEnv (assoc s decEnv)
+      | Raw (intLit n) => Fncall(("","mk_Raw"),[mk_uintLit n])
+      | Raw other => raise ERR "contig_to_exp" "Raw expects integer literal"
+      | Array (c,intLit n) =>
+        Fncall(("","mk_Array"), [contig_to_exp decEnv c, mk_uintLit n])
+      | Array other => raise ERR "contig_to_exp" "Array expects integer literal dimenstion"
+      | Recd fields =>
+         let fun mk_field(s,c) =
+              mk_tuple [ConstExp (StringLit s),contig_to_exp decEnv c]
+         in Fncall(("","mk_Recd"),[listLit(map mk_field fields)])
+         end
+      | Union choices => raise ERR "contig_to_exp" "Union not yet handled"
+      | Assert b => raise ERR "contig_to_exp" "Assert not yet handled"
+
+ end
+
 (*---------------------------------------------------------------------------*)
 (* CakeML Prettyprinters for AST                                             *)
 (*---------------------------------------------------------------------------*)
@@ -70,7 +121,14 @@ fun pp_exp depth pkgName exp =
       | ConstExp (CharLit c) => PrettyString ("'#"^Char.toString c^"'")
       | ConstExp (StringLit s) => PrettyString (Lib.quote(String.toString s))
       | ConstExp (IntLit{kind, value}) => PrettyString (Int.toString value)
-      | ConstExp (FloatLit r) => PrettyString (Real.toString r)
+      | ConstExp (FloatLit r) =>
+          if Real.sign r < 0 then
+            PrettyString (String.concat
+              ["(Double.~(Double.fromString ",
+               Lib.quote (Real.toString (Real.abs r)), "))"])
+          else
+            PrettyString (String.concat
+              ["(Double.fromString ", Lib.quote (Real.toString r), ")"])
       | ConstExp (RegexLit r) => PrettyString ("<RegexLit>!?")
       | Unop(Not,e) => PrettyBlock(2,true,[],
            [PrettyString"not",PrettyBreak(0,1),
@@ -95,8 +153,8 @@ fun pp_exp depth pkgName exp =
       | Binop(Minus,e1,e2) => pp_infix depth pkgName ("-",e1,e2)
       | Binop(Multiply,e1,e2) => pp_infix depth pkgName ("*",e1,e2)
       | Binop(Plus,e1,e2) => pp_infix depth pkgName ("+",e1,e2)
-      | Binop(Divide,e1,e2) => pp_exp depth "" (Fncall (("Int","div"),[e1,e2]))
-      | Binop(Modulo,e1,e2) => pp_exp depth "" (Fncall (("Int","mod"),[e1,e2]))
+      | Binop(Divide,e1,e2) => pp_exp depth "" (Fncall (("","Int.div"),[e1,e2]))
+      | Binop(Modulo,e1,e2) => pp_exp depth "" (Fncall (("","Int.mod"),[e1,e2]))
       | Binop(Fby,e1,e2) => pp_infix depth pkgName ("->",e1,e2)
       | ArrayExp elist => PrettyBlock(0,true,[],
           [PrettyString "Array.fromList",Space,
@@ -105,7 +163,7 @@ fun pp_exp depth pkgName exp =
             PrettyString"]"])
       | ArrayIndex(A,dims) =>
          let fun trans exp [] = exp
-               | trans exp (d::dims) = trans (Fncall (("Array","sub"),[exp,d])) dims
+               | trans exp (d::dims) = trans (Fncall (("","Array.sub"),[exp,d])) dims
          in pp_exp depth pkgName (trans A dims)
          end
       | Fncall ((_,"App"),elist) =>
@@ -179,13 +237,13 @@ fun pp_exp depth pkgName exp =
          (case list
            of [v,arry,P] =>
                 pp_exp (depth-1) pkgName
-                   (Fncall(("Array","all"), [Fncall(("","Lambda"),[v,P]),arry]))
+                   (Fncall(("","Array.all"), [Fncall(("","Lambda"),[v,P]),arry]))
             | otherwise => PrettyString "!!<Array_Forall needs 3 args>!!")
       | Fncall(("","Array_Exists"),list) =>
          (case list
            of [v,arry,P] =>
                 pp_exp (depth-1) pkgName
-                   (Fncall(("Array","exists"), [Fncall(("","Lambda"),[v,P]),arry]))
+                   (Fncall(("","Array.exists"), [Fncall(("","Lambda"),[v,P]),arry]))
             | otherwise => PrettyString "!!<Array_Exists needs 3 args>!!")
       | Fncall(("","AssignExp"),[v,e]) => pp_infix (depth-1) pkgName (":=",v,e)
       | Fncall (qid,args) => PrettyBlock(2,false,[],
@@ -389,7 +447,7 @@ val eltype = eltyper 12;
 (* the fieldName, and then "_of"                                             *)
 (*---------------------------------------------------------------------------*)
 
-fun recd_projFn_name tyName fieldName = tyName^"_"^fieldName^"_of";
+fun recd_projFn_name tyName fieldName = "proj_"^tyName^"_"^fieldName;
 
 fun fieldFn tyE rty fieldName =
  let fun recdtyper n tyE ty =
@@ -632,7 +690,7 @@ fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
     else
       PrettyBlock(2,true,[],
         [PrettyString "fun ",
-         PrettyString ("lc"^snd qid), PrettyString " recd =",Space,
+         PrettyString (snd qid), PrettyString " recd =",Space,
          PrettyString "case recd", Line_Break,
          PrettyString "  of ", PrettyString (snd tyqid^"Recd"), PrettyString " ",
          pp_list_with_style false Space [emptyBreak]
@@ -669,6 +727,139 @@ fun pp_tmdec depth pkgName tmdec =
        end
  end;
 
+
+(*---------------------------------------------------------------------------*)
+(* Write out :                                                               *)
+(*                                                                           *)
+(*   - atom_width def                                                        *)
+(*   - env def                                                               *)
+(*   - contig support defs                                                   *)
+(*   - contig defs                                                           *)
+(*   - decoder support defs                                                  *)
+(*   - decoder defs                                                          *)
+(*   - parser defs                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val boilerplate1 = String.concatWith "\n"
+ ["(*---------------------------------------------------------------------------*)",
+  "(* Set up parsing environment                                                *)",
+  "(*---------------------------------------------------------------------------*)",
+  "\n",
+  "fun atom_width atom =",
+  " case atom",
+  "  of ByteContig.Bool       => 1",
+  "   | ByteContig.Char       => 1",
+  "   | ByteContig.Float      => 4",
+  "   | ByteContig.Double     => 8",
+  "   | ByteContig.Signed n   => n",
+  "   | ByteContig.Unsigned n => n",
+  "   | other => raise Utils.ERR \"atomic_width\" \"Blob: unknown width\"",
+  "\n",
+  "val parseEnv =",
+  "  ([],[],atom_width,ByteContig.valFnLE,ByteContig.dvalFnLE);",
+  "\n",
+   "fun is_event byteA =",
+   "  0 < Word8Array.length byteA andalso",
+   "  Word8Array.sub byteA 0 = Word8.fromInt 1;",
+   "\n",
+  "fun eventParse p byteA =",
+  " if not(is_event byteA) then",
+  "    None",
+  " else",
+  "  let val (contig,mk_data) = p",
+  "  in case ByteContig.parseFn",
+  "            parseEnv byteA (ByteContig.VarName\"root\") contig",
+  "              ([],1,ByteContig.empty_lvalMap())",
+  "      of Some([ptree],_,_) => Some (Utils.total mk_data ptree)",
+  "       | otherwise => Some None",
+  "  end;",
+  "\n",
+  "(*---------------------------------------------------------------------------*)",
+  "(* Contig stuff                                                              *)",
+  "(*---------------------------------------------------------------------------*)",
+  "\n",
+  "fun intLit i   = ByteContig.IntLit i;",
+  "fun unsigned n = ByteContig.Basic(ByteContig.Unsigned n);",
+  "fun signed n   = ByteContig.Basic(ByteContig.Signed n);",
+  "fun mk_Array c n = ByteContig.Array c (intLit n);",
+  "fun mk_Recd list   = ByteContig.Recd list;",
+  "fun mk_Union list  = ByteContig.Union list;",
+  "\n",
+  "val bool = ByteContig.Basic ByteContig.Bool;",
+  "val u8   = unsigned 1;",
+  "val char = unsigned 1;",
+  "val u16  = unsigned 2;",
+  "val u32  = unsigned 4;",
+  "val i32  = signed 4;",
+  "val i64  = signed 8;",
+  "val f32  = ByteContig.Basic(ByteContig.Float);",
+  "val f64  = ByteContig.Basic(ByteContig.Double);",
+  "\n"];
+
+val boilerplate2 = String.concatWith "\n"
+ [ "val mk_intLE   = ByteContig.mk_intLE;",
+   "val mk_floatLE = ByteContig.mk_floatLE;",
+   "val mk_array   = ByteContig.mk_array;"
+ ];
+
+fun is_in_event_data_port (name,ty,dir,kind) = (dir = "in" andalso kind = "EventDataPort");
+fun is_in_data_port (name,ty,dir,kind) = (dir = "in" andalso kind = "DataPort");
+fun is_in_event_port (name,ty,dir,kind) = (dir = "in" andalso kind = "EventPort");
+
+fun pp_parser_struct depth (structName,inports,contig_binds,decode_decs) =
+ let open PolyML
+     val contig_exps = map (I##contig_to_exp []) contig_binds
+     fun mk_contig_dec (qid,exp) = ConstDec (("","contig_"^snd qid),dummyTy,exp)
+     val contig_decs = map mk_contig_dec contig_exps
+     val in_edps = filter is_in_event_data_port inports
+     val in_dps = filter is_in_data_port inports
+     val in_eps = filter is_in_event_port inports
+     fun mk_parseFn_dec (pName,ty,_,_) =
+      case ty
+       of NamedTy(_,tyName) =>
+           ConstDec(("","parse_"^tyName),dummyTy,
+                Fncall(("","eventParse"),
+                  [mk_tuple[VarExp ("contig_"^tyName),VarExp("decode_"^tyName)]]))
+        | other =>  raise ERR "pp_parser" "expected type of inport to be named"
+     val parseFn_decs = map mk_parseFn_dec in_edps
+ in if depth = 0 then PrettyString "<Parse-structure>"
+   else
+    PrettyBlock(0,true,[],
+        [PrettyString ("structure "^structName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         PrettyString boilerplate1,
+         end_pp_list Line_Break Line_Break (pp_tmdec  (depth-1) "Parse") contig_decs,
+         Line_Break,
+	 Line_Break,
+         PrettyString boilerplate2,
+	 Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) "Parse") decode_decs,
+	 Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) "Parse") parseFn_decs,
+	 Line_Break,
+	 Line_Break,
+         PrettyString "end"
+      ])
+ end;
+
+fun pp_defs_struct depth (structName,tydecs,tmdecs) =
+ let open PolyML
+ in if depth = 0 then PrettyString "<Defs-structure>"
+   else
+    PrettyBlock(0,true,[],
+        [PrettyString ("structure "^structName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) "Defs") tydecs,
+         Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) "Defs") tmdecs,
+	 Line_Break,
+	 Line_Break,
+         PrettyString "end"
+      ])
+ end;
 
 fun pp_filter depth (FilterDec (qid,ports,tmdecs,ivars,props)) =
  let open PolyML
@@ -723,19 +914,8 @@ fun portname (Event s) = s
 (* that the correct projection function can be used.                         *)
 (*---------------------------------------------------------------------------*)
 
-val boolTy = BaseTy BoolTy;
-val dummyTy = NamedTy("","dummyTy");
 val unitExp = Fncall(("","unitExp"),[]);
 val emptyString = VarExp(Lib.quote"")
-
-fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
-fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
-fun mk_tuple list = Fncall(("","Tuple"),list)
-
-fun letExp binds exp =
-    let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
-    in Fncall(("","LET"),eqs@[exp])
-    end;
 
 fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
 

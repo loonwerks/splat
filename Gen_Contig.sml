@@ -74,7 +74,7 @@ val mk_bool_node = VarExp"mk_bool"
 val mk_char_node = VarExp "mk_char"
 val mk_intLE_node = VarExp "mk_intLE"
 val mk_floatLE_node = VarExp "mk_floatLE"
-fun mk_array_node eltFn = Fncall(("ByteContig","mk_array"),[eltFn]);
+fun mk_array_node eltFn = Fncall(("","mk_array"),[eltFn]);
 
 (*---------------------------------------------------------------------------*)
 (* The decoder will be given a parse tree where the leaves are annotated     *)
@@ -100,14 +100,12 @@ fun decoder_of tyE decodeE ty =
           | SOME decoder => decoder)
 ;
 
-fun listLit elts = Fncall(("","List"), elts);
-
 fun uptoFn f lo hi =
   let fun iter i = if i > hi then [] else f i::iter (i+1)
   in iter lo
   end
 
-fun AppExp elist = Fncall(("","App"), elist);
+val AppExp = PP_CakeML.AppExp;
 
 (*---------------------------------------------------------------------------*)
 (*  fun decode_X ptree =                                                     *)
@@ -126,9 +124,9 @@ fun mk_decoder_def tyE decodeE ty =
          val field_decoders = map (decoder_of tyE decodeE o snd) fields
          val vars = uptoFn (fn i => VarExp("v"^Int.toString i)) 1 (length fields)
          val varspat = listLit vars
-         val recdpat = Fncall(("ByteContig","RECD"),[varspat])
+         val recdpat = Fncall(("","ByteContig.RECD"),[varspat])
          val recdName = snd qid
-         fun mk_recd elist = Fncall(("Types",recdName^"Recd"),elist)
+         fun mk_recd elist = Fncall(("Defs",recdName^"Recd"),elist)
          fun mk_decode_app d v = AppExp [d, Fncall(("","snd"),[v])]
          val case_rhs = mk_recd (map2 mk_decode_app field_decoders vars)
          val main_clause = (recdpat,case_rhs)
@@ -139,7 +137,6 @@ fun mk_decoder_def tyE decodeE ty =
          val ptreeVar = VarExp "ptree"
          val case_exp = Fncall(("","CASE"),
                          [ptreeVar,AppExp[recdpat,case_rhs],AppExp[errpat,err_rhs]])
-         val decoder_LHS = Fncall(("Parse",decoderName),[ptreeVar])
      in
         AADL.FnDec(("",decoderName),[("ptree",dummyTy)],NamedTy qid,case_exp)
      end
@@ -156,7 +153,7 @@ val is_recd_ty = Lib.can qid_of_recdTy;
 
 fun mk_decodeE tylist =
   let fun munge (qid as(pkgName,tyName)) =
-         (qid,ConstExp(IdConst("Parse","decode_"^tyName)))
+         (qid,ConstExp(IdConst("","decode_"^tyName)))
   in mapfilter (munge o qid_of_recdTy) tylist
   end;
 

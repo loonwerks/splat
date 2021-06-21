@@ -455,54 +455,9 @@ fun mk_const_def compName json =
             ("expr", body)] => ConstDec((compName,cname), dest_ty ty, dest_exp body)
   |  otherwise => raise ERR "mk_const_def" "unexpected input";
 
-fun dest_feature (AList alist) =
-    (dropString (assoc "name" alist),
-     (dest_tyqid o dropString) (assoc "classifier" alist));
-
-fun mk_property_stmt_def compName features (AList alist) =
-     (case (assoc "kind" alist,
-            assoc "name" alist,
-	    assoc "expr" alist)
-       of (String kname, String fname, e)
-          => if mem kname ["PropertyStatement","GuaranteeStatement"] then
-             let val boolTy = BaseTy BoolTy
-                 val exp = dest_exp e
-                 val compParams = map dest_feature features
-                 val free_names = expFrees [] exp
-                 val params = filter (fn cp => mem (fst cp) free_names) compParams
-             in
-                FnDec((compName,fname), params, boolTy, exp)
-             end
-             else raise ERR "mk_property_def" "expected Property or Guarantee statement"
-       | otherwise => raise ERR "mk_property_def" "unexpected syntax")
-  | mk_property_stmt_def any other thing = raise ERR "mk_property_def" "unexpected syntax"
-;
-
-fun mk_eq_stmt_def compName features (AList alist) =
-     (case (assoc "kind" alist,
-            assoc "left" alist,
-	    assoc "expr" alist)
-       of (String "EqStatement", List [AList LHS], e)
-          => let val fName = dropString(assoc "name" LHS)
-                 val lhs_ty = dest_ty (assoc "type" LHS)
-                 val exp = dest_exp e
-                 val compParams = map dest_feature features
-                 val free_names = expFrees [] exp
-                 val params = filter (fn cp => mem (fst cp) free_names) compParams
-             in
-                FnDec((compName,fName), params, lhs_ty, exp)
-             end
-       | otherwise => raise ERR "mk_eq_stmt_def" "unexpected syntax")
-  | mk_eq_stmt_def any other thing = raise ERR "mk_eq_stmt_def" "unexpected syntax"
-;
-
 fun mk_def compName features dec =
   mk_const_def compName dec    handle HOL_ERR _ =>
   mk_fun_def compName dec      handle HOL_ERR _ =>
-(*
-  mk_property_stmt_def compName features json handle HOL_ERR _ =>
-  mk_eq_stmt_def compName features json handle HOL_ERR _ =>
-*)
   raise ERR "mk_def" "unexpected syntax";
 
 fun get_annex_stmts (AList alist) =
@@ -534,42 +489,6 @@ mk_def pkgName features stmt7;
 mk_def pkgName features stmt8;
 mk_def pkgName features stmt9;
 mk_def pkgName features stmt10;
-
-mk_def pkgName features stmt11;
-mk_def pkgName features stmt12;
-mk_def pkgName features stmt13;
-mk_def pkgName features stmt14;
-mk_def pkgName features stmt15;
-mk_def pkgName features stmt16;
-mk_def pkgName features stmt17;
-mk_def pkgName features stmt18;
-mk_def pkgName features stmt19;
-mk_def pkgName features stmt20;
-
-mk_def pkgName features stmt21;
-mk_def pkgName features stmt22;
-mk_def pkgName features stmt23;
-mk_def pkgName features stmt24;
-mk_def pkgName features stmt25;
-mk_def pkgName features stmt26;
-mk_def pkgName features stmt27;
-mk_def pkgName features stmt28;
-mk_def pkgName features stmt29;
-
-
-mk_def pkgName features stmt30;
-mk_def pkgName features stmt31;
-mk_def pkgName features stmt32;
-mk_def pkgName features stmt33;
-mk_def pkgName features stmt34;
-mk_def pkgName features stmt35;
-mk_def pkgName features stmt36;
-mk_def pkgName features stmt37;
-mk_def pkgName features stmt38;
-mk_def pkgName features stmt39;
-
-mk_def pkgName features stmt40;
-mk_def pkgName features stmt41;
 
 *)
 

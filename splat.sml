@@ -186,39 +186,41 @@ open AST AADL;
 
 type port = string * ty * string * string;  (* (id,ty,dir,kind) *)
 
-type ivardec = string * ty * exp
+type ivardec = string * ty * exp;
 
 type guar = string * string * exp;
 
-type decs = tydec list * tmdec list;
-
-type support = (string * decs) list;
-
 datatype gadget =
  Gadget of qid
-           * support
            * tydec list
            * tmdec list
            * (port list * bool * ivardec list * guar list);
 
-
-fun tydecs_of_support (support:support) = List.concat (map (fst o snd) support);
-fun tmdecs_of_support (support:support) = List.concat (map (snd o snd) support);
-
 val sort_tydecs = AADL.sort_tydecs
 val sort_tmdecs = AADL.sort_tmdecs;
 
-fun elim_monitor support (MonitorDec mondec) =
- let val (qid,ports,latched,tmdecs,ivardecs,guars) = mondec
-     val tydecs = []  (* Will change *)
- in Gadget (qid, support, tydecs, tmdecs, (ports,latched,ivardecs,guars))
+fun set_tmdec_pkgName name tmdec =
+ case tmdec
+  of ConstDec((_,s),ty,exp) => ConstDec((name,s),ty,exp)
+   | FnDec ((_,s),params,rty,exp) => FnDec ((name,s),params,rty,exp)
+
+fun elim_monitor tydecs tmdecs (MonitorDec mondec) =
+ let val (qid,ports,latched,mon_tmdecs,ivardecs,guars) = mondec
+     val mon_tydecs = []
+     val tydecs' = sort_tydecs (tydecs @ mon_tydecs)
+     val mondecs' = map (set_tmdec_pkgName (snd qid)) mon_tmdecs
+     val tmdecs' = sort_tmdecs (tmdecs @ mondecs')
+ in Gadget (qid, tydecs', tmdecs', (ports,latched,ivardecs,guars))
  end;
 
-fun elim_filter support (FilterDec filtdec) =
- let val (qid,ports,tmdecs, ivardecs, guars) = filtdec
+fun elim_filter tydecs tmdecs (FilterDec filtdec) =
+ let val (qid, ports,filt_tmdecs, ivardecs, guars) = filtdec
+     val filt_tydecs = []
      val latched = false
-     val tydecs = []
- in Gadget (qid, support, tydecs, tmdecs, (ports,latched,ivardecs,guars))
+     val tydecs' = sort_tydecs (tydecs @ filt_tydecs)
+     val filtdecs' = map (set_tmdec_pkgName (snd qid)) filt_tmdecs
+     val tmdecs' = sort_tmdecs (tmdecs @ filtdecs')
+ in Gadget (qid, tydecs', tmdecs', (ports,latched,ivardecs,guars))
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -227,17 +229,17 @@ fun elim_filter support (FilterDec filtdec) =
 
 fun configure decls (support,gadgets) =
  let val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = decls
-     val tydecs' = sort_tydecs tydecs
-     val tmdecs' = sort_tmdecs tmdecs
-     val support' = (pkgName,(tydecs',tmdecs')) :: support
-     val filter_gadgets = List.map (elim_filter support') filtdecs
-     val monitor_gadgets = List.map (elim_monitor support') mondecs
+     val (stydecs,stmdecs) = support
+     val tydecs' = tydecs @ stydecs
+     val tmdecs' = tmdecs @ stmdecs
+     val filter_gadgets = List.map (elim_filter tydecs' tmdecs') filtdecs
+     val monitor_gadgets = List.map (elim_monitor tydecs' tmdecs') mondecs
  in
-     (support',
+     ((tydecs',tmdecs'),
       filter_gadgets @ monitor_gadgets @ gadgets)
 end
 
-fun mk_gadgets pkgs = snd (rev_itlist configure pkgs ([],[]));
+fun mk_gadgets pkgs = snd (rev_itlist configure pkgs (([],[]),[]));
 
 val empty_varE = PP_CakeML.empty_varE;
 val assocFn = PP_CakeML.assocFn;
@@ -263,6 +265,7 @@ fun transRval_dec E tmdec =
 fun trans_ivardec E (s,ty,e) = (s,ty,transRval E e)
 fun trans_guar E (s1,s2,e) = (s1,s2,transRval E e)
 
+(*
 fun trans_support E support =
  let fun transFn (s,(tydecs,tmdecs)) =
        let val tmdecs' = map (transRval_dec E) tmdecs
@@ -270,6 +273,7 @@ fun trans_support E support =
        end
  in map transFn support
  end
+*)
 
 fun portE ports =
  let fun dest_port (id,ty,_,_) = (id,ty)
@@ -288,17 +292,14 @@ fun ivarE ivars =
 (*---------------------------------------------------------------------------*)
 
 fun transRval_gadget E gadget =
- let val Gadget (qid,support, tydecs, tmdecs,
-                 (ports,latched,ivardecs,guars)) = gadget
-     val support' = trans_support E support
-     val tydecs'  = sort_tydecs tydecs
-     val tmdecs'  = sort_tmdecs (map (transRval_decl E) tmdecs)
-     val tmdecs'' = mk_recd_projns tydecs' @ tmdecs'
+ let val Gadget (qid,tydecs, tmdecs, (ports,latched,ivardecs,guars)) = gadget
+     val tmdecs'  = map (transRval_decl E) tmdecs
+     val tmdecs'' = mk_recd_projns tydecs @ tmdecs'
      val varE     = catE (portE ports) (ivarE ivardecs)
      val ivardecs' = map (trans_ivardec (E,varE)) ivardecs
      val guars'    = map (trans_guar (E,varE)) guars
  in
-    Gadget (qid, support', tydecs', tmdecs'', (ports,latched,ivardecs',guars'))
+    Gadget (qid, tydecs, tmdecs'', (ports,latched,ivardecs',guars'))
  end
 
 fun elim_projections tyE tmE gdts =
@@ -318,15 +319,71 @@ end;
 
 val trivEnv = ([],[],atomic_width);
 
-fun gadget_qid (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = qid;
-fun gadget_ports (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = ports;
-fun gadget_support (Gadget(qid,supp,tydecs,tmdecs,(ports,latched,ivars,guars))) = supp;
+fun gadget_qid (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = qid;
+fun gadget_ports (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = ports;
+fun gadget_tydecs (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = tydecs;
+fun gadget_tmdecs (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = tmdecs;
+
+fun tmdec_qids tmdec set =
+  case tmdec
+   of ConstDec (qid,ty,exp) => AST.expQids exp (insert qid set)
+    | FnDec (qid,parames,rty,exp) => AST.expQids exp (insert qid set);
+
+fun ivardec_qids (s,ty,exp) set = AST.expQids exp set
+fun guar_qids (s1,s2,exp) set = AST.expQids exp set
+
+fun gadgetQids gdt set =
+ let val Gadget(qid,_,tmdecs,(_,_,ivars,guars)) = gdt
+     val set1 = itlist tmdec_qids tmdecs set
+     val set2 = itlist ivardec_qids ivars set1
+     val set3 = itlist guar_qids guars set2
+ in set3
+ end
+
+(*
+fun set_ty_Defs ty =
+ case ty
+   of BaseTy _ => ty
+    | NamedTy (_,s) => NamedTy("Defs",s)
+    | RecdTy  ((_,s),fields) => RecdTy (("Defs",s), map (I##set_ty_Defs) fields)
+    | ArrayTy (ty,elist) => ArrayTy (set_ty_Defs ty, elist);
+
+fun set_tydec_Defs tydec =
+ case tydec
+  of EnumDec  (qid, elts) => EnumDec(("Defs",snd qid),elts)
+   | RecdDec  (qid, flds) =>
+     RecdDec(("Defs",snd qid), map (I##set_ty_Defs) flds)
+   | ArrayDec (qid,ty) => ArrayDec(("Defs",snd qid),set_ty_Defs ty)
+   | UnionDec (qid,constrs) =>
+     UnionDec(("Defs",snd qid),map (I##set_ty_Defs) constrs)
+
+
+fun set_exp_Defs exp =
+  let val exp_qids =
+
+fun set_Defs gdt =
+ case gdt
+  of Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars)) =>
+     let val tydecs' = map set_tydec_Defs tydecs
+         val tmdecs' = map set_tmdec_Defs tmdecs
+         val ports'  = map set_port_Decs ports
+         val ivars'  = map set_ivar_Decs ivars
+         val guars'  = map set_guar_Decs guars
+     in Gadget(qid,tydecs',tmdecs',(ports',latched,ivars',guars'))
+     end
+*)
+
+fun defs_struct_of gdt =
+ let val fodder = ("Defs",gadget_tydecs gdt,gadget_tmdecs gdt)
+     val pretty = PP_CakeML.pp_defs_struct ~1 fodder
+in
+  pretty
+end
 
 fun gadget_tyE gdt =
- let val Gadget (_,support, tydecs, _,_) = gdt
-     val all_tydecs = tydecs_of_support support @ tydecs
+ let val Gadget (_,tydecs, _,_) = gdt
      fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
-     val tydec_alist = map mk_tydec_bind all_tydecs
+     val tydec_alist = map mk_tydec_bind tydecs
  in
    tydec_alist
  end
@@ -371,6 +428,20 @@ in
   pretty
 end;
 
+fun parser_struct_of gdt =
+let val qid = gadget_qid gdt
+    val ports = gadget_ports gdt
+    val inports = filter is_in_port ports
+    val tyEalist = gadget_tyE gdt
+    val tyE = assocFn tyEalist
+    val contig_binds = map (I##Gen_Contig.contig_of tyE) tyEalist
+    val decoder_defs = Gen_Contig.decoders tyE (map snd tyEalist)
+    val fodder = ("Parse",inports, contig_binds, decoder_defs)
+    val pretty = PP_CakeML.pp_parser_struct ~1 fodder
+in
+  pretty
+end
+
 fun CakeML_names pkgs = pkgs;
 
 fun process_model jsonFile =
@@ -381,9 +452,64 @@ fun process_model jsonFile =
      val gdts1 = mk_gadgets pkgs
      val gdts2 = elim_projections tyE tmE gdts1
      val apis = map API_of gdts2
+     val parser_structs = map parser_struct_of gdts2
+     val defs_structs = map defs_struct_of gdts2
  in
-    (apis,gdts2)
+    (apis,parser_structs, defs_structs, gdts2)
  end;
+
+fun getFile path =
+  let val istrm = TextIO.openIn path
+      val vector = TextIO.inputAll istrm
+      val () = TextIO.closeIn istrm
+  in
+    vector
+  end;
+
+val Utils_Src      = getFile "Lego/Utils.cml";
+val ByteContig_Src = getFile "Lego/ByteContig.cml";
+val basis_ffi_Src  = getFile "Lego/basis_ffi.c";
+val Makefile_Src   = getFile "Lego/Makefile";
+
+(* val Cake_Src       = getFile "Lego/cake.S"; *)
+
+fun export_implementation dir (api,parser,defs,gdt) =
+ let open FileSys
+     val (pkgName,compName) = gadget_qid gdt
+     val gadgetName = pkgName^"_"^compName
+     val _ = stdErr_print ("\nProcessing "^qid_string (gadget_qid gdt)^".\n")
+     val origDir = getDir()
+     val () = stdErr_print ("Invocation dir: "^ origDir ^ "\n")
+     val gadgetDir = String.concat[dir,"/",gadgetName]
+     val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
+     val _ = stdErr_print ("  Writing basis_ffi.c\n")
+     val ostrm = TextIO.openOut "basis_ffi.c"
+     val () = TextIO.output(ostrm,basis_ffi_Src)
+     val () = TextIO.closeOut ostrm
+     val _ = stdErr_print ("  Writing Makefile\n")
+     val ostrm = TextIO.openOut "Makefile"
+     val () = TextIO.output(ostrm, Makefile_Src)
+     val () = TextIO.closeOut ostrm
+     val gadgetFile = gadgetName^".cml"
+     val () = stdErr_print ("  Writing "^gadgetFile^"\n")
+     val ostrm = TextIO.openOut gadgetFile
+     fun add s = TextIO.output(ostrm,s)
+     val () = add Utils_Src
+     val () = add "\n\n"
+     val () = add ByteContig_Src
+     val () = add "\n\n"
+     val () = PPfns.pp_ostrm ostrm defs
+     val () = add "\n\n"
+     val () = PPfns.pp_ostrm ostrm parser
+     val () = add "\n\n"
+     val () = PPfns.pp_ostrm ostrm api
+     val () = TextIO.closeOut ostrm
+     val fullgadgetDir = origDir^"/"^gadgetDir
+     val () = stdErr_print ("Code written to directory: "^fullgadgetDir ^ "\n")
+     val () = stdErr_print ("Done.\n")
+ in
+  chDir origDir
+ end
 
 (*
 val jsonFile = "examples/SW.json";
@@ -391,21 +517,37 @@ val args = [jsonFile];
 val thyName = "SW";
 val dir = ".";
 
-val (apis,gadgets) = process_model "examples/SW.json";
-val [gdt1, gdt2, gdt3] = gadgets;
-val [api1,api2,api3] = apis
+val (apis,parsers,defs,gdts) = process_model "examples/SW.json";
+val [gdt1, gdt2, gdt3] = gdts;
+val [api1,api2,api3] = apis;
+val [p1,p2,p3] = parsers;
+val [defs1,defs2,defs3] = defs;
+export_implementation "tmp" (api1,p1,defs1,gdt1);
+
+gadgetQids gdt1 [];
 
 List.app (print o PPfns.pp_string) apis;
+List.app (print o PPfns.pp_string) parsers
+
+dir (api,parser,gdt) =
+
+val tyE_assoc = gadget_tyE gdt1;
+val tyE = assocFn tyE_assoc;
 
 val support = hd (gadget_support gdt1);
 val tydecs = fst(snd support);
 val tys = map tydec_to_ty tydecs;
 
-contig_of tyE (hd tys);
+val contig = Gen_Contig.contig_of tyE (hd tys);
+PP_CakeML.contig_to_exp [] contig;
+
+val contigs = map (Gen_Contig.contig_of tyE) tys;
+map (PP_CakeML.contig_to_exp []) contigs;
+
 
 val gdt1_tyE = gadget_tyE gdt1;
 
-val ([jpkg],ss) = Json.fromFile (parse_args args)
+val ([jpkg],ss) = Json.fromFile jsonFile;
 
 open AADL;
 

@@ -8,6 +8,8 @@ sig
     type tydec = AADL.tydec
     type tmdec = AADL.tmdec
     type pretty = PolyML.pretty
+    type contig = ByteContig.contig
+    type inport = string * ty * string * string
 
     val pp_ty : int -> string -> ty -> pretty
     val pp_exp : int -> string -> exp -> pretty
@@ -29,4 +31,18 @@ sig
     val transRval      : ((qid -> ty option) * (id -> ty option)) * (id -> ty option) -> exp -> exp
     val transRval_decl : (qid -> ty option) * (id -> ty option) -> tmdec -> tmdec
     val tydec_to_ty    : tydec -> ty
+    val contig_to_exp  : (string * contig) list -> contig -> exp
+    val AppExp         : exp list -> exp
+
+    val pp_api : int -> string *
+                        (string * int) list *      (* inport bufs *)
+                        (string * string) list *   (* fillFns *)
+                        (string * string) list *   (* sendFns *)
+                        string -> pretty
+
+    val pp_parser_struct
+      : int -> string * inport list * (qid * contig) list * tmdec list
+            -> pretty
+
+    val pp_defs_struct : int -> string * tydec list * tmdec list -> pretty
 end
