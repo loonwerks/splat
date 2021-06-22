@@ -957,6 +957,16 @@ fun atomic_width atom =
    | ByteContig.Unsigned n => n
    | other => raise Utils.ERR "atomic_width" "Blob: unknown width"
 
+fun atom_string atom =
+ case atom
+  of ByteContig.Bool       => "Bool"
+   | ByteContig.Char       => "Char"
+   | ByteContig.Float      => "Float"
+   | ByteContig.Double     => "Double"
+   | ByteContig.Signed n   => "Signed"
+   | ByteContig.Unsigned n => "Unsigned"
+   | ByteContig.Blob       => "Blob";
+
 (*---------------------------------------------------------------------------*)
 (* Interpretation support                                                    *)
 (*---------------------------------------------------------------------------*)
@@ -1001,7 +1011,7 @@ fun dvalFnLE atm bytes =
   of ByteContig.Float =>
      let val s = String.implode (List.map Utils.w8char bytes)
          val () = Utils.clear_buf buf
-         val () = #(float2double) s buf
+         val () = #(float2doublePromote) s buf
          val a = Word8Array.sub buf 0
          val b = Word8Array.sub buf 1
          val c = Word8Array.sub buf 2
@@ -1014,10 +1024,14 @@ fun dvalFnLE atm bytes =
      in dval
      end
    | ByteContig.Double =>
-     (case bytes
+     (Utils.println "dvalFnLE: parsing Double";
+     case bytes
        of [a,b,c,d,e,f,g,h] => Word64.concatAll a b c d e f g h
         | otherwise =>
 	  raise Utils.ERR "dvalFnLE" "expected exactly 8 bytes for a Double")
+   | otherwise =>
+      (Utils.println ("dvalFnLE: atm is unexpected: "^atom_string atm);
+       raise Utils.ERR "dvalFnLE" "expected Float or Double")
 end
 
 val exampleV4Env = ([],[],atomic_width,valFnLE,dvalFnLE);
@@ -1034,8 +1048,9 @@ fun mk_intLE ptree =
 
 fun mk_floatLE ptree =
  case ptree
-  of ByteContig.LEAF a bytes => dvalFnLE a bytes
-   | otherwise => raise Utils.ERR "Gate_Parse.mk_floatLE" "expected a LEAF";
+  of ByteContig.LEAF a bytes =>
+        (Utils.println "calling dvalFnLE"; dvalFnLE a bytes)
+   | otherwise => raise Utils.ERR "Gate_Parse.mk_floatLE" "expected a LEAF"
 
 fun mk_doubleLE ptree =
  case ptree
@@ -1092,8 +1107,8 @@ val u16  = unsigned 2;
 val u32  = unsigned 4;
 val i32  = signed 4;
 val i64  = signed 8;
-
-val f32  = signed 4;  (* temporary *)
+val f32  = ByteContig.Basic(ByteContig.Float);
+val f64  = ByteContig.Basic(ByteContig.Double);
 
 val contig_Coord =
   ByteContig.Recd [
@@ -1108,10 +1123,22 @@ val contig_Mission = mkArray contig_Coord (intLit 3);
 (* Map from parse trees to data                                              *)
 (*---------------------------------------------------------------------------*)
 
+val println = Utils.println;
+
 fun mk_coord ptree =
  case ptree
   of ByteContig.RECD [("Latitude",  lat), ("Longitude", lon), ("Altitude",  alt)]
-     => SW_Types.CoordinateRecd (mk_floatLE lat) (mk_floatLE lon) (mk_floatLE alt)
+     => let val () = println "start parsing coordinate"
+            val () = println "making Latitude"
+            val latVal = mk_floatLE lat
+	    val () = println "making Longitude"
+            val lonVal = mk_floatLE lon
+	    val () = println "making Altitude"
+            val altVal = mk_floatLE alt
+	    val () = println "finished parsing coordinate"
+       in
+         SW_Types.CoordinateRecd latVal lonVal altVal
+       end
    | otherwise => raise Utils.ERR "mk_header" "unexpected parse tree";
 
 val mk_Mission = mk_array mk_coord;
@@ -1125,10 +1152,11 @@ fun eventParse p byteA =
     None
  else
   let val (contig,mk_data) = p
+      val _ = Utils.println "Entering parser"
   in case ByteContig.parseFn
             exampleV4Env byteA (ByteContig.VarName"root") contig
               ([],1,ByteContig.empty_lvalMap())
-      of Some([ptree],_,_) => Some (Utils.total mk_data ptree)
+      of Some([ptree],_,_) => (Utils.println "exiting parser"; Some (Utils.total mk_data ptree))
        | otherwise => Some None
   end;
 
@@ -1142,6 +1170,7 @@ struct
 
 val lcFlightPlan_in_buffer = Word8Array.array 37 Utils.w8zero;
 
+(*
 fun fill_FlightPlan_in_buffer () =
   let val () = Utils.clear_buf lcFlightPlan_in_buffer
   in  #(api_get_FlightPlan_in) "" lcFlightPlan_in_buffer
@@ -1153,6 +1182,7 @@ fun send_FlightPlan_out string =
 fun send_Alert () = #(api_send_Alert) "" Utils.emptybuf;
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
+*)
 
 end (* HAMR API *)
 
@@ -1188,18 +1218,18 @@ val alt_of = SW_Functions.lcCoordinate_Altitude_of;
 fun waypoint_IN_ZONE wp kiz =
  (is_BOUNDED
      (lat_of wp)
+     (lat_of (Array.sub kiz 0))
      (lat_of (Array.sub kiz 1))
-     (lat_of (Array.sub kiz 2))
   andalso
   is_BOUNDED
      (lon_of wp)
+     (lon_of (Array.sub kiz 0))
      (lon_of (Array.sub kiz 1))
-     (lon_of (Array.sub kiz 2))
   andalso
   is_BOUNDED
     (alt_of wp)
-    (alt_of (Array.sub kiz 1))
-    (alt_of (Array.sub kiz 2)));
+    (alt_of (Array.sub kiz 0))
+    (alt_of (Array.sub kiz 1)));
 
 fun waypoints_IN_ZONE plan kiz =
     Array.all (fn i => waypoint_IN_ZONE i kiz) plan;
@@ -1269,6 +1299,7 @@ fun stepFn inports stateVars =
     (newStateVarOpts, (monAlert,fplan_out))
   end
 
+(*
 fun parse_Flightplan_in () =
  let val () = API.fill_FlightPlan_in_buffer ()
      val inOpt2 = SW_Parse.parse_Mission API.lcFlightPlan_in_buffer
@@ -1294,36 +1325,111 @@ fun monFn () =
           end
     end
  end
+*)
 
 end (* Monitor *)
 
-structure Control =
-struct
+val print = Utils.print;
+val println = Utils.println;
+val _ = Utils.debugLevel := 1;
 
-fun pacer_emit() =
-    (#(sb_pacer_notification_emit) "" Utils.singlebuf;
-     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
 
-fun pacer_wait() =
-    (#(sb_pacer_notification_wait) "" Utils.singlebuf;
-     Word8Array.sub Utils.singlebuf 0 <> Word8.fromInt 0);
+(*---------------------------------------------------------------------------*)
+(* Testing infrastructure                                                    *)
+(*---------------------------------------------------------------------------*)
 
-fun receiveInput() = #(api_receiveInput) "" Utils.emptybuf;
-fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
+fun get_Flightplan fileName =
+  let val istrm = TextIO.openIn fileName
+      val () = Utils.clear_buf API.lcFlightPlan_in_buffer
+      val s = TextIO.inputAll istrm
+      val () = Utils.string2buf s API.lcFlightPlan_in_buffer
+  in
+    TextIO.closeIn istrm
+  end;
 
-fun loop () =
-  if pacer_wait() then
-    ( receiveInput();
-      Monitor.monFn();
-      sendOutput();
-      pacer_emit();
-      loop()
-    )
-  else
-    loop();
+fun parse_Flightplan () =
+ let val () = get_Flightplan "mon-input.bytes"
+     val inOpt2 = SW_Parse.parse_Mission API.lcFlightPlan_in_buffer
+ in
+     Utils.dropOpt "Parsing of Trusted_IDs port failed." inOpt2
+ end;
 
-fun start () = (pacer_emit(); loop());
+val _ = println "About to parse flightplan aka Mission";
+val inOpt = parse_Flightplan ()
+val _ = println "Parsed flightplan aka Mission";
+val (newState,outputs) = Monitor.stepFn inOpt (!Monitor.theState)
+val () = (Monitor.theState := newState)
+val (monAlert,fplanOpt) = outputs
 
-end (* Control *)
+val _ = if monAlert then println "Alert is HI" else println "Alert is LO";
 
-val _ = Control.start();
+val _ =
+    let in
+     case fplanOpt
+      of None => println"Port Flightplan_Out is not being invoked"
+       | Some fplan =>
+          let val _ = print "Port Flightplan_Out is being invoked"
+              val len = Word8Array.length API.lcFlightPlan_in_buffer
+          in ()
+	  (*API.send_FlightPlan_out
+               (Word8Array.substring API.lcFlightPlan_in_buffer 1 (len-1))
+	       *)
+          end
+    end
+;
+
+(*
+fun stepper list =
+  case list
+   of [] => ()
+    | (stepNum,(tidFileOpt,rqtFileOpt,ctlFileOpt))::t =>
+      let val () = Utils.println ("Step number : "^Int.toString stepNum^"\n")
+          val tidsOpt = parse_trustedIDs_fromFileOpt tidFileOpt
+          val rqtOpt = parse_shmQ_fromFileOpt rqtFileOpt
+          val ctlOpt = parse_shm_fromFileOpt ctlFileOpt
+          val () = Gate.print_gate_inputs tidsOpt rqtOpt ctlOpt
+          val (newState,outOpts) = Gate.stepFn (tidsOpt,rqtOpt,ctlOpt) (!Gate.theState)
+          val () = (Gate.theState := newState)
+          val (blockOut,shmOut,countOut) = outOpts
+          val () = Gate.print_gate_outputs countOut blockOut shmOut
+      in
+       Utils.println "\n"
+       ;
+       stepper t
+      end
+
+fun enumerate list = List.zip (Utils.upto 1 (List.length list), list);
+
+(*---------------------------------------------------------------------------*)
+(* test <name> <inputs> where <inputs> is a list of file option tuples of    *)
+(* the form                                                                  *)
+(*                                                                           *)
+(*   [(tidsFileOpt, rqtFileOpt, ctlFileOpt)_1, ...,                          *)
+(*    (tidsFileOpt, rqtFileOpt, ctlFileOpt)_n]                               *)
+(*                                                                           *)
+(* represents a sequence of monitor invocations. A "fileOpt" that is None    *)
+(* represents "no event" and results in a zeroed-out buffer being parsed,    *)
+(* and a "FileOpt" of the form (Some fileName) represents an input port      *)
+(* event with buffer being read from fileName.                               *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun test testName list =
+ (Gate.resetState();
+  Utils.println ("TEST "^testName^".");
+  Utils.println "=================================";
+  stepper (enumerate list);
+  Utils.println ("END TEST "^testName^".");
+  Utils.println "=================================";
+  Utils.print "\n\n"
+ );
+
+(*---------------------------------------------------------------------------*)
+(* Set degree of printed output                                              *)
+(*  0 = no output                                                            *)
+(*  1 = show input and output port values                                    *)
+(*  2 = show selected elements of the state                                  *)
+(*  3 = show intermediate values in function calls                           *)
+(*---------------------------------------------------------------------------*)
+
+*)

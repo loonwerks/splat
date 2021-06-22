@@ -1001,7 +1001,7 @@ fun dvalFnLE atm bytes =
   of ByteContig.Float =>
      let val s = String.implode (List.map Utils.w8char bytes)
          val () = Utils.clear_buf buf
-         val () = #(float2double) s buf
+         val () = #(float2doublePromote) s buf
          val a = Word8Array.sub buf 0
          val b = Word8Array.sub buf 1
          val c = Word8Array.sub buf 2
@@ -1231,7 +1231,10 @@ fun stepFn inports stateVars =
      (* Compute output values *)
      (*-----------------------*)
 
-     val outOpt = if event_input then Some (valOf inOpt) else None
+     val outOpt =
+        if event_input andalso filter_policy then
+           Some (valOf inOpt)
+        else None
 
      val newStateVarOpts = Some filter_policy
   in

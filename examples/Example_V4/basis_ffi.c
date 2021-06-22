@@ -267,3 +267,11 @@ void ffifloat2double(unsigned char *parameter, long parameterSizeBytes,
   double result = *((float*)bytes);
   memcpy(output, (unsigned char*) &result, sizeof(double));
 }
+
+// Promotes a float to a double for the current architecture.
+void ffifloat2doublePromote(unsigned char *parameter, long parameterSizeBytes,
+                     unsigned char *output,    long outputSizeBytes) {
+
+  double result = *((float*)parameter);
+  memcpy(output, (unsigned char*) &result, sizeof(double));
+}
