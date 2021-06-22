@@ -1341,7 +1341,7 @@ fun sendOutput()   = #(api_sendOutput) "" Utils.emptybuf;
 fun loop () =
   if pacer_wait() then
     ( receiveInput();
-      Gate.gateFn();
+      Gate.monFn();
       sendOutput();
       pacer_emit();
       loop()
