@@ -106,6 +106,7 @@ fun uptoFn f lo hi =
   end
 
 val AppExp = PP_CakeML.AppExp;
+val listLit = PP_CakeML.listLit;
 
 (*---------------------------------------------------------------------------*)
 (*  fun decode_X ptree =                                                     *)
@@ -126,7 +127,7 @@ fun mk_decoder_def tyE decodeE ty =
          val varspat = listLit vars
          val recdpat = Fncall(("","ByteContig.RECD"),[varspat])
          val recdName = snd qid
-         fun mk_recd elist = Fncall(("Defs",recdName^"Recd"),elist)
+         fun mk_recd elist = Fncall(("Defs",recdName),elist)
          fun mk_decode_app d v = AppExp [d, Fncall(("","snd"),[v])]
          val case_rhs = mk_recd (map2 mk_decode_app field_decoders vars)
          val main_clause = (recdpat,case_rhs)
