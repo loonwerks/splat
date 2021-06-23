@@ -957,6 +957,16 @@ fun atomic_width atom =
    | ByteContig.Unsigned n => n
    | other => raise Utils.ERR "atomic_width" "Blob: unknown width"
 
+fun atom_string atom =
+ case atom
+  of ByteContig.Bool       => "Bool"
+   | ByteContig.Char       => "Char"
+   | ByteContig.Float      => "Float"
+   | ByteContig.Double     => "Double"
+   | ByteContig.Signed n   => "Signed"
+   | ByteContig.Unsigned n => "Unsigned"
+   | ByteContig.Blob       => "Blob";
+
 (*---------------------------------------------------------------------------*)
 (* Interpretation support                                                    *)
 (*---------------------------------------------------------------------------*)
@@ -1018,6 +1028,9 @@ fun dvalFnLE atm bytes =
        of [a,b,c,d,e,f,g,h] => Word64.concatAll a b c d e f g h
         | otherwise =>
 	  raise Utils.ERR "dvalFnLE" "expected exactly 8 bytes for a Double")
+   | otherwise =>
+      (Utils.println ("dvalFnLE: atm is unexpected: "^atom_string atm);
+       raise Utils.ERR "dvalFnLE" "expected Float or Double")
 end
 
 val exampleV4Env = ([],[],atomic_width,valFnLE,dvalFnLE);
