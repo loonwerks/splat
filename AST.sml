@@ -17,21 +17,12 @@ fun unimplemented s = ERR s "unimplemented";
 type id = string
 type qid = string * string;
 
-datatype uop
-  = Not    | BitNot   | UMinus | ChrOp | OrdOp
-  | Signed | Unsigned | Unbounded
-  | Yesterday | ZYesterday | Historically
+datatype uop = Not | UMinus;
 
 datatype bop
   = Plus | Minus | Multiply | Divide | Modulo | Exponent
   | Equal | NotEqual | Greater | Less | LessEqual | GreaterEqual
-  | Or | And | Imp | BitOr | BitAnd | BitXOR
-  | LogicalLShift | LogicalRShift | ArithmeticRShift
-  | CastWidth
-  | RegexMatch
-  | Since
-  | Trigger
-  | Fby
+  | Or | And | Imp | Fby
 
 datatype numkind
   = Nat of int option
@@ -44,7 +35,6 @@ datatype lit
   | StringLit of string
   | FloatLit of real
   | IntLit of {value:int,kind:numkind}
-  | RegexLit of string
 
 datatype builtin
   = BoolTy
@@ -53,7 +43,6 @@ datatype builtin
   | FloatTy
   | DoubleTy
   | IntTy of numkind
-  | RegexTy
 
 datatype quant = Forall | Exists
 
@@ -72,7 +61,7 @@ and exp
   | ArrayIndex of exp * exp list
   | RecdProj of exp * id
   | Fncall of qid * exp list
-  | ConstrExp of qid * id * exp option
+  | ConstrExp of qid * id * exp list
   | Quantified of quant * (id * ty) list * exp
 
 type vdec = id * ty;
@@ -98,11 +87,8 @@ datatype decl
   | TyAbbrevDecl of id * ty
   | RecdDecl of id * (id * ty) list
   | DatatypeDecl of id * (id * ty list) list
-  | GraphDecl of id * ty * ty
   | VarDecl of vdec
   | ConstDecl of id * ty * exp
-  | SizedDataDecl of id * ty * exp * exp option
-  | SizedGraphDecl of id * ty * exp * exp
   | EfnDecl of id * param list * vdec option
   | FnDecl of id * param list * vdec option * vdec list * stmt list
   | SpecDecl of id * vdec list * stmt list
@@ -188,8 +174,6 @@ fun lift_exp_operator (f:exp->exp) =
     fun appDecl d =
       case d
        of ConstDecl(id,ty,e) => ConstDecl(id,ty,f e)
-        | SizedDataDecl(id,ty,e1,e2) => SizedDataDecl(id,ty,f e1, Option.map f e2)
-        | SizedGraphDecl(id,ty,e1,e2) => SizedGraphDecl(id,ty,f e1,f e2)
         | FnDecl(id,params,rvOpt,locals,stmts) =>
            FnDecl(id,params,rvOpt,locals,map lift stmts)
         | SpecDecl(id,vdecs,stmts) => SpecDecl(id,vdecs,map lift stmts)
@@ -197,42 +181,6 @@ fun lift_exp_operator (f:exp->exp) =
   in
      fn (pkgName,decls) => (pkgName,map appDecl decls)
   end;
-
-(*---------------------------------------------------------------------------*)
-(* Lift a ty -> ty operation to a pkg->pkg operation                         *)
-(*---------------------------------------------------------------------------*)
-(*
-fun lift_ty_operator (f:ty->ty) =
- let fun liftE exp =
-       case exp
-        of VarExp _ => exp
-         | ConstExp _ => exp
-         | Unop (uop,e) => UnOp(uop, liftE e)
-         | Binop(bop,e1,e2) => Binop(bop,liftE e1,liftE e2)
-         | ArrayExp elist => ArrayExp (map liftE elist)
-         | ArrayIndex (e,elist) => ArrayIndex (liftE e,map liftE elist)
-         | ConstrExp(qid,id,eOpt) => ConstrExp(qid,id,Option.map liftE eOpt)
-         | Fncall(qid,elist) => Fncall(qid,map liftE elist)
-         | RecdExp (qid,flds) => recdExp(qid,map (I##liftE) fields)
-         | RecdProj(e,id) => RecdProj(liftE e,id)
-         | Quantified(q,bvars,exp) => Quantified(q,map (I##f) bvars,liftE exp)
-    fun liftS stmt =
-       case stmt
-        of Skip => Skip
-      | Assign(e1,e2) => Assign(liftE e1, liftE e2)
-      | IfThenElse(exp,s1,s2) => IfThenElse(liftE exp, liftS s1, liftS s2)
-      | Case(e,clauses) => Case(liftE e, map (liftE##liftS) clauses)
-      | Call(qid,elist) => Call(qid,map liftE elist)
-      | While(exp,stmt) => While(liftE exp, liftS stmt)
-      | For (id,e1,e2,istmt,body) =>
-            For(id, liftE e1, liftE e2, liftS istmt, liftS body)
-      | Block stmts => Block (map liftS stmts)
-      | Check exp => Check (liftE exp)
-
- in
-   lift_exp_operator lift
- end;
-*)
 
 (*---------------------------------------------------------------------------*)
 (* Various operations on types, expressions, programs, and packages          *)
@@ -275,7 +223,7 @@ and
   | expNumTypes (ArrayIndex(e,elist)::t) = expNumTypes (e::elist@t)
   | expNumTypes (RecdProj(e,id)::t) = expNumTypes (e::t)
   | expNumTypes (Fncall(qid,expl)::t) = expNumTypes (expl@t)
-  | expNumTypes (ConstrExp(tyqid,id,opt)::t) = expNumTypes (optlist opt @ t)
+  | expNumTypes (ConstrExp(tyqid,id,elist)::t) = expNumTypes (elist @ t)
 
 fun stmtNumTypes [] = []
   | stmtNumTypes (stmt::t) =
@@ -303,11 +251,8 @@ fun declNumTypes [] = []
         | TyAbbrevDecl (id,ty) => tyNumTypes [ty]
         | RecdDecl (id,fields) => tyNumTypes (map snd fields)
         | DatatypeDecl(id,constrs) => U (map (tyNumTypes o snd) constrs)
-        | GraphDecl(id,nty,ety) => tyNumTypes [nty,ety]
         | VarDecl (id,ty) => tyNumTypes [ty]
         | ConstDecl(id,ty,exp) => union (tyNumTypes [ty]) (expNumTypes [exp])
-        | SizedDataDecl(id,ty,e1,e2) => union (tyNumTypes [ty]) (expNumTypes (e1::optlist e2))
-        | SizedGraphDecl(id,ty,e1,e2) => union (tyNumTypes [ty]) (expNumTypes [e1,e2])
         | EfnDecl(id,params,retvalOpt) =>
               tyNumTypes (map (snd o dest_param) params @
                           map snd (optlist retvalOpt))
@@ -342,7 +287,7 @@ fun expVars (VarExp id) = [id]
   | expVars (ArrayIndex(e,elist)) = bigU (map expVars (e::elist))
   | expVars (RecdProj(e,id)) = expVars e
   | expVars (Fncall(qid,expl)) = bigU (map expVars expl)
-  | expVars (ConstrExp(tyqid,id,opt)) = bigU(map expVars (optlist opt))
+  | expVars (ConstrExp(tyqid,id,elist)) = bigU(map expVars elist)
   | expVars (Quantified(quant,bvars,e)) =
       bigU [map fst bvars, bigU (map (tyVars o snd) bvars), expVars e]
 and tyVars (BaseTy _) = []
@@ -369,41 +314,6 @@ val stringSort = Listsort.sort String.compare;
 
 val sorted_expVars = stringSort o expVars;
 
-(*
-fun declVars (NumTyDecl _) = []
-  | declVars (TyAbbrevDecl(_,ty)) = tyVars ty
-  | declVars (RecdDecl(_,fields)) = bigU (map (tyVars o snd) fields)
-  | declVars (DatatypeDecl(id, constrList)) =
-  | declVars (VarDecl(id,ty)) = insert id (tyVars ty)
-  | declVars (ConstDecl(id,ty,exp)) = insert id (union (tyVars ty) (expVars exp))
-  | declVars (SizedDataDecl(id,ty,e1,NONE))
-      = insert id (union (tyVars ty) (expVars e1))
-  | declVars (SizedDataDecl(id,ty,e1,SOME e2))
-      = insert id (union (tyVars ty) (union (expVars e1) (expVars e2)))
-  | declVars (SizedGraphDecl(id,ty,e1,e2))
-      = insert id (union (tyVars ty) (union (expVars e1) (expVars e2)))
-  | declVars (SizedGraphDecl(id,ty,e1,e2)) = insert id (union (tyVars ty)
-                                                  (union (expVars e1) (expVars e2)))
-  | declVars (EfnDecl(id,params,retvalOpt)) =
-      let val paramIds = map (fst o dest_param)
-                             (params @ map Out (optlist retvalOpt))
-          val dimIds = fnArrayDims (params,retvalOpt)
-          val localIds = map fst locals
-      in stmtFrees (dimIds@paramIds@localIds) (Block stmts)
-      end
-  | declVars (FnDecl(id,params,retvalOpt,locals,stmts)) =
-      let val paramIds = map (fst o dest_param)
-                             (params @ map Out (optlist retvalOpt))
-          val dimIds = fnArrayDims (params,retvalOpt)
-          val localIds = map fst locals
-      in stmtFrees (dimIds@paramIds@localIds) (Block stmts)
-      end
-  | declVars(SpecDecl(id,vlist,stmts)) =
-            union (bigU (map (tyVars o snd) vlist))
-                  (stmtVars stmts)
-  | declVars (CommentDecl _) = []
-*)
-
 (*---------------------------------------------------------------------------*)
 (* Find all/only free variables in an ty/exp/stmt/function/package           *)
 (*---------------------------------------------------------------------------*)
@@ -425,7 +335,7 @@ and expFrees scope exp =
    | ArrayIndex(e,elist) => bigU (map (expFrees scope) (e::elist))
    | RecdProj(e,id) => expFrees scope e
    | Fncall(qid,expl) => bigU (map (expFrees scope) expl)
-   | ConstrExp(tyqid,id,opt) => bigU(map (expFrees scope) (optlist opt))
+   | ConstrExp(tyqid,id,elist) => bigU(map (expFrees scope) elist)
    | Quantified(quant,bvars,e) => expFrees (map fst bvars @ scope) e
 
 fun stmtFrees scope stmt =
@@ -480,8 +390,7 @@ fun exp_calls [] acc = acc
   | exp_calls (Binop(_,e1,e2)::t) acc = exp_calls (e1::e2::t) acc
   | exp_calls (ArrayExp elist::t) acc = exp_calls (elist@t) acc
   | exp_calls (ArrayIndex(_,elist)::t) acc = exp_calls (elist@t) acc
-  | exp_calls (ConstrExp (_,_,NONE)::t) acc = exp_calls t acc
-  | exp_calls (ConstrExp (_,_,SOME e)::t) acc = exp_calls (e::t) acc
+  | exp_calls (ConstrExp (_,_,elist)::t) acc = exp_calls (elist@t) acc
   | exp_calls (Fncall(qid,elist)::t) acc = exp_calls (elist@t) (insert qid acc)
   | exp_calls (RecdExp (qid,fields)::t) acc = exp_calls (map snd fields@t) acc
   | exp_calls (RecdProj(e,_)::t) acc = exp_calls (e::t) acc
@@ -512,8 +421,8 @@ fun fn_calls stmts qids =
        | exps (Case(e,cls)::t) acc = exps (map snd cls@t) (e::acc)
        | exps (Call(qid,elist)::t) acc = exps t (elist@acc)
        | exps (While(e,s)::t) acc = exps (s::t) (e::acc)
-       | exps (For(_,e1,e2,istmt,body)::t) acc = exps (istmt::body::t)
-                                                      (e1::e2::acc)
+       | exps (For(_,e1,e2,istmt,body)::t) acc =
+               exps (istmt::body::t) (e1::e2::acc)
        | exps (Block slist::t) acc = exps (slist@t) acc
        | exps (Check e::t) acc = exps t (e::acc)
  in
@@ -569,7 +478,6 @@ and eqExp epair =
    | (ConstExp(IntLit i1), ConstExp(IntLit i2))       => i1=i2
    | (ConstExp(CharLit c1), ConstExp(CharLit c2))     => c1=c2
    | (ConstExp(StringLit s1), ConstExp(StringLit s2)) => s1=s2
-   | (ConstExp(RegexLit r1), ConstExp(RegexLit r2))   => r1=r2
    | (ConstExp(FloatLit f1), ConstExp(FloatLit f2))   => Real.==(f1,f2)
    | (Unop(op1,e1),Unop(op2,e2)) => op1=op2 andalso eqExp(e1,e2)
    | (Binop(op1,d1,d2),Binop(op2,e1,e2))
@@ -577,8 +485,8 @@ and eqExp epair =
    | (ArrayExp elist1,ArrayExp elist2) => Lib.all2 (curry eqExp) elist1 elist2
    | (ArrayIndex(e1,elist1),ArrayIndex(e2,elist2))
        => eqExp(e1,e2) andalso Lib.all2 (curry eqExp) elist1 elist2
-   | (ConstrExp(q1,i1,eOpt1),ConstrExp(q2,i2,eOpt2))
-       => q1=q2 andalso i1=i2 andalso eqOpt (curry eqExp) eOpt1 eOpt2
+   | (ConstrExp(q1,i1,elist1),ConstrExp(q2,i2,elist2))
+       => q1=q2 andalso i1=i2 andalso Lib.all2 (curry eqExp) elist1 elist2
    | (Fncall(q1,elist1),Fncall(q2,elist2))
        => q1=q2 andalso Lib.all2 (curry eqExp) elist1 elist2
    | (RecdExp (qid1,fields1),RecdExp(qid2,fields2)) =>
@@ -622,8 +530,7 @@ and
       | ArrayExp elist => ArrayExp(map (substExp theta) elist)
       | ArrayIndex(e,elist) => ArrayIndex
                                  (substExp theta e, map (substExp theta) elist)
-      | ConstrExp(qid,id,NONE) => exp
-      | ConstrExp(qid,id,SOME e) => ConstrExp(qid,id,SOME (substExp theta e))
+      | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (substExp theta) elist)
       | Fncall(qid,elist) => Fncall(qid,map (substExp theta) elist)
       | RecdExp (qid,fields) => RecdExp(qid,map (I##substExp theta) fields)
       | RecdProj(e,id) => RecdProj(substExp theta e,id)
@@ -709,14 +616,8 @@ fun substDecl theta decl =
    | RecdDecl(id,flds)   => RecdDecl(id, map (I##substTy theta) flds)
    | DatatypeDecl(id,constrs)
      => DatatypeDecl(id, map (substConstr theta) constrs)
-   | GraphDecl(id,nty,ety) => GraphDecl(id,substTy theta nty,substTy theta ety)
    | VarDecl vdec => VarDecl(substVdec theta vdec)
    | ConstDecl(id,ty,exp) => ConstDecl(id,substTy theta ty,substExp theta exp)
-   | SizedDataDecl(id,ty,e1,eopt)
-      => SizedDataDecl(id,substTy theta ty,substExp theta e1,
-                       Option.map (substExp theta) eopt)
-   | SizedGraphDecl(id,ty,e1,e2)
-      => SizedGraphDecl(id,substTy theta ty, substExp theta e1,substExp theta e2)
    | EfnDecl(id,params,retvalOpt)
      => EfnDecl(id,map (substParam theta) params,
                    Option.map (substVdec theta) retvalOpt)
@@ -754,8 +655,7 @@ and substTyExp theta exp =
      | ArrayExp elist => ArrayExp(map (substTyExp theta) elist)
      | ArrayIndex(e,elist) => ArrayIndex(substTyExp theta e,
                                          map (substTyExp theta) elist)
-     | ConstrExp(qid,id,NONE) => exp
-     | ConstrExp(qid,id,SOME e) => ConstrExp(qid,id,SOME (substTyExp theta e))
+     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (substTyExp theta) elist)
      | Fncall(qid,elist) => Fncall(qid,map (substTyExp theta) elist)
      | RecdExp(qid,fields) => RecdExp(qid,map (I##substTyExp theta) fields)
      | RecdProj(e,id) => RecdProj(substTyExp theta e,id)
@@ -803,18 +703,10 @@ fun substTyDecl theta decl =
      => RecdDecl(id, map (substTyVdec theta) flds)
    | DatatypeDecl(id,constrs)
      => DatatypeDecl(id, map (substTyConstr theta) constrs)
-   | GraphDecl(id,nty,ety)
-     => GraphDecl(id,substTyTy theta nty,substTyTy theta ety)
    | VarDecl vdec
      => VarDecl(substTyVdec theta vdec)
    | ConstDecl(id,ty,exp)
      => ConstDecl(id,substTyTy theta ty,substTyExp theta exp)
-   | SizedDataDecl(id,ty,e1,eopt)
-     => SizedDataDecl(id,substTyTy theta ty,
-                      substTyExp theta e1,Option.map (substTyExp theta) eopt)
-   | SizedGraphDecl(id,ty,e1,e2)
-     => SizedGraphDecl(id,substTyTy theta ty,
-                       substTyExp theta e1,substTyExp theta e2)
    | EfnDecl(id,params,retvalOpt)
      => EfnDecl(id,map (substTyParam theta) params,
                    Option.map (substTyVdec theta) retvalOpt)
@@ -852,15 +744,14 @@ and substQidExp theta (exp:exp) =
      | Unop(opr,e) => Unop(opr,substQidExp theta e)
      | Binop(opr,e1,e2) => Binop(opr,substQidExp theta e1,substQidExp theta e2)
      | ArrayExp elist => ArrayExp(map (substQidExp theta) elist)
-     | ArrayIndex(e,elist) => ArrayIndex
-                  (substQidExp theta e, map (substQidExp theta) elist)
-     | ConstrExp(qid,id,NONE) => ConstrExp(alistFn theta (qid), id, NONE)
-     | ConstrExp(qid,id,SOME e) => ConstrExp(alistFn theta (qid),
-                                            id,SOME (substQidExp theta e))
-     | Fncall(qid,elist) => Fncall(alistFn theta(qid),
-                                   map (substQidExp theta) elist)
-     | RecdExp(qid,fields) => RecdExp(alistFn theta(qid),
-                                      map (I##substQidExp theta) fields)
+     | ArrayIndex(e,elist) =>
+         ArrayIndex (substQidExp theta e, map (substQidExp theta) elist)
+     | ConstrExp(qid,id,elist) =>
+         ConstrExp(alistFn theta (qid), id,map (substQidExp theta) elist)
+     | Fncall(qid,elist) =>
+          Fncall(alistFn theta(qid), map (substQidExp theta) elist)
+     | RecdExp(qid,fields) =>
+         RecdExp(alistFn theta(qid), map (I##substQidExp theta) fields)
      | RecdProj(e,id) => RecdProj(substQidExp theta e,id)
      | Quantified(q,qvars,e) => Quantified(q,qvars,substQidExp theta e)
 
@@ -899,17 +790,9 @@ fun substQidDecl theta decl =
    | RecdDecl(id,flds)   => RecdDecl(id, map (I##substQidTy theta) flds)
    | DatatypeDecl(id,constrs)
      => DatatypeDecl(id, map (substQidConstr theta) constrs)
-   | GraphDecl(id,nty,ety) => GraphDecl(id,substQidTy theta nty,
-                                           substQidTy theta ety)
    | VarDecl vdec => VarDecl(substQidVdec theta vdec)
    | ConstDecl(id,ty,exp) => ConstDecl(id,substQidTy theta ty,
                                           substQidExp theta exp)
-   | SizedDataDecl(id,ty,e1,eopt)
-      => SizedDataDecl(id,substQidTy theta ty,
-                       substQidExp theta e1,Option.map (substQidExp theta) eopt)
-   | SizedGraphDecl(id,ty,e1,e2)
-      => SizedGraphDecl(id,substQidTy theta ty,
-                        substQidExp theta e1,substQidExp theta e2)
    | EfnDecl(id,params,retvalOpt)
      => EfnDecl(id,map (substQidParam theta) params,
                    Option.map (substQidVdec theta) retvalOpt)
@@ -946,8 +829,7 @@ and expIds exp set =
      | Binop(opr,e1,e2) => expIds e2 (expIds e1 set)
      | ArrayExp elist => itlist expIds elist set
      | ArrayIndex(e,elist) => itlist expIds (e::elist) set
-     | ConstrExp((_,id1),id2,NONE) => insert id1 (insert id2 set)
-     | ConstrExp((_,id1),id2,SOME e) => expIds e (insert id1 (insert id2 set))
+     | ConstrExp((_,id1),id2,elist) => itlist expIds elist (insert id1 (insert id2 set))
      | Fncall((_,id),elist) => itlist expIds elist (insert id set)
      | RecdExp((_,id),fields) => itlist expIds (map snd fields) (insert id set)
      | RecdProj(e,id) => expIds e (insert id set)
@@ -978,15 +860,8 @@ fun declIds decl set =
    | RecdDecl(id,flds) => itlist tyIds (map snd flds) (insert id set)
    | TyAbbrevDecl(id,ty) => tyIds ty (insert id set)
    | DatatypeDecl(id,constrs) => itlist constrIds constrs (insert id set)
-   | GraphDecl(id,nty,ety) => tyIds ety (tyIds nty (insert id set))
    | VarDecl (id,ty) => tyIds ty (insert id set)
    | ConstDecl(id,ty,exp) => expIds exp (tyIds ty (insert id set))
-   | SizedDataDecl(id,ty,e1,NONE)
-      => expIds e1 (tyIds ty (insert id set))
-   | SizedDataDecl(id,ty,e1,SOME e2)
-      => expIds e2 (expIds e1 (tyIds ty (insert id set)))
-   | SizedGraphDecl(id,ty,e1,e2)
-      => expIds e2 (expIds e1 (tyIds ty (insert id set)))
    | EfnDecl(id,params,retvalOpt) =>
       let val tys = map (snd o dest_param) params @
                     map snd (optlist retvalOpt)
@@ -1026,8 +901,7 @@ and expQids exp set =
      | Binop(opr,e1,e2) => expQids e2 (expQids e1 set)
      | ArrayExp elist => itlist expQids elist set
      | ArrayIndex(e,elist) => itlist expQids (e::elist) set
-     | ConstrExp(qid,id,NONE) => insert qid set
-     | ConstrExp(qid,id,SOME e) => expQids e (insert qid set)
+     | ConstrExp(qid,id,elist) => itlist expQids elist (insert qid set)
      | Fncall(qid,elist) => itlist expQids elist (insert qid set)
      | RecdExp(qid,fields) => itlist expQids (map snd fields) (insert qid set)
      | RecdProj(e,id) => expQids e set
@@ -1058,14 +932,8 @@ fun declQids decl set =
    | RecdDecl(id,flds) => itlist tyQids (map snd flds) set
    | TyAbbrevDecl(id,ty) => tyQids ty set
    | DatatypeDecl(id,constrs) => itlist constrQids constrs set
-   | GraphDecl(id,nty,ety) => tyQids nty (tyQids ety set)
    | VarDecl (id,ty) => tyQids ty set
    | ConstDecl(id,ty,exp) => expQids exp (tyQids ty set)
-   | SizedDataDecl(id,ty,e1,eopt) =>
-       (case eopt
-         of NONE => expQids e1 (tyQids ty set)
-          | SOME e2 => expQids e2 (expQids e1 (tyQids ty set)))
-   | SizedGraphDecl(id,ty,e1,e2) => expQids e2 (expQids e1 (tyQids ty set))
    | EfnDecl(id,params,retvalOpt) =>
       let val tys = map (snd o dest_param) params @
                     map snd (optlist retvalOpt)
@@ -1175,12 +1043,8 @@ fun pkg_varDecs (name,decls) =
  end;
 
 fun splitPkg (pkgName,decls) =
- let val types = mapfilter (fn (x as RecdDecl _) => x
-                             | (x as DatatypeDecl _) => x
-                             | (x as GraphDecl _) => x) decls
-     val vdecls = mapfilter (fn (x as VarDecl _) => x
-                              | (x as SizedDataDecl _) => x
-                              | (x as SizedGraphDecl _) => x) decls
+ let val types = mapfilter (fn (x as RecdDecl _) => x) decls
+     val vdecls = mapfilter (fn (x as VarDecl _) => x) decls
      val edecls = mapfilter (fn EfnDecl x => x) decls
      val fdecls = mapfilter (fn (x as ConstDecl _) => x
                               | (x as FnDecl _) => x) decls
@@ -1189,83 +1053,6 @@ fun splitPkg (pkgName,decls) =
   (types,vdecls,edecls,fdecls,sdecls)
  end
 
-
-(*---------------------------------------------------------------------------*)
-(* Matching (simple) for types.                                              *)
-(*---------------------------------------------------------------------------*)
-(*
-val MATCH_TY_ERR = ERR "matchTy"
-val MATCH_EXP_ERR = ERR "matchExp"
-
-fun matchTy fixed typair =
-  case typair
-   of (BaseTy x1, BaseTy x2)
-       => if x1=x2 then []
-            else raise MATCH_TY_ERR "disagreement at base types"
-    | (NamedTy qid1,NamedTy qid2)
-       => if qid1=qid2 then []
-            else raise MATCH_TY_ERR "disagreement at named types"
-    | (RecdTy (qid1,flds1), RecdTy (qid2,flds2))
-       => if qid1 <> qid2 then
-            raise MATCH_TY_ERR "disagreement at record types"
-          else
-          let val fields1 = sort_on_string_key flds1
-              val fields2 = sort_on_string_key flds2
-              fun matchFieldTy (s1,ty1) (s2,ty2) =
-                if s1=s2 then matchTy fixed (ty1,ty2)
-                 else raise MATCH_TY_ERR ("disagreement at record field "^s1)
-              val fldpairs = zip fields1 fields2
-                     handle e => raise MATCH_TY_ERR
-                                 "disagreement in number of record fields"
-              val thetans = map matchFieldTy fldpairs
-              fun norm [] = []
-                | norm ([]::t) = norm t
-                | norm (bindings::t) =
-                   let val t' = norm t
-                       fun add_bindings (v,e) list =
-                          case assoc1 v list
-                            of NONE => (v,e)::list
-                             | SOME (_,e') => if e = e' then list
-                                 else raise MATCH_TY_ERR
-                                  ("disagreement in binding for variable "^fst v)
-                   in itlist add_binding bindings t'
-                   end
-          in norm thetans
-          end
-    | (ArrayTy (ty1,exps1), ArrayTy (ty2,exps2))
-        => matchTy(ty1,ty2) andalso Lib.all2 (curry matchExp) exps1 exps2
-    | (other,wise) => false
-and matchExp fixed epair =
-  case epair
-  of (VarExp i1, VarExp i2) => i1=i2
-   | (ConstExp(IdConst i1), ConstExp(IdConst i2))     => i1=i2
-   | (ConstExp(BoolLit b1), ConstExp(BoolLit b2))     => b1=b2
-   | (ConstExp(IntLit i1), ConstExp(IntLit i2))       => i1=i2
-   | (ConstExp(CharLit c1), ConstExp(CharLit c2))     => c1=c2
-   | (ConstExp(StringLit s1), ConstExp(StringLit s2)) => s1=s2
-   | (ConstExp(FloatLit f1), ConstExp(FloatLit f2))   => Real.==(f1,f2)
-   | (Unop(op1,e1),Unop(op2,e2)) => op1=op2 andalso matchExp(e1,e2)
-   | (Binop(op1,d1,d2),Binop(op2,e1,e2))
-        => op1=op2 andalso matchExp(d1,e2) andalso matchExp(d2,e2)
-   | (ArrayExp elist1,ArrayExp elist2) => Lib.all2 (curry matchExp) elist1 elist2
-   | (ArrayIndex(e1,elist1),ArrayIndex(e2,elist2))
-       => matchExp(e1,e2) andalso Lib.all2 (curry matchExp) elist1 elist2
-   | (ConstrExp(q1,i1,eOpt1),ConstrExp(q2,i2,eOpt2))
-       => q1=q2 andalso i1=i2 andalso eqOpt (curry matchExp) eOpt1 eOpt2
-   | (Fncall(q1,elist1),Fncall(q2,elist2))
-       => q1=q2 andalso Lib.all2 (curry matchExp) elist1 elist2
-   | (RecdExp (qid1,fields1),RecdExp(qid2,fields2)) =>
-       let fun eqField (s1,e1) (s2,e2) = s1=s2 andalso matchExp(e1,e2)
-       in qid1=qid2 andalso Lib.all2 eqField fields1 fields2
-       end
-   | (RecdProj(e1,i1),RecdProj(e2,i2)) => i1=i2 andalso matchExp(e1,e2)
-   | (Quantified(q1,bvars1,e1),Quantified(q2,bvars2,e2))
-       => let fun eqBvar(s1,ty1) (s2,ty2) = s1=s2 andalso matchTy(ty1,ty2)
-          in q1=q2 andalso matchExp(e1,e2) andalso
-             Lib.all2 eqBvar bvars1 bvars2
-          end
-   | (other,wise) => false
-*)
 
 
 (*---------------------------------------------------------------------------*)
@@ -1341,20 +1128,6 @@ fun is_bounded (BaseTy(IntTy(Int(SOME _)))) = true
   | is_bounded (BaseTy(IntTy(Nat(SOME _)))) = true
   | is_bounded otherwise = false
 
-fun flip_sign Signed (BaseTy(IntTy(Nat x))) = BaseTy(IntTy(Int x))
-  | flip_sign Signed (ty as BaseTy(IntTy(Int _))) = ty
-  | flip_sign Unsigned (BaseTy(IntTy(Int x))) = BaseTy(IntTy(Nat x))
-  | flip_sign Unsigned (ty as BaseTy(IntTy(Nat _))) = ty
-  | flip_sign uop otherwise = raise ERR "ty_of" "flip_sign: expected a number"
-
-fun drop_bound ty =
- case ty
-  of BaseTy(IntTy(Nat NONE)) => ty
-   | BaseTy(IntTy(Int NONE)) => ty
-   | BaseTy(IntTy(Nat (SOME _))) => BaseTy(IntTy(Nat NONE))
-   | BaseTy(IntTy(Int (SOME _))) => BaseTy(IntTy(Int NONE))
-   | otherwise => raise ERR "ty_of" "drop_bound: expected a numeric type";
-
 (*---------------------------------------------------------------------------*)
 (* Replace implications by conditionals in an exp. Note that this can be     *)
 (* seen as imposing an order of evaluation where the antecedent is evaluated *)
@@ -1377,7 +1150,7 @@ fun elim_imp p =
      | RecdExp (qid,fields) => RecdExp (qid,List.map (I##elim_imp) fields)
      | RecdProj(recd,fname) => RecdProj(elim_imp recd,fname)
      | Fncall (qid,args) => Fncall(qid,map elim_imp args)
-     | ConstrExp(qid, constr,argOpt) => ConstrExp(qid, constr,Option.map elim_imp argOpt)
+     | ConstrExp(qid, constr,args) => ConstrExp(qid, constr,map elim_imp args)
      | Quantified(q,vars,e) => Quantified(q,vars,elim_imp e)
 ;
 
@@ -1443,9 +1216,8 @@ fun expand1Ty E ty =
      | ArrayExp elist => ArrayExp(map (expand1TyExp E) elist)
      | ArrayIndex(e,elist) =>
           ArrayIndex(expand1TyExp E e, map (expand1TyExp E) elist)
-     | ConstrExp(qid,id,NONE) => ConstrExp(qid_map E qid,id,NONE)
-     | ConstrExp(qid,id,SOME e) =>
-          ConstrExp(qid_map E qid, id,SOME (expand1TyExp E e))
+     | ConstrExp(qid,id,elist) =>
+          ConstrExp(qid_map E qid, id,map (expand1TyExp E) elist)
      | Fncall(qid,elist) => Fncall(qid,map (expand1TyExp E) elist)
      | RecdExp(qid,fields) =>
           RecdExp(qid_map E qid, map (I##expand1TyExp E) fields)
@@ -1514,7 +1286,7 @@ fun matchTys E [] bindings = checkDims E bindings
          => matchTys E ((ty1,ty2)::t) ((zip exps1 exps2)@bindings)
        | (RecdTy (qid1,fields1), RecdTy (qid2,fields2))
          => if qid1 <> qid2
-              then raise TC_ERR "Type mismatch in function call args (record types with different qids)."
+             then raise TC_ERR "Type mismatch in function call args (record types with different qids)."
               else
                let val (f1_ids, f1_tys) = unzip (sort_on_string_key fields1)
                    val (f2_ids,f2_tys) = unzip (sort_on_string_key fields2)
@@ -1571,76 +1343,15 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
       | ConstExp (BoolLit _) => BaseTy BoolTy
       | ConstExp (CharLit _) => BaseTy CharTy
       | ConstExp (StringLit _) => BaseTy StringTy
-      | ConstExp (RegexLit _) => BaseTy RegexTy
       | ConstExp (IntLit{kind, ...}) => BaseTy (IntTy kind)
       | ConstExp (FloatLit _) => BaseTy FloatTy
       | Unop(Not,e) => check "Not" (tcExp env e) (BaseTy BoolTy)
-      | Unop(BitNot,e) =>
-          check_pred "BitNot: expected argument to have bounded integer type"
-                   (tcExp env e)
-                   is_bounded
       | Unop(UMinus,e) =>
          let val estr = String.concat
                 ["Unary Minus: expected argument to be an int ",
                  "(either fixed width or unbounded)"]
          in check_pred estr (tcExp env e) is_signed
          end
-      | Unop(ChrOp,e) =>
-         let in
-             check "chr" (tcExp env e)
-                         (BaseTy (IntTy (Nat(SOME 8))));
-             BaseTy CharTy
-         end
-      | Unop(OrdOp,e) =>
-         let in
-             check "ord" (tcExp env e) (BaseTy CharTy);
-             BaseTy (IntTy (Nat(SOME 8)))
-         end
-      | Unop(Signed,e) =>
-         let val ty = tcExp env e
-         in check_pred "Signed: expected argument to be an int of some kind"
-                       ty is_int;
-            flip_sign Signed ty
-         end
-      | Unop(Unsigned,e) =>
-         let val ty = tcExp env e
-         in check_pred "Unsigned: expected argument to be an int of some kind"
-                    ty is_int;
-            flip_sign Unsigned ty
-         end
-      | Unop(Unbounded,e) =>
-         let val ty = tcExp env e
-         in check_pred "Unbounded: expected argument to be an int of some kind"
-                       ty is_int;
-            drop_bound ty
-         end
-      | Unop(Yesterday,e) =>
-          let in
-            check "Yesterday" (tcExp env e) (BaseTy BoolTy);
-            BaseTy BoolTy
-          end
-      | Unop(ZYesterday,e) =>
-          let in
-            check "ZYesterday" (tcExp env e) (BaseTy BoolTy);
-            BaseTy BoolTy
-          end
-      | Unop(Historically,e) =>
-          let in
-            check "Historically" (tcExp env e) (BaseTy BoolTy);
-            BaseTy BoolTy
-          end
-      | Binop(CastWidth,e1,e2) =>
-          let val ty1 = tcExp env e1
-              val ty2 = tcExp env e2
-          in
-            check_pred "CastWidth: expected int in first argument"
-                       ty1 is_int;
-            check_pred "CastWidth: expected uint literal in second argument"
-                       ty2 is_unbounded_uint;
-            case dest_uintLit e2
-             of SOME n => BaseTy(IntTy(Nat (SOME n)))
-              | NONE => raise TC_ERR"CastWidth: non-literal width "
-          end
       | Binop(And,e1,e2) =>
           let in
             check "And" (tcExp env e1) (BaseTy BoolTy);
@@ -1652,38 +1363,6 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
             check "Imp" (tcExp env e1) (BaseTy BoolTy);
             check "Imp" (tcExp env e2) (BaseTy BoolTy);
             BaseTy BoolTy
-          end
-      | Binop(ArithmeticRShift,e1,e2) =>
-           let val ty1 = tcExp env e1
-               val ty2 = tcExp env e2
-           in
-              check_pred "ArithmeticRShift" ty1 is_bounded;
-              check_pred "ArithmeticRShift" ty2 is_unbounded_uint;
-              ty1
-          end
-      | Binop(BitAnd,e1,e2) =>
-          let val ty1 = tcExp env e1
-              val ty2 = tcExp env e2
-          in
-              check_pred "BitAnd" ty1 is_bounded;
-              check "BitAnd" ty1 ty2;
-              ty2
-          end
-      | Binop(BitOr,e1,e2) =>
-          let val ty1 = tcExp env e1
-              val ty2 = tcExp env e2
-          in
-              check_pred "BitOr" ty1 is_bounded;
-              check "BitOr" ty1 ty2;
-              ty2
-          end
-      | Binop(BitXOR,e1,e2) =>
-          let val ty1 = tcExp env e1
-              val ty2 = tcExp env e2
-          in
-              check_pred "BitXOR" ty1 is_bounded;
-              check "BitXOR" ty1 ty2;
-              ty2
           end
       | Binop(Equal,e1,e2) =>
           let val ty1 = tcExp env e1
@@ -1740,22 +1419,6 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
               check "LessEqual" ty1 ty2;
               BaseTy BoolTy
           end
-      | Binop(LogicalLShift,e1,e2) =>
-           let val ty1 = tcExp env e1
-               val ty2 = tcExp env e2
-           in
-               check_pred "LogicalLShift" ty1 is_bounded;
-               check_pred "LogicalLShift" ty2 is_unbounded_uint;
-               ty1
-          end
-      | Binop(LogicalRShift,e1,e2) =>
-           let val ty1 = tcExp env e1
-               val ty2 = tcExp env e2
-           in
-               check_pred "LogicalRShift" ty1 is_bounded;
-               check_pred "LogicalRShift" ty2 is_unbounded_uint;
-               ty1
-          end
       | Binop(Minus,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
@@ -1801,24 +1464,6 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
               check "Plus" ty1 ty2;
               ty1
           end
-      | Binop(RegexMatch,e1,e2) =>
-          let in
-            check "RegexMatch" (tcExp env e1) (BaseTy RegexTy);
-            check "RegexMatch" (tcExp env e2) (BaseTy StringTy);
-            BaseTy BoolTy
-          end
-      | Binop(Since,e1,e2) =>
-          let in
-            check "Since" (tcExp env e1) (BaseTy BoolTy);
-            check "Since" (tcExp env e2) (BaseTy BoolTy);
-            BaseTy BoolTy
-          end
-      | Binop(Trigger,e1,e2) =>
-          let in
-            check "Trigger" (tcExp env e1) (BaseTy BoolTy);
-            check "Trigger" (tcExp env e2) (BaseTy BoolTy);
-            BaseTy BoolTy
-          end
       | Binop(Fby,e1,e2) =>
           let val ty1 = tcExp env e1
               val ty2 = tcExp env e2
@@ -1853,31 +1498,14 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
                | otherwise => raise TC_ERR
                    "Array part of array index expression doesn't have array type"
           end
-      | ConstrExp (qid,c,argOpt) =>
-          let val argTy = optlist(Option.map (tcExp env) argOpt)
-          in
-           case total constrEnv (qid,c)
-            of NONE =>  raise TC_ERR ("unknown type: "^qid_string qid)
-             | SOME([],rngty) =>
-                if null argTy then rngty else
-                raise TC_ERR (String.concat
-                  ["constructor: ",qid_string qid,
-                   " expects no arguments, but has been given some"])
-             | SOME([domty],rngty) =>
-                 if length argTy = 1 then
-                    (if eqTyEnv (abbrEnv,recdEnv) domty (hd argTy)
-                     then rngty
-                     else raise TC_ERR (String.concat
-                      ["constructor: ",qid_string qid^"."^c,
-                      " has been given an argument of the wrong type"]))
-                else
-                raise TC_ERR (String.concat
-                  ["constructor: ",qid_string qid,
-                   " has been given the wrong number of arguments"])
-             | SOME(domtys,rngty) => raise TC_ERR
-               (String.concat ["constructor: ",qid_string qid,
-                               " has more than one argument"])
-          end
+      | ConstrExp (qid,c,elist) =>
+         let val tys = map (tcExp env) elist
+         in case total constrEnv (qid,c)
+             of NONE =>  raise TC_ERR ("unknown type: "^qid_string qid)
+              | SOME(domtys,rngty) =>
+                 (matchTys (abbrEnv,recdEnv) (zip domtys tys) []; rngty) handle e =>
+                  raise TC_ERR ("function: "^qid_string qid^" misapplied")
+         end
       | Fncall (qid,elist) =>  (* Similar to typecheck of Call stmt *)
          let val tys = map (tcExp env) elist
          in case total constEnv qid
@@ -1970,34 +1598,13 @@ fun tcStmt E stmt =
                 handle e => raise TC_ERR ("function: "^qid_string qid^
                                           " misapplied")
        end
-    | IfThenElse (exp,s1,s2) =>
-        let val ty = tcExp E exp
-        in if eqTyEnv (abbrEnv,recdEnv) ty (BaseTy BoolTy)
-            then (tcStmt E s1; tcStmt E s2)
-            else raise TC_ERR "If-Then-Else: test expression is not boolean"
-        end
-    | Case (exp,rules) => (* patterns have the form : qid.C(id) *)
+    | Case (exp,rules) => raise TC_ERR "Case not handled"
+      (*
        let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
-           fun pat_id_type (ConstrExp(qid,c,expOpt)) =
+           fun pat_id_type (ConstrExp(qid,c,elist)) =
                (case total constrEnv (qid,c)
                  of NONE => raise TC_ERR "Case statement: unknown constructor"
-                  | SOME (domtys,rngty) =>
-                     (case expOpt
-                       of NONE => if null domtys then NONE
-                                  else raise TC_ERR (String.concat
-                                  ["Case statement: constructor ",c,
-                                   " from type ", qid_string qid,
-                                   " expects a non-zero number of arguments"])
-                        | SOME (VarExp id) =>
-                            if length domtys = 1
-                             then SOME(id,hd domtys)
-                             else raise TC_ERR (String.concat
-                                  ["Case statement: constructor ",c,
-                                   " does not expect an argument"])
-                        | SOME otherExp => raise TC_ERR (String.concat
-                           ["Case statement: expected a constructor applied ",
-                            "to a variable"]))
-               )
+                  | SOME (domtys,rngty) => ??? )
              | pat_id_type otherwise = raise TC_ERR
                  "Case statement: expected a constructor pattern"
            fun tcRule (p,s) =
@@ -2014,6 +1621,13 @@ fun tcStmt E stmt =
           tcExp E exp;
           List.app tcRule rules
        end
+      *)
+    | IfThenElse (exp,s1,s2) =>
+        let val ty = tcExp E exp
+        in if eqTyEnv (abbrEnv,recdEnv) ty (BaseTy BoolTy)
+            then (tcStmt E s1; tcStmt E s2)
+            else raise TC_ERR "If-Then-Else: test expression is not boolean"
+        end
     | Block stmts => List.app (tcStmt E) stmts
     | For ((id,ty),e1,e2,istmt,body) =>
         let val (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv) = E
@@ -2049,11 +1663,8 @@ fun decl_info decl =
    | TyAbbrevDecl(id,ty) => ("TyAbbrevDecl of : "^id)
    | RecdDecl(id,_)      => ("RecdDecl of : "^id)
    | DatatypeDecl(id,_)  => ("DatatypeDecl of : "^id)
-   | GraphDecl(id,_,_)   => ("GraphDecl of : "^id)
    | VarDecl(id,_)       => ("VarDecl of : "^id)
    | ConstDecl(id,_,_)   => ("ConstDecl of : "^id)
-   | SizedDataDecl(id,_,_,_)  => ("SizedDataDecl of : "^id)
-   | SizedGraphDecl(id,_,_,_) => ("SizedGraphDecl of : "^id)
    | EfnDecl(id,_,_)     => ("EfnDecl of : "^id)
    | FnDecl(id,_,_,_,_)  => ("FnDecl of : "^id)
    | SpecDecl(id,_,_)    => ("SpecDecl of : "^id)
@@ -2082,39 +1693,6 @@ fun tcDecl E decl =
                       ["declaration of constant: ",Lib.quote id,
                        " disagreement between specified type and",
                        " type of expression"])
-       end
-   | SizedDataDecl(id,ty,e1,eopt) =>
-       let val _ = tcTy E ty
-       in if eqTyEnv (abbrEnv,recdEnv) uintTy (tcExp E e1)
-           then ()
-           else raise TC_ERR (String.concat
-                      ["declaration of bounded size global variable: ",Lib.quote id,
-                       " expected size bound to be of type uint"])
-           ;
-          (case eopt
-            of NONE => ()
-             | SOME e2 =>
-                 if eqTyEnv (abbrEnv,recdEnv) ty (tcExp E e2)
-                 then ()
-                 else raise TC_ERR (String.concat
-                      ["declaration of bounded size global variable: ",Lib.quote id,
-                       " disagreement between specified type and type of initializer expression"]))
-       end
-   | SizedGraphDecl(id,ty,e1,e2) =>
-       let val _ = tcTy E ty
-           val ty1 = tcExp E e1
-           val ty2 = tcExp E e2
-       in if eqTyEnv (abbrEnv,recdEnv) uintTy ty1 andalso
-             eqTyEnv (abbrEnv,recdEnv) uintTy ty2
-           then ()
-           else raise TC_ERR (String.concat
-                      ["declaration of graph global variable: ",Lib.quote id,
-                       " expected size bounds to be of type uint"])
-       end
-   | GraphDecl(id,nty,ety) =>
-       let in
-           tcTy E nty
-         ; tcTy E ety
        end
    | EfnDecl(id,params,retvalOpt) =>
        let val paramVars = map dest_param params
@@ -2178,7 +1756,6 @@ fun tydecls pkgName decls =
  mapfilter
    (fn (RecdDecl (id,_))    => ((pkgName,id),NamedTy(pkgName,id))
      | (DatatypeDecl(id,_)) => ((pkgName,id),NamedTy(pkgName,id))
-     | (GraphDecl (id,_,_)) => ((pkgName,id),NamedTy(pkgName,id))
      | (TyAbbrevDecl (id,ty)) => ((pkgName,id),ty)
      | other => raise ERR "" "")
  decls;
@@ -2210,8 +1787,6 @@ val specdecls = mapfilter (fn (SpecDecl (id,_,_)) => id);
 
 val vardecls = (* assumes all globals are declared in current package *)
   let fun dest_var (VarDecl (id,ty)) = (id,ty)
-        | dest_var (SizedDataDecl(id,ty,e1,e2)) = (id,ty)
-        | dest_var (SizedGraphDecl(id,ty,e1,e2)) = (id,ty)
         | dest_var other = raise ERR "vardecls" "dest_var"
   in
     mapfilter dest_var
@@ -2259,26 +1834,6 @@ fun typecheck (pkg as (pkgName,decls)) =
  handle e => raise wrap_exn "Passes" "typecheck" e;
 
 
-(*
-
-val ipkg = parsePkg "test/prio.sexp";
-
-val pkg = Passes.apply_type_abbrevs ipkg;
-val (pkgName,decls) = pkg;
-fun fdecl_assoc s ((dec as FnDecl(id,params,ret,locals,stmts))::t) =
-    if s = id then dec else fdecl_assoc s t
-  | fdecl_assoc s (other::t) = fdecl_assoc s t;
-
-val decl = fdecl_assoc "extract" decls;  (* el 16 decls; *)
-val E = pkgTyEnv pkg
-tcDecl pkgName E decl;
-List.app (tcDecl pkgName E) decls;
-val [decl1,decl2,decl3,decl4,decl5,decl6,decl7,decl8,decl9,decl10,decl11] = decls;
-
-val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
-     c11, c12, c13, c14, c15, c16, c17, c18, c19, c20] = fdecl_cohorts;
-*)
-
 (*---------------------------------------------------------------------------*)
 (* Compute type declaration cliques                                          *)
 (*---------------------------------------------------------------------------*)
@@ -2311,9 +1866,8 @@ fun tydecl_cliques pkgName tydecls =
 fun base_ty_name (BaseTy BoolTy)   = "bool"
   | base_ty_name (BaseTy CharTy)   = "char"
   | base_ty_name (BaseTy StringTy) = "string"
-  | base_ty_name (BaseTy RegexTy)  = "regex"
   | base_ty_name (BaseTy FloatTy)  = "float"
-  | base_ty_name (BaseTy DoubleTy)  = "double"
+  | base_ty_name (BaseTy DoubleTy) = "double"
   | base_ty_name (BaseTy (IntTy (Nat NONE))) = "uint"
   | base_ty_name (BaseTy (IntTy (Int NONE))) = "int"
   | base_ty_name (BaseTy (IntTy (Nat(SOME w)))) = "uint"^Int.toString w
@@ -2359,46 +1913,14 @@ fun pp_ty depth ty =
                | Int (SOME w) => PrettyString (istr^"int"^Int.toString w)
           end
       | ConstExp (FloatLit r) => PrettyString (Real.toString r)
-      | ConstExp (RegexLit r) => PrettyString ("`"^r^"`")
       | Unop(Not,e) => PrettyBlock(2,true,[],
            [PrettyString"not",PrettyBreak(0,1),
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(BitNot,e) => PrettyBlock(2,true,[],
-           [PrettyString"~",
             PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
       | Unop(UMinus,e) => PrettyBlock(2,true,[],
            [PrettyString"-",
             PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(ChrOp,e) => PrettyBlock(2,true,[],
-           [PrettyString"chr",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(OrdOp,e) => PrettyBlock(2,true,[],
-           [PrettyString"ord",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(Signed,e) => PrettyBlock(2,true,[],
-           [PrettyString"signed",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(Unsigned,e) => PrettyBlock(2,true,[],
-           [PrettyString"unsigned",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(Unbounded,e) => PrettyBlock(2,true,[],
-           [PrettyString"unbounded",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(Yesterday,e) => PrettyBlock(2,true,[],
-           [PrettyString"Yesterday",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(ZYesterday,e) => PrettyBlock(2,true,[],
-           [PrettyString"ZYesterday",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
-      | Unop(Historically,e) => PrettyBlock(2,true,[],
-           [PrettyString"Historically",
-            PrettyString"(",pp_exp (depth-1) e,PrettyString")"])
       | Binop(And,e1,e2) => pp_binop depth ("and",e1,e2)
       | Binop(Imp,e1,e2) => pp_binop depth ("==>",e1,e2)
-      | Binop(ArithmeticRShift,e1,e2) => pp_binop depth ("a>>",e1,e2)
-      | Binop(BitAnd,e1,e2) => pp_binop depth ("&",e1,e2)
-      | Binop(BitOr,e1,e2) => pp_binop depth ("|",e1,e2)
-      | Binop(BitXOR,e1,e2) => pp_binop depth ("^",e1,e2)
       | Binop(Equal,e1,e2) => pp_binop depth ("=",e1,e2)
       | Binop(Exponent,e1,e2) => pp_binop depth ("exp",e1,e2)
       | Binop(Greater,e1,e2) => pp_binop depth (">",e1,e2)
@@ -2406,18 +1928,12 @@ fun pp_ty depth ty =
       | Binop(Divide,e1,e2) => pp_binop depth ("/",e1,e2)
       | Binop(Less,e1,e2) => pp_binop depth ("<",e1,e2)
       | Binop(LessEqual,e1,e2) => pp_binop depth ("<=",e1,e2)
-      | Binop(LogicalLShift,e1,e2) => pp_binop depth ("<<",e1,e2)
-      | Binop(LogicalRShift,e1,e2) => pp_binop depth ("l>>",e1,e2)
       | Binop(Minus,e1,e2) => pp_binop depth ("-",e1,e2)
       | Binop(Modulo,e1,e2) => pp_binop depth ("%",e1,e2)
       | Binop(Multiply,e1,e2) => pp_binop depth ("*",e1,e2)
       | Binop(NotEqual,e1,e2) => pp_binop depth ("!=",e1,e2)
       | Binop(Or,e1,e2) => pp_binop depth ("or",e1,e2)
       | Binop(Plus,e1,e2) => pp_binop depth ("+",e1,e2)
-      | Binop(CastWidth,e1,e2) => pp_binop depth ("width",e1,e2)
-      | Binop(RegexMatch,e1,e2) => pp_exp depth (Fncall(("","match"),[e1,e2]))
-      | Binop(Since,e1,e2) => pp_exp depth (Fncall(("","Since"),[e1,e2]))
-      | Binop(Trigger,e1,e2) => pp_exp depth (Fncall(("","Trigger"),[e1,e2]))
       | Binop(Fby,e1,e2) => pp_binop depth ("->",e1,e2)
       | ArrayExp elist => PrettyBlock(0,true,[],
            [PrettyString"[",
@@ -2427,13 +1943,12 @@ fun pp_ty depth ty =
            [pp_exp (depth-1) A, PrettyString"[",
             gen_pp_list Comma [emptyBreak] (pp_exp (depth-1)) dims,
             PrettyString"]"])
-      | ConstrExp(qid, constr,argOpt) =>
+      | ConstrExp(qid, constr,args) =>
          PrettyBlock(2,true,[],
-           [PrettyString(pp_qid qid^"'"^constr),
+           [PrettyString(pp_qid qid^"'"^constr), PrettyString"(",
             PrettyBlock(0,false,[],
-             case argOpt of NONE => []
-               | SOME vexp => [PrettyString"(", pp_exp (depth-1) vexp,
-                               PrettyString")"])])
+	       [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1)) args]),
+	    PrettyString")"])
       | Fncall (qid,args) => PrettyBlock(2,true,[],
            [PrettyString(pp_qid qid), PrettyString"(",
             PrettyBlock(0,false,[],
@@ -2593,11 +2108,6 @@ fun pp_decl depth decl =
               pp_constr_list (depth-1) constrs,
               PrettyString";"])
           end
-     | GraphDecl(id,nty,ety)
-       => PrettyBlock(2,true,[],
-             [PrettyString ("graphtype "^id), Space, PrettyString"= (",
-              PrettyString "nodeLabel = ", pp_ty (depth-1) nty, Comma,Space,
-              PrettyString "edgeLabel = ", pp_ty (depth-1) ety,PrettyString");"])
      | VarDecl vdec
        => PrettyBlock(0,true,[],
              [PrettyString "var", Space, pp_ty_field (depth-1) vdec,
@@ -2608,23 +2118,6 @@ fun pp_decl depth decl =
               pp_ty_field (depth-1) (id,ty),
               PrettyString" = ", Space,
               pp_exp (depth-1) exp, PrettyString";"])
-     | SizedDataDecl(id,ty,e1,NONE)
-       => PrettyBlock(2,true,[],
-             [PrettyString "sized ",
-              pp_ty_field (depth-1) (id,ty),
-              PrettyString" (", pp_exp (depth-1) e1, PrettyString");"])
-     | SizedDataDecl(id,ty,e1,SOME e2)
-       => PrettyBlock(2,true,[],
-             [PrettyString "sized ",
-              pp_ty_field (depth-1) (id,ty),
-              PrettyString" (", pp_exp (depth-1) e1, PrettyString") :=",
-              Space, pp_exp (depth-1) e2, PrettyString ";"])
-     | SizedGraphDecl(id,ty,e1,e2)
-       => PrettyBlock(2,true,[],
-             [PrettyString "sized ",
-              pp_ty_field (depth-1) (id,ty),
-              PrettyString" (", pp_exp (depth-1) e1, Comma,
-                                pp_exp (depth-1) e2, PrettyString");"])
      | EfnDecl(id,params,retvalOpt)
        => PrettyBlock(2,true,[],
              [PrettyString "imported function", Space,

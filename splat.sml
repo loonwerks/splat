@@ -164,15 +164,6 @@ fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
 fun extract_filters (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
 fun extract_monitors (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = mondecs;
 
-(*
-fun decls_qids decls =
- let val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = decls
-     val supplied_qids = Lib.union (supplied_tydec_qids tydecs) (supplied_tmdec_qids tmdecs)
-     val mentioned_qids = MiscLib.bigU [mentioned_tydec_qids, mentiond_tmdec_qids,
-                                        mentioned_filter_qids, mentioned_monitor_qids]
- in
-*)
-
 (*---------------------------------------------------------------------------*)
 (* Transform to a set of "components", each of the form                      *)
 (*                                                                           *)
@@ -194,7 +185,9 @@ datatype gadget =
  Gadget of qid
            * tydec list
            * tmdec list
-           * (port list * bool * ivardec list * guar list);
+           * port list
+           * ivardec list
+           * guar list;
 
 val sort_tydecs = AADL.sort_tydecs
 val sort_tmdecs = AADL.sort_tmdecs;
@@ -210,7 +203,7 @@ fun elim_monitor tydecs tmdecs (MonitorDec mondec) =
      val tydecs' = sort_tydecs (tydecs @ mon_tydecs)
      val mondecs' = map (set_tmdec_pkgName (snd qid)) mon_tmdecs
      val tmdecs' = sort_tmdecs (tmdecs @ mondecs')
- in Gadget (qid, tydecs', tmdecs', (ports,latched,ivardecs,guars))
+ in Gadget (qid, tydecs', tmdecs', ports,ivardecs,guars)
  end;
 
 fun elim_filter tydecs tmdecs (FilterDec filtdec) =
@@ -220,7 +213,7 @@ fun elim_filter tydecs tmdecs (FilterDec filtdec) =
      val tydecs' = sort_tydecs (tydecs @ filt_tydecs)
      val filtdecs' = map (set_tmdec_pkgName (snd qid)) filt_tmdecs
      val tmdecs' = sort_tmdecs (tmdecs @ filtdecs')
- in Gadget (qid, tydecs', tmdecs', (ports,latched,ivardecs,guars))
+ in Gadget (qid, tydecs', tmdecs', ports,ivardecs,guars)
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -265,16 +258,6 @@ fun transRval_dec E tmdec =
 fun trans_ivardec E (s,ty,e) = (s,ty,transRval E e)
 fun trans_guar E (s1,s2,e) = (s1,s2,transRval E e)
 
-(*
-fun trans_support E support =
- let fun transFn (s,(tydecs,tmdecs)) =
-       let val tmdecs' = map (transRval_dec E) tmdecs
-       in (s,(tydecs, mk_recd_projns tydecs @ tmdecs'))
-       end
- in map transFn support
- end
-*)
-
 fun portE ports =
  let fun dest_port (id,ty,_,_) = (id,ty)
  in assocFn (map dest_port ports)
@@ -292,18 +275,17 @@ fun ivarE ivars =
 (*---------------------------------------------------------------------------*)
 
 fun transRval_gadget E gadget =
- let val Gadget (qid,tydecs, tmdecs, (ports,latched,ivardecs,guars)) = gadget
+ let val Gadget (qid,tydecs, tmdecs, ports,ivardecs,guars) = gadget
      val tmdecs'  = map (transRval_decl E) tmdecs
      val tmdecs'' = mk_recd_projns tydecs @ tmdecs'
      val varE     = catE (portE ports) (ivarE ivardecs)
      val ivardecs' = map (trans_ivardec (E,varE)) ivardecs
      val guars'    = map (trans_guar (E,varE)) guars
  in
-    Gadget (qid, tydecs, tmdecs'', (ports,latched,ivardecs',guars'))
+    Gadget (qid, tydecs, tmdecs'', ports,ivardecs',guars')
  end
 
-fun elim_projections tyE tmE gdts =
-   map (transRval_gadget (tyE,tmE)) gdts
+fun elim_projections tyE tmE gdts = map (transRval_gadget (tyE,tmE)) gdts;
 
 fun atomic_width atom =
 let open ByteContig
@@ -319,59 +301,189 @@ end;
 
 val trivEnv = ([],[],atomic_width);
 
-fun gadget_qid (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = qid;
-fun gadget_ports (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = ports;
-fun gadget_tydecs (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = tydecs;
-fun gadget_tmdecs (Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars))) = tmdecs;
+fun gadget_qid (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = qid;
+fun gadget_ports (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = ports;
+fun gadget_tydecs (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = tydecs;
+fun gadget_tmdecs (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = tmdecs;
+
+fun substExp_tmdec theta tmdec =
+ case tmdec
+  of ConstDec (qid,ty,e) => ConstDec (qid,ty,substExp theta e)
+   | FnDec(qid,params,rty,e) => FnDec(qid,params,rty,substExp theta e)
+fun substExp_ivar theta (s,ty,e) = (s,ty,substExp theta e)
+fun substExp_guar theta (s1,s2,e) = (s1,s2,substExp theta e)
+fun substExp_gadget theta gdt =
+ let val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+ in Gadget(qid,tydecs,
+           map (substExp_tmdec theta) tmdecs,
+           ports,
+           map (substExp_ivar theta) ivars,
+           map (substExp_guar theta) guars)
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Types/Definitions can come from a variety of packages, but they all get   *)
+(* thrown into the "Defs" structure, so we rename all the qids to reflect    *)
+(* that.                                                                     *)
+(*---------------------------------------------------------------------------*)
 
 fun tmdec_qids tmdec set =
   case tmdec
    of ConstDec (qid,ty,exp) => AST.expQids exp (insert qid set)
     | FnDec (qid,parames,rty,exp) => AST.expQids exp (insert qid set);
-
 fun ivardec_qids (s,ty,exp) set = AST.expQids exp set
 fun guar_qids (s1,s2,exp) set = AST.expQids exp set
 
 fun gadgetQids gdt set =
- let val Gadget(qid,_,tmdecs,(_,_,ivars,guars)) = gdt
+ let val Gadget(qid,_,tmdecs,_,ivars,guars) = gdt
      val set1 = itlist tmdec_qids tmdecs set
      val set2 = itlist ivardec_qids ivars set1
      val set3 = itlist guar_qids guars set2
  in set3
  end
 
-(*
-fun set_ty_Defs ty =
- case ty
-   of BaseTy _ => ty
-    | NamedTy (_,s) => NamedTy("Defs",s)
-    | RecdTy  ((_,s),fields) => RecdTy (("Defs",s), map (I##set_ty_Defs) fields)
-    | ArrayTy (ty,elist) => ArrayTy (set_ty_Defs ty, elist);
+fun subst_qid theta qid =
+  case subst_assoc (equal qid) theta
+   of NONE => qid
+    | SOME qid' => qid';
 
-fun set_tydec_Defs tydec =
- case tydec
-  of EnumDec  (qid, elts) => EnumDec(("Defs",snd qid),elts)
-   | RecdDec  (qid, flds) =>
-     RecdDec(("Defs",snd qid), map (I##set_ty_Defs) flds)
-   | ArrayDec (qid,ty) => ArrayDec(("Defs",snd qid),set_ty_Defs ty)
-   | UnionDec (qid,constrs) =>
-     UnionDec(("Defs",snd qid),map (I##set_ty_Defs) constrs)
+fun substQid_tmdec theta tmdec =
+  case tmdec
+   of ConstDec (qid,ty,exp) =>
+      ConstDec (subst_qid theta qid,ty,substQidExp theta exp)
+    | FnDec (qid,parames,rty,exp) =>
+      FnDec (subst_qid theta qid,parames,rty,substQidExp theta exp)
 
+fun substQid_ivar theta (s,ty,exp) = (s,ty,substQidExp theta exp);
+fun substQid_guar theta (s1,s2,exp) = (s1,s2,substQidExp theta exp);
+fun substQid_gadget theta gdt =
+ let val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+ in Gadget(qid,tydecs,
+           map (substQid_tmdec theta) tmdecs,
+           ports,
+           map (substQid_ivar theta) ivars,
+           map (substQid_guar theta) guars)
+ end;
 
-fun set_exp_Defs exp =
-  let val exp_qids =
+fun set_Defs_struct gdt =
+ let fun mk_def_qid (qid as (s1,s2)) acc =
+        if s1 = "" then acc else (qid |-> ("Defs",s2))::acc
+     val gqids = gadgetQids gdt []
+     val theta = itlist mk_def_qid gqids []
+ in substQid_gadget theta gdt
+ end
 
-fun set_Defs gdt =
- case gdt
-  of Gadget(qid,tydecs,tmdecs,(ports,latched,ivars,guars)) =>
-     let val tydecs' = map set_tydec_Defs tydecs
-         val tmdecs' = map set_tmdec_Defs tmdecs
-         val ports'  = map set_port_Decs ports
-         val ivars'  = map set_ivar_Decs ivars
-         val guars'  = map set_guar_Decs guars
-     in Gadget(qid,tydecs',tmdecs',(ports',latched,ivars',guars'))
+(*---------------------------------------------------------------------------*)
+(* Unhappily it can happen that identifiers that are the names of constants, *)
+(* and which should be constants, can arrive in the .json as free variables. *)
+(* This manifests as a free variable occurring in one of the following cases *)
+(*                                                                           *)
+(*  - the body of a constant or function declaration (tmdecs)                *)
+(*  - in the rhs of an ivar declaration (where the rhs can legitimately have *)
+(*    other ivars, and ports, occurring as free vars)                        *)
+(*  - in a guarantee (where the guar can have legit ivar and portname occs.  *)
+(*                                                                           *)
+(* This pass is an attempt to repair such anomalies.                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun corrall_rogue_vars gdt =
+ let val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     fun free_tmdecV tmdec =
+       case tmdec
+        of ConstDec (_,_,e) => AST.expVars e
+         | FnDec(_,params,_,e) => subtract (AST.expVars e) (map fst params)
+     fun free_ivarsV (_,_,e) = AST.expVars e
+     fun free_guarV (_,_,e) = AST.expVars e
+
+     val constNames = map (snd o tmdec_qid) tmdecs
+     val portNames = map #1 ports
+     val ivarNames = map #1 ivars
+     val taken = portNames @ ivarNames
+
+     val tmdec_probs = intersect (bigU (map free_tmdecV tmdecs)) constNames
+     val ivar_probs = subtract (bigU (map free_ivarsV ivars)) taken
+     val guar_probs = subtract (bigU (map free_guarV guars)) taken
+     val problems = bigU [tmdec_probs, ivar_probs, guar_probs]
+ in
+   if null problems then
+     gdt
+   else
+     let fun mk_bind id = (VarExp id |-> ConstExp(IdConst("Defs",id)))
+         val theta = map mk_bind problems
+     in
+      substExp_gadget theta gdt
      end
-*)
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* CakeML uses case to distinguish datatype constructors from variables      *)
+(* (val bindings, fun params, etc). Constructors start with an upper case    *)
+(* letter. Variables start with lower case. We have a pass lowering all      *)
+(* names that don't comply. Probably need a corresponding                    *)
+(* "upper-case-ification" for any constructors that happen to start with a   *)
+(* lower case letter.                                                        *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+fun set_vars_lower_case gdt =
+ let open AST
+   fun alistFn alist x =
+     case subst_assoc (equal x) alist
+      of SOME y => y
+       | NONE => x
+   fun substQidTy theta ty =
+    case ty
+     of RecdTy(qid,flist) => RecdTy (qid,map (I##substQidTy theta) flist)
+      | ArrayTy(ty,elist) => ArrayTy (substQidTy theta ty,
+                                      map (substQidExp theta) elist)
+      | otherwise => ty
+   and
+   substQidExp theta (exp:exp) =
+   case exp
+    of VarExp _ => exp
+     | ConstExp (IdConst qid) => ConstExp(IdConst (alistFn theta qid))
+     | ConstExp _ => exp
+     | Unop(opr,e) => Unop(opr,substQidExp theta e)
+     | Binop(opr,e1,e2) => Binop(opr,substQidExp theta e1,substQidExp theta e2)
+     | ArrayExp elist => ArrayExp(map (substQidExp theta) elist)
+     | ArrayIndex(e,elist) => ArrayIndex
+                  (substQidExp theta e, map (substQidExp theta) elist)
+     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (substQidExp theta) elist)
+     | Fncall(qid,elist) =>
+         Fncall(alistFn theta(qid), map (substQidExp theta) elist)
+     | RecdExp(qid,fields) => RecdExp(qid, map (I##substQidExp theta) fields)
+     | RecdProj(e,id) => RecdProj(substQidExp theta e,id)
+     | Quantified(q,qvars,e) => Quantified(q,qvars,substQidExp theta e)
+
+   val mk_low = String.map Char.toLower
+   fun mk_low_qid (qid as (s1,s2)) acc =
+       if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
+          acc
+       else (qid |-> (s1,mk_low s2))::acc
+   val gqids = gadgetQids gdt []
+   val theta = itlist mk_low_qid gqids []
+ in
+   substQid_gadget theta gdt
+ end;
+
+fun set_ports_and_ivars_lower_case gdt =
+ let open AST
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val portNames = map #1 ports
+     val ivarNames = map #1 ivars
+     val lower = String.map Char.toLower
+     fun mk_lowId id acc =
+	 if Char.isLower(String.sub(id,0)) then
+	     acc
+         else (VarExp id |-> VarExp (lower id))::acc
+     val theta = itlist mk_lowId (portNames@ivarNames) []
+     fun substIvar theta (s,ty,exp) = (s,ty,substExp theta exp)
+     fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
+ in Gadget(qid,tydecs,tmdecs,ports,
+           map (substIvar theta) ivars,
+           map (substGuar theta) guars)
+ end;
 
 fun defs_struct_of gdt =
  let val fodder = ("Defs",gadget_tydecs gdt,gadget_tmdecs gdt)
@@ -381,7 +493,7 @@ in
 end
 
 fun gadget_tyE gdt =
- let val Gadget (_,tydecs, _,_) = gdt
+ let val Gadget (_,tydecs, _,_,_,_) = gdt
      fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
      val tydec_alist = map mk_tydec_bind tydecs
  in
@@ -442,20 +554,22 @@ in
   pretty
 end
 
-fun CakeML_names pkgs = pkgs;
-
 fun process_model jsonFile =
  let val ([jpkg],ss) = Json.fromFile jsonFile
      val pkgs = scrape_pkgs jpkg
      val tyE = mk_tyE (map Pkg pkgs)
      val tmE = mk_constE (map Pkg pkgs)
      val gdts1 = mk_gadgets pkgs
-     val gdts2 = elim_projections tyE tmE gdts1
-     val apis = map API_of gdts2
-     val parser_structs = map parser_struct_of gdts2
-     val defs_structs = map defs_struct_of gdts2
+     val gdts2a = map corrall_rogue_vars gdts1
+     val gdts2b = map set_ports_and_ivars_lower_case gdts2a
+     val gdts3 = elim_projections tyE tmE gdts2b
+     val gdts4 = map set_Defs_struct gdts3
+     val gdts5 = map set_vars_lower_case gdts4
+     val apis = map API_of gdts5
+     val parser_structs = map parser_struct_of gdts5
+     val defs_structs = map defs_struct_of gdts5
  in
-    (apis,parser_structs, defs_structs, gdts2)
+    (apis,parser_structs, defs_structs, gdts5)
  end;
 
 fun getFile path =
@@ -522,10 +636,30 @@ val [gdt1, gdt2, gdt3] = gdts;
 val [api1,api2,api3] = apis;
 val [p1,p2,p3] = parsers;
 val [defs1,defs2,defs3] = defs;
+
 export_implementation "tmp" (api1,p1,defs1,gdt1);
+export_implementation "tmp" (api2,p2,defs2,gdt2);
+export_implementation "tmp" (api3,p3,defs3,gdt3);
 
 gadgetQids gdt1 [];
+gadgetQids gdt2 [];
+gadgetQids gdt3 [];
 
+val Gadget(qid,tydecs,tmdecs,(ports,ivars,guars)) = gdt2;
+
+val gdt2_qids = gadgetQids gdt2 [];
+
+val gdt2' =
+  Gadget(qid,tydecs,
+         map (substQid_tmdec theta) tmdecs,
+         ports,
+         map (substQid_ivar theta) ivars,
+         map (substQid_guar theta) guars);
+
+val gdt2_qids' = gadgetQids gdt2' [];
+val theta = itlist mk_def_qid (gadgetQids gdt2 []) [];
+
+val _qid = fun substQid
 List.app (print o PPfns.pp_string) apis;
 List.app (print o PPfns.pp_string) parsers
 
@@ -662,9 +796,9 @@ val [filtdec1,filtdec2,filtdec3,filtdec4] = filtdecs;
 
 val const_alist = tryfind extract_consts pkgs
 
-val MonitorDec(qid,features,latched,decs,eq_stmts,outCode) = mondec1;
-val MonitorDec(qid,features,latched,decs,eq_stmts,outCode) = mondec2;
-val MonitorDec(qid,features,latched,decs,eq_stmts,outCode) = mondec3;
+val MonitorDec(qid,features,decs,eq_stmts,outCode) = mondec1;
+val MonitorDec(qid,features,decs,eq_stmts,outCode) = mondec2;
+val MonitorDec(qid,features,decs,eq_stmts,outCode) = mondec3;
 
 val plist = map Pkg pkgs;
 val plist' = transRval_pkglist plist ;

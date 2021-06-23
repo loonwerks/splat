@@ -84,7 +84,6 @@ fun base_ty_name BoolTy   = "bool"
   | base_ty_name FloatTy  = "Double.double"
   | base_ty_name DoubleTy  = "Double.double"
   | base_ty_name (IntTy _) = "int"
-  | base_ty_name RegexTy   = raise ERR "base_ty_name" "regex"
 
 fun pp_ty depth pkgName ty =
  let open PolyML
@@ -129,19 +128,17 @@ fun pp_exp depth pkgName exp =
           else
             PrettyString (String.concat
               ["(Double.fromString ", Lib.quote (Real.toString r), ")"])
-      | ConstExp (RegexLit r) => PrettyString ("<RegexLit>!?")
       | Unop(Not,e) => PrettyBlock(2,true,[],
            [PrettyString"not",PrettyBreak(0,1),
             PrettyString"(",pp_exp (depth-1) pkgName e,PrettyString")"])
+      | Unop(UMinus,ConstExp(FloatLit r)) =>
+           PrettyString (String.concat
+              ["(Double.~(Double.fromString ",
+               Lib.quote (Real.toString (Real.abs r)), "))"])
+      | Unop(UMinus,ConstExp(IntLit{kind, value})) => PrettyString ("~"^Int.toString value)
       | Unop(UMinus,e) => PrettyBlock(2,true,[],
            [PrettyString"~",
             PrettyString"(",pp_exp (depth-1) pkgName e,PrettyString")"])
-      | Unop(ChrOp,e) => PrettyBlock(2,true,[],
-           [PrettyString"Char.chr",
-            PrettyString"(",pp_exp (depth-1) pkgName e,PrettyString")"])
-      | Unop(OrdOp,e) => PrettyBlock(2,true,[],
-           [PrettyString"Char.ord",
-            PrettyString"(",pp_exp (depth-1) pkgName  e,PrettyString")"])
       | Binop(Or,e1,e2) => pp_infix depth pkgName ("orelse",e1,e2)
       | Binop(And,e1,e2) => pp_infix depth pkgName ("andalso",e1,e2)
       | Binop(Equal,e1,e2) => pp_infix depth pkgName ("=",e1,e2)
@@ -163,7 +160,10 @@ fun pp_exp depth pkgName exp =
             PrettyString"]"])
       | ArrayIndex(A,dims) =>
          let fun trans exp [] = exp
-               | trans exp (d::dims) = trans (Fncall (("","Array.sub"),[exp,d])) dims
+               | trans exp (d::dims) =
+                 let val dsub1 = Binop(Minus,d,mk_uintLit 1)
+                 in trans (Fncall (("","Array.sub"),[exp,dsub1])) dims
+                 end
          in pp_exp depth pkgName (trans A dims)
          end
       | Fncall ((_,"App"),elist) =>
@@ -252,13 +252,15 @@ fun pp_exp depth pkgName exp =
             if null args then PrettyString "()" else
             pp_list_with_style false Space [emptyBreak] (pp_exp (depth-1) pkgName) args,
             PrettyString")"])
-      | ConstrExp(qid, constr,argOpt) =>
+      | ConstrExp(qid, constr,args) =>
          PrettyBlock(2,true,[],
-           [PrettyString(pp_pkg_qid pkgName (fst qid,constr)), Space,
-            PrettyBlock(0,false,[],
-             case argOpt of NONE => []
-               | SOME vexp => [PrettyString"(", pp_exp (depth-1) pkgName  vexp,
-                               PrettyString")"])])
+          if null args then
+	      [PrettyString(pp_pkg_qid pkgName (fst qid,constr))]
+          else
+	    [PrettyString"(",
+             PrettyString(pp_pkg_qid pkgName qid), PrettyString" ",
+             pp_list_with_style false Space [emptyBreak] (pp_exp (depth-1) pkgName) args,
+            PrettyString")"])
       | RecdExp (qid,fields) => PrettyBlock(2,true,[],
            [PrettyString("("),PrettyString(pp_pkg_qid pkgName qid), Space,
             PrettyBlock(0,false,[],
@@ -338,35 +340,6 @@ fun pp_decl depth pkgName decl =
               pp_exp (depth-1) pkgName exp, PrettyString";"])
      | FnDecl(id,params,retvalOpt,locals,stmts)
        => PrettyString "<FnDecl>!?"
-
-(*
-let fun pp_params() = PrettyBlock (2,true,[],
-                   [PrettyString id,Space,
-                    PrettyBlock(0,false,[],
-                         [pp_space_list (pp_param (depth-1)) params])])
-             fun pp_body() = PrettyBlock(0,true,[],
-                    iter_pp emptyString  [Line_Break] (pp_stmt (depth-1)) pkgName stmts)
-              fun pp_top_stmt [] = pp_body()
-                | pp_top_stmt locals =
-                    PrettyBlock(0,false,[],
-                      [PrettyString"var",
-                       PrettyBreak (1,0),
-                       PrettyBlock(0,true,[],
-                         iter_pp emptyString [Line_Break] (pp_vdec_semi (depth-1)) locals),
-                       Line_Break,
-                       PrettyString"in",
-                       Line_Break,
-                       pp_body()])
-          in
-           PrettyBlock(2,false,[],
-             [PrettyString "function ", pp_params(),
-              PrettyString" {", Line_Break,
-              PrettyString " ",
-              pp_top_stmt locals,
-              Line_Break,
-              PrettyString"}"])
-          end
-*)
      | otherwise => PrettyString"<!!Unexpected decl!!>"
  end
 
@@ -387,7 +360,7 @@ fun pp_tydec depth pkgName tydec =
      | RecdDec(qid,fields) =>
         let val tyName = snd qid
             val tys = map snd fields
-            val dty = DatatypeDecl (tyName,[(tyName^"Recd",tys)])
+            val dty = DatatypeDecl (tyName,[(tyName,tys)])
         in pp_decl depth pkgName dty
         end
      | UnionDec(qid,constrs) =>
@@ -447,7 +420,7 @@ val eltype = eltyper 12;
 (* the fieldName, and then "_of"                                             *)
 (*---------------------------------------------------------------------------*)
 
-fun recd_projFn_name tyName fieldName = "proj_"^tyName^"_"^fieldName;
+fun recd_projFn_name tyName fieldName = "proj_"^fieldName^"_"^tyName
 
 fun fieldFn tyE rty fieldName =
  let fun recdtyper n tyE ty =
@@ -527,7 +500,7 @@ fun transRval E e =
    | Unop (uop,e')     => Unop(uop,transRval E e')
    | Binop (bop,e1,e2) => Binop (bop,transRval E e1, transRval E e2)
    | ArrayExp elist    => ArrayExp (map (transRval E) elist)
-   | ConstrExp(qid,id,eOpt) => ConstrExp(qid,id,Option.map (transRval E) eOpt)
+   | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (transRval E) elist)
    | Fncall(qid as ("","Array_Forall"),elist) =>
       (case elist
         of [v,arry,P] =>
@@ -568,46 +541,6 @@ fun transRval_decl E tmdec =
 (* Superseded by code in splat.sml                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun transRval_filter E filterdec =
- let fun ivarFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
-     fun guarFn (a,b,e) = (a,b,transRval (E,empty_varE) e)
- in case filterdec
-     of FilterDec (qid,ports,tmdecs,ivars,props) =>
-      let val ivars' = map ivarFn ivars
-          val props' = map guarFn props
-      in FilterDec (qid,ports,tmdecs,ivars',props')
-      end
- end handle e => raise wrap_exn "PP_CakeML" "transRval_filter" e;
-
-(*---------------------------------------------------------------------------*)
-(* Superseded by code in splat.sml                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun transRval_monitor E mondec =
-  let fun ivarFn(a,b,e) = (a,b,transRval (E,empty_varE) e)
-      fun guarFn (a,b,e) = (a,b,transRval (E,empty_varE) e)
-  in
-   case mondec
-    of MonitorDec (qid,ports,latched,decs,ivardecs,guars) =>
-        let val decs' = map (transRval_decl E) decs
-            val ivardecs' = map ivarFn ivardecs
-            val guars' = map guarFn guars
-        in MonitorDec(qid,ports,latched,decs',ivardecs',guars')
-        end
-  end
-  handle e => raise wrap_exn "PP_CakeML" "transRval_monitor" e;
-
-(*---------------------------------------------------------------------------*)
-(* Superseded by code in splat.sml                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun transRval_pkg E (Pkg (pkgName,(tydecs,tmdecs,filters,monitors))) =
- Pkg(pkgName,
-       (tydecs,
-        map (transRval_decl E) tmdecs,
-        map (transRval_filter E) filters,
-        map (transRval_monitor E) monitors));
-
 fun tydec_to_ty tydec =
   case tydec
    of RecdDec (qid,fields) => RecdTy(qid,fields)
@@ -646,12 +579,6 @@ fun mk_constE pkglist =
  in assocFn alist
  end
 
-fun transRval_pkglist plist =
- let val tyE = mk_tyE plist
-     val constE = mk_constE plist
- in map (transRval_pkg (tyE,constE)) plist
- end;
-
 fun dest_recd_dec (RecdDec (qid, fields)) = (qid,fields)
   | dest_recd_dec otherwise = raise ERR "dest_recd_dec" ""
 
@@ -677,10 +604,13 @@ fun mk_recd_projns tys =
  end
 
 fun dest_recd_projnFn tmdec =
+ let fun is_recd_proj_name s = Lib.mem s ["record-projection","Record-Projection"]
+ in
  case tmdec
-  of FnDec(qid,[("recd", NamedTy tyqid)], ty,
-           Fncall(("","Record-Projection"),var::vars)) => SOME(qid,tyqid,var,vars)
+  of FnDec(qid,[("recd", NamedTy tyqid)], ty, Fncall(("",s),var::vars)) =>
+       if is_recd_proj_name s then SOME(qid,tyqid,var,vars) else NONE
    | otherwise => NONE
+ end
 ;
 
 fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
@@ -692,7 +622,7 @@ fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
         [PrettyString "fun ",
          PrettyString (snd qid), PrettyString " recd =",Space,
          PrettyString "case recd", Line_Break,
-         PrettyString "  of ", PrettyString (snd tyqid^"Recd"), PrettyString " ",
+         PrettyString "  of ", PrettyString (snd tyqid), PrettyString " ",
          pp_list_with_style false Space [emptyBreak]
                 (pp_exp (depth-1) pkgName) vars,
          PrettyString " => ", (pp_exp (depth-1) pkgName) var,
@@ -861,23 +791,10 @@ fun pp_defs_struct depth (structName,tydecs,tmdecs) =
       ])
  end;
 
-fun pp_filter depth (FilterDec (qid,ports,tmdecs,ivars,props)) =
- let open PolyML
- in if depth = 0 then PrettyString "<decl>"
-    else
-      PrettyBlock(0,true,[],
-	  [PrettyString "FILTER: ",
-	   PrettyString (qid_string qid)])
- end;
-
 fun dest_inout (InOut p) = p
   | dest_inout otherwise = raise ERR "dest_inout" "";
 fun dest_in (In p) = p
   | dest_in otherwise = raise ERR "dest_in" "";
-
-fun portname (Event s) = s
-  | portname (Data(s,ty)) = s
-  | portname (EventData(s,ty)) = s;
 
 (*---------------------------------------------------------------------------*)
 (* The stepFn synthesized for a monitor has the form                         *)
@@ -919,8 +836,8 @@ val emptyString = VarExp(Lib.quote"")
 
 fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
 
-val NoneExp = ConstrExp(("Option","option"),"None",NONE);
-fun mk_Some e = ConstrExp(("Option","option"),"Some",SOME e)
+val NoneExp = ConstrExp(("Option","option"),"None",[]);
+fun mk_Some e = ConstrExp(("Option","option"),"Some",[e])
 
 fun mk_boolOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
 
@@ -942,6 +859,12 @@ fun mk_deref e = Fncall(("","!"),[e]);
 (* TODO: sort Lustre variables in dependency order. Right now I assume that  *)
 (* has been done by the programmer/system designer.                          *)
 (*---------------------------------------------------------------------------*)
+
+datatype port = EventData of string * ty | Data of string * ty | Event of string;
+
+fun portname (Event s) = s
+  | portname (Data(s,ty)) = s
+  | portname (EventData(s,ty)) = s;
 
 fun feature2port (s,ty,dir,kind) =
  case kind
@@ -1012,36 +935,6 @@ val outVal_comment =
 	      "(*-----------------------*)",
               "(* Compute output values *)",
               "(*-----------------------*)", ""]);
-
-(*---------------------------------------------------------------------------*)
-(* Mapping AADL types to contiguity type names. The corresponding contig     *)
-(* types will be found in structure Uxas. The mapping is used to generate    *)
-(* parsers via a call                                                        *)
-(*                                                                           *)
-(*   Contig.parseFn Uxas.uxasEnv                                             *)
-(*           (Contig.VarName"root")                                          *)
-(*           contig                                                          *)
-(*           ([],string,Contig.mk_empty_lvalMap())                           *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
-
-val parseTable =
-  [(NamedTy("CMASI","AddressAttributedMessage"), "aaMesg"),
-   (NamedTy("CMASI","OperatingRegion"),          "OperatingRegion"),
-   (NamedTy("CMASI","LineSearchTask"),           "LineSearchTask"),
-   (NamedTy("CMASI","AutomationRequest"),        "AutomationRequest"),
-   (NamedTy("CMASI","AutomationResponse"),       "AutomationResponse"),
-   (NamedTy("CMASI","AddressArray"),             "address_array"),
-   (NamedTy("CMASI","Polygon"),                  "polygon")]
-
-(*
-fun mk_parseFn_call inputs =
- let val table =
-
-fun mk_predFn_call inputs =
- let val table =
-*)
-
 fun mk_mon_stepFn mondec =
  let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
      val stepFn_name = "stepFn"
@@ -1190,9 +1083,9 @@ fun mk_fillFn inports =
  end
 
 fun mk_stateVardecs n =
-  let val NoneExp = ConstrExp(("","Option"),"None",NONE)
+  let val NoneExp = ConstrExp(("","Option"),"None",[])
       val nexpList = map (K NoneExp) (upto 1 n)
-      val Some_True_Exp = ConstrExp(("","Option"),"Some",SOME (ConstExp(BoolLit true)))
+      val Some_True_Exp = ConstrExp(("","Option"),"Some",[ConstExp(BoolLit true)])
       val intial_stateVar_contents = Some_True_Exp::nexpList
       val refTuple = Fncall(("","Ref"),[mk_tuple nexpList])
   in ConstDec(("","theState"),dummyTy, refTuple)
@@ -1248,7 +1141,7 @@ fun pp_api depth (structName,inbufs,fillFns,sendFns,logInfo) =
  in
  if depth = 0 then PrettyString "<API-structure>"
    else
-    PrettyBlock(2,true,[],
+    PrettyBlock(0,true,[],
         [PrettyString ("structure "^structName^" = "), Line_Break,
          PrettyString "struct", Line_Break_2,
          end_pp_list Line_Break Line_Break (pp_inbuf  (depth-1)) inbufs,  Line_Break,
@@ -1257,7 +1150,8 @@ fun pp_api depth (structName,inbufs,fillFns,sendFns,logInfo) =
 	 Line_Break,
          end_pp_list Line_Break Line_Break (pp_sendFn (depth-1)) sendFns, Line_Break,
 	 Line_Break,
-         PrettyString logInfo,      Line_Break,
+         PrettyString logInfo,
+         Line_Break,
 	 Line_Break,
          PrettyString "end"
         ])
@@ -1279,7 +1173,6 @@ fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
          PrettyString "struct", Line_Break_2,
          end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types,   Line_Break,
          end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts', Line_Break,
-         end_pp_list Line_Break Line_Break (pp_filter (depth-1)) filters,        Line_Break,
          end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors,      Line_Break,
          PrettyString "end"
         ])
@@ -1293,175 +1186,5 @@ val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_monitor i mon);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
 
 
-(*---------------------------------------------------------------------------*)
-(* Instantiate monitor template                                              *)
-(*---------------------------------------------------------------------------*)
-
-local
-(*---------------------------------------------------------------------------*)
-(* Read in the template file "splat/codegen/monitor-template"                *)
-(*---------------------------------------------------------------------------*)
-val filter_template_ss =
-    let val istrm = TextIO.openIn "codegen/monitor-template"
-	val string = TextIO.inputAll istrm
-    in TextIO.closeIn istrm;
-       Substring.full string
-    end;
-in
-fun locate pat ss =
- let val (chunkA, suff) = Substring.position pat ss
-     val chunkB = Substring.triml (String.size pat) suff
- in (chunkA,chunkB)
- end
-
-(*---------------------------------------------------------------------------*)
-(* New file contents:                                                        *)
-(*           chunk0 . input-buf-decls .                                       *)
-(*           chunk1 . fill-inputs-decl .                                     *)
-(*           chunk2 . FFI-outputs-decl .                                     *)
-(*           chunk3 . size-origin .                                          *)
-(*           chunk4 . buf-size .                                             *)
-(*           chunk5 . inport-name .                                          *)
-(*           chunk6 . inport-name .                                          *)
-(*           chunk7 . contig-qid .                                           *)
-(*           chunk8                                                          *)
-(*---------------------------------------------------------------------------*)
-val replace  =
- let val (chunk0,suff0) = locate "<<INPUT-BUF-DECLS>>" filter_template_ss
-     val (chunk1,suff1) = locate "<<FILL-INPUT-BUFS>>" suff0
-     val (chunk2,suff2) = locate "<<FFI-OUTPUT-CALLS>>" suff1
-     val (chunk3,suff3) = locate "<<INPUT-BUF-DECLS>>" suff2
-     val (chunk4,suff4) = locate "<<FILL-INPUT-BUFS>>" suff3
-     val (chunk5,suff5) = locate "<<INPORT>>" suff4
-     val (chunk6,suff6) = locate "<<INPORT>>" suff5
-     val (chunk7,suff7) = locate "<<CONTIG>>" suff6
- in fn input_buf_decl =>
-    fn fill_inputs_decl =>
-    fn ffi_outputs_decl =>
-    fn size_origin =>
-    fn bufsize =>
-    fn inport =>
-    fn contig =>
-      Substring.concat
-         [chunk0, input_buf_decl,
-          chunk1, fill_inputs_decl,
-          chunk2, ffi_outputs_decl,
-          chunk3, size_origin,
-          chunk4, bufsize,
-          chunk5, inport,
-          chunk6, inport,
-          chunk7, contig,suff7]
- end
-end;
-
-fun numBytes n = 1 + Int.div(n,8);
-
-fun dest_namedTy (NamedTy qid) = qid
-  | dest_namedTy other = raise ERR "dest_namedTy" "";
-
-fun dest_intLit exp =
- case exp
-  of ConstExp(IntLit{value,kind = AST.Int NONE}) => value
-   | otherwise => raise ERR "dest_intLit" "";
-
-fun isIn (name,ty,"in",style) = true
-  | isIn otherwise = false
-
-fun mk_inbuf_decl const_alist (pname,ty,d,style) =
- let val (pkg,tyName) = dest_namedTy ty
-     val sizeName = tyName^"_Bit_Codec_Max_Size"
-     val bitsize_exp = assoc sizeName const_alist
-     val bitsize = dest_intLit bitsize_exp
-     val byte_size_string = Int.toString (1 + numBytes bitsize) (* for event byte *)
-     val () = stdErr_print (String.concat
-                ["    Buffer size (bits/bytes) : ",
-                 Int.toString bitsize,"/",byte_size_string,"\n"])
-     val inbufName = pname^"_buffer"
- in
-   (inbufName,
-    String.concat
-     ["(*---------------------------------------------------------------------------*)\n",
-      "(* Size computed from ",sizeName, "                  *)\n",
-      "(*---------------------------------------------------------------------------*)\n\n",
-      "val ",inbufName," = Word8Array.array ", byte_size_string, " Utils.w8zero;"])
- end;
-
-fun mk_fill_inbufs portNames inbufNames =
- let val clearStrings =
-         map (fn bname => ("val () = Utils.clear_buf "^bname)) inbufNames
-     val fillStrings =
-         map2 (fn pn => fn bn =>
-                ("val () = #(api_get_"^pn^") \"\" "^bn))
-             portNames inbufNames
-     val cpStrings =
-         map (fn bname => ("Utils.buf2string "^bname)) inbufNames
- in
- String.concatWith "\n"
-["(*---------------------------------------------------------------------------*)",
- "(* Clear buffers, read ports into buffers, copy buffers to strings           *)",
- "(*---------------------------------------------------------------------------*)",
- "",
- "fun fill_input_buffers () =",
- "  let "^String.concatWith "\n      " clearStrings,
- "      "^String.concatWith "\n      " fillStrings,
- "   in",
- "      ("^String.concatWith ",\n       " cpStrings^")",
- "   end;"
-]
-end;
-
-fun mk_output_call (name,ty,_,_) =
-    String.concat ["#(api_put_",name,") ","string Utils.emptybuf"]
-
-fun paren s = String.concat["(",s,")"];
-
-fun mk_output_calls oports =
- let val body =
-       (case oports
-         of [] => raise ERR "mk_output_calls" ""
-          | [port] => mk_output_call port
-          | multiple => paren(String.concatWith ";\n    "
-                               (map mk_output_call oports)))
- in String.concat
-       ["fun output_calls string =\n   ",body,";"]
- end
-
-(*---------------------------------------------------------------------------*)
-(* Instantiate monitor template with monitor-specific info                   *)
-(*---------------------------------------------------------------------------*)
-
-fun export_cakeml_monitors s list monlist = ();
-
-(*
-fun inst_monitor_template dir const_alist mondec =
- let open Substring
- in
- case mondec
-  of MonitorDec (qid,ports,latched,decs,ivardecs,guars) =>
-     let val () = stdErr_print ("-> "^qid_string qid^"\n")
-         val (inports, outports) = Lib.partition isIn ports
-         val inportNames = map #1 inports
-         val inbuf_decls = map (mk_inbuf_decl const_alist) inports
-         val inbufNames = map fst inbuf_decls
-         val inbuf_decl_string = String.concatWith "\n\n" (map snd inbuf_decls)^"\n"
-         val fill_inputs_decl = mk_fill_inbufs inportNames inbufNames
-         val outFns = mk_output_calls outports
-   | otherwise => raise ERR "inst_monitor_template" "expected a MonitorDec"
- end
-
-fun export_cakeml_monitors dir const_alist mondecs =
-  if null mondecs then
-     ()
-  else
-  let val qids = map mondec_qid mondecs
-      val names = map qid_string qids
-      val _ = stdErr_print (String.concat
-         ["Creating CakeML monitor implementation(s) for:\n   ",
-          String.concatWith "\n   " names, "\n"])
-  in
-     List.app (inst_monitor_template dir const_alist) mondecs
-   ; stdErr_print " ... Done.\n\n"
-  end
-*)
 
 end (* PP_CakeML *)

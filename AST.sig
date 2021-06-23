@@ -6,10 +6,6 @@ sig
 
   datatype bop
     = And
-    | ArithmeticRShift
-    | BitAnd
-    | BitOr
-    | BitXOR
     | Divide
     | Equal
     | Exponent
@@ -18,24 +14,15 @@ sig
     | GreaterEqual
     | Less
     | LessEqual
-    | LogicalLShift
-    | LogicalRShift
     | Plus
     | Minus
     | Modulo
     | Multiply
     | NotEqual
     | Or
-    | CastWidth
-    | RegexMatch
-    | Since
-    | Trigger
     | Fby
 
-  datatype uop
-    = Not | BitNot | UMinus | ChrOp | OrdOp
-    | Signed | Unsigned | Unbounded
-    | Yesterday | ZYesterday | Historically
+  datatype uop = Not | UMinus;
 
   datatype numkind
     = Nat of int option
@@ -50,7 +37,6 @@ sig
     | StringLit of string
     | IntLit of {value: int, kind:numkind}
     | FloatLit of real
-    | RegexLit of string
 
   datatype builtin
     = BoolTy
@@ -59,7 +45,6 @@ sig
     | IntTy of numkind
     | FloatTy
     | DoubleTy
-    | RegexTy
 
   datatype quant = Exists | Forall
 
@@ -75,7 +60,7 @@ sig
     | Binop of bop * exp * exp
     | ArrayExp of exp list
     | ArrayIndex of exp * exp list
-    | ConstrExp of qid * id * exp option
+    | ConstrExp of qid * id * exp list
     | Fncall of qid * exp list
     | RecdExp of qid * (id * exp) list
     | RecdProj of exp * id
@@ -101,11 +86,8 @@ sig
     | TyAbbrevDecl of id * ty
     | RecdDecl of id * (id * ty) list
     | DatatypeDecl of id * (id * ty list) list
-    | GraphDecl of id * ty * ty
     | VarDecl of vdec
     | ConstDecl of id * ty * exp
-    | SizedDataDecl of id * ty * exp * exp option
-    | SizedGraphDecl of id * ty * exp * exp
     | EfnDecl of id * param list * vdec option
     | FnDecl of id * param list * vdec option * vdec list * stmt list
     | SpecDecl of id * vdec list * stmt list
@@ -199,8 +181,6 @@ sig
   val is_signed    : ty -> bool
   val is_unsigned  : ty -> bool
   val is_bounded   : ty -> bool
-  val flip_sign    : uop -> ty -> ty
-  val drop_bound   : ty -> ty
   val elim_imp     : exp -> exp
 
   val pkg_varDecs  : package -> (string * vdec list) list

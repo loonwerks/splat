@@ -16,12 +16,8 @@ sig
     val pp_decl : int -> string -> decl -> pretty
     val pp_tydec : int -> string -> AADL.tydec -> pretty
     val pp_tmdec : int -> string -> AADL.tmdec -> pretty
-    val pp_filter : int -> AADL.filter -> pretty
     val pp_monitor : int -> AADL.monitor -> pretty
     val pp_pkg     : int -> AADL.pkg -> pretty
-
-    val export_cakeml_monitors : string -> (string * exp) list -> AADL.monitor list -> unit
-
 
     val mk_tyE         : AADL.pkg list -> qid -> ty option
     val mk_constE      : AADL.pkg list -> string -> ty option
@@ -33,6 +29,7 @@ sig
     val tydec_to_ty    : tydec -> ty
     val contig_to_exp  : (string * contig) list -> contig -> exp
     val AppExp         : exp list -> exp
+    val listLit        : exp list -> exp
 
     val pp_api : int -> string *
                         (string * int) list *      (* inport bufs *)
