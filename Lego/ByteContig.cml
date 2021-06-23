@@ -603,6 +603,16 @@ fun valFnLE atm bytes =
    | Unsigned i => Some (Utils.unsignedLE bytes)
    | otherwise  => Some (Utils.unsignedLE bytes);
 
+fun atom_string atom =
+ case atom
+  of Bool       => "Bool"
+   | Char       => "Char"
+   | Float      => "Float"
+   | Double     => "Double"
+   | Signed n   => "Signed"
+   | Unsigned n => "Unsigned"
+   | Blob       => "Blob";
+
 (* val () = print ("dvalFnLE: value = "^Double.toString dval^"\n") *)
 local
   val buf = Word8Array.array 8 (Word8.fromInt 0)
