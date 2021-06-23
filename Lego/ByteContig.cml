@@ -612,7 +612,7 @@ fun dvalFnLE atm bytes =
   of Float =>
      let val s = String.implode (List.map Utils.w8char bytes)
          val () = Utils.clear_buf buf
-         val () = #(float2double) s buf
+         val () = #(float2doublePromote) s buf
          val a = Word8Array.sub buf 0
          val b = Word8Array.sub buf 1
          val c = Word8Array.sub buf 2
@@ -629,6 +629,9 @@ fun dvalFnLE atm bytes =
          of [a,b,c,d,e,f,g,h] => Word64.concatAll a b c d e f g h
           | otherwise =>
             raise Utils.ERR "dvalFnLE" "expected exactly 8 bytes for a Double")
+   | otherwise =>
+      (Utils.println ("dvalFnLE: atm is unexpected: "^atom_string atm);
+       raise Utils.ERR "dvalFnLE" "expected Float or Double")
 end
 
 (*---------------------------------------------------------------------------*)
