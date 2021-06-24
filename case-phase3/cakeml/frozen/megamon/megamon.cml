@@ -2298,13 +2298,15 @@ fun suspectIDs3 ownship traffic previous previous_len =
 
 (*---------------------------------------------------------------------------*)
 (* State vector:                                                             *)
-(*   (yesterday, yest_len, today,                                            *)
+(*   (initialized,                                                           *)
+(*    yesterday, yest_len, today,                                            *)
 (*    unexpected_today, unexpected_yest, unexpected_two,                     *)
 (*    abnormal1, abnormal3, cycle_count)                                     *)
 (*---------------------------------------------------------------------------*)
 
-val theState = Ref (None, None, None, None, None, None, None, None, None)
- : (Adsb_Types.traffic_report array option *
+val theState = Ref (None, None, None, None, None, None, None, None, None, None)
+ : (bool option *
+    Adsb_Types.traffic_report array option *
     int option *
     Adsb_Types.traffic_report array option *
     int array option *
@@ -2322,7 +2324,8 @@ val println = Utils.println;
 fun stepFn inports stateVars =
  let val observed = inports
      val event_observed = Option.isSome observed
-     val (yesterday, yest_len, today,
+     val (initialized,
+          yesterday, yest_len, today,
           unexpected_today, unexpected_yest, unexpected_two,
 	  abnormal1, abnormal3, cycle_count) = stateVars
 
@@ -2332,7 +2335,8 @@ fun stepFn inports stateVars =
 
      val newStateVars =
          if !initStep then
-	   let val yesterday =
+           let val initialized = if event_observed then True else False
+	       val yesterday =
 		  if event_observed then
 		    traffic_of (valOf observed)
 		  else default_TRAFFIC_REPORT_ARRAY
@@ -2357,17 +2361,21 @@ fun stepFn inports stateVars =
                val cycle_count    = 1
                val ()             = (initStep := False)
            in
-             (yesterday, yest_len, today,
+             (initialized,
+              yesterday, yest_len, today,
               unexpected_today, unexpected_yest, unexpected_two, abnormal1, abnormal3, cycle_count)
            end
          else
-           let val (yesterday, yest_len, today,
+           let val (initialized,
+                    yesterday, yest_len, today,
                     unexpected_today, unexpected_yest, unexpected_two,
                     abnormal1, abnormal3, cycle_count) =
-                   (valOf yesterday, valOf yest_len, valOf today,
+                   (valOf initialized,
+                    valOf yesterday, valOf yest_len, valOf today,
                     valOf unexpected_today, valOf unexpected_yest, valOf unexpected_two,
                     valOf abnormal1, valOf abnormal3, valOf cycle_count)
-	       val yesterday = if event_observed then today else yesterday
+               val initialized = if event_observed then True else initialized
+	       val yesterday = if event_observed andalso initialized then today else yesterday
                val yest_len  = if event_observed then (prefixLenRight is_default_report yesterday) else yest_len
 	       val today = if event_observed then
 			     traffic_of (valOf observed)
@@ -2376,7 +2384,7 @@ fun stepFn inports stateVars =
                val unexpected_two = if event_observed then unexpected_yest else unexpected_two
 	       val unexpected_yest = if event_observed then unexpected_today else unexpected_yest
                val unexpected_today =
-                   if event_observed then
+                   if event_observed andalso initialized then
                       get_unexpected today yesterday yest_len
                    else unexpected_today
 
@@ -2400,11 +2408,13 @@ fun stepFn inports stateVars =
                       today
                val cycle_count = cycle_count + 1
            in
-             (yesterday, yest_len, today,
+             (initialized,
+              yesterday, yest_len, today,
               unexpected_today, unexpected_yest, unexpected_two, abnormal1, abnormal3, cycle_count)
            end
 
-      val (yesterday, yest_len, today,
+      val (initialized,
+           yesterday, yest_len, today,
            unexpected_today, unexpected_yest, unexpected_two,
 	         abnormal1, abnormal3, cycle_count) = newStateVars
 
@@ -2419,7 +2429,7 @@ fun stepFn inports stateVars =
       (*-----------------------*)
 
       val suspect_traffic_out1 =
-         if cycle_count > 3 andalso event_observed andalso abnormal1
+         if event_observed andalso abnormal1
          then
            Some (mk_monitor_report
                   1 
@@ -2458,7 +2468,8 @@ fun stepFn inports stateVars =
       val health_out = Some cycle_count
 
       val newStateVarOpts =
-          (Some yesterday, Some yest_len,
+          (Some initialized,
+           Some yesterday, Some yest_len,
            Some today, Some unexpected_today, Some unexpected_yest, Some unexpected_two,
 	         Some abnormal1, Some abnormal3, Some cycle_count)
   in
