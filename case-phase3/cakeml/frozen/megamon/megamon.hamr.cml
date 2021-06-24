@@ -1912,8 +1912,6 @@ fun send_Health_Out string =
 
 fun logInfo s = #(api_logInfo) s Utils.emptybuf;
 
-end
-
 end (* API *)
 
 structure Monitor =
@@ -2425,6 +2423,11 @@ fun stepFn inports stateVars =
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
+
+fun print_inputOpt iOpt =
+ case iOpt
+  of None => Utils.println "No event"
+   | Some msgs => Adsb_Types.print_messageIDs msgs;
 
 fun parseInput () =
   Adsb_Parse.eventParse

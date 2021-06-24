@@ -2481,6 +2481,11 @@ fun stepFn inports stateVars =
 (* One thread invocation                                                      *)
 (* ---------------------------------------------------------------------------*)
 
+fun print_inputOpt iOpt =
+ case iOpt
+  of None => Utils.println "No event"
+   | Some msgs => Adsb_Types.print_messageIDs msgs;
+
 fun parseInput () =
   Adsb_Parse.eventParse
         (Adsb_Contig.adsb_messages, Adsb_Parse.mk_adsb_messages)
