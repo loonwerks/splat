@@ -57,8 +57,8 @@ and exp
   | Unop of uop * exp
   | Binop of bop * exp * exp
   | ArrayExp of exp list
-  | RecdExp of qid * (id * exp) list
   | ArrayIndex of exp * exp list
+  | RecdExp of qid * (id * exp) list
   | RecdProj of exp * id
   | Fncall of qid * exp list
   | ConstrExp of qid * id * exp list
@@ -1344,7 +1344,7 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
       | ConstExp (CharLit _) => BaseTy CharTy
       | ConstExp (StringLit _) => BaseTy StringTy
       | ConstExp (IntLit{kind, ...}) => BaseTy (IntTy kind)
-      | ConstExp (FloatLit _) => BaseTy FloatTy
+      | ConstExp (FloatLit _) => BaseTy DoubleTy
       | Unop(Not,e) => check "Not" (tcExp env e) (BaseTy BoolTy)
       | Unop(UMinus,e) =>
          let val estr = String.concat
@@ -1832,6 +1832,88 @@ fun typecheck (pkg as (pkgName,decls)) =
    pkg
  end
  handle e => raise wrap_exn "Passes" "typecheck" e;
+
+(*---------------------------------------------------------------------------*)
+(* Type of an expression                                                     *)
+(*---------------------------------------------------------------------------*)
+
+val boolTy = BaseTy BoolTy ;
+
+fun tryFn f x y = (f x handle _ => f y);
+
+(*---------------------------------------------------------------------------*)
+(* Expectation is that we are dealing with something already typechecked,    *)
+(* and so we just need to extract the type of an expression knowing the      *)
+(* types of:                                                                 *)
+(*                                                                           *)
+(*   - ivars and ports (varEnv),                                             *)
+(*   - declared constants and functions (constEnv)                           *)
+(*   - named types (tyEnv)                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun expTy (env as (varEnv,tyEnv,constEnv)) exp :ty =
+ case exp
+  of VarExp id => varEnv id
+   | ConstExp (IdConst qid) => constEnv qid
+   | ConstExp (BoolLit _) => boolTy
+   | ConstExp (IntLit{kind, ...}) => BaseTy (IntTy kind)
+   | ConstExp (FloatLit _) => BaseTy DoubleTy
+   | ConstExp (CharLit _) => BaseTy CharTy
+   | ConstExp (StringLit _) => BaseTy StringTy
+   | Unop(Not,e) => boolTy
+
+   | Unop(UMinus,e) => expTy env e
+   | Binop(Exponent,e1,e2) => expTy env e1
+   | Binop(Divide,e1,e2) => tryFn (expTy env) e1 e2
+   | Binop(Minus,e1,e2) => tryFn (expTy env) e1 e2
+   | Binop(Modulo,e1,e2) => tryFn (expTy env) e1 e2
+   | Binop(Multiply,e1,e2) => tryFn (expTy env) e1 e2
+   | Binop(Plus,e1,e2) => tryFn (expTy env) e1 e2
+   | Binop(Fby,e1,e2) => tryFn (expTy env) e1 e2
+
+   | Binop(Or,e1,e2) => boolTy
+   | Binop(And,e1,e2) => boolTy
+   | Binop(Imp,e1,e2) => boolTy
+   | Binop(Equal,e1,e2) => boolTy
+   | Binop(NotEqual,e1,e2) => boolTy
+   | Binop(Greater,e1,e2) => boolTy
+   | Binop(GreaterEqual,e1,e2) => boolTy
+   | Binop(Less,e1,e2) => boolTy
+   | Binop(LessEqual,e1,e2) => boolTy
+   | Quantified(quant,bvars,e) => boolTy
+
+   | ConstrExp (qid,c,elist) => tyEnv qid
+   | Fncall (qid,elist) => constEnv qid
+
+   | ArrayExp elist =>
+      if null elist then
+       raise ERR "expTy" "ArrayExp with no elements"
+      else
+      let fun crunchArrayTy (ArrayTy(b,dims)) = (b,dims)
+            | crunchArrayTy ty = (ty,[])
+          val ty = expTy env (hd elist)
+          val dim = mk_uintLit (length elist)
+          val (b,dims) = crunchArrayTy ty
+      in
+        ArrayTy(b, dim::dims)
+      end
+   | ArrayIndex (A,indices) =>
+       (case expTy env A
+         of ArrayTy(elty,dims) => elty
+         |  otherwise => raise ERR "expTy" "ArrayIndex: expected an ArrayTy")
+
+   | RecdExp(qid,fields) => tyEnv qid
+   | RecdProj (e,id) =>
+       case expTy env e
+        of RecdTy(qid,fields) => assoc id fields
+         | NamedTy tyqid =>
+	    (case tyEnv tyqid
+             of RecdTy(qid,fields) => assoc id fields
+              | otherwise => raise ERR "expTy" "RecdProj: expected a record type")
+         | otherwise  => raise ERR "expTy" "RecdProj"
+;
+
+
 
 
 (*---------------------------------------------------------------------------*)

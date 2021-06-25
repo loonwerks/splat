@@ -223,6 +223,8 @@ sig
   val tcDecl : tyenv -> decl -> unit
   val typecheck : package -> package
 
+  val expTy : (id -> ty) * (qid -> ty) *  (qid -> ty) -> exp -> ty
+
   val tydecl_cliques : string -> decl list -> decl list list
 
   val qid_string : qid -> string

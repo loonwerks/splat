@@ -173,6 +173,13 @@ fun extract_monitors (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = mondecs;
 (*  or gate. The pkg_i can be trimmed to be minimal.                         *)
 (*---------------------------------------------------------------------------*)
 
+fun substFn alist x =
+ case subst_assoc (equal x) alist
+  of SOME y => y
+   | NONE => x
+
+fun alistFn alist x = assoc x alist;
+
 open AST AADL;
 
 type port = string * ty * string * string;  (* (id,ty,dir,kind) *)
@@ -353,7 +360,6 @@ fun substQid_tmdec theta tmdec =
       ConstDec (subst_qid theta qid,ty,substQidExp theta exp)
     | FnDec (qid,parames,rty,exp) =>
       FnDec (subst_qid theta qid,parames,rty,substQidExp theta exp)
-
 fun substQid_ivar theta (s,ty,exp) = (s,ty,substQidExp theta exp);
 fun substQid_guar theta (s1,s2,exp) = (s1,s2,substQidExp theta exp);
 fun substQid_gadget theta gdt =
@@ -381,7 +387,7 @@ fun set_Defs_struct gdt =
 (*  - the body of a constant or function declaration (tmdecs)                *)
 (*  - in the rhs of an ivar declaration (where the rhs can legitimately have *)
 (*    other ivars, and ports, occurring as free vars)                        *)
-(*  - in a guarantee (where the guar can have legit ivar and portname occs.  *)
+(*  - in a guarantee (where the guar can have legit ivar and portname occs). *)
 (*                                                                           *)
 (* This pass is an attempt to repair such anomalies.                         *)
 (*                                                                           *)
@@ -417,6 +423,66 @@ fun corrall_rogue_vars gdt =
  end;
 
 (*---------------------------------------------------------------------------*)
+(* A pass that sets type constructors and eliminates record expressions in   *)
+(* favour of constructor application.                                        *)
+(*---------------------------------------------------------------------------*)
+
+fun constrs_of tydec =
+ case tydec
+  of EnumDec (qid,ids) => map (pair qid) ids
+   | RecdDec (qid,fields) => [(qid,snd qid)]
+   | UnionDec (qid,constrs) => map (pair qid o fst) constrs
+   | ArrayDec _ => []
+
+fun set_type_constrs gdt =
+ let open AST
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val tycE = List.concat (map constrs_of tydecs)
+     val consts = gadgetQids gdt []
+     fun equiv (pname,fName) (qname,constrName) = (fName = constrName)
+     fun itFn qid acc =
+       case total (first (equiv qid)) tycE
+        of NONE => acc
+	 | SOME cqid => (qid,cqid)::acc
+   val theta = itlist itFn consts []
+   fun assocConstr x alist =
+    case assoc1 x alist
+     of NONE => NONE
+      | SOME (_,y) => SOME y
+   fun subExp exp =
+   case exp
+    of VarExp _ => exp
+     | ConstExp (IdConst qid) =>
+        (case assocConstr qid theta
+          of NONE => exp
+          | SOME (tyqid,id) => ConstrExp(tyqid,id,[]))
+     | ConstExp _ => exp
+     | Unop(opr,e) => Unop(opr,subExp e)
+     | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
+     | ArrayExp elist => ArrayExp(map subExp elist)
+     | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
+     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
+     | Fncall(qid,elist) =>
+        (case assocConstr qid theta
+          of NONE => Fncall(qid, map subExp elist)
+           | SOME (tyqid,id) => ConstrExp(tyqid,id, map subExp elist))
+     | RecdExp(tyqid,fields) => ConstrExp(tyqid,snd tyqid, map (subExp o snd) fields)
+     | RecdProj(e,id) => RecdProj(subExp e,id)
+     | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
+   fun subDec tmdec =
+     case tmdec
+      of ConstDec(qid,ty,exp) => ConstDec(qid,ty,subExp exp)
+       | FnDec(qid,params,rty,exp) => FnDec(qid,params,rty,subExp exp)
+   fun subIvar (s,ty,exp) = (s,ty,subExp exp)
+   fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
+ in Gadget(qid,tydecs,
+	   map subDec tmdecs,
+           ports,
+           map subIvar ivars,
+           map subGuar guars)
+ end;
+
+(*---------------------------------------------------------------------------*)
 (* CakeML uses case to distinguish datatype constructors from variables      *)
 (* (val bindings, fun params, etc). Constructors start with an upper case    *)
 (* letter. Variables start with lower case. We have a pass lowering all      *)
@@ -428,34 +494,7 @@ fun corrall_rogue_vars gdt =
 
 fun set_vars_lower_case gdt =
  let open AST
-   fun alistFn alist x =
-     case subst_assoc (equal x) alist
-      of SOME y => y
-       | NONE => x
-   fun substQidTy theta ty =
-    case ty
-     of RecdTy(qid,flist) => RecdTy (qid,map (I##substQidTy theta) flist)
-      | ArrayTy(ty,elist) => ArrayTy (substQidTy theta ty,
-                                      map (substQidExp theta) elist)
-      | otherwise => ty
-   and
-   substQidExp theta (exp:exp) =
-   case exp
-    of VarExp _ => exp
-     | ConstExp (IdConst qid) => ConstExp(IdConst (alistFn theta qid))
-     | ConstExp _ => exp
-     | Unop(opr,e) => Unop(opr,substQidExp theta e)
-     | Binop(opr,e1,e2) => Binop(opr,substQidExp theta e1,substQidExp theta e2)
-     | ArrayExp elist => ArrayExp(map (substQidExp theta) elist)
-     | ArrayIndex(e,elist) => ArrayIndex
-                  (substQidExp theta e, map (substQidExp theta) elist)
-     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (substQidExp theta) elist)
-     | Fncall(qid,elist) =>
-         Fncall(alistFn theta(qid), map (substQidExp theta) elist)
-     | RecdExp(qid,fields) => RecdExp(qid, map (I##substQidExp theta) fields)
-     | RecdProj(e,id) => RecdProj(substQidExp theta e,id)
-     | Quantified(q,qvars,e) => Quantified(q,qvars,substQidExp theta e)
-
+   val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
    val mk_low = String.map Char.toLower
    fun mk_low_qid (qid as (s1,s2)) acc =
        if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
@@ -463,8 +502,41 @@ fun set_vars_lower_case gdt =
        else (qid |-> (s1,mk_low s2))::acc
    val gqids = gadgetQids gdt []
    val theta = itlist mk_low_qid gqids []
+
+   fun subTy ty =   (* Not sure this is needed right now *)
+    case ty
+     of RecdTy(qid,flist) => RecdTy (qid,map (I##subTy) flist)
+      | ArrayTy(ty,elist) => ArrayTy (subTy ty, map subExp elist)
+      | otherwise => ty
+   and
+   subExp (exp:exp) =
+   case exp
+    of VarExp _ => exp
+     | ConstExp (IdConst qid) => ConstExp(IdConst (substFn theta qid))
+     | ConstExp _ => exp
+     | Unop(opr,e) => Unop(opr,subExp e)
+     | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
+     | ArrayExp elist => ArrayExp(map subExp elist)
+     | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
+     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
+     | Fncall(qid,elist) => Fncall(substFn theta(qid), map subExp elist)
+     | RecdExp(qid,fields) => RecdExp(qid, map (I##subExp) fields)
+     | RecdProj(e,id) => RecdProj(subExp e,id)
+     | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
+   fun subDec tmdec =
+     case tmdec
+      of ConstDec(qid,ty,exp) =>
+         ConstDec(substFn theta qid,ty,subExp exp)
+       | FnDec(qid,params,rty,exp) =>
+         FnDec(substFn theta qid,params,rty,subExp exp)
+   fun subIvar (s,ty,exp) = (s,ty,subExp exp)
+   fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
  in
-   substQid_gadget theta gdt
+    Gadget(qid,tydecs,
+	   map subDec tmdecs,
+           ports,
+           map subIvar ivars,
+           map subGuar guars)
  end;
 
 fun set_ports_and_ivars_lower_case gdt =
@@ -478,19 +550,15 @@ fun set_ports_and_ivars_lower_case gdt =
 	     acc
          else (VarExp id |-> VarExp (lower id))::acc
      val theta = itlist mk_lowId (portNames@ivarNames) []
-     fun substIvar theta (s,ty,exp) = (s,ty,substExp theta exp)
+     fun substId s = if Char.isLower(String.sub(s,0)) then s else lower s
+     fun substPort (s,ty,dir,kind) = (substId s,ty,dir,kind)
+     fun substIvar theta (s,ty,exp) = (substId s,ty,substExp theta exp)
      fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
- in Gadget(qid,tydecs,tmdecs,ports,
+ in Gadget(qid,tydecs,tmdecs,
+           map substPort ports,
            map (substIvar theta) ivars,
            map (substGuar theta) guars)
  end;
-
-fun defs_struct_of gdt =
- let val fodder = ("Defs",gadget_tydecs gdt,gadget_tmdecs gdt)
-     val pretty = PP_CakeML.pp_defs_struct ~1 fodder
-in
-  pretty
-end
 
 fun gadget_tyE gdt =
  let val Gadget (_,tydecs, _,_,_,_) = gdt
@@ -500,6 +568,31 @@ fun gadget_tyE gdt =
    tydec_alist
  end
 
+fun gadget_tyEnvs gdt =
+ let open AST
+     val Gadget (qid, tydecs, tmdecs,ports,ivars,guars) = gdt
+     val tyE_0 = gadget_tyE gdt
+     fun chase list = list  (* Stub *)
+     val tyE = chase tyE_0
+     fun rng (ConstDec(qid,ty,e)) = (qid,ty)
+       | rng (FnDec(qid,params,rty,e)) = (qid,rty)
+     val tmE = map rng tmdecs
+     fun bind_of_port (id,ty,dir,kind) = (id,ty)
+     fun bind_of_ivar (id,ty,e) = (id,ty)
+     val varE = map bind_of_port ports @ map bind_of_ivar ivars
+ in
+     (alistFn varE, alistFn tyE, alistFn tmE)
+ end
+
+
+fun defs_struct_of gdt =
+ let val tyEnvs = gadget_tyEnvs gdt
+     val fodder = ("Defs",gadget_tydecs gdt,gadget_tmdecs gdt)
+     val pretty = PP_CakeML.pp_defs_struct tyEnvs fodder
+in
+  pretty
+end
+
 fun port_ty (id,ty,dir,kind) = ty;
 fun is_in_port (id,ty,"in",kind) = true
   | is_in_port otherwise = false;
@@ -508,12 +601,16 @@ fun is_out_port (id,ty,"out",kind) = true
 fun is_event (id,ty,dir,"DataPort") = false
   | is_event otherwise = true;
 
-fun API_of gdt =
+fun get_ports gdt =
+ let val ports = gadget_ports gdt
+ in (filter is_in_port ports,filter is_out_port ports)
+ end
+
+fun API_of (orig_gdt,gdt) =
 let val qid = gadget_qid gdt
-    val ports = gadget_ports gdt
-    val inports = filter is_in_port ports
-    val outports = filter is_out_port ports
+    val (inports, outports) = get_ports gdt
     val tyE = assocFn (gadget_tyE gdt)
+
     fun mk_inport_buf (iport as (id,ty,dir,kind)) =
       let val contig = Gen_Contig.contig_of tyE (port_ty iport)
           val size = Gen_Contig.size_of trivEnv contig
@@ -522,20 +619,25 @@ let val qid = gadget_qid gdt
        (id^"_buffer", esize)
       end
     val inport_bufs = map mk_inport_buf inports
-    fun mk_fillFn (iport as (id,ty,dir,kind)) =
+
+    val (orig_inports, orig_outports) = get_ports orig_gdt
+
+    fun mk_fillFn ((iport as (id,ty,dir,kind)),(orig_id,_,_,_)) =
      let val bufName = id^"_buffer"
-         val api_call = String.concat ["#(api_get_",id,") \"\" ", bufName]
+         val api_call = String.concat ["#(api_get_",orig_id,") \"\" ", bufName]
      in (bufName, api_call)
      end
-    val fillFns = map mk_fillFn inports
-    fun mk_sendFn (oport as (id,ty,dir,kind)) =
-      let val api_call = String.concat["#(api_send_",id,") string Utils.emptybuf;"]
+    val fillFns = map mk_fillFn (zip inports orig_inports)
+
+    fun mk_sendFn ((oport as (id,ty,dir,kind)),(orig_id,_,_,_)) =
+      let val api_call = String.concat["#(api_send_",orig_id,") string Utils.emptybuf;"]
       in (id, api_call)
       end
-    val sendFns = map mk_sendFn outports
+    val sendFns = map mk_sendFn (zip outports orig_outports)
+
     val logInfo = "fun logInfo s = #(api_logInfo) s Utils.emptybuf;"
     val fodder = ("API",inport_bufs,fillFns,sendFns,logInfo)
-    val pretty = PP_CakeML.pp_api ~1 fodder
+    val pretty = PP_CakeML.pp_api fodder
 in
   pretty
 end;
@@ -554,22 +656,27 @@ in
   pretty
 end
 
+fun apply gdts [] = gdts
+  | apply gdts (f::t) = apply (f gdts) t ;
+
 fun process_model jsonFile =
  let val ([jpkg],ss) = Json.fromFile jsonFile
      val pkgs = scrape_pkgs jpkg
      val tyE = mk_tyE (map Pkg pkgs)
      val tmE = mk_constE (map Pkg pkgs)
      val gdts1 = mk_gadgets pkgs
-     val gdts2a = map corrall_rogue_vars gdts1
-     val gdts2b = map set_ports_and_ivars_lower_case gdts2a
-     val gdts3 = elim_projections tyE tmE gdts2b
-     val gdts4 = map set_Defs_struct gdts3
-     val gdts5 = map set_vars_lower_case gdts4
-     val apis = map API_of gdts5
-     val parser_structs = map parser_struct_of gdts5
-     val defs_structs = map defs_struct_of gdts5
+     val gdts = apply gdts1
+                 [map corrall_rogue_vars,
+                  map set_type_constrs,
+                  map set_vars_lower_case,
+                  map set_ports_and_ivars_lower_case,
+                  elim_projections tyE tmE,
+                  map set_Defs_struct]
+     val apis = map API_of (zip gdts1 gdts)
+     val parser_structs = map parser_struct_of gdts
+     val defs_structs = map defs_struct_of gdts
  in
-    (apis,parser_structs, defs_structs, gdts5)
+    (apis,parser_structs, defs_structs, gdts)
  end;
 
 fun getFile path =
@@ -641,9 +748,57 @@ export_implementation "tmp" (api1,p1,defs1,gdt1);
 export_implementation "tmp" (api2,p2,defs2,gdt2);
 export_implementation "tmp" (api3,p3,defs3,gdt3);
 
-gadgetQids gdt1 [];
-gadgetQids gdt2 [];
-gadgetQids gdt3 [];
+fun envFn env x = assoc x env;
+
+val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt1;
+val env as (env1,env2,env3) = expTy_env gdt1;
+val E = (envFn env1, envFn env2, envFn env3);
+
+val tmdec = el 11 tmdecs;
+val FnDec(qid,params,rty,exp) = tmdec;
+val Binop(And,e1,e2) = exp
+expTy E e1;
+expTy E e2;
+val Binop(_,e2a,e2b) = e2;
+expTy E e2a;
+expTy E e2b;
+
+val ([jpkg],ss) = Json.fromFile jsonFile
+val pkgs = scrape_pkgs jpkg
+val tyE = mk_tyE (map Pkg pkgs)
+val tmE = mk_constE (map Pkg pkgs)
+val gdts1 = mk_gadgets pkgs
+
+val gdts = apply gdts1
+  [map corrall_rogue_vars,
+   map set_type_constrs,
+   map set_vars_lower_case
+];
+
+val [gdt1,gdt2,gdt3] = gdts
+
+val gdts = apply gdts1
+  [map corrall_rogue_vars,
+   map set_type_constrs,
+   map set_ports_and_ivars_lower_case,
+   elim_projections tyE tmE,
+   map set_Defs_struct
+];
+
+val gdt2a = corrall_rogue_vars gdt1;
+val gdt2b = set_type_constrs gdt2a;
+val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt2b;
+val gdt2c = set_ports_and_ivars_lower_case gdt2b;
+val gdt3 = elim_projections tyE tmE [gdt2c];
+
+     val gdts4 = map set_Defs_struct gdts3
+     val gdts5 = map set_vars_lower_case gdts4
+     val apis = map API_of gdts5
+     val parser_structs = map parser_struct_of gdts5
+     val defs_structs = map defs_struct_of gdts5
+ in
+    (apis,parser_structs, defs_structs, gdts5)
+ end;
 
 val Gadget(qid,tydecs,tmdecs,(ports,ivars,guars)) = gdt2;
 
@@ -658,6 +813,10 @@ val gdt2' =
 
 val gdt2_qids' = gadgetQids gdt2' [];
 val theta = itlist mk_def_qid (gadgetQids gdt2 []) [];
+
+gadgetQids gdt1 [];
+gadgetQids gdt2 [];
+gadgetQids gdt3 [];
 
 val _qid = fun substQid
 List.app (print o PPfns.pp_string) apis;

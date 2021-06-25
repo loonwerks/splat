@@ -37,9 +37,9 @@ fun contig_of env ty =
       | BaseTy (IntTy (Int (SOME bits))) => Basic (Signed (bits_to_bytes bits))
       | BaseTy (IntTy (Nat NONE)) => Basic (Unsigned (current_default_num_width()))
       | BaseTy (IntTy (Int NONE)) => Basic (Signed (current_default_num_width()))
-      | BaseTy FloatTy  => Basic Float
+      | BaseTy FloatTy => Basic Float
       | BaseTy DoubleTy => Basic Double
-      | BaseTy other    => raise ERR "contig_of" "unhandled base type"
+      | BaseTy other   => raise ERR "contig_of" "unhandled base type"
       | NamedTy qid =>
           (case env qid
             of NONE => raise ERR "contig_of" ("unknown type: "^qid_string qid)
@@ -126,8 +126,8 @@ fun mk_decoder_def tyE decodeE ty =
          val vars = uptoFn (fn i => VarExp("v"^Int.toString i)) 1 (length fields)
          val varspat = listLit vars
          val recdpat = Fncall(("","ByteContig.RECD"),[varspat])
-         val recdName = snd qid
-         fun mk_recd elist = Fncall(("Defs",recdName),elist)
+         val constrName = snd qid
+         fun mk_recd elist = ConstrExp(qid,constrName,elist)
          fun mk_decode_app d v = AppExp [d, Fncall(("","snd"),[v])]
          val case_rhs = mk_recd (map2 mk_decode_app field_decoders vars)
          val main_clause = (recdpat,case_rhs)
