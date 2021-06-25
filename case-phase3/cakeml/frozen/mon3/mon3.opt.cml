@@ -2224,7 +2224,7 @@ fun next_test istrm =
 fun run_tests fileName =
  let val instrm = TextIO.openIn fileName
                   handle e => (TextIO.print "Unable to find test file!"; raise e)
-     val () = TextIOprint ("Teleport Monitor: running tests from file: "^fileName^"\n")
+     val () = TextIO.print ("Teleport Monitor: running tests from file: "^fileName^"\n")
      fun rowStep i =
       case next_test instrm
        of None => TextIO.closeIn instrm
@@ -2253,6 +2253,6 @@ val _ = run_tests "../tests/tc6.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc17.bytes";
 *)
-
 val _ = run_tests "../tests/test";
 val _ = print "\n\n";
+
