@@ -43,10 +43,15 @@ fun contig_of env ty =
       | NamedTy qid =>
           (case env qid
             of NONE => raise ERR "contig_of" ("unknown type: "^qid_string qid)
-             | SOME ty => contig_of env ty)
+             | SOME ty1 =>
+                if AST.eqTy (ty,ty1) then
+                     raise ERR "contig_of"
+                        (String.concat [qid_string qid, "depends on itself"])
+                else contig_of env ty1)
       | RecdTy (qid, fields) => Recd (map (I##contig_of env) fields)
       | ArrayTy (elty,[dim]) => Array (contig_of env elty, intLit (dest_dim dim))
-      | ArrayTy (elty,otherdims) => raise ERR "contig_of" "only single-dimension arrays handled"
+      | ArrayTy (elty,otherdims) =>
+         raise ERR "contig_of" "only single-dimension arrays handled"
  end
 
 fun sumlist [] = 0
@@ -100,13 +105,11 @@ fun decoder_of tyE decodeE ty =
           | SOME decoder => decoder)
 ;
 
-fun uptoFn f lo hi =
-  let fun iter i = if i > hi then [] else f i::iter (i+1)
-  in iter lo
-  end
-
 val AppExp = PP_CakeML.AppExp;
 val listLit = PP_CakeML.listLit;
+val tydec_qid = AADL.tydec_qid;
+val tydec_to_ty = PP_CakeML.tydec_to_ty;
+val assocFn = PP_CakeML.assocFn;
 
 (*---------------------------------------------------------------------------*)
 (*  fun decode_X ptree =                                                     *)
@@ -116,14 +119,17 @@ val listLit = PP_CakeML.listLit;
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_decoder_def tyE decodeE ty =
+fun mk_decoder_def tyE decodeE tydec =
  let val dummyTy = NamedTy("","dummyTy")
+     val ptreeVar = VarExp "ptree"
+     val qid = tydec_qid tydec
+     val ty = tydec_to_ty tydec
  in
  case ty
   of RecdTy (qid, fields) =>
      let val decoderName = "decode_"^snd qid
          val field_decoders = map (decoder_of tyE decodeE o snd) fields
-         val vars = uptoFn (fn i => VarExp("v"^Int.toString i)) 1 (length fields)
+         val vars = intervalWith (fn i => VarExp("v"^Int.toString i)) 1 (length fields)
          val varspat = listLit vars
          val recdpat = Fncall(("","ByteContig.RECD"),[varspat])
          val constrName = snd qid
@@ -135,18 +141,31 @@ fun mk_decoder_def tyE decodeE ty =
          val err_rhs = Fncall(("","raise"),
                        [VarExp"Utils.ERR",ConstExp(StringLit decoderName),
                         ConstExp(StringLit "unexpected parse tree")])
-         val ptreeVar = VarExp "ptree"
          val case_exp = Fncall(("","CASE"),
                          [ptreeVar,AppExp[recdpat,case_rhs],AppExp[errpat,err_rhs]])
      in
         AADL.FnDec(("",decoderName),[("ptree",dummyTy)],NamedTy qid,case_exp)
      end
-  | otherwise => raise ERR "recd_decoder_def" "expected a RecdTy"
+   | ArrayTy(elty,dims) =>
+     let val decoderName = "decode_"^snd qid
+         val array_decoder = decoder_of tyE decodeE ty
+     in
+        AADL.ConstDec(("",decoderName),dummyTy, array_decoder)
+     end
+  | otherwise => raise ERR "recd_decoder_def" "expected a RecdTy or ArrayTy"
  end;
 
-val tydec_to_ty = PP_CakeML.tydec_to_ty;
-val assocFn = PP_CakeML.assocFn;
+fun decoders tyE tydecs =
+ let fun munge tydec =
+       let val (qid as (_,tyName)) = tydec_qid tydec
+       in  (qid,ConstExp(IdConst("","decode_"^tyName)))
+       end
+     val decodeEalist = map munge tydecs
+     val decodeE = assocFn decodeEalist
+ in mapfilter (mk_decoder_def tyE decodeE) tydecs
+ end
 
+(*
 fun qid_of_recdTy (RecdTy(qid,_)) = qid
   | qid_of_recdTy other = raise ERR "qid_of_recdTy" "";
 
@@ -164,10 +183,11 @@ fun decoders tyE tylist =
        if is_recd_ty ty then
           mk_decoder_def tyE decodeE ty::defs
        else defs
+
  in
    List.rev(rev_itlist itFn tylist [])
  end
-
+*)
 
 (*
 fun atomic_width atom =

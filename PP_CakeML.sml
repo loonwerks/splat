@@ -4,8 +4,10 @@ struct
 open Lib Feedback MiscLib PPfns AST AADL;
 
 type contig = ByteContig.contig;
-type inport = string * ty * string * string;
 type tyenvs = (id -> ty) * (qid -> ty) *  (qid -> ty)
+type port = string * ty * string * string
+type ivar = string * ty * exp
+type guar = string * string * exp;
 
 val ERR = mk_HOL_ERR "PP_CakeML";
 fun unimplemented s = ERR s "unimplemented";
@@ -29,7 +31,6 @@ fun mk_tuple elts = Fncall(("","Tuple"), elts);
 val boolTy = BaseTy BoolTy;
 val dummyTy = NamedTy("","dummyTy");
 fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
-fun mk_tuple list = Fncall(("","Tuple"),list)
 fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
 
 fun letExp binds exp =
@@ -158,35 +159,63 @@ fun pp_cake_exp depth pkgName env exp =
       | Unop(UMinus,ConstExp(IntLit{value,...})) => PrettyString ("~"^Int.toString value)
       | Unop(UMinus,e) =>
          if is_float env e then
-            PrettyBlock(2,true,[],
-              [PrettyString"Double.~(",
-               pp_cake_exp (depth-1) pkgName env e,
-               PrettyString")"])
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.~"),[e]))
          else
-            PrettyBlock(2,true,[],
-              [PrettyString"~(",
-               pp_cake_exp (depth-1) pkgName env e,
-               PrettyString")"])
+           PrettyBlock(2,true,[],
+            [PrettyString"~(", pp_cake_exp (depth-1) pkgName env e, PrettyString")"])
       | Binop(Or,e1,e2) => pp_infix depth pkgName env ("orelse",e1,e2)
       | Binop(And,e1,e2) => pp_infix depth pkgName env ("andalso",e1,e2)
       | Binop(Equal,e1,e2) => pp_infix depth pkgName env ("=",e1,e2)
       | Binop(NotEqual,e1,e2) => pp_infix depth pkgName env ("<>",e1,e2)
-      | Binop(Greater,e1,e2) => pp_infix depth pkgName env (">",e1,e2)
-      | Binop(GreaterEqual,e1,e2) => pp_infix depth pkgName env (">=",e1,e2)
-      | Binop(Less,e1,e2) => pp_infix depth pkgName env ("<",e1,e2)
-      | Binop(LessEqual,e1,e2) => pp_infix depth pkgName env ("<=",e1,e2)
-      | Binop(Minus,e1,e2) => pp_infix depth pkgName env ("-",e1,e2)
-      | Binop(Multiply,e1,e2) => pp_infix depth pkgName env ("*",e1,e2)
-      | Binop(Plus,e1,e2) => pp_infix depth pkgName env ("+",e1,e2)
-      | Binop(Divide,e1,e2) => pp_cake_exp depth "" env (Fncall (("","Int.div"),[e1,e2]))
-      | Binop(Modulo,e1,e2) => pp_cake_exp depth "" env (Fncall (("","Int.mod"),[e1,e2]))
+      | Binop(Greater,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.>"),[e1,e2]))
+         else
+            pp_infix depth pkgName env (">",e1,e2)
+      | Binop(GreaterEqual,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.>="),[e1,e2]))
+         else
+            pp_infix depth pkgName env (">=",e1,e2)
+      | Binop(Less,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.<"),[e1,e2]))
+         else
+            pp_infix depth pkgName env ("<",e1,e2)
+      | Binop(LessEqual,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.<="),[e1,e2]))
+         else
+            pp_infix depth pkgName env ("<=",e1,e2)
+      | Binop(Minus,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.-"),[e1,e2]))
+         else
+            pp_infix depth pkgName env ("-",e1,e2)
+      | Binop(Multiply,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.*"),[e1,e2]))
+         else
+            pp_infix depth pkgName env ("*",e1,e2)
+      | Binop(Plus,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.+"),[e1,e2]))
+         else
+            pp_infix depth pkgName env ("+",e1,e2)
+      | Binop(Divide,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double./"),[e1,e2]))
+         else
+             pp_cake_exp depth pkgName env (Fncall (("","Int.div"),[e1,e2]))
+      | Binop(Modulo,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+           raise ERR "pp_cake_exp" "mod: not implemented for doubles"
+         else
+	  pp_cake_exp depth pkgName env (Fncall (("","Int.mod"),[e1,e2]))
       | Binop(Fby,e1,e2) => pp_infix depth pkgName env ("->",e1,e2)
-      | ArrayExp elist => PrettyBlock(0,true,[],
-          [PrettyString "Array.fromList",Space,
-           PrettyString"[",
-            pp_list_with_style false Comma [emptyBreak]
-                    (pp_cake_exp (depth-1) pkgName env) elist,
-            PrettyString"]"])
+      | ArrayExp elist =>
+          pp_cake_exp depth pkgName env
+              (Fncall (("","Array.fromList"),[listLit elist]))
       | ArrayIndex(A,dims) =>
          let fun trans exp [] = exp
                | trans exp (d::dims) =
@@ -289,13 +318,14 @@ fun pp_cake_exp depth pkgName env exp =
             pp_list_with_style false Space [emptyBreak]
                (pp_cake_exp (depth-1) pkgName env) args,
             PrettyString")"])
-      | ConstrExp(qid, constr,args) =>
+      | ConstrExp(tyqid, constr,args) =>
          PrettyBlock(2,true,[],
           if null args then
 	      [PrettyString(pp_pkg_qid pkgName (fst qid,constr))]
           else
 	    [PrettyString"(",
-             PrettyString(pp_pkg_qid pkgName qid), PrettyString" ",
+             PrettyString(pp_pkg_qid pkgName (fst qid,constr)),
+             PrettyString" ",
              pp_list_with_style false Space [emptyBreak]
                  (pp_cake_exp (depth-1) pkgName env) args,
             PrettyString")"])
@@ -759,7 +789,7 @@ fun is_in_event_data_port (name,ty,dir,kind) = (dir = "in" andalso kind = "Event
 fun is_in_data_port (name,ty,dir,kind) = (dir = "in" andalso kind = "DataPort");
 fun is_in_event_port (name,ty,dir,kind) = (dir = "in" andalso kind = "EventPort");
 
-fun pp_parser_struct depth (structName,inports,contig_binds,decode_decs) =
+fun pp_parser_struct (structName,inports,contig_binds,decode_decs) =
  let open PolyML
      val contig_exps = map (I##contig_to_exp []) contig_binds
      fun mk_contig_dec (qid,exp) = ConstDec (("","contig_"^snd qid),dummyTy,exp)
@@ -775,8 +805,8 @@ fun pp_parser_struct depth (structName,inports,contig_binds,decode_decs) =
                   [mk_tuple[VarExp ("contig_"^tyName),VarExp("decode_"^tyName)]]))
         | other =>  raise ERR "pp_parser" "expected type of inport to be named"
      val parseFn_decs = map mk_parseFn_dec in_edps
- in if depth = 0 then PrettyString "<Parse-structure>"
-   else
+     val depth = ~1
+ in
     PrettyBlock(0,true,[],
         [PrettyString ("structure "^structName^" = "), Line_Break,
          PrettyString "struct", Line_Break_2,
@@ -818,11 +848,6 @@ fun pp_defs_struct env (structName,tydecs,tmdecs) =
       ])
  end;
 
-fun dest_inout (InOut p) = p
-  | dest_inout otherwise = raise ERR "dest_inout" "";
-fun dest_in (In p) = p
-  | dest_in otherwise = raise ERR "dest_in" "";
-
 (*---------------------------------------------------------------------------*)
 (* The stepFn synthesized for a monitor has the form                         *)
 (*                                                                           *)
@@ -863,8 +888,10 @@ val emptyString = VarExp(Lib.quote"")
 
 fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
 
-val NoneExp = ConstrExp(("Option","option"),"None",[]);
-fun mk_Some e = ConstrExp(("Option","option"),"Some",[e])
+val NoneExp = ConstExp(IdConst("","None"));
+fun mk_Some e = Fncall(("","Some"),[e])
+fun mk_isSome e = Fncall(("","Option.isSome"),[e])
+fun mk_valOf e = Fncall(("","valOf"),[e])
 
 fun mk_boolOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
 
@@ -872,6 +899,7 @@ fun mk_comment slist = Fncall(("","Comment"), map VarExp slist);
 
 fun mk_ref e = Fncall(("","Ref"),[e]);
 fun mk_deref e = Fncall(("","!"),[e]);
+fun mk_condExp(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 
 (*---------------------------------------------------------------------------*)
 (* There should be enough information in the outgoing FnDecl so that code    *)
@@ -887,7 +915,7 @@ fun mk_deref e = Fncall(("","!"),[e]);
 (* has been done by the programmer/system designer.                          *)
 (*---------------------------------------------------------------------------*)
 
-datatype port = EventData of string * ty | Data of string * ty | Event of string;
+datatype portsy = EventData of string * ty | Data of string * ty | Event of string;
 
 fun portname (Event s) = s
   | portname (Data(s,ty)) = s
@@ -962,6 +990,7 @@ val outVal_comment =
 	      "(*-----------------------*)",
               "(* Compute output values *)",
               "(*-----------------------*)", ""]);
+
 fun mk_mon_stepFn mondec =
  let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
      val stepFn_name = "stepFn"
@@ -1074,6 +1103,207 @@ fun mk_monFn mondec =
  in
     FnDec((fst qid,"monFn"), [], dummyTy, bodyExp)
  end
+
+val comment1 =
+  mk_comment ["",
+	      "(*--------------------------*)",
+              "(* Compute new state values *)",
+              "(*--------------------------*)",""];
+
+val comment2 =
+  mk_comment ["",
+	      "(*-----------------------*)",
+              "(* Compute output values *)",
+              "(*-----------------------*)", ""];
+
+fun ivar_ty (s,ty,exp) = ty;
+fun ivar_name (s,ty,exp) = s;
+fun port_name (s,ty,dir,kind) = s;
+
+fun ppBind ppleft ppright =
+   PrettyBlock(2,true,[],
+     [PrettyString "val ", ppleft, PrettyString " =",
+      Space, PrettyBlock(0,false,[], [ppright])]);
+
+fun valBind (left,right) = ppBind (ppExp left) (ppExp right)
+
+fun valBinds vblist = end_pp_list Line_Break Line_Break valBind vblist;
+
+fun letBinds (binds,exp) =
+   PrettyBlock(0,true,[],
+     [PrettyString "let ",
+      PrettyBlock(4,true,[],[valBinds binds]),
+      Space, PrettyString "in", Space, PrettyString "  ",
+      ppExp exp, Space,
+      PrettyString "end"]);
+
+fun ppCond(ppB,pp_e1,pp_e2) =
+  PrettyBlock(0,true,[],
+     [PrettyString "if ",
+      PrettyBlock(0,false,[],[ppB]),
+      Space, PrettyString "then", Space,
+      pp_e1,
+      Space, PrettyString "else", Space, pp_e2]);
+
+val gadget_struct_boilerplate = String.concatWith "\n"
+ [ "fun pre x = x;",
+   "val valOf = Option.valOf;"
+ ];
+
+fun pp_gadget_struct env (structName,ports,ivars,guars) =
+ let open PolyML
+     val ppExp = pp_cake_exp ~1 structName env
+     val depth = ~1
+     val inports = filter is_in_port ports
+     val eiports = filter is_event inports
+     val outports = filter is_out_port ports
+
+     val initState_dec =
+       let val initStateTuple = mk_tuple(intervalWith (K NoneExp) 1 (length ivars))
+           val state_tys = map ivar_ty ivars
+           fun pp_ty_option ty =
+             PrettyBlock(0,true,[],[pp_cake_ty ~1 "" ty, PrettyString" option"])
+           val state_ty_tuple = PrettyBlock(2,true,[],
+               [gen_pp_list (PrettyString " *") [Space] pp_ty_option state_tys])
+       in
+         PrettyBlock(2,true,[],
+           [PrettyString "val ",
+            pp_cake_exp ~1 "" triv_env initStateVar,
+            PrettyString " =", Space,
+            pp_cake_exp ~1 "" triv_env initStateTuple,
+            Space, PrettyString ": ",
+            state_ty_tuple,
+            PrettyString ";"])
+       end
+
+     val inputBind =
+       let val inTuple = mk_tuple (map (VarExp o port_name) inports)
+           val inputsVar = VarExp "inputs"
+       in (inTuple,inputsVar)
+       end
+
+     val stateVarExps = map (VarExp o ivar_name) ivars
+     val stateVarTuple = mk_tuple stateVarExps
+     val stateVars = VarExp "stateVars"
+     val newStateVars = VarExp "newStateVars"
+
+     val stepFn_dec =
+       let val stateBind = (stateVarTuple,stateVars)
+           val event_varBinds =
+             let fun mk_event_varBind id =
+                  (VarExp ("event_"^id), mk_isSome(VarExp id))
+             in map (mk_event_varBind o port_name) eiports
+             end
+           fun split (s,ty,exp) =
+             let val (e1,e2) = split_fby exp
+             in ((VarExp s,e1),(VarExp s,e2))
+             end
+           val (initBinds,stepBinds) = unzip (map split ivars)
+           val initStep_False =
+             (unitExp,
+              mk_assignExp (VarExp"initStep")
+                           (ConstExp(BoolLit false)))
+           val initExp = letBinds(initBinds @ [initStep_False],stateVarTuple)
+           val step_startVals =
+             (stateVarTuple,mk_tuple(map mk_valOf stateVarExps))
+           val stepExp = letBinds(step_startVals::stepBinds,stateVarTuple)
+           val stepBind =
+             ppBind (ppExp newStateVars)
+                    (ppCond(PrettyString"!initStep",initExp, stepExp))
+           val reBind = (stateVarTuple, newStateVars)
+           val newOpts =
+             (VarExp"newStateVarOpts", mk_tuple (map mk_Some stateVarExps))
+
+           val outBinds =
+             let val outIds = map outCode_target guars
+                 val outVars = map VarExp outIds
+             in zip outVars (map mk_outExp guars)
+             end
+       in
+         PrettyBlock(2,true,[],
+           [PrettyString "fun stepFn inputs stateVars = ", Line_Break,
+            Line_Break,
+            valBinds (inputBind::stateBind::event_varBinds),
+            Line_Break,
+            ppExp comment1,
+            stepBind,
+            Line_Break,
+            valBind reBind,
+            Line_Break,
+            valBind newOpts,
+            Line_Break,
+            ppExp comment2,
+            Line_Break,
+            valBinds outBinds
+          ])
+       end
+
+(*
+TextIO.print (pp_string it);
+*)
+
+     val gadgetFn_dec =
+        PrettyBlock(2,true,[],
+        [PrettyString (String.concat["fun ", structName, "Fn () = ()"])
+         ])
+ in
+    PrettyBlock(0,true,[],
+        [PrettyString ("structure "^structName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         PrettyString gadget_struct_boilerplate,
+         Line_Break_2,
+         initState_dec,
+         Line_Break,
+         PrettyString"val theState = Ref initState;",
+	 Line_Break,
+         PrettyString"val initStep = Ref True;",
+         Line_Break_2,
+         stepFn_dec,
+	 Line_Break_2,
+         gadgetFn_dec,
+ 	 Line_Break_2,
+         PrettyString "end"
+      ])
+ end;
+
+(*
+fun mk_mon_stepFn mondec =
+ let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
+     val stepFn_name = "stepFn"
+     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
+     val inputs    = map feature2port inports
+     val outputs   = map outCode_target outCode
+     val outVars   = map VarExp outputs
+     val outVarT   = mk_tuple outVars
+     val stateVars = map (fn (name,ty,exp) => VarExp name) ivardecs
+     val stateVarT = mk_tuple stateVars
+     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) ivardecs
+     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
+                     @ [(unitExp, mk_assignExp initStepVar (ConstExp(BoolLit false)))]
+     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
+     val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
+(*     val inportVs  = (mk_tuple(map (VarExp o portname) inputs),
+                      mk_tuple (map mk_parse inputs))
+*)
+     val stateBs   = (mk_tuple stateVars,VarExp"stateVars")
+     val outportBs = (mk_tuple(map VarExp outputs),VarExp"outports")
+     val pre_def   = localFnExp("pre",[VarExp"x"],VarExp"x")
+     val retTuple  = mk_tuple stateVars
+     val initExp   = letExp init_code retTuple
+     val stepExp   = letExp step_code retTuple
+     val condExp   = Fncall(("","IfThenElse"),[mk_deref initStepVar,initExp,stepExp])
+     val topBinds  = letExp ([inportBs,(* inportVs,*)
+                              stateBs,pre_def, stateVal_comment,
+                              (stateVarT,condExp),outVal_comment]
+                             @ zip outVars (map mk_outExp outCode))
+                            (mk_tuple [stateVarT,outVarT])
+  in
+    FnDec((fst qid,"stepFn"),
+          [("inports",dummyTy),("stateVars",dummyTy)],
+          dummyTy,
+          topBinds)
+ end;
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Buffer sizes for messages declared in CM_Property_Set.                    *)

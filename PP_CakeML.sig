@@ -9,14 +9,15 @@ sig
     type tmdec = AADL.tmdec
     type pretty = PolyML.pretty
     type contig = ByteContig.contig
-    type inport = string * ty * string * string
     type tyenvs = (id -> ty) * (qid -> ty) *  (qid -> ty)
+    type port = string * ty * string * string
+    type ivar = string * ty * exp
+    type guar = string * string * exp
 
     val pp_cake_ty : int -> string -> ty -> pretty
     val pp_cake_exp : int -> string -> tyenvs -> exp -> pretty
     val pp_tydec : int -> string -> AADL.tydec -> pretty
     val pp_tmdec : int -> string -> tyenvs -> AADL.tmdec -> pretty
-(*    val pp_pkg   : int -> AADL.pkg -> pretty *)
 
     val mk_tyE         : AADL.pkg list -> qid -> ty option
     val mk_constE      : AADL.pkg list -> string -> ty option
@@ -38,8 +39,9 @@ sig
                  string -> pretty
 
     val pp_parser_struct
-      : int -> string * inport list * (qid * contig) list * tmdec list
-            -> pretty
+      : string * port list * (qid * contig) list * tmdec list -> pretty
 
     val pp_defs_struct : tyenvs -> string * tydec list * tmdec list -> pretty
+
+    val pp_gadget_struct : tyenvs -> string * port list * ivar list * guar list -> pretty
 end

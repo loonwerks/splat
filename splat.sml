@@ -199,6 +199,15 @@ datatype gadget =
 val sort_tydecs = AADL.sort_tydecs
 val sort_tmdecs = AADL.sort_tmdecs;
 
+fun port_ty (id,ty,dir,kind) = ty;
+fun is_in_port (id,ty,"in",kind) = true
+  | is_in_port otherwise = false;
+fun is_out_port (id,ty,"out",kind) = true
+  | is_out_port otherwise = false;
+fun is_event (id,ty,dir,"DataPort") = false
+  | is_event otherwise = true;
+
+
 fun set_tmdec_pkgName name tmdec =
  case tmdec
   of ConstDec((_,s),ty,exp) => ConstDec((name,s),ty,exp)
@@ -560,6 +569,33 @@ fun set_ports_and_ivars_lower_case gdt =
            map (substGuar theta) guars)
  end;
 
+(*---------------------------------------------------------------------------*)
+(* Replace all "event inport" syntax by "event_inport" variables. Then       *)
+(* replace all "inport" variables by "valOf inport" calls. If the user has   *)
+(* written a good spec, then this should be fine. If not, it could happen    *)
+(* that a "valOf v" expression gets evaluated but that there isn't a         *)
+(* preceding "event_v" test, and that there is no input event on v. In this  *)
+(* sad case, there will be a runtime test "Option.valOf None" and the gadget *)
+(* will crash.                                                               *)
+(*---------------------------------------------------------------------------*)
+
+fun elim_inport_events gdt =
+ let open AST
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val inports = filter is_in_port ports
+     val eiports = filter is_event inports
+     val portNames = map #1 eiports
+     fun mk_bind1 s = (Fncall(("","event"),[VarExp s]) |-> VarExp("event_"^s))
+     fun mk_bind2 s = (VarExp s |-> Fncall(("","valOf"),[VarExp s]))
+     val theta1 = map mk_bind1 portNames
+     val theta2 = map mk_bind2 portNames
+     fun substIvar theta (s,ty,exp) = (s,ty,substExp theta exp)
+     fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
+ in Gadget(qid,tydecs,tmdecs,ports,
+           map (substIvar theta2 o substIvar theta1) ivars,
+           map (substGuar theta2 o substGuar theta1) guars)
+ end;
+
 fun gadget_tyE gdt =
  let val Gadget (_,tydecs, _,_,_,_) = gdt
      fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
@@ -572,7 +608,7 @@ fun gadget_tyEnvs gdt =
  let open AST
      val Gadget (qid, tydecs, tmdecs,ports,ivars,guars) = gdt
      val tyE_0 = gadget_tyE gdt
-     fun chase list = list  (* Stub *)
+     fun chase list = list
      val tyE = chase tyE_0
      fun rng (ConstDec(qid,ty,e)) = (qid,ty)
        | rng (FnDec(qid,params,rty,e)) = (qid,rty)
@@ -584,6 +620,16 @@ fun gadget_tyEnvs gdt =
      (alistFn varE, alistFn tyE, alistFn tmE)
  end
 
+(*     fun chase n tyqid alist =
+       if n <= 0 then
+          raise ERR "gadget_tyEnvs" "possible cycle in type abbrevs"
+       else
+         case assoc1 qid alist
+          of SOME (_,NamedTy qid') => chase qid' (n-1)
+           | SOME (_, ty) => ty
+           | NONE => raise ERR "rgadget_tyEnvs"
+                     ("unknown type abbrev: "^qid_string qid)
+*)
 
 fun defs_struct_of gdt =
  let val tyEnvs = gadget_tyEnvs gdt
@@ -592,14 +638,6 @@ fun defs_struct_of gdt =
 in
   pretty
 end
-
-fun port_ty (id,ty,dir,kind) = ty;
-fun is_in_port (id,ty,"in",kind) = true
-  | is_in_port otherwise = false;
-fun is_out_port (id,ty,"out",kind) = true
-  | is_out_port otherwise = false;
-fun is_event (id,ty,dir,"DataPort") = false
-  | is_event otherwise = true;
 
 fun get_ports gdt =
  let val ports = gadget_ports gdt
@@ -644,14 +682,25 @@ end;
 
 fun parser_struct_of gdt =
 let val qid = gadget_qid gdt
+    val tydecs = gadget_tydecs gdt
     val ports = gadget_ports gdt
     val inports = filter is_in_port ports
     val tyEalist = gadget_tyE gdt
     val tyE = assocFn tyEalist
     val contig_binds = map (I##Gen_Contig.contig_of tyE) tyEalist
-    val decoder_defs = Gen_Contig.decoders tyE (map snd tyEalist)
+    val decoder_defs = Gen_Contig.decoders tyE tydecs
     val fodder = ("Parse",inports, contig_binds, decoder_defs)
-    val pretty = PP_CakeML.pp_parser_struct ~1 fodder
+    val pretty = PP_CakeML.pp_parser_struct fodder
+in
+  pretty
+end
+
+fun gadget_struct_of gdt =
+let open AST
+    val Gadget (qid, tydecs, tmdecs,ports,ivars,guars) = gdt
+    val fodder = (snd qid,ports, ivars, guars)
+    val tyEnvs = gadget_tyEnvs gdt
+    val pretty = PP_CakeML.pp_gadget_struct tyEnvs fodder
 in
   pretty
 end
@@ -671,12 +720,14 @@ fun process_model jsonFile =
                   map set_vars_lower_case,
                   map set_ports_and_ivars_lower_case,
                   elim_projections tyE tmE,
-                  map set_Defs_struct]
+                  map set_Defs_struct,
+                  map elim_inport_events]
      val apis = map API_of (zip gdts1 gdts)
      val parser_structs = map parser_struct_of gdts
      val defs_structs = map defs_struct_of gdts
+     val gadget_structs = map gadget_struct_of gdts
  in
-    (apis,parser_structs, defs_structs, gdts)
+    (apis,parser_structs, defs_structs, gadget_structs, gdts)
  end;
 
 fun getFile path =
@@ -694,7 +745,7 @@ val Makefile_Src   = getFile "Lego/Makefile";
 
 (* val Cake_Src       = getFile "Lego/cake.S"; *)
 
-fun export_implementation dir (api,parser,defs,gdt) =
+fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
  let open FileSys
      val (pkgName,compName) = gadget_qid gdt
      val gadgetName = pkgName^"_"^compName
@@ -724,6 +775,8 @@ fun export_implementation dir (api,parser,defs,gdt) =
      val () = PPfns.pp_ostrm ostrm parser
      val () = add "\n\n"
      val () = PPfns.pp_ostrm ostrm api
+     val () = add "\n\n"
+     val () = PPfns.pp_ostrm ostrm pp_gdt
      val () = TextIO.closeOut ostrm
      val fullgadgetDir = origDir^"/"^gadgetDir
      val () = stdErr_print ("Code written to directory: "^fullgadgetDir ^ "\n")
@@ -738,15 +791,16 @@ val args = [jsonFile];
 val thyName = "SW";
 val dir = ".";
 
-val (apis,parsers,defs,gdts) = process_model "examples/SW.json";
+val (apis,parsers,defs,gdt_pps,gdts) = process_model "examples/SW.json";
 val [gdt1, gdt2, gdt3] = gdts;
 val [api1,api2,api3] = apis;
 val [p1,p2,p3] = parsers;
 val [defs1,defs2,defs3] = defs;
+val [gpp1,gpp2,gpp3] = gdt_pps;
 
-export_implementation "tmp" (api1,p1,defs1,gdt1);
-export_implementation "tmp" (api2,p2,defs2,gdt2);
-export_implementation "tmp" (api3,p3,defs3,gdt3);
+export_implementation "tmp" (api1,p1,defs1,gpp1,gdt1);
+export_implementation "tmp" (api2,p2,defs2,gpp2,gdt2);
+export_implementation "tmp" (api3,p3,defs3,gpp3,gdt3);
 
 fun envFn env x = assoc x env;
 
