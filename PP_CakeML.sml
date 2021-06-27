@@ -1164,13 +1164,17 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
      val inports = filter is_in_port ports
      val eiports = filter is_event inports
      val outports = filter is_out_port ports
+     fun is_signal port = is_event port andalso not (is_data port)
 
      val initState_dec =
        let val initStateTuple = mk_tuple(intervalWith (K NoneExp) 1 (length ivars))
            val state_tys = map ivar_ty ivars
            fun pp_ty_option ty =
              PrettyBlock(0,true,[],[pp_cake_ty ~1 "" ty, PrettyString" option"])
-           val state_ty_tuple = PrettyBlock(2,true,[],
+           val state_ty_tuple =
+              if null ivars then
+                 PrettyString "unit"
+              else PrettyBlock(2,true,[],
                [gen_pp_list (PrettyString " *") [Space] pp_ty_option state_tys])
        in
          PrettyBlock(2,true,[],
@@ -1271,7 +1275,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
        | splice x [y] = [y]
        | splice x (h::t) = h::x::splice x t;
 
-     val gadgetFnId = structName^"Fn"
+     val gadgetFnId = "gadgetFn"
      val gadgetFn_dec =
        let val inportIds = map port_name inports
            val inportVars = map VarExp inportIds
@@ -1284,6 +1288,8 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
            val inOptVars = map VarExp inOptIds
            val outIds = map outCode_target guars
            val outVars = map VarExp outIds
+           val out_signals = filter is_signal outports
+           val out_signalIds = map port_name out_signals
 
            fun dest_varexp e =
             case e
@@ -1291,6 +1297,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
 	      | otherwise => raise ERR "dest_varexp" "expected a VarExp"
 
 	   fun is_valof ("","Option.valOf") = true
+             | is_valof ("","valOf") = true
              | is_valof otherwise = false
 
            fun guarOut (s1,s2,exp) =
@@ -1322,20 +1329,26 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
                  val srcId = dest_varexp srcVar
              in
               PrettyBlock(0,true,[],
-               [PrettyString "let in", Line_Break,
+               ([PrettyString "let in", Line_Break,
                 PrettyString ("  case "^tgtId), Line_Break,
                 PrettyString "   of None => ()", Line_Break,
-                PrettyString "    | Some _ => ", Line_Break,
-              PrettyString ("      let val len = Word8Array.length API."^srcId^"_buffer"),
-              Line_Break,
-              PrettyString ("      in API.send_"^tgtId),
-              Line_Break,
-             PrettyString ("            (Word8Array.substring API."^srcId^"_buffer 1 (len-1))"),
-              Line_Break,
-              PrettyString  "      end",
-              Line_Break,
-              PrettyString  "end"
-             ])
+                PrettyString "    | Some _ => "]
+               @
+               (if mem tgtId out_signalIds
+                then [PrettyString ("API.send_"^tgtId^" \"\""),
+                      Line_Break, PrettyString "end"]
+                else
+                [Line_Break,
+                 PrettyString ("      let val len = Word8Array.length API."^srcId^"_buffer"),
+                 Line_Break,
+                 PrettyString ("      in API.send_"^tgtId),
+                 Line_Break,
+                 PrettyString ("            (Word8Array.substring API."^srcId^"_buffer 1 (len-1))"),
+                 Line_Break,
+                 PrettyString  "      end",
+                 Line_Break,
+                 PrettyString  "end"
+                ])))
              end
 
            val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break])

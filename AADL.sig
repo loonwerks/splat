@@ -54,6 +54,7 @@ sig
  val is_in_port : port -> bool
  val is_out_port: port -> bool
  val is_event  :  port -> bool
+ val is_data   :  port -> bool
 
  val sort_tydecs : tydec list -> tydec list
  val sort_tmdecs : tmdec list -> tmdec list

@@ -71,6 +71,8 @@ fun is_out_port (id,ty,"out",kind) = true
   | is_out_port otherwise = false;
 fun is_event (id,ty,dir,"DataPort") = false
   | is_event otherwise = true;
+fun is_data(id,ty,dir,"EventPort") = false
+  | is_data otherwise = true;
 
 (*---------------------------------------------------------------------------*)
 (* Json syntax ops                                                           *)
