@@ -49,8 +49,8 @@ sig
 
    val variants : term list -> term list -> term list
 
-   val mk_gensym : string -> string list 
-                    -> {gensym: unit -> string, 
+   val mk_gensym : string -> string list
+                    -> {gensym: unit -> string,
                         set_base: string list -> string list}
    val stdOut_print : string -> unit
    val stdErr_print : string -> unit
@@ -72,4 +72,6 @@ sig
 
    val mapfilter : ('a -> 'b) -> 'a list -> 'b list
    val shortcut : tactic
+   val intervalWith : (int -> 'a) -> int -> int -> 'a list
+   val listBinds : int -> string -> string -> unit
 end

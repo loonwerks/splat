@@ -733,6 +733,7 @@ val Utils_Src      = getFile "Lego/Utils.cml";
 val ByteContig_Src = getFile "Lego/ByteContig.cml";
 val basis_ffi_Src  = getFile "Lego/basis_ffi.c";
 val Makefile_Src   = getFile "Lego/Makefile";
+val Control_Src    = getFile "Lego/Control";
 
 (* val Cake_Src       = getFile "Lego/cake.S"; *)
 
@@ -768,6 +769,9 @@ fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
      val () = PPfns.pp_ostrm ostrm api
      val () = add "\n\n"
      val () = PPfns.pp_ostrm ostrm pp_gdt
+     val () = add "\n\n"
+     val () = add Control_Src
+     val () = add "\n\n"
      val () = TextIO.closeOut ostrm
      val fullgadgetDir = origDir^"/"^gadgetDir
      val () = stdErr_print ("Code written to directory: "^fullgadgetDir ^ "\n")

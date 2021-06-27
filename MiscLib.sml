@@ -598,4 +598,18 @@ fun mapfilter f list =
 
 val shortcut = W (ACCEPT_TAC o mk_thm)
 
+fun intervalWith f lo hi =
+  let fun iter i = if i > hi then [] else f i::iter (i+1)
+  in iter lo
+  end
+
+fun listBinds n s1 s2 =
+ let fun scat i = s2^Int.toString i
+ in print (String.concat
+       ["val [",
+        String.concatWith "," (intervalWith scat 1 n), "] = ",
+        s1,";\n"])
+ end;
+
+
 end (* MiscLib *)

@@ -1379,7 +1379,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
        end
  in
     PrettyBlock(0,true,[],
-       ([PrettyString ("structure "^structName^" = "), Line_Break,
+       ([PrettyString ("structure Gadget = "), Line_Break,
          PrettyString "struct", Line_Break_2,
          PrettyString gadget_struct_boilerplate,
          Line_Break_2,
