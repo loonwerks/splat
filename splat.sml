@@ -199,15 +199,6 @@ datatype gadget =
 val sort_tydecs = AADL.sort_tydecs
 val sort_tmdecs = AADL.sort_tmdecs;
 
-fun port_ty (id,ty,dir,kind) = ty;
-fun is_in_port (id,ty,"in",kind) = true
-  | is_in_port otherwise = false;
-fun is_out_port (id,ty,"out",kind) = true
-  | is_out_port otherwise = false;
-fun is_event (id,ty,dir,"DataPort") = false
-  | is_event otherwise = true;
-
-
 fun set_tmdec_pkgName name tmdec =
  case tmdec
   of ConstDec((_,s),ty,exp) => ConstDec((name,s),ty,exp)

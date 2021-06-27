@@ -16,6 +16,7 @@ in end;
  type ty = AST.ty;
  type exp = AST.exp;
  type tyEnv = (ty * ty) list;
+ type port = string * ty * string * string
 
  datatype tydec
     = EnumDec of qid * string list
@@ -30,23 +31,25 @@ in end;
  datatype filter
     = FilterDec   (* (name,ports,decs,ivars,guars) *)
         of qid *
-           (string * ty * string * string) list *
+           port list *
            tmdec list *
            (string * ty * exp) list *
            (string * string * exp) list
 
  datatype monitor  (*  (name,ports,latched,decs,ivars,guars)  *)
     = MonitorDec of qid
-                 * (string * ty * string * string) list
+                 * port list
                  * bool
                  * tmdec list
                  * (string * ty * exp) list
                  * (string * string * exp) list
 
+(*
 datatype port
     = Event of string
     | Data of string * ty
     | EventData of string * ty
+*)
 
 type decls =
   (* pkgName *)   string
@@ -59,6 +62,15 @@ type decls =
 datatype pkg = Pkg of decls;
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
+
+fun port_name (s,ty,dir,kind) = s;
+fun port_ty (id,ty,dir,kind) = ty;
+fun is_in_port (id,ty,"in",kind) = true
+  | is_in_port otherwise = false;
+fun is_out_port (id,ty,"out",kind) = true
+  | is_out_port otherwise = false;
+fun is_event (id,ty,dir,"DataPort") = false
+  | is_event otherwise = true;
 
 (*---------------------------------------------------------------------------*)
 (* Json syntax ops                                                           *)

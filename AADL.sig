@@ -6,6 +6,7 @@ sig
   type ty = AST.ty
   type exp = AST.exp
   type tyEnv = (ty * ty) list
+  type port = string * ty * string * string
 
  datatype tydec
     = EnumDec of qid * string list
@@ -47,6 +48,12 @@ sig
 
  val tydec_qid : tydec -> qid
  val tmdec_qid : tmdec -> qid
+
+ val port_name : port -> string
+ val port_ty   : port -> ty
+ val is_in_port : port -> bool
+ val is_out_port: port -> bool
+ val is_event  :  port -> bool
 
  val sort_tydecs : tydec list -> tydec list
  val sort_tmdecs : tmdec list -> tmdec list

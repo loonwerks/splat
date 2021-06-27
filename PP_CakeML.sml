@@ -321,10 +321,10 @@ fun pp_cake_exp depth pkgName env exp =
       | ConstrExp(tyqid, constr,args) =>
          PrettyBlock(2,true,[],
           if null args then
-	      [PrettyString(pp_pkg_qid pkgName (fst qid,constr))]
+	      [PrettyString(pp_pkg_qid pkgName (fst tyqid,constr))]
           else
 	    [PrettyString"(",
-             PrettyString(pp_pkg_qid pkgName (fst qid,constr)),
+             PrettyString(pp_pkg_qid pkgName (fst tyqid,constr)),
              PrettyString" ",
              pp_list_with_style false Space [emptyBreak]
                  (pp_cake_exp (depth-1) pkgName env) args,
@@ -1118,32 +1118,30 @@ val comment2 =
 
 fun ivar_ty (s,ty,exp) = ty;
 fun ivar_name (s,ty,exp) = s;
-fun port_name (s,ty,dir,kind) = s;
+
+fun ty_name ty =
+ case ty
+  of NamedTy(_,tyName) => tyName
+   | otherwise => raise ERR "ty_name" "Expected a named type";
 
 fun ppBind ppleft ppright =
+ let open PolyML
+ in
    PrettyBlock(2,true,[],
      [PrettyString "val ", ppleft, PrettyString " =",
-      Space, PrettyBlock(0,false,[], [ppright])]);
-
-fun valBind (left,right) = ppBind (ppExp left) (ppExp right)
-
-fun valBinds vblist = end_pp_list Line_Break Line_Break valBind vblist;
-
-fun letBinds (binds,exp) =
-   PrettyBlock(0,true,[],
-     [PrettyString "let ",
-      PrettyBlock(4,true,[],[valBinds binds]),
-      Space, PrettyString "in", Space, PrettyString "  ",
-      ppExp exp, Space,
-      PrettyString "end"]);
+      Space, PrettyBlock(0,false,[], [ppright])])
+ end;
 
 fun ppCond(ppB,pp_e1,pp_e2) =
+ let open PolyML
+ in
   PrettyBlock(0,true,[],
      [PrettyString "if ",
       PrettyBlock(0,false,[],[ppB]),
       Space, PrettyString "then", Space,
       pp_e1,
-      Space, PrettyString "else", Space, pp_e2]);
+      Space, PrettyString "else", Space, pp_e2])
+ end;
 
 val gadget_struct_boilerplate = String.concatWith "\n"
  [ "fun pre x = x;",
@@ -1154,6 +1152,15 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
  let open PolyML
      val ppExp = pp_cake_exp ~1 structName env
      val depth = ~1
+     fun valBind (left,right) = ppBind (ppExp left) (ppExp right)
+     fun valBinds vblist = end_pp_list Line_Break Line_Break valBind vblist
+     fun letBinds (binds,exp) =
+        PrettyBlock(0,true,[],
+         [PrettyString "let ",
+          PrettyBlock(4,true,[],[valBinds binds]),
+          Space, PrettyString "in", Space, PrettyString "  ",
+          ppExp exp, Space,
+          PrettyString "end"])
      val inports = filter is_in_port ports
      val eiports = filter is_event inports
      val outports = filter is_out_port ports
@@ -1168,7 +1175,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
        in
          PrettyBlock(2,true,[],
            [PrettyString "val ",
-            pp_cake_exp ~1 "" triv_env initStateVar,
+            pp_cake_exp ~1 "" triv_env (VarExp"initState"),
             PrettyString " =", Space,
             pp_cake_exp ~1 "" triv_env initStateTuple,
             Space, PrettyString ": ",
@@ -1214,41 +1221,152 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
            val newOpts =
              (VarExp"newStateVarOpts", mk_tuple (map mk_Some stateVarExps))
 
-           val outBinds =
-             let val outIds = map outCode_target guars
-                 val outVars = map VarExp outIds
-             in zip outVars (map mk_outExp guars)
-             end
+           val outIds = map outCode_target guars
+           val outVars = map VarExp outIds
+           val outBinds = zip outVars (map mk_outExp guars)
+           val outTuple = mk_tuple[VarExp"newStateVarOpts",mk_tuple outVars]
        in
          PrettyBlock(2,true,[],
            [PrettyString "fun stepFn inputs stateVars = ", Line_Break,
-            Line_Break,
-            valBinds (inputBind::stateBind::event_varBinds),
-            Line_Break,
-            ppExp comment1,
-            stepBind,
-            Line_Break,
-            valBind reBind,
-            Line_Break,
-            valBind newOpts,
-            Line_Break,
-            ppExp comment2,
-            Line_Break,
-            valBinds outBinds
+            PrettyString"let ",
+            PrettyBlock(4,true,[],
+             [valBinds (inputBind::stateBind::event_varBinds),
+              Line_Break,
+              ppExp comment1,
+              Line_Break,
+              stepBind,
+              Line_Break,
+              valBind reBind,
+              Line_Break,
+              valBind newOpts,
+              Line_Break,
+              ppExp comment2,
+              Line_Break,
+              valBinds outBinds]),
+            Space,
+            PrettyString "in",
+            Space, PrettyString "   ", ppExp outTuple,
+            Space,
+            PrettyString"end"
           ])
        end
 
-(*
-TextIO.print (pp_string it);
-*)
+     val inportIds = map port_name inports
+     val inportTyNames = map (ty_name o port_ty) inports
 
+     val parseFn_decs =
+       let fun inportParser_dec portId tyName = String.concat
+              ["fun ", "parse_"^portId, " () =\n",
+               "  let val () = API.fill_", portId, "_buffer ()\n",
+               "      val inOpt2 = Parse.parse_", tyName, " API.",portId, "_buffer\n",
+               "  in\n",
+               "     Utils.dropOpt \"Parsing of ", portId, "port failed.\" inOpt2\n",
+	       "  end;"]
+           val strings = map2 inportParser_dec inportIds inportTyNames
+       in
+         map PrettyString strings
+       end
+
+     fun splice x [] = []
+       | splice x [y] = [y]
+       | splice x (h::t) = h::x::splice x t;
+
+     val gadgetFnId = structName^"Fn"
      val gadgetFn_dec =
-        PrettyBlock(2,true,[],
-        [PrettyString (String.concat["fun ", structName, "Fn () = ()"])
-         ])
+       let val inportIds = map port_name inports
+           val inportVars = map VarExp inportIds
+           fun mk_Opt s = s^"Opt"
+           fun mk_inOpt id = String.concat
+                 ["val ", mk_Opt id, " = parse_", id, " ()"]
+           val inOpt_decs = splice Line_Break
+                              (map (PrettyString o mk_inOpt) inportIds)
+           val inOptIds = map mk_Opt inportIds
+           val inOptVars = map VarExp inOptIds
+           val outIds = map outCode_target guars
+           val outVars = map VarExp outIds
+
+           fun dest_varexp e =
+            case e
+             of VarExp id => id
+	      | otherwise => raise ERR "dest_varexp" "expected a VarExp"
+
+	   fun is_valof ("","Option.valOf") = true
+             | is_valof otherwise = false
+
+           fun guarOut (s1,s2,exp) =
+             case exp
+              of Binop(Equal,e1,e2) =>
+                (case e1
+                  of Fncall(("","event"),_) => e2
+                   | VarExp p => e2
+                   | otherwise => raise ERR "guarOut" "unexpected syntax")
+               | Fncall(("","IfThenElse"),[b,e1,e2]) =>
+                (case e1
+                  of Binop(And,_,Binop(Equal,_,e)) => e
+                  | otherwise => raise ERR "guarOut" "unexpected syntax")
+               | otherwise => raise ERR "guarOut" "unexpected syntax"
+
+           fun guar_code guar =
+             let val tgtId = outCode_target guar
+                 val srcVar =
+                   (case guarOut guar
+                     of Fncall (qid,[arg]) =>
+                        if is_valof qid andalso
+                           op_mem (curry eqExp) arg inportVars
+                        then arg
+                        else raise ERR "pp_gadget_struct"
+                              "gadgetFn_dec: unexpected output guarantee syntax"
+                      | (v as VarExp _) => v
+                      | otherwise  => raise ERR "pp_gadget_struct"
+                            "gadgetFn_dec: unexpected output guarantee syntax")
+                 val srcId = dest_varexp srcVar
+             in
+              PrettyBlock(0,true,[],
+               [PrettyString "let in", Line_Break,
+                PrettyString ("  case "^tgtId), Line_Break,
+                PrettyString "   of None => ()", Line_Break,
+                PrettyString "    | Some _ => ", Line_Break,
+              PrettyString ("      let val len = Word8Array.length API."^srcId^"_buffer"),
+              Line_Break,
+              PrettyString ("      in API.send_"^tgtId),
+              Line_Break,
+             PrettyString ("            (Word8Array.substring API."^srcId^"_buffer 1 (len-1))"),
+              Line_Break,
+              PrettyString  "      end",
+              Line_Break,
+              PrettyString  "end"
+             ])
+             end
+
+           val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break])
+           val outputCalls =
+             PrettyBlock(4,true,[], splice spacer (map guar_code guars))
+
+       in
+	   PrettyBlock(2,true,[],
+           [PrettyString (String.concat["fun ", gadgetFnId, "() = "]),
+            Line_Break,
+            PrettyString"let ",
+            PrettyBlock(4,true,[],
+             (inOpt_decs
+               @
+              [Line_Break,
+               valBind (VarExp"inputs", mk_tuple inOptVars),
+               Line_Break,
+               PrettyString "val (newState,outputs) = stepFn inputs (!theState)",
+               Line_Break,
+               PrettyString "val () = (theState := newState)",
+               Line_Break,
+               valBind(mk_tuple outVars, VarExp"outputs")])),
+            Space,
+            PrettyString "in", Space,
+            outputCalls, Space,
+            PrettyString"end"
+          ])
+       end
  in
     PrettyBlock(0,true,[],
-        [PrettyString ("structure "^structName^" = "), Line_Break,
+       ([PrettyString ("structure "^structName^" = "), Line_Break,
          PrettyString "struct", Line_Break_2,
          PrettyString gadget_struct_boilerplate,
          Line_Break_2,
@@ -1259,51 +1377,15 @@ TextIO.print (pp_string it);
          PrettyString"val initStep = Ref True;",
          Line_Break_2,
          stepFn_dec,
-	 Line_Break_2,
+	 Line_Break_2]
+      @  parseFn_decs
+      @ [Line_Break_2,
          gadgetFn_dec,
  	 Line_Break_2,
-         PrettyString "end"
-      ])
+         PrettyString "end"])
+      )
  end;
 
-(*
-fun mk_mon_stepFn mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
-     val stepFn_name = "stepFn"
-     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
-     val inputs    = map feature2port inports
-     val outputs   = map outCode_target outCode
-     val outVars   = map VarExp outputs
-     val outVarT   = mk_tuple outVars
-     val stateVars = map (fn (name,ty,exp) => VarExp name) ivardecs
-     val stateVarT = mk_tuple stateVars
-     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) ivardecs
-     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
-                     @ [(unitExp, mk_assignExp initStepVar (ConstExp(BoolLit false)))]
-     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
-     val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
-(*     val inportVs  = (mk_tuple(map (VarExp o portname) inputs),
-                      mk_tuple (map mk_parse inputs))
-*)
-     val stateBs   = (mk_tuple stateVars,VarExp"stateVars")
-     val outportBs = (mk_tuple(map VarExp outputs),VarExp"outports")
-     val pre_def   = localFnExp("pre",[VarExp"x"],VarExp"x")
-     val retTuple  = mk_tuple stateVars
-     val initExp   = letExp init_code retTuple
-     val stepExp   = letExp step_code retTuple
-     val condExp   = Fncall(("","IfThenElse"),[mk_deref initStepVar,initExp,stepExp])
-     val topBinds  = letExp ([inportBs,(* inportVs,*)
-                              stateBs,pre_def, stateVal_comment,
-                              (stateVarT,condExp),outVal_comment]
-                             @ zip outVars (map mk_outExp outCode))
-                            (mk_tuple [stateVarT,outVarT])
-  in
-    FnDec((fst qid,"stepFn"),
-          [("inports",dummyTy),("stateVars",dummyTy)],
-          dummyTy,
-          topBinds)
- end;
-*)
 
 (*---------------------------------------------------------------------------*)
 (* Buffer sizes for messages declared in CM_Property_Set.                    *)
