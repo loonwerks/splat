@@ -2504,12 +2504,12 @@ fun monFn () =
  in
    let in
      case countOpt
-      of None => API.logInfo "Health Output: uninitialized cycle count"
+      of None => Utils.println "Health Output: uninitialized cycle count"
        | Some i => API.send_Health_Out (Utils.pack_u64 i)
    end
     ;
    case rptOpt1
-    of None => API.logInfo "\nOutput on Suspect_Traffic_Out1 port : No output because no abnormalities found.\n\n"
+    of None => Utils.println "Output on Suspect_Traffic_Out1 port : No output because no abnormalities found."
      | Some monitor_report =>
        let val () = Utils.println "\nOutput on Suspect_Traffic_Out1 port :  Abnormalities found."
            val () = Adsb_Types.print_monitor_report monitor_report
@@ -2520,7 +2520,7 @@ fun monFn () =
        end
     ;
    case rptOpt2
-    of None => API.logInfo "\nOutput on Suspect_Traffic_Out2 port : No output because no duplicates found.\n\n"
+    of None => Utils.println "Output on Suspect_Traffic_Out2 port : No output because no duplicates found."
      | Some monitor_report =>
        let val () = Utils.println "\nOutput on Suspect_Traffic_Out2 port :  Duplicates found."
 	   val () = Adsb_Types.print_monitor_report monitor_report
@@ -2531,7 +2531,7 @@ fun monFn () =
        end
     ;
    case rptOpt3
-    of None => API.logInfo "\nOutput on Suspect_Traffic_Out3 port : No output because no abnormalities found.\n\n"
+    of None => Utils.println "Output on Suspect_Traffic_Out3 port : No output because no abnormalities found."
      | Some monitor_report =>
        let val () = Utils.println "\nOutput on Suspect_Traffic_Out3 port :  Abnormalities found."
 	   val () = Adsb_Types.print_monitor_report monitor_report
