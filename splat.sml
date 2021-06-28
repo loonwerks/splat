@@ -70,6 +70,11 @@ fun set_outDir d =
      | SOME _ => ()
  end
 
+fun get_outDir() =
+ case !(#outDir FLAGS)
+  of NONE => raise ERR "get_outDir" "no default outdir"
+   | SOME dir => dir
+
 fun set_intwidth s =
  case !(#intwidth FLAGS)
   of NONE =>
@@ -153,16 +158,6 @@ fun parse_args args =
      set_flags flags
    ; jfile
  end
-
-fun extract_consts ("CM_Property_Set",(tydecs,fndecs,filtdecs,mondecs)) =
-     let open AADL
-         fun dest_const_dec (ConstDec ((_,cname),ty,i)) = (cname,i)
-     in mapfilter dest_const_dec fndecs
-     end
-  | extract_consts otherwise = raise ERR "extract_consts" "unable to find package CM_Property_Set"
-
-fun extract_filters (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = filtdecs;
-fun extract_monitors (pkgName,(tydecs,fndecs,filtdecs,mondecs)) = mondecs;
 
 (*---------------------------------------------------------------------------*)
 (* Transform to a set of "components", each of the form                      *)
@@ -699,28 +694,6 @@ end
 fun apply gdts [] = gdts
   | apply gdts (f::t) = apply (f gdts) t ;
 
-fun process_model jsonFile =
- let val ([jpkg],ss) = Json.fromFile jsonFile
-     val pkgs = scrape_pkgs jpkg
-     val tyE = mk_tyE (map Pkg pkgs)
-     val tmE = mk_constE (map Pkg pkgs)
-     val gdts1 = mk_gadgets pkgs
-     val gdts = apply gdts1
-                 [map corrall_rogue_vars,
-                  map set_type_constrs,
-                  map set_vars_lower_case,
-                  map set_ports_and_ivars_lower_case,
-                  elim_projections tyE tmE,
-                  map set_Defs_struct,
-                  map elim_inport_events]
-     val apis = map API_of (zip gdts1 gdts)
-     val parser_structs = map parser_struct_of gdts
-     val defs_structs = map defs_struct_of gdts
-     val gadget_structs = map gadget_struct_of gdts
- in
-    (apis,parser_structs, defs_structs, gadget_structs, gdts)
- end;
-
 fun getFile path =
   let val istrm = TextIO.openIn path
       val vector = TextIO.inputAll istrm
@@ -742,8 +715,8 @@ fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
      val (pkgName,compName) = gadget_qid gdt
      val gadgetName = pkgName^"_"^compName
      val _ = stdErr_print ("\nProcessing "^qid_string (gadget_qid gdt)^".\n")
-     val origDir = getDir()
-     val () = stdErr_print ("Invocation dir: "^ origDir ^ "\n")
+     val invocDir = getDir()
+     val () = stdErr_print ("Invocation dir: "^ invocDir ^ "\n")
      val gadgetDir = String.concat[dir,"/",gadgetName]
      val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
      val _ = stdErr_print ("  Writing basis_ffi.c\n")
@@ -773,12 +746,34 @@ fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
      val () = add Control_Src
      val () = add "\n\n"
      val () = TextIO.closeOut ostrm
-     val fullgadgetDir = origDir^"/"^gadgetDir
-     val () = stdErr_print ("Code written to directory: "^fullgadgetDir ^ "\n")
+     val () = stdErr_print ("Code written to directory: "^gadgetDir ^ "\n")
      val () = stdErr_print ("Done.\n")
  in
-  chDir origDir
+  chDir invocDir
  end
+
+fun process_model jsonFile =
+ let val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonFile
+	   ("Parsing "^jsonFile^" ... ") "succeeded.\n"
+     val pkgs = scrape_pkgs jpkg
+     val tyE = mk_tyE (map Pkg pkgs)
+     val tmE = mk_constE (map Pkg pkgs)
+     val gdts1 = mk_gadgets pkgs
+     val gdts = apply gdts1
+                 [map corrall_rogue_vars,
+                  map set_type_constrs,
+                  map set_vars_lower_case,
+                  map set_ports_and_ivars_lower_case,
+                  elim_projections tyE tmE,
+                  map set_Defs_struct,
+                  map elim_inport_events]
+     val apis = map API_of (zip gdts1 gdts)
+     val parser_structs = map parser_struct_of gdts
+     val defs_structs = map defs_struct_of gdts
+     val gadget_structs = map gadget_struct_of gdts
+ in
+    (apis,parser_structs, defs_structs, gadget_structs, gdts)
+ end;
 
 (*
 val jsonFile = "examples/SW.json";
@@ -796,256 +791,28 @@ val [gpp1,gpp2,gpp3] = gdt_pps;
 export_implementation "tmp" (api1,p1,defs1,gpp1,gdt1);
 export_implementation "tmp" (api2,p2,defs2,gpp2,gdt2);
 export_implementation "tmp" (api3,p3,defs3,gpp3,gdt3);
-
-fun envFn env x = assoc x env;
-
-val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt1;
-val env as (env1,env2,env3) = expTy_env gdt1;
-val E = (envFn env1, envFn env2, envFn env3);
-
-val tmdec = el 11 tmdecs;
-val FnDec(qid,params,rty,exp) = tmdec;
-val Binop(And,e1,e2) = exp
-expTy E e1;
-expTy E e2;
-val Binop(_,e2a,e2b) = e2;
-expTy E e2a;
-expTy E e2b;
-
-val ([jpkg],ss) = Json.fromFile jsonFile
-val pkgs = scrape_pkgs jpkg
-val tyE = mk_tyE (map Pkg pkgs)
-val tmE = mk_constE (map Pkg pkgs)
-val gdts1 = mk_gadgets pkgs
-
-val gdts = apply gdts1
-  [map corrall_rogue_vars,
-   map set_type_constrs,
-   map set_vars_lower_case
-];
-
-val [gdt1,gdt2,gdt3] = gdts
-
-val gdts = apply gdts1
-  [map corrall_rogue_vars,
-   map set_type_constrs,
-   map set_ports_and_ivars_lower_case,
-   elim_projections tyE tmE,
-   map set_Defs_struct
-];
-
-val gdt2a = corrall_rogue_vars gdt1;
-val gdt2b = set_type_constrs gdt2a;
-val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt2b;
-val gdt2c = set_ports_and_ivars_lower_case gdt2b;
-val gdt3 = elim_projections tyE tmE [gdt2c];
-
-     val gdts4 = map set_Defs_struct gdts3
-     val gdts5 = map set_vars_lower_case gdts4
-     val apis = map API_of gdts5
-     val parser_structs = map parser_struct_of gdts5
-     val defs_structs = map defs_struct_of gdts5
- in
-    (apis,parser_structs, defs_structs, gdts5)
- end;
-
-val Gadget(qid,tydecs,tmdecs,(ports,ivars,guars)) = gdt2;
-
-val gdt2_qids = gadgetQids gdt2 [];
-
-val gdt2' =
-  Gadget(qid,tydecs,
-         map (substQid_tmdec theta) tmdecs,
-         ports,
-         map (substQid_ivar theta) ivars,
-         map (substQid_guar theta) guars);
-
-val gdt2_qids' = gadgetQids gdt2' [];
-val theta = itlist mk_def_qid (gadgetQids gdt2 []) [];
-
-gadgetQids gdt1 [];
-gadgetQids gdt2 [];
-gadgetQids gdt3 [];
-
-val _qid = fun substQid
-List.app (print o PPfns.pp_string) apis;
-List.app (print o PPfns.pp_string) parsers
-
-dir (api,parser,gdt) =
-
-val tyE_assoc = gadget_tyE gdt1;
-val tyE = assocFn tyE_assoc;
-
-val support = hd (gadget_support gdt1);
-val tydecs = fst(snd support);
-val tys = map tydec_to_ty tydecs;
-
-val contig = Gen_Contig.contig_of tyE (hd tys);
-PP_CakeML.contig_to_exp [] contig;
-
-val contigs = map (Gen_Contig.contig_of tyE) tys;
-map (PP_CakeML.contig_to_exp []) contigs;
-
-
-val gdt1_tyE = gadget_tyE gdt1;
-
-val ([jpkg],ss) = Json.fromFile jsonFile;
-
-open AADL;
-
-val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = pkgs;
-
-val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg7;
-
-val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg5;
-val [mondec1,mondec2,mondec3] = mondecs;
-val [filtdec1,filtdec2,filtdec3,filtdec4] = filtdecs;
 *)
 
 (*
-fun process_filter intformat flags ((pkgName,fname),thm) =
- let open FileSys
-     val _ = stdErr_print ("\nProcessing filter "^Lib.quote fname^".\n")
-     val wDir = getDir()
-     val filterDir = String.concat[wDir,"/",pkgName,"_",fname]
-     val _ = ((mkDir filterDir handle _ => ()); chDir filterDir)
-     val (checkprops,codegen,testgen,alevel) = flags
-     val filter_artifacts =
-         apply_with_chatter
-           (splatLib.gen_filter_artifacts intformat) ((pkgName,fname),thm)
-           "Defining filter artifacts ... " "succeeded.\n"
-
-     val _ = if checkprops = true then
-               apply_with_chatter
-                  prove_filter_props filter_artifacts
-                  "Proving translation validation property ... " "succeeded.\n"
-             else ()
-
-    val {regexp,...} = filter_artifacts
-
-    val regexp_compiler =
-         case alevel
-          of Basic => regexpLib.SML
-	   | HOL   => regexpLib.HOL
-	   | other => failwithERR
-             (ERR "splat" "Cake regexp compilation not handled at present")
-
-    val DFA as (certificate, start, finals, table) =
-        deconstruct (regexpLib.gen_dfa regexp_compiler regexp)
-
-    val (match_state_thm, match_def) = mk_matcher fname certificate
-
-    val (langGen,suffix) =
-     case codegen
-      of "C" => (DFA_Codegen.C,".c")
-       | "SML" => (DFA_Codegen.SML,".sml")
-       | "Ada" => (DFA_Codegen.Ada,".ada")
-       | "Java" => (DFA_Codegen.Java,".java")
-       | "Slang" => (Code_Gen.Slang,".scala")
-       | other    => raise ERR "process_filter" "unsupported target language"
-
-    (* Smuggling architecture info through the name. To be handled (so far)
-       only in Slang code generation, which wants the AADL path to the filter
-    *)
-    val slang_path_name =
-     if codegen = "Slang" then
-       String.concat[pkgName,".",fname]
-     else fname
- in
-     Code_Gen.export_dfa langGen (slang_path_name,suffix) regexp finals table
-   ;
-     stdErr_print ("End processing filter "^Lib.quote fname^".\n\n")
-   ;
-     chDir wDir
-   ;
-     filter_artifacts
- end
-*)
-
-(*
-
 val args = ["examples/uxaslite.json"];
 val thyName = "uxaslite";
 val dir = ".";
-
-val args = ["examples/gate.json"];
-val thyName = "VPM";
-val dir = ".";
-
-val args = ["examples/mon3a.json"];
-val thyName = "VPM";
-val dir = ".";
-
-val args = ["examples/mon4a.json"];
-val thyName = "VPM";
-val dir = ".";
-
-val args = ["examples/mon5a.json"];
-val thyName = "VPM";
-val dir = ".";
-
-val args = ["examples/UAS.json"];
-val thyName = "UAS";
-val dir = ".";
-
-val jsonfile = parse_args args;
-val ([jpkg],ss) = Json.fromFile jsonfile;
-open AADL;
-
-val pkgs = scrape_pkgs jpkg;
-
-val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7] = pkgs;
-
-val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg7;
-
-val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = pkg5;
-val [mondec1,mondec2,mondec3] = mondecs;
-val [filtdec1,filtdec2,filtdec3,filtdec4] = filtdecs;
-
-val const_alist = tryfind extract_consts pkgs
-
-val MonitorDec(qid,features,decs,eq_stmts,outCode) = mondec1;
-val MonitorDec(qid,features,decs,eq_stmts,outCode) = mondec2;
-val MonitorDec(qid,features,decs,eq_stmts,outCode) = mondec3;
-
-val plist = map Pkg pkgs;
-val plist' = transRval_pkglist plist ;
 *)
 
-(*
-HAMR::Bit_Codec_Max_Size: It is attached to the types declared for the channel.
-
-val args = ["examples_monitor/req_resp_monitor.json"];
-val args = ["examples_monitor/geo_monitor.json"];
-val args = ["examples_monitor/Coord-Mon.json"];
-val args = ["examples_monitor/Resp-Mon.json"];
-val args = ["examples_monitor/Coord-Mon.json"];
-val args = ["examples_monitor/SW-Mon-1.json"];
-val args = ["examples_monitor/SW-Mon.json"];
-val args = ["examples_monitor/RunTimeMonitor_Simple_Example_V1.json"];
-val args = ["examples_monitor/Datacentric_monitor.json"];
-*)
+fun zip5 (h1::t1) (h2::t2) (h3::t3) (h4::t4) (h5::t5) =
+     (h1,h2,h3,h4,h5)::zip5 t1 t2 t3 t4 t5
+  | zip5 [] [] [] [] [] = []
+  | zip5 a b c d e = raise ERR "zip5" "not all lists have equal length";
 
 fun main () =
- let val _ = stdErr_print "splat-mon: \n"
+ let val _ = stdErr_print "splat: \n"
      val args = CommandLine.arguments()
-     val jsonfile = parse_args args
-     val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonfile
-	   ("Parsing "^jsonfile^" ... ") "succeeded.\n"
-     val pkgs = apply_with_chatter AADL.scrape_pkgs jpkg
-                  "Converting Json to AST ... " "succeeded.\n"
-     val thyName = "SPLAT"  (* Need something better: get it from modelUnits from jpkg *)
-
-     val filter_decs = List.concat (map extract_filters pkgs)
-     val monitor_decs = List.concat (map extract_monitors pkgs)
-     val _ = stdErr_print ("Found "^Int.toString (List.length filter_decs)^" filter declarations.\n")
-     val _ = stdErr_print ("Found "^Int.toString (List.length monitor_decs)^" monitor declarations.\n")
-     val const_alist = tryfind extract_consts pkgs
-
-(*
-     val _ = AADL.export_cakeml_monitors dir const_alist monitor_decs
-     val _ = AADL.export_cakeml_filters dir const_alist filter_decs
-*)
+     val jsonFile = parse_args args
+     val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile
+     val _ = stdErr_print ("Found "^Int.toString (List.length gdts)^" CASE security components.\n")
+     val inputs = zip5 apis parsers defs gdt_pps gdts
+     val dir = get_outDir()
+     val () = List.app (export_implementation dir) inputs
   in
     MiscLib.succeed()
  end
