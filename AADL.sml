@@ -9,7 +9,7 @@ open Lib Feedback HolKernel boolLib bossLib MiscLib AST Json;
 
 local open
    stringLib stringSimps fcpLib realLib
-   regexpLib regexpSyntax aadl_basetypesTheory ptltlSyntax intrealSyntax
+   regexpLib regexpSyntax aadl_basetypesTheory intrealSyntax
 in end;
 
  type qid = string * string;
