@@ -1,27 +1,62 @@
-SPLAT: Semantic Properties for Language and Automata Theory
-===========================================================
+To build splat requires a recent installation of HOL. Its "Holmake"
+tool is used to create the splat executable. In the splat directory
+invoke
 
-The code in this directory supports the creation of, and correctness
-proofs for, filters specified by arithmetic properties extracted from
-AADL architectures. A record structure declaration with constraints on
-its fields specifies an encoding/decoding pair that maps a record of
-the given type into (and back out of) a sequence of bytes. A filter
-for such messages is also created, embodied by a regular expression,
-which can be further compiled into a DFA that checks that the sequence
-obeys the constraints.
+  Holmake splat
 
-Typing
+If this succeeds, the splat executable is created in the splat
+directory. Following is an invocation of splat on JSON generated from
+the Example_V4 model:
 
-   Holmake
 
-builds an executable named `splat`, which currently takes a json file
-representing an AADL architecture. An invocation
+   $ ./splat examples/SW.json
+   splat:
+   Parsing /home/guardol/Projects/splat/examples/SW.json ... succeeded.
+   Found 3 CASE security components.
 
-   ./splat foo.json
+   Processing "SW.Filter".
+   Invocation dir: /home/guardol/Projects/splat
+     Writing basis_ffi.c
+     Writing Makefile
+     Writing SW_Filter.cml
+   Code written to directory: /home/guardol/Projects/splat/splat_outputs/SW_Filter
+   Done.
 
-will extract filter properties from the architecture, create
-encoders/decoders from the record declaration and accompanying
-constraints, create a regexp from the filter properties, and show that
-the regexp implements the filter properties. It leaves a HOL theory
-fooTheory.{sig,sml} capturing the formalization.
+   Processing "SW.Monitor".
+   Invocation dir: /home/guardol/Projects/splat
+     Writing basis_ffi.c
+     Writing Makefile
+     Writing SW_Monitor.cml
+   Code written to directory: /home/guardol/Projects/splat/splat_outputs/SW_Monitor
+   Done.
 
+   Processing "SW.AttestationGate".
+   Invocation dir: /home/guardol/Projects/splat
+     Writing basis_ffi.c
+     Writing Makefile
+     Writing SW_AttestationGate.cml
+   Code written to directory: /home/guardol/Projects/splat/splat_outputs/SW_AttestationGate
+   Done.
+
+Command Line Arguments.
+------------------------
+
+Invoking splat with no arguments results in the options being displayed:
+
+   $ ./splat
+   splat:
+   Usage: splat [-target (hamr | standalone)]
+                [-outdir <dirname>]
+                [-intwidth <int>]
+                [-endian (LSB | MSB)]
+                <name>.json
+
+The defaults are
+
+   - build for HAMR API calls
+   - directory where outputs are written is
+
+        <invocation-dir>/splat_outputs
+
+   - 32 bit integers
+   - little-endian format
