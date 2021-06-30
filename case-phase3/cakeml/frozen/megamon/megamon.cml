@@ -2110,7 +2110,7 @@ val d180 = Utils.i2d 180;
 fun heading_IN_BOUND now low high =
     if Double.< low high
     then
-      Double.< low now andalso Double.< now high
+      Double.<= low now andalso Double.< now high
     else
       (* assuming a maximum difference of 180 degrees between low and high,
          low must satisfy 180.0 < low < 360.0 *)
