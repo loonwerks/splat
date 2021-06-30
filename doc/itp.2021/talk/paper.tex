@@ -1,0 +1,1366 @@
+\documentclass[a4paper,UKenglish,cleveref, autoref, thm-restate]{lipics-v2021}
+
+\bibliographystyle{plainurl}% the mandatory bibstyle
+
+\title{Specifying Message Formats with Contiguity Types} %TODO Please add
+% \titlerunning{Dummy short title} %TODO optional, please use if title is longer than one line
+
+\author{Konrad Slind}{Trusted Systems Group, Collins Aerospace, USA}{konrad.slind@collins.com}{}{}
+\authorrunning{K. Slind}
+\Copyright{Konrad Slind}
+\ccsdesc[500]{Theory of computation~Logic and verification}
+\keywords{Logic, verification, formal language theory, message format languages}
+\acknowledgements{This research was developed with funding from the
+  Defense Advanced Research Projects Agency (DARPA). The views,
+  opinions and/or findings expressed are those of the author and
+  should not be interpreted as representing the official views or
+  policies of the Department of Defense or the
+  U.S. Government. Discussions with Robby, Luke Ryon, Dave Greve,
+  David Hardin, Magnus Myreen, and Michael Norrish have greatly
+  improved this work.}
+
+% Artifact URL
+\supplement{HOL4 formalization may be found at:}
+\supplementdetails{Model} {https://github.com/loonwerks/splat/blob/monitors/contig/abscontigScript.sml}
+
+\nolinenumbers %uncomment to disable line numbering
+
+%\hideLIPIcs  %uncomment to remove references to LIPIcs series (logo, DOI, ...), e.g. when preparing a pre-final version to be uploaded to arXiv or another public repository
+
+%% %Editor-only macros:: begin (do not touch as author)%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% \EventEditors{John Q. Open and Joan R. Access}
+%% \EventNoEds{2}
+%% \EventLongTitle{42nd Conference on Very Important Topics (CVIT 2016)}
+%% \EventShortTitle{CVIT 2016}
+%% \EventAcronym{CVIT}
+%% \EventYear{2016}
+%% \EventDate{December 24--27, 2016}
+%% \EventLocation{Little Whinging, United Kingdom}
+%% \EventLogo{}
+%% \SeriesVolume{42}
+%% \ArticleNo{23}
+%% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Packages and abbreviations used by Konrad
+\usepackage{latexsym}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsbsy}
+
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\etc}{\textit{etc.}}
+\newcommand{\adhoc}{\textit{ad hoc}}
+\newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\imp}{\Rightarrow}
+\newcommand{\lval}{\ensuremath{\mathit{lval}}}
+\newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
+\newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
+\newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
+\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
+\newcommand{\SubstTheta}[2]{\ensuremath{\theta\;{#1}\; {#2}}}
+\newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+
+\EventEditors{Liron Cohen and Cezary Kaliszyk}
+\EventNoEds{2}
+\EventLongTitle{12th International Conference on Interactive Theorem Proving (ITP 2021)}
+\EventShortTitle{ITP 2021}
+\EventAcronym{ITP}
+\EventYear{2021}
+\EventDate{June 29--July 1, 2021}
+\EventLocation{Rome, Italy (Virtual Conference)}
+\EventLogo{}
+\SeriesVolume{193}
+\ArticleNo{27}
+
+\begin{document}
+
+\maketitle
+
+
+\begin{abstract}
+We introduce \emph{Contiguity Types}, a formalism for network message
+formats, aimed especially at self-describing formats. Contiguity types
+provide an intermediate layer between programming language data
+structures and messages, offering a helpful setting from which to
+automatically generate decoders, filters, and message generators.  The
+syntax and semantics of contiguity types are defined and used to prove
+the correctness of a matching algorithm which has the flavour of a
+parser generator. The matcher has been used to enforce semantic
+well-formedness conditions on complex message formats for an
+autonomous unmanned avionics system.
+\end{abstract}
+
+
+\section{Introduction}\label{sec:intro}
+
+Serialized data, for example network messages, is an important
+component in many computer systems.\footnote{DISTRIBUTION STATEMENT
+  A. Approved for public release.}  As a result, innumerable libraries
+and tools have been created that use high level specifications as a
+basis for automating the creation, validation, and decoding of such
+data. Usually, these high level specifications describe the format of
+a message in terms of how the elements (fields) of the message are
+packed side-by-side to make the full message. When the size of each
+field is known in advance, there are really no conceptual
+difficulties. However, messages can be more complicated than that.
+
+The main source of difficulty is \emph{self-describing} messages:
+those where information embedded in fields of the message determines
+the final structure of the message. Two of the main culprits are
+variable-length arrays and unions. A \emph{variable-length array} is a
+field where the number of elements in the field depends on the value
+of some already-seen field (or, more generally, is the result of a
+computation involving previously-seen information in the message).
+The length is therefore a value determined at runtime. A \emph{union}
+is deployed when some information held in a message is used to
+determine the structure of later portions of the message. For example,
+unions can be used to support versioning where version $i$ has $n$
+fields, and version $i+1$ has $n+1$. In settings where both versions
+need to be supported in a single format, it can make sense to encode
+the version handling inside the message, and unions are how this can
+be specified.
+
+We believe that tools and techniques from formal language theory such
+as regular expressions, automata, grammars, parser generators, \etc\,
+can provide an effective way to tackle message formats, and have been
+using the acronym \emph{SPLAT} (Semantic Properties for Language and
+Automata Theory) to refer to this approach. For example, we have used
+regular expressions as a specification language for message formats
+having simple interval constraints on the values allowed in
+fields. Generation of the corresponding DFA results in an efficient
+table-driven automaton implementing the specified constraints, with a
+solid proof certificate connecting the original constraints with the
+DFA behavior \cite{hardin-slind-safecomp-2016}.
+
+However, self-describing data formats fall outside the realm of common
+formal language techniques; \eg, variable-length fields are clearly
+not able to be described by regular or context-free languages. (These
+language classes encompass repetitions of a fixed or unbounded size,
+but not repetitions of a size determined by parts of the input
+string.) It seems that context-sensitive grammars can, in principle,
+specify such information, but there are few tools supporting context
+sensitive languages. Knuth introduced attribute grammars
+\cite{knuth-attribute-grammars} for dealing with context-sensitive
+aspects of parsing, and those techniques address similar problems to
+ours. Another possibility would be to use \emph{parser combinators} in
+order to quickly stitch together a parser; it seems likely that the
+combinators can be instrumented to gather and propagate contextual
+information. However, we are seeking a high level of formal
+specification and automation, while still being rooted in formal
+languages, with their emphasis on sets of strings as the basic notion.
+
+\section {Contiguity Types}
+
+The characteristic property of a message is \emph{contiguity}: all the
+elements of the message are laid out side-by-side in a byte array (or
+string). Our assumption is that a message is the \emph{result} of a
+map from structured data and we will rely on a basic collection of
+programming language types to capture that structure. Contiguity types
+(Figure \ref{contig-types}) start with common base types (booleans,
+characters, signed and unsigned integers, \etc) and are closed under
+the construction of records, arrays, and unions. \footnote{We will use
+the terms ``\emph{contiguity type}, \konst{contig}, and $\tau$
+interchangeably.}
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+ \mathit{base} & = & \konst{bool} \mid \konst{char} \mid \konst{u8} \mid
+ \konst{u16} \mid \konst{u32} \mid \konst{u64}  \mid \konst{i16} \mid
+ \konst{i32} \mid \konst{i64} \mid \konst{float} \mid \konst{double} \\
+ \tau & = & \mathit{base} \\
+      & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
+      & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
+      & \mid & \konst{Alt}\; \mathit{bexp}\; \tau \; \tau
+\end{array}
+\]
+\caption{Contiguity types}
+\label{contig-types}
+\end{figure}
+
+Notice that $\tau$ is defined in terms of a type of arithmetic
+expressions $\mathit{exp}$ and also $\mathit{bexp}$, boolean
+expressions built from $\mathit{exp}$. Now consider
+%
+\[
+ \konst{Array} \; \tau \; \mathit{exp} \ .
+\]
+%
+For this to specify a varying length array dependent on other fields
+of the message, its dimension $\mathit{exp}$ should be able to refer
+to the \emph{values} of those fields. The challenge is just how to
+express the concept of ``other fields'', \ie, we need a notation to
+describe the \emph{location} in the message buffer where the value of
+a field can be accessed. Our core insight is that this is similar to a
+problem that programming language designers had in the 60s and 70s,
+resolved by the notions of \emph{L-value} and \emph{R-value}. The idea
+is originally due to Christopher Strachey in CPL \cite{strachey} and
+developed subsequently, for example by Dennis Ritchie in
+C \cite{dmr-lvals}.
+
+Before getting into formal details, we discuss a few examples.  We
+will use familiar notation: records are lists of $\mathit{fieldname} :
+\tau$ elements enclosed by braces; an array field
+$\konst{Array}\;c\;\mathit{dim}$ is written $c\, [\mathit{dim}]$; and
+$\konst{Alt}\;b\;\tau_1\;\tau_2$ is written
+`$\itelse{b}{\tau_1}{\tau_2}$'. `Cascaded' \konst{Alt}s may be written
+in Lisp `cond' style, \ie, as
+\[
+\begin{array}{ll}
+\konst{Alt} & b_1 \longrightarrow \tau_1 \ldots \\
+            & b_n \longrightarrow \tau_n \\
+            & \text{otherwise} \longrightarrow \tau_{n+1}
+\end{array}
+\]
+
+\begin{enumerate}
+
+\item The following is a record with no self-describing aspects: each
+  field is of a statically known size.
+
+{\small
+\begin{verbatim}
+  {A : u8
+   B : {name : char [13]
+        cell : i32}
+   C : bool
+  }
+\end{verbatim}
+}
+The \verb+A+ field is specified to be an unsigned int of width 8 bits,
+the \verb+B+ field is a record, the first element of which is a
+character array of size 13, and the second element of which is a 32
+bit integer; the last field is specified to be a
+boolean.
+
+\item Variable-sized strings are a classic self-describing aspect. In
+  this example the contents of the \verb+len+ field determines the
+  number of elements in the \verb+elts+ field.
+
+{\small
+\begin{verbatim}
+  { len : u16
+    elts : char [len]
+  }
+\end{verbatim}
+}
+
+\item The following example shows the \konst{Alt} construct being
+  used to support multiple versions in a single format.  Messages with
+  the value of field \verb+versionID+ being less than 14 have three
+  fields in the message, while all others have two.
+
+{\small
+\begin{verbatim}
+  {versionID : u8
+   versions : if versionID < 14 then
+                 { A : i32, B : u16})
+              else { Vec : char [13]}
+   }
+\end{verbatim}
+}
+
+\item The following is a contrived example showing the need for
+  resolution of multiple similarly named fields; it also shows how the
+  information needed to determine the message structure may be deeply
+  buried in some fields.
+{\small
+\begin{verbatim}
+  {len : u16
+   A : {len : u16
+        elts : u16[len]
+       }
+   B : char [A.len - 1 * len]
+   C : i32 [A.elts[0]]
+  }
+\end{verbatim}
+}
+\end{enumerate}
+
+\subsection{Expressions, L-values, and R-values}
+
+In programming languages, an \emph{L-value} is an expression that can
+occur on the left-hand side of an assignment statement. Similarly, an
+\emph{R-value} can occur on the right-hand side of
+assignments. Following are a few examples:
+{\small
+\begin{verbatim}
+    x := x + 1
+    A[x] := B.y + 42
+    A[x].lens.fst[7] := MAX_LEN * 1024 + B.y
+\end{verbatim}
+}
+Figure \ref{Lvalues} presents the formal syntax for L-values, R-values,
+and the boolean expressions we will use.  An L-value can be
+a variable, an array index, or a record field access. R-values are
+arithmetic expressions that can contain L-values (we will use
+$\mathit{exp}$ interchangeably with R-value).
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+\mathit{lval} & = & \mathit{varname} \mid
+                    \mathit{lval} \, [ \mathit{exp} ] \mid
+                    \mathit{lval} . \mathit{fieldname} \\
+%  & & \\
+\mathit{exp} & = & \konst{Loc}\; \mathit{lval}
+              \mid \konst{nLit}\; \konst{nat}
+              \mid \mathit{constname}
+              \mid \mathit{exp} + \mathit{exp}
+              \mid \mathit{exp} * \mathit{exp} \\
+%  & & \\
+\mathit{bexp} & = & \konst{bLoc}\; \mathit{lval}
+              \mid  \konst{bLit}\; \konst{bool}
+              \mid  \neg \mathit{bexp}
+              \mid  \mathit{bexp} \land \mathit{bexp}
+              \mid  \mathit{exp} = \mathit{exp}
+              \mid  \mathit{exp} < \mathit{exp}
+\end{array}
+\]
+\caption{L-values, expressions, and boolean expressions}
+\label{Lvalues}
+\end{figure}
+
+An L-value denotes an \emph{offset} from the beginning of a
+data structure, plus a \emph{width}. In an R-value, an occurrence of an
+L-value is mapped to the value of the patch of memory between
+$\mathit{offset}$ and $\mathit{offset} + \mathit{width}$. For the
+purpose of specifying message formats, it may not be immediately
+obvious that a notation supporting assignment in imperative languages
+can help, but there is indeed a form of assignment lurking.
+
+The above explanation of L-values centers on indices into a byte
+buffer; in the following we will give a mild variant of this: instead
+of indices into the buffer, we lift out the designated slices. Thus,
+given environments $\theta: \mathit{lval} \mapsto \konst{string}$ (binding
+L-values to strings), and functions
+$\konst{toN}:\konst{string}\to\mathbb{N}$ and
+$\konst{toB}:\konst{string}\to\konst{bool}$ (which interpret byte
+sequences to numbers and booleans, respectively), expression
+evaluation and boolean expression evaluation have conventional
+definitions:
+
+\[
+\begin{array}{l}
+\konst{evalExp} \;\theta \; e =
+\mathtt{case}\; e\
+ \left\{
+ \begin{array}{lcl}
+    \konst{Loc}\; \lval & \Rightarrow & \konst{toN}(\theta(\lval)) \\
+    \konst{nLit}\; n & \Rightarrow & n  \\
+    e_1 + e_2 & \Rightarrow & \konst{evalExp}\;\theta\; e_1 + \konst{evalExp}\;\theta\; e_2  \\
+    e_1 * e_2 & \Rightarrow & \konst{evalExp}\;\theta\; e_1 * \konst{evalExp}\;\theta\; e_2  \\
+  \end{array}
+ \right.
+ \\ \\
+\konst{evalBexp}\;\theta \; b =
+\mathtt{case}\; b\
+ \left\{
+ \begin{array}{lcl}
+    \konst{bLoc}\; \lval & \Rightarrow & \konst{toB}(\theta(\lval)) \\
+    \konst{bLit}\; b & \Rightarrow & b \\
+    \neg b & \Rightarrow & \neg(\konst{evalBexp}\;\theta \; b)  \\
+    b_1 \lor b_2 & \Rightarrow & \konst{evalBexp}\;\theta \;b_1 \lor \konst{evalBexp}\;\theta \;b_2   \\
+    b_1 \land b_2 & \Rightarrow & \konst{evalBexp}\;\theta \;b_1 \land \konst{evalBexp}\;\theta \;b_2   \\
+    e_1 = e_2 & \Rightarrow & \konst{evalExp}\;\theta \;e_1 = \konst{evalExp}\;\theta \;e_2   \\
+    e_1 < e_2 & \Rightarrow & \konst{evalExp}\;\theta \;e_1 < \konst{evalExp}\;\theta \;e_2
+  \end{array}
+ \right.
+
+\end{array}
+\]
+
+\begin{remark}[Partiality]
+Expression evaluation is partial because there is no guarantee that
+$\theta(\lval)$ is defined: an \lval{} being looked-up may not be in the
+map $\theta$. Failure in evaluation is modelled by the \konst{option}
+type, and must be handled in the semantics and the matching
+algorithm. However error handling is omitted in the presentation since
+it hampers readability. See the HOL4 formalization for full details.
+\end{remark}
+
+\subsection{Semantics}
+
+ We now confess to misleading the reader: in spite of the notational
+ similarity, a contiguity type is \emph{not} a type: it is a formal
+ language. A type is usually understood to represent a set, or domain,
+ of values, \eg, the type \konst{int32} represents a set of
+ integers. In contrast, the contiguity type \konst{i32} represents the
+ set of strings of width 32 bits. An element of a contiguity type can
+ be turned into an element of a type by providing interpretations for
+ all the strings at the leaves and interpreting the \konst{Recd} and
+ \konst{Array} constructors into the corresponding type constructs. (A
+ base contiguity type therefore serves mainly as a \emph{tag} to be
+ interpreted as a width and also as an intended target type.) Thus,
+ contiguity types sit---conveniently---between the types in a
+ programming language and the strings used to make messages.
+
+The semantics definition depends on a few basic notions familiar from
+language theory: language concatenation, and iterated language
+concatenation.
+
+\begin{align*}
+L_1 \cdot L_2 &= \set{w_1 w_2 \mid w_1 \in L_1 \land w_2 \in  L_2} \\
+L^0 &= \varepsilon \\
+L^{n+1} &= L \cdot L^n
+\end{align*}
+
+
+\begin{definition}[Semantics of contiguity types]
+
+ In the following, we assume given an assignment $\theta$ for
+ evaluating expressions. If an expression evaluation fails, the
+ language being constructed will be $\emptyset$.
+
+\[
+% \begin{array}{l}
+\LangTheta{\tau} =
+\mathtt{case}\; \tau\
+% \hspace*{3mm}
+ \left\{
+ \begin{array}{l}
+ \mathit{base} \Rightarrow \set{s \mid \konst{len}(s) = \konst{width}(base)} \\
+ \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n)
+      \Rightarrow \LangTheta{\tau_1} \cdot \ldots \cdot \LangTheta{\tau_n}
+\\
+ \konst{Array}\; \tau \; \mathit{exp} \Rightarrow  \\
+  \hspace*{5mm}
+ \left\{
+ \begin{array}{ll}
+    \LangTheta{\tau}^{\konst{evalExp}\;\theta\;\mathit{exp}} &
+       \mathrm{if}\ \konst{evalExp}\;\theta\;\mathit{exp}\ \mathrm{succeeds} \\
+    \emptyset & \text{if evaluation fails}
+ \end{array}
+ \right.
+\\
+ \konst{Alt}\; \mathit{bexp}\;\tau_1\; \tau_2 \Rightarrow \\
+  \hspace*{5mm}
+ \left\{
+ \begin{array}{ll}
+    \LangTheta{\tau_1} & \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp} = \konst{true} \\
+    \LangTheta{\tau_2} & \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp} = \konst{false} \\
+    \emptyset          & \text{if evaluation fails}
+ \end{array}
+ \right.
+ \\
+\end{array}
+ \right.
+%\end{array}
+\]
+\end{definition}
+
+\begin{example}
+Consider the following schema for an \emph{option} contiguity
+type. The empty record \verb+{}+ associated with boolean expression
+$b$ has no fields.
+\[ \itelse{b}{\{\,\}}{c} \]
+In case $\mathit{b}$ evaluates to \konst{true}, no portion of the
+string is consumed; otherwise, $c$ specifies the remainder of the
+processing. It may be instructive to consider how this type works with
+arrays. For example, a string meeting the following \konst{contig} specification
+
+{\small
+\begin{verbatim}
+  (if b then {} else i32) [3]
+\end{verbatim}
+}
+
+\noindent is either zero or twelve bytes in length (assuming that
+\verb+i32+ is four bytes wide).
+
+\end{example}
+
+\section{Algorithms}
+
+The following are classical topics in formal language theory and
+practice, and they are worth investigating in the context of
+contiguity types. At present we have been working on decoding,
+filtering, and test generation.
+
+\begin{description}
+
+\item [Decoding] A decoder breaks a sequence of bytes up and puts the
+  pieces into a useful data structure, typically a parse tree. We will
+  discuss this in more detail in Section \ref{decoding}.
+
+\item [Filtering] A filter computes an answer to the question: ``does
+  a sequence of bytes meet the specification of a given contiguity
+  type''. This is an instance of the language recognition
+  problem. More powerful filters enforce that certain fields of a
+  message, when interpreted, meet specific semantic properties. We
+  will discuss this further in Section \ref{assert}.
+
+\item [Serialization] Given a contiguity type, synthesize a function
+  that writes a compact binary version of a data structure to a message.
+
+\item [Test generation] Given a contiguity type, generate byte
+  sequences that do (or do not) meet its specification and feed the
+  sequences to implementations in order to observe their behaviour.
+
+\item [Learning] Given training sets of messages that are
+  accepted/rejected by an implementation, attempt to discover a
+  contiguity type for the entire set of messages.
+
+\end{description}
+
+\subsection{Decoding}
+\label{decoding}
+
+Above we mentioned that decoding can result in parse trees; however,
+self-describing messages allow a different conceptual framework to be
+brought to bear. There is an important distinction between parsing,
+which \emph{creates} structure (parse trees), and matching, which is
+given structure and calculates assignments
+(substitutions).\footnote{Thus the notion of matching discussed here
+  is in the tradition of term rewriting \cite{baader:nipkow}, the main
+  difference being that our substitutions are applied to
+  $\mathit{lval}$s rather than variables.} Giving some evocative types
+helps make the difference clear:
+%
+\begin{align*}
+  \konst{parse} &: \mathit{grammar} \to \konst{string} \to \mathit{parse tree} \\
+  \konst{match} &: \mathit{pattern} \to \konst{string} \to \mathit{assignments}
+\end{align*}
+
+For our purposes, namely decoding datastructures in binary format, the
+central decoding algorithm is a \emph{matcher}: given a contiguity
+type $\tau$ and a string $s$, the matcher will either fail, or succeed
+with an assignment $\theta : \mathit{lval} \mapsto \konst{string}$
+mapping each L-value in $\tau$ to its corresponding slice of $s$. The
+assignment $\theta$ can be post-processed to yield a standard parse
+tree, but its novelty and strength is that $\theta$ can be dynamically
+consulted to access the values needed to guide the processing of
+self-describing messages.
+
+\begin{definition}[Matching algorithm]
+
+The matcher operates over a triple
+$(\mathit{worklist},\mathit{str}, \theta)$ where $\mathit{worklist}$ is a stack used to
+linearize the input contiguity type $\tau$, $\mathit{str}$ represents
+the remainder of the input string, and $\theta$ is the assignment
+being built up. Each element of the $\mathit{worklist}$ is a
+$(\tau,\mathit{lval})$ pair, where $\tau$ is a \konst{contig}, and
+$\mathit{lval}$ is the path growing down from the root to $\tau$. The
+notation $(\lval \mapsto \mathit{slice}) \bullet \theta$ denotes the
+addition of binding $\lval \mapsto \mathit{slice}$ to $\theta$.
+We examine the cases in turn:
+
+\begin{enumerate}
+
+\item The worklist is empty; the match succeeds.
+%
+\begin{align*}
+([], \mathit{str}, \theta) &\Rightarrow \konst{SOME}(\mathit{str}, \theta)
+\end{align*}
+
+\item The first element of the worklist is a base type. The
+  prescribed number of bytes are broken off the front of the string, giving
+  $\mathit{str} = (\mathit{slice},\mathit{rst})$; then the
+  binding is added to $\theta$ before recursing. If the string is shorter
+  than the requested number of bytes, fail.
+%
+\begin{align*}
+((\konst{Basic}\;a, \lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  (t,\mathit{rst}, (\lval \mapsto \mathit{slice}) \bullet \theta)
+\end{align*}
+
+\item The first element of the worklist is $\mathit{recd} =
+  \konst{Recd}\;(f_1 : \tau_1) \ldots (f_n : \tau_n)$. Before
+  recursing, the fields are pushed onto the stack, extending the path
+  to each field element:
+%
+\begin{align*}
+((\mathit{recd}, \lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  ([(\tau_1,\lval.f_1), \cdots , (\tau_n,\lval.f_n)] @ t,\mathit{str}, \theta)
+\end{align*}
+
+\item The first element of the worklist is an array. The dimension
+  expression is evaluated to get the width $d$, then $d$ copies are
+  pushed onto the stack, where each path is extended with the array
+  index.
+%
+\begin{align*}
+((\konst{Array}\; \tau \; \mathit{exp},\lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  ([(\tau,\lval[0]), \cdots , (\tau,\lval[d-1])] @ t,\mathit{str}, \theta)
+\end{align*}
+
+\item The first element of the worklist is an \konst{Alt}. If $b$ evaluates to \konst{true},
+  $\tau_1$ is pushed on to the worklist; if it evaluates to \konst{false}, $\tau_2$ is pushed.
+  Otherwise, fail.
+%
+\begin{align*}
+((\konst{Alt}\; b\;\tau_1\;\tau_2, \lval)::t, \mathit{str}, \theta)
+   &\Rightarrow
+  ((\tau_i,\lval)::t,\mathit{str}, \theta)
+\end{align*}
+
+\end{enumerate}
+
+\noindent The matcher function, \konst{match} begins with an initial state
+%
+\[
+  \mathit{state}_0 = ([(\mathit{root},\tau)],\mathit{str}_0,\emptyset)
+\]
+
+where the initial path is a default \lval{} variable named
+$\mathit{root}$, the initial string is $\mathit{str}_0$, and the
+initial assignment has no bindings.
+
+\end{definition}
+
+\begin{theorem}[Matcher termination]
+As mentioned, the state of the matcher is held in a
+$(\mathit{worklist},\mathit{str}, \theta)$ tuple. The termination
+relation is a lexicographic combination, where either $\mathit{str}$
+gets shorter, or, $\mathit{str}$ is unchanged and $\mathit{worklist}$
+gets smaller under the multiset order. (The multiset order is useful
+in this proof since the handling of the \konst{Array} construct is a
+nice version of the Hercules-Hydra problem \cite{dershowitz:manna}.)
+\end{theorem}
+
+
+\begin{definition}[Substitution application]
+
+Correctness depends on an operation $\SubstTheta{\mathit{lval}}{\tau}$
+applying substitution $\theta$ to contiguity type $\tau$, starting
+at $\mathit{lval}$, in order to reconstruct the original string.
+%
+\[
+\SubstTheta{\mathit{lval}}{\tau} =
+\mathtt{case}\; \tau\
+ \left\{
+ \begin{array}{l}
+ \mathit{base} \Rightarrow \theta(\mathit{lval})
+\\
+ \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \Rightarrow
+   \SubstTheta{(\mathit{lval}.f_1)}{\tau_1} \cdot \ldots \cdot \SubstTheta{(\mathit{lval}.f_n)}{\tau_n}
+\\
+ \konst{Array}\; \tau_1 \; \mathit{exp} \Rightarrow \\
+  \hspace*{5mm}
+ \left\{
+ \begin{array}{ll}
+  \SubstTheta{(\mathit{lval}[0])}{\tau_1} \cdot \ldots \cdot
+  \SubstTheta{(\mathit{lval}[d-1])}{\tau_1}, &
+   \text{if}\; d = \konst{evalExp}\;\theta\;\mathit{exp} \\
+    \emptyset & \text{if evaluation fails}
+ \end{array}
+ \right.
+ \\
+ \konst{Alt}\; \mathit{bexp}\;\tau_1\; \tau_2 \Rightarrow \\
+  \hspace*{5mm}
+ \left\{
+ \begin{array}{ll}
+    \SubstTheta{\mathit{lval}}{\tau_1} & \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp} = \konst{true} \\
+    \SubstTheta{\mathit{lval}}{\tau_2} & \mathrm{if}\ \konst{evalBexp}\;\theta\;\mathit{bexp} = \konst{false} \\
+    \emptyset          & \text{if evaluation fails}
+ \end{array}
+ \right.
+ \\
+\end{array}
+ \right.
+%\end{array}
+\]
+
+\end{definition}
+
+\begin{theorem}[Correctness of substitution]
+The correctness statement for the matcher is similar to those found in
+the term rewriting literature, namely that the computed substitution
+applied to the contiguity type yields the original string:
+%
+\[
+  \konst{match}\;\mathit{state}_0 = \konst{SOME}(\theta, s)
+  \imp \theta\;\mathit{root}\;\tau \cdot s = \mathit{str}_0
+\]
+%
+\begin{proof}
+By induction on the definition of \konst{match}.
+\end{proof}
+\end{theorem}
+
+\begin{theorem}[Matcher soundness]
+The connection to $\LangTheta{\tau}$ is formalized as
+%
+\[
+  \mathit{str}_0 = s_1 s_2 \land \konst{match}\; \mathit{state}_0 =
+  \konst{SOME}(\theta, s_2) \imp s_1 \in \LangTheta{\tau}
+\]
+%
+\begin{proof}
+By induction on the definition of \konst{match}.
+\end{proof}
+\end{theorem}
+
+In other words, a successful match provides a $\theta$ that will
+successfully evaluate all encountered expressions, and the matched
+string is indeed in the language of $\tau$. A completeness theorem
+going in the other direction has not yet been tackled.
+
+\begin{example}
+Given the \konst{contig}
+
+{\small
+\begin{verbatim}
+   {A : Bool
+    B : Char
+    len : u16
+    elts : i32 [len]
+  }
+\end{verbatim}
+}
+\noindent and an input string (listed in hex)
+{\small
+\begin{verbatim}
+  [0wx1, 0wx67, 0wx0, 0wx5, 0wx0, 0wx0, 0wx0, 0wx19, 0wx0, 0wx0,
+   0wx9, 0wx34, 0wx0, 0wx0, 0wx30, 0wx39, 0wx0, 0wx0, 0wxD4,
+   0wx31, 0wxFF, 0wxFF, 0wxFE, 0wxB3]
+\end{verbatim}
+}
+\noindent created by encoding: the boolean \verb+true+, the letter \verb+g+, the
+number 5 (MSB 2 byte unsigned), and the five MSB 4 byte signed twos complement
+integers 25, 2356, 12345, 54321, and -333, the matcher creates the
+following assignment of $\mathit{lval}$s to substrings of the input:
+{\small
+\begin{verbatim}
+ [(root.A,       (Bool, [0wx1])),
+  (root.B,       (Char, [0wx67])),
+  (root.len,     (u16,  [0wx0, 0wx5])),
+  (root.elts[0], (i32,  [0wx0, 0wx0, 0wx0, 0wx19])),
+  (root.elts[1], (i32,  [0wx0, 0wx0, 0wx9, 0wx34])),
+  (root.elts[2], (i32,  [0wx0, 0wx0, 0wx30, 0wx39])),
+  (root.elts[3], (i32,  [0wx0, 0wx0, 0wxD4, 0wx31])),
+  (root.elts[4], (i32,  [0wxFF, 0wxFF, 0wxFE, 0wxB3]))
+ ]
+\end{verbatim}
+}
+Note that each element of the list is of the form
+$(\mathit{lval},(\mathit{tag},\mathit{bytes}))$ where each slice is labelled with its
+corresponding base type, to support further translation.
+\end{example}
+
+Thus the matcher will break up the input string in accordance with the
+specification; the execution, in effect, generates a sequence of
+assignments that, if applied, would populate a data structure with the
+specified data in the specified places. Therefore it is not really
+necessary to generate parse trees to in order to decode messages: one
+merely needs a target data structure to write data into. (In fact,
+when filtering, no target data structure is needed at all.) The
+correctness property will ensure that \emph{all} fields are written
+with the specified data. The assignments can be incrementally
+evaluated as the decoder runs, or can be stored and applied when the
+decoder terminates.
+
+%\subsection{Parsing}
+
+\section{Extended contiguity types}
+
+In the discussion so far, contiguity types can only express bounded
+data: each base type has a fixed size and all \konst{Array} types are
+given an explicit bound. Removing these two restrictions would greatly
+increase expressiveness. Of course, we look to the theory of formal
+languages to guide extensions to the formalism. We have thus explored
+the addition of the empty language $\emptyset$, Kleene star, and a
+lexer. The augmented syntax can be seen in Figure
+\ref{gen-contig-types}. The addition of $\emptyset$ (via \konst{Void})
+and Kleene star (via \konst{List}) has been accomplished, along with
+the proofs verifying the upgraded matcher. We also discuss replacing
+the existing base types with a lexer for completeness, even though that
+discussion more appropriately belongs to future work.
+
+\begin{figure}
+\[
+\begin{array}{rcl}
+ \tau & =    & \konst{Base}\; (\mathit{regexp} \times \mathit{valFn}) \\
+      & \mid & \konst{Void} \\
+      & \mid & \konst{List}\; \tau \\
+      & \mid & \konst{Recd}\; (f_1 : \tau_1) \ldots (f_n : \tau_n) \\
+      & \mid & \konst{Array}\; \tau \; \mathit{exp} \\
+      & \mid & \konst{Alt}\; \mathit{bexp} \; \tau_1\; \tau_2
+\end{array}
+\]
+\caption{Extended contiguity types}
+\label{gen-contig-types}
+\end{figure}
+
+\begin{definition}[Semantics additions]
+
+A base type element has the form
+$\konst{Base}(\mathit{regexp},\mathit{valFn})$, where $\mathit{valFn}$
+is a function that maps the string recognized by $\mathit{regexp}$ to
+a data value.  The semantics of a \konst{Base} type is just the
+(formal language) semantics of its regular expression, \konst{Void}
+denotes the empty set, and \konst{List} is a ``tagged'' version of
+Kleene star (\konst{NilTag} and \konst{ConsTag} are described in
+Section \ref{list-type}).
+
+\[
+\LangTheta{\tau} =
+\mathtt{case}\; \tau\
+ \left\{
+ \begin{array}{l}
+ \konst{Base}\; (\mathit{regexp}, \mathit{valFn}) \Rightarrow  \Lang{\mathit{regexp}} \\
+
+ \konst{Void} \Rightarrow  \emptyset \\
+
+ \konst{List}\; \tau \Rightarrow
+   (\konst{ConsTag}\cdot \LangTheta{\tau})^{*} \cdot \konst{NilTag} \\
+
+ ... \text{(previous clauses)}  \\
+
+ \end{array}
+ \right.
+\]
+\end{definition}
+
+\subsection{\konst{Void} and in-message assertions}\label{assert}
+
+The \konst{Alt} constructor combined with \konst{Void} supports an
+\emph{in-message assertion} feature. The contiguity type
+$\konst{Assert}\;\mathit{bexp}$ is defined as follows:
+
+\begin{definition}[\konst{Assert}]
+
+\[
+  \konst{Assert}\; \mathit{bexp} =
+     \konst{Alt} \; \mathit{bexp} \; (\konst{Recd}\, [\,]) \; \konst{Void}
+\]
+
+\end{definition}
+
+\noindent The meaning of $\konst{Assert}\;b$ is obtained by simplification:
+%
+\[
+\LangTheta{\konst{Assert}\; \mathit{bexp}} =
+ \itelse{\konst{evalBexp}\;\theta\;\mathit{bexp}}
+        {\varepsilon} {\emptyset}
+\]
+%
+and \konst{match} evaluates it by failing when
+$\konst{evalBexp}\;\theta\;\mathit{bexp}$ is false, and otherwise
+continuing on without advancing in the input.
+
+\begin{example}[$A^n B^n C^n$]
+It is well known that $L = A^n B^n C^n$ is not a context-free
+language. We can use \konst{Assert} to specify a language that is
+\emph{nearly} $L$ with the following contiguity type:
+%
+{\small
+\begin{verbatim}
+  charA = {ch : char, isA : Assert (ch = 65)}   (* "A" = ASCII 65 *)
+  charB = {ch : char, isB : Assert (ch = 66)}
+  charC = {ch : char, isC : Assert (ch = 67)}
+
+  mesg = {len : u16
+          A : charA [len]
+          B : charB [len]
+          C : charC [len]
+        }
+\end{verbatim}
+}
+\noindent In fact $\LangTheta{\konst{mesg}} = u \cdot A^{\konst{toN}(u)} \cdot
+B^{\konst{toN}(u)} \cdot C^{\konst{toN}(u)}$.
+\end{example}
+
+%% Mirroring the semantics, almost no change to the matcher function is
+%% needed to support \konst{Assert} forms: the matcher's traversal of
+%% \konst{contig} and string arguments is unchanged, and the accumulation of
+%% contextual information in the form of the map $\theta$ also is
+%% unchanged. Each \konst{Assert} expression is evaluated when it is
+%% encountered; if the result is true, processing continues, otherwise
+%% an error has been found.
+
+%% Notice that successful match of a message against a \konst{contig} amounts to
+%% a minimal well-formedness check: the message string is long enough to
+%% match the \konst{contig}. \konst{Assert} fields provide a basis for deeper
+%% semantic checks. It is also worth noting that certain features of
+%% \konst{contig}s require checks no matter what kind of user-specified
+%% properties are required: both enumerations and arrays have
+%% side-conditions that \konst{Assert} can enforce.
+
+\noindent \konst{Assert} expressions have been used extensively when
+specifying wellformedness properties for messages in our application
+work. The applications include restrictions on array sizes and
+constraints on array elements, \eg, requiring that every element in an
+array of GPS coordinates is an acceptable GPS coordinate.
+
+\begin{example}[Array limits]
+
+In UxAS messages (see Section \ref{application}) the length of every
+array element is held in a separate \emph{length} field which is two
+bytes in size. Thus the following \konst{contig}, in the absence of
+any further constraint, supports arrays of length up to 65536
+elements. A receiver system may well not be prepared for messages
+having collections of such potentially large components.
+{\small
+\begin{verbatim}
+  { len : u16
+    elts : i32 [len] }
+\end{verbatim}
+}
+\noindent In the meta-data for such messages, one can sometimes find
+information about the maximum expected size, usually a fairly small
+number. This can be directly expressed inside the \konst{contig} with
+an \konst{Assert}:
+{\small
+\begin{verbatim}
+  { len : u16
+    len-range : Assert (len <= 8)
+    elts : i32 [len] }
+\end{verbatim}
+}
+\noindent Note that the expected array length should be specified
+before the array itself, otherwise the allocation attempt might be
+made before the check.
+\end{example}
+
+\subsection{Kleene Star}\label{list-type}
+
+Although the use of bounded \konst{Array} types provides much
+expressiveness for representing sequences of data, ultimately some
+kinds of message can not be handled, \ie, those where there is no way to
+predict the number of nestings of structure: s-expressions, logical
+formulae, and programming language syntax trees are some typical
+examples. We address this shortcoming by adding a new contiguity type
+constructor---\konst{List}--- of unbounded lists. A message matching a
+$\konst{List}\;\tau$ type will be subject to an encoding similar to
+implementations of lists in functional languages. The matching
+algorithm for contiguity types is extended to handle \konst{List}
+objects by iteratively unrolling the recursive equation
+%
+\[ \kstar{L} = \varepsilon \cup L \cdot \kstar{L} \]
+%
+Indeed the type $\konst{List}\;\tau$ is represented by the following
+contiguity type, a recursive record:
+
+\[
+ \konst{List}\;\tau =
+   \left\{
+     \begin{array}{lcl}
+       \konst{tag} & : & \konst{u8} \\
+       \konst{test} & : &
+       \begin{array}[t] {lcl}
+         \konst{Alt} \quad (\konst{tag} = \konst{NilTag}) & \longrightarrow & \varepsilon \\
+\phantom{\konst{Alt}} \quad (\konst{tag} = \konst{ConsTag}) & \longrightarrow &
+          \{ \konst{hd} : \tau, \ \konst{tl} : \konst{List}\; \tau \} \\
+\phantom{\konst{Alt}} \quad \text{otherwise} & \longrightarrow & \konst{Void}
+        \end{array}
+     \end{array}
+   \right.
+\]
+
+In words, a $\konst{List}\;\tau$ matches a sequence of records where
+a single-byte tag (\konst{NilTag} or \konst{ConsTag}) is read, then tested to see
+whether to stop parsing the list (\konst{NilTag}) or to continue on to
+parse a $\tau$ into the \konst{hd} field and recurse in order to
+process the remainder of the list. An incorrect value for the tag results in failure.
+Thus, the list of integers
+%
+\[ \konst{Cons}(1, \konst{Cons}(2, \konst{Cons}(3, \konst{Nil}))) \]
+%
+can be represented in a message as (assume \konst{Code} is an encoder for integers)
+%
+\[ \konst{ConsTag}\cdot \konst{Code}(1) \cdot
+   \konst{ConsTag}\cdot \konst{Code}(2) \cdot
+   \konst{ConsTag}\cdot \konst{Code}(3) \cdot \konst{NilTag}
+\]
+%
+and \konst{match}, given type $\konst{List}\; \konst{int}$
+(where $\konst{int}$ is a contiguity type for some flavor of integer)
+succeeds, returning the context
+%
+\[
+\begin{array}{rcl}
+\konst{root.tag} & \mapsto & \konst{ConsTag} \\
+\konst{root.hd} & \mapsto & \konst{Code}(1) \\
+\konst{root.tl.tag} & \mapsto & \konst{ConsTag} \\
+\konst{root.tl.hd} & \mapsto & \konst{Code}(2) \\
+\konst{root.tl.tl.tag} & \mapsto & \konst{ConsTag} \\
+\konst{root.tl.tl.hd} & \mapsto & \konst{Code}(3) \\
+\konst{root.tl.tl.tl.tag} & \mapsto & \konst{NilTag}
+\end{array}
+\]
+
+This solution is compositional, in the sense that \konst{List} types
+can be the arguments of other contiguity types, can be applied to
+themselves, \eg, $\konst{List}(\konst{List}\;\tau)$, \etc \; Thus
+quite general branching structures of arbitrary finite depth and width can
+be specified and parsed with this extension.  The approach captures a
+certain class of \emph{context-free-like} languages. However, it
+differs distinctly from the standard Chomsky hierarchy, mainly because
+sums are determined by \emph{looking behind} when computing which
+choice to follow in an \konst{Alt} type; for example, the list parser
+branches \emph{after} it has seen the tag. The similarity with
+`no-lookahead' parsing, such as LL(0) and LR(0), deserves further
+investigation.
+
+\begin{example}[First order term challenge]
+
+Although lists of contig types can be straightforwardly constructed
+with the above encoding, there remains a problem when lists are part
+of a recursive construction. A classic example is \emph{first order
+  terms}, as described by the following ML-style datatype:
+
+{\small
+\begin{verbatim}
+  term = Var of string
+       | App of string * term list
+\end{verbatim}}
+
+\noindent The following contiguity types capture a binary encoding of
+\verb+term+, using tags to distinguish the two kinds of term:
+\[
+\begin{array}{l}
+  \konst{string} = \{\konst{len} : \konst{u16}, \konst{elts} : \konst{char}\, [\konst{len}] \}
+\\ \\
+ \konst{term} =
+   \left\{
+     \begin{array}{lcl}
+       \konst{tag} & : & \konst{u8} \\
+       \konst{test} & : &
+       \begin{array}[t] {lcl}
+         \konst{Alt} \quad (\konst{tag} = \konst{VarTag})
+                      & \longrightarrow
+                      & \{\konst{varName} : \konst{string}\} \\
+\phantom{\konst{Alt}} \quad (\konst{tag} = \konst{AppTag})
+                  & \longrightarrow &
+          \{ \konst{fnName} : \konst{string}, \ \konst{Args} : \konst{List}\; \konst{term} \} \\
+\phantom{\konst{Alt}} \quad \text{otherwise} & \longrightarrow & \konst{Void}
+        \end{array}
+     \end{array}
+   \right.
+\end{array}
+\]
+
+However, such \emph{nested recursive} specifications demand more
+elaborate constructions, for example treating \konst{term} and
+\konst{List} as being mutually recursively defined, as is already done
+for nested recursive datatypes in theorem provers \cite{jrh:ind-defs}.
+\end{example}
+
+\subsection{Lexing}
+
+Currently, the set of base contiguity types comprises the usual base
+types expected in most programming languages. Semantically, a base
+type denotes a set of strings of the specified width, but it is also
+coupled with an \emph{interpretation function} for example, the
+contiguity type \verb+u8+ denotes the set of all one-byte strings,
+interpreted by the usual unsigned valuation function:
+%
+\[ \konst{u8} = (\set{s \mid \konst{length}(s) = 1}, \konst{toN} )
+\]
+%
+This approach cannot, however, capture base types such as string
+literals of arbitrary size, or bignums, or the situation in packed
+bit-level encodings where fields are of \emph{ad hoc} sizes aimed at
+saving space. A common generalization is to express base types via
+regular expressions paired with interpretation functions. In that
+setting \konst{u8} can be defined as
+%
+\[ \konst{u8} = ( . \; , \konst{toN})
+\]
+%
+(where `.' is the standard regular expression denoting any character). Similarly,
+%
+\[ \konst{Cstring} = ([\backslash 001-\backslash 255]^{*}\backslash 000, \lambda x.\,x )
+\]
+%
+denotes the set of zero-terminated strings, as found in the C
+language. Its displayed interpretation is just the identity function,
+but could just as well be a function that drops the terminating
+\verb+\000+ character.
+
+Scott Owens has already formalized a HOL4 theory of regexp based,
+maximal munch, lexer generation, and it is future work to adapt
+contiguity types to use those lexemes instead of the current
+restricted set of base types.
+
+\section{Application}\label{application}
+
+In the DARPA CASE project, we have been applying contiguity types to
+help create provably secure message filters and runtime monitors. One
+example we have been working with is \emph{OpenUxAS}, which has been
+developed by the Air Force Research Laboratory.\footnote{See
+  \texttt{https://github.com/afrl-rq/OpenUxAS}.}  UxAS is a collection
+of modular services that interact via a common message-passing
+architecture, aimed at unmanned autonomous systems.  Each service
+subscribes to messages in the system and responds to queries. The
+content of each message conforms to the Light-weight Message Control
+Protocol (LMCP) format. In UxAS, software classes providing LMCP
+message creation, access, and serialization/deserialization are
+automatically generated from XML descriptions, which detail the exact
+data fields, units, and default values for each message. All UxAS
+services communicate with LMCP formatted messages.
+
+An example LMCP message type is \konst{AirVehicleState}. The following
+is its contiguity type:
+
+{\small
+\begin{verbatim}
+AirVehicleState =
+   {EntityState   : EntityState
+    Airspeed      : float
+    VerticalSpeed : float
+    WindSpeed     : float
+    WindDirection : float
+   }
+\end{verbatim}
+}
+\noindent where an \konst{EntityState} is quite an elaborate type:
+{\small
+\begin{verbatim}
+   { ID : i64
+     u  : float
+     v  : float
+     w  : float
+     udot : float
+     vdot : float
+     wdot : float
+     Heading : float
+     Pitch   : float
+     Roll    : float
+     p : float,  q : float, r : float
+     Course : float
+     Groundspeed : float
+     Location : mesgOption "LOCATION3D" location3D
+     EnergyAvailable : float
+     ActualEnergyRate : float
+     PayloadStateList
+        : uxasBoundedArray (mesgOption "PAYLOADSTATE" payloadState) 8
+     CurrentWaypoint : i64
+     CurrentCommand  : i64
+     Mode : uxasNavigationMode
+     AssociatedTasks : uxasBoundedArray i64 8
+     Time : i64
+     Info : uxasBoundedArray(mesgOption "KEYVALUEPAIR" keyValuePair) 32
+   }
+\end{verbatim}
+}
+
+\noindent Most of the fields are simple base types, but the \konst{Location}
+field and the \konst{PayloadStateList} are complex. They are expressed
+with some derived syntax, which we will explain.
+
+\begin{itemize}
+\item The \konst{Location} field,
+  {\small\verb+mesgOption "LOCATION3D" location3D+}, may or may not
+  occur (signalled with a tag field), but if it does, it is a
+  \konst{location3D}, which is a GPS location, and its latitude,
+  longitude, and altitude fields are checked with an \konst{Assert} to
+  make sure they lie within the expected numeric ranges, which are
+  expressed as floating point numbers.
+
+{\small
+\begin{verbatim}
+  AltitudeType = AGL | MSL
+
+  location3D = {
+   Latitude  : double,
+   Longitude : double,
+   Altitude  : float,
+   AltitudeType : AltitudeType,
+   Wellformed : Assert (
+       -90.0 <= Latitude <= 90.0 and
+      -180.0 <= Longitude <= 180.0 and
+       0.0 <= Altitude <= 15000.0)
+  }
+\end{verbatim}}
+
+\item The \konst{PayloadStateList} is a variable-length array of
+  optional records, with maximum length 8. Each record has, along with
+  other fields, its own variable-length array of key-value pairs, and
+  the key and value of each such pair is a variable-length string.
+
+\end{itemize}
+
+We have formalized most of the LMCP messages as contiguity types, and
+created filters and parsers by instantiating the \konst{match}
+algorithm. In order to meet the demands of LMCP message modelling, the
+matcher algorithm has been upgraded to support a fuller expression and
+boolean expression language, but the core algorithm is the same as our
+verified core version. The filters and parsers have been added to an
+existing UxAS design and successfully tested with the UxAS simulator.
+
+\section{Extensions and future work}
+
+Various extensions have been easy to add to the contiguity type
+framework, and we also have more substantial ideas to pursue for
+future work.
+
+\begin{description}
+
+\item [Enumerations] An \emph{enumeration} declaration
+introduces a new base contiguity type, and also adds the specified
+elements to a map associating constant names to numbers.
+Suppose that enumerations are allowed to have up to 256 elements,
+allowing any enumerated element to fit in one byte. The following
+enumeration is taken from UxAS messages:
+{\small
+\begin{verbatim}
+  NavigationMode
+    = Waypoint | Loiter | FlightDirector
+    | TargetTrack | FollowLeader | LostComm
+\end{verbatim}
+}
+A field expecting a \konst{NavigationMode} element will be one byte wide,
+and thus there are 250 byte patterns that should not be allowed in the
+field. Thus, the \konst{contig}
+
+{\small\begin{verbatim}
+  { A : NavigationMode }
+\end{verbatim}
+}
+should be replaced by
+
+{\small
+\begin{verbatim}
+  { A : NavigationMode
+    A-range : Assert (A <= 5)
+  }
+\end{verbatim}
+}
+
+\item [Raw blocks] A raw chunk of a string (byte array) of a size that
+  can depend on the values of earlier fields is easy to specify:
+  \[ \konst{Raw}\; \mathit{exp} \]
+
+For example, a large \konst{Array} form can lead to a large number of
+L-values being stored in $\theta$; if none are ever accessed later,
+\eg, if the array is some image data, it can be preferable to simply
+declare a \konst{Raw} block. Thus a 2D array can be blocked out in the
+following manner:
+
+{\small
+\begin{verbatim}
+  { rows : i32
+    cols : i32
+    block : Raw (rows * cols)
+  }
+\end{verbatim}
+}
+
+\item [Guest scanners] It seemed useful to provide a general ability
+  to host scanning functions. This is accomplished via the following
+  constructor:
+
+  \[ \konst{Scanner}\;
+     (\mathit{scanfn} : \konst{string} \to (\konst{string} \times \konst{string})\konst{option}) \]
+
+  When a custom scanner is encountered during the matching process,
+  the scanner is invoked on the input and should either fail or
+  provide an $(s_1,s_2)$ pair representing a splitting of the
+  input. Then $s_1$ is added to $\theta$ at the current \lval, and
+  matching continues on $s_2$.
+
+\item [Non-copying implementations] In the discussion so far, we have
+  assumed that the input string is being broken up into substrings
+  that are placed into the \lval{} map $\theta$. However, very little
+  is changed if, instead of a substring, an \lval{} in $\theta$ maps
+  to a pair of indices $(\mathit{pos},\mathit{width})$ designating the
+  location of the substring. The result is a matcher that never copies
+  byte buffer data. This is necessary to synthesize efficient filters.
+
+  In making this representation change, there is a slight change to
+  the semantics. In the original, $\theta(\lval)$ yields a string
+  whereas in the non-copying version, $\theta(\lval)$ yields a pair of
+  indices, which means that the original string $\mathit{str}_0$ needs
+  to be included in applying the assignment.
+
+\item [Compilation] Our current implementation of contiguity types is
+  in an \emph{interpreted} style: the evaluation of numeric
+  \konst{Array} bounds and boolean guards on \konst{Alt} conditions is
+  done with respect to the current context, which is explicitly
+  accumulated as the message is processed. However, notice that the
+  host programming language will no doubt already provide compilation
+  for numeric and boolean expressions. This leads to the idea of
+  \emph{compiling contiguity types}: the current matching algorithm
+  for contiguity types can be replaced by the generation of equivalent
+  host-language code which is then compiled by the host-language
+  compiler and evaluated. Although the current contiguity type matcher
+  has proved to be fast enough to keep up with the real-time demands
+  of the UxAS system, we expect that a compiled version of the code
+  would be much faster.
+
+ We would like to formalize the compilation algorithm and prove it
+ correct. Since the CakeML\cite{cakeml:popl14} formalization provides
+ an operational semantics for CakeML programs, and a convenient
+ translation from HOL4 expressions to CakeML ASTs, one should be able
+ to prove a correctness theorem relating the matcher function of the
+ present paper with a compiler that takes a contiguity type and
+ generates CakeML. However, this is only speculative; there are many
+ details to work out.
+
+\item [Relationship with grammars]
+
+Contiguity types and \konst{match} provide a type-directed and
+context-oriented parser generator that has some similarities with
+LL(0) or LR(0) languages wherein the parser can proceed with no
+lookahead. This is useful for binary-encoded datastructures. It would
+be very interesting to attempt to bridge the gap with conventional
+parsing technology based on grammars. A good beginning would be to
+understand the issues involved in attempting to translate context-free
+grammars into contiguity types and \emph{vice versa}.
+
+\end{description}
+
+\section {Related work}
+
+As mentioned in the introduction, domain specific languages for
+message formats have been around for a long time. Semantic definitions
+and verification for them is a much more recent phenomenon. The PADS
+framework \cite{pads:ddl} aimed at supporting a wide variety of
+formats, including text-based. Its core message description formalism
+was given semantics by translation into dependent type theory. An
+interesting integration of context-sensitivity into a conventional
+grammar framework has been done by Jim and Mandelbaum
+\cite{trevor-jim-dependent-parsing}. Everparse \cite{everparse} is an
+impressive approach, based on parser combinators and having an
+emphasis on proving the invertibility of encode/decode pairs with
+automated proof (other properties are also established). Chlipala and
+colleagues \cite{narcissus-encode-decode} similarly emphasize
+encode/decode proofs, basing their work in Coq and using the power of
+dependent types to good effect. Formats based on dependent types can
+(and do) use the built-in expressive power of type theory to enforce
+semantic properties on data. A recent language in this vein is Parsely
+\cite{parsley:sri} which leverages the dependent records and predicate
+subtyping of PVS to provide a combination of PEG parsing and attribute
+grammars aimed at parsing complex language formats.
+
+Many of these efforts obtain the semantics of the data description
+formalism by translation into features provided by a powerful host
+logic. In contrast, contiguity types use only very basic---and easily
+implemented---concepts. This means that contiguity type matchers,
+parsers, and extensions can be directly implemented in any convenient
+programming language.  Contiguity types also provide a kind of
+dependency, without leveraging the type system of the theorem
+prover. We suspect that working at the representation level, and using
+L-values, allows one to get some of the benefits of type
+dependency. Another distinguishing aspect of our work is that our
+emphasis on filters means that we are primarily interested in the
+enforcement of semantic properties on message contents rather than
+encode/decode properties. In future work we expect to be able to
+leverage this in high performance filter implementations.
+
+
+%Other papers toreference \cite{verified:protocolbuffer}.
+
+\section{Conclusion}
+
+ We have designed, formalized, proved correct, implemented, and applied
+a specification language for message formats, based on formal
+languages and the venerable notion of L- and R-values from imperative
+programming. The notion of contiguity type seems to give a lot of
+expressive power, sufficient to tackle difficult idioms in
+self-describing formats. Contiguity types integrate common structuring
+mechanisms from programming languages, such as arrays, records, and
+lists while keeping the foundation in sets of strings, which seems
+appropriate for message specifications.
+
+%% Bibliography
+\bibliography{contig}
+
+\end{document}
