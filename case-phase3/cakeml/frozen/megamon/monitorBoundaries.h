@@ -32,7 +32,8 @@
 #define USE_SIMPLE_VCALC_VERT 1
 
 #define INVALID_HEIGHT 101375.0
-#define INVALID_VERTICAL_VEL -131072.0 #//TODO int or double?
+#define INVALID_VERTICAL_VEL -131072.0 ////TODO int or double?
+#define INVALID_HORZ_SPEED 4095
 
 /* note:
     phi = latitude
@@ -86,6 +87,7 @@ double calculateVCalcVertHighBound(double height1, double height2);
 // ******** One interface to rule them all *******
 Boundary_s calculateBoundaries(double lat1, double lat2,
                                double lon1, double lon2,
-                               double height1, double height2);
+                               double height1, double height2, double horz_speed,
+                               double nic1, double nic2, double trackType, double vertVelocity);
 
 #endif
