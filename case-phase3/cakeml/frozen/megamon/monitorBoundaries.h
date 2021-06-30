@@ -53,7 +53,7 @@ typedef struct Boundary_s
     double vCalcVertHighBound;
 } Boundary_s;
 
-/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** 
+/* *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
  * REFERENCE THE .C FILE FOR FUNCTION COMMENTS AND USAGE   *** ***
  * *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***/
 
@@ -89,5 +89,4 @@ Boundary_s calculateBoundaries(double lat1, double lat2,
                                double lon1, double lon2,
                                double height1, double height2, double horz_speed,
                                double nic1, double nic2, double trackType, double vertVelocity);
-
 #endif
