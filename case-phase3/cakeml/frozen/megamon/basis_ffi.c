@@ -272,60 +272,15 @@ void ffifloat2double(unsigned char *parameter, long parameterSizeBytes,
 }
 
 
-/* Compute upper and lower bounds for velocity and heading. Takes 6
-   doubles in input and returns 6 doubles in output.
- */
-/*
 void fficompute_bounds
        (unsigned char *input, long ilen,
         unsigned char *output, long olen) {
 
-
-  assert (48 == ilen);
-  long dlen = sizeof (double);
-
-  double plat,lat,plon,lon,palt,alt,
-         hlo,hhi,vlo,vhi,olo,ohi;
-
-  memcpy(&plat, input,          dlen);
-  memcpy(&lat, input + dlen,   dlen);
-  memcpy(&plon, input + 2*dlen, dlen);
-  memcpy(&lon, input + 3*dlen, dlen);
-  memcpy(&palt, input + 4*dlen, dlen);
-  memcpy(&alt, input + 5*dlen, dlen);
-
-  printf("FFI(in):\n  prev-lat : %f\n  lat :      %f\n  prev-lon : %f\n  lon :      %f\n  prev-alt : %f\n  alt :      %f\n",
-	 plat, lat,plon,lon,palt,alt);
-
-  hlo = cos(plat);
-  hhi = sin(lat);
-  vlo = cos(plon);
-  vhi = sin(lon);
-  olo = cos(palt);
-  ohi = sin(alt);
-
-  printf("FFI(out):\n  cos(prev-lat) :  %f\n  sin(lat) :      %f\n  cos(prev-lon) : %f\n  sin(lon) :      %f\n  cos(prev-alt) : %f\n  sin(alt) :      %f\n",
-	 hlo, hhi,vlo,vhi,olo,ohi);
-
-  memcpy(output,          (unsigned char*) &hlo, dlen);
-  memcpy(output + dlen,   (unsigned char*) &hhi, dlen);
-  memcpy(output + 2*dlen, (unsigned char*) &vlo, dlen);
-  memcpy(output + 3*dlen, (unsigned char*) &vhi, dlen);
-  memcpy(output + 4*dlen, (unsigned char*) &olo, dlen);
-  memcpy(output + 5*dlen, (unsigned char*) &ohi, dlen);
-}
-*/
-
-void fficompute_bounds
-       (unsigned char *input, long ilen,
-        unsigned char *output, long olen) {
-
-
-  assert (48 == ilen);
+  assert (88 == ilen);
   long dlen = sizeof (double);
 
   Boundary_s boundaryRec;
-  double lat1,lat2,lon1,lon2,alt1,alt2,
+  double lat1,lat2,lon1,lon2,alt1,alt2, horizV_now, nic1,nic2,track_now,vertV_now,
          hlo, hhi, vlo, vhi, olo, ohi;
 
   memcpy(&lat1, input,          dlen);
@@ -335,10 +290,17 @@ void fficompute_bounds
   memcpy(&alt1, input + 4*dlen, dlen);
   memcpy(&alt2, input + 5*dlen, dlen);
 
+  memcpy(&horizV_now, input + 6*dlen, dlen);
+  memcpy(&nic1,       input + 7*dlen, dlen);
+  memcpy(&nic2,       input + 8*dlen, dlen);
+  memcpy(&track_now,  input + 9*dlen, dlen);
+  memcpy(&vertV_now,  input + 10*dlen, dlen);
+
   /* printf("FFI(in):\n  lat1 : %f\n  lat2 : %f\n  lon1 : %f\n  lon2 : %f\n  alt1 : %f\n  alt2 : %f\n",
 	 lat1, lat2,lon1,lon2,alt1,alt2);
   */
-  boundaryRec = calculateBoundaries(lat1,lat2,lon1,lon2,alt1,alt2);
+  boundaryRec = calculateBoundaries(lat1,lat2,lon1,lon2,alt1,alt2,
+				    horizV_now,nic1,nic2,track_now,vertV_now);
 
   hlo = boundaryRec.vCalcHorzLowBound;
   hhi = boundaryRec.vCalcHorzHighBound;
@@ -358,6 +320,5 @@ void fficompute_bounds
   memcpy(output + 3*dlen, (unsigned char*) &vhi, dlen);
   memcpy(output + 4*dlen, (unsigned char*) &olo, dlen);
   memcpy(output + 5*dlen, (unsigned char*) &ohi, dlen);
-
 
 }
