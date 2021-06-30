@@ -2339,7 +2339,7 @@ fun suspectIDs3 ownship traffic previous previous_len =
 (*    abnormal1, abnormal3, cycle_count)                                     *)
 (*---------------------------------------------------------------------------*)
 
-val theState = Ref (None, None, None, None, None, None, None, None, None, None)
+val initState = (None, None, None, None, None, None, None, None, None, None)
  : (int option *
     Adsb_Types.traffic_report array option *
     int option *
@@ -2349,9 +2349,13 @@ val theState = Ref (None, None, None, None, None, None, None, None, None, None)
     int array option *
     bool option *
     bool option *
-    int option) ref;
+    int option)
+
+val theState = Ref initState;
 
 val initStep = Ref True;
+
+fun reset_monitor_state() = (theState := initState; initStep := True);
 
 val valOf = Option.valOf;
 val println = Utils.println;
@@ -2611,11 +2615,45 @@ fun run_tests fileName =
    rowStep 0
  end
 
+val _ = run_tests "../tests/tc1.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc5.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc6.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc12.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc13.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc24.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc17.bytes";
+val _ = print "\n\n";
+
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc28.bytes";
+val _ = print "\n\n";
+val _ = Monitor.reset_monitor_state();
 val _ = run_tests "../tests/tc100.bytes";
 val _ = print "\n\n";
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc101.bytes";
+
+(*
 val _ = run_tests "../tests/tc101.bytes";
 val _ = print "\n\n";
-(*
 val _ = run_tests "tests/test";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc1.bytes";
