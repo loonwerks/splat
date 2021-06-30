@@ -1064,6 +1064,20 @@ fun airborne_of miscs =
  case miscs
   of MiscIndicators_Recd aborne rptkind tt1 tt0 => aborne;
 
+fun tt_bit1_of miscs =
+ case miscs
+  of MiscIndicators_Recd aborne rptkind tt1 tt0 => tt1;
+
+fun tt0_bit0_of miscs =
+ case miscs
+  of MiscIndicators_Recd aborne rptkind tt1 tt0 => tt0;
+
+fun bit_num b = if b then 1 else 0;
+
+fun trackType_of miscs =
+ case miscs
+  of MiscIndicators_Recd aborne rptkind tt1 tt0 => 2 * bit_num tt1 + bit_num tt0;
+
 datatype targetID = TargetID_Recd int int;
 
 fun addr_of tid =
@@ -1984,6 +1998,8 @@ val lon_of     = Adsb_Types.lon_of;
 val alt_of     = Adsb_Types.alt_of;
 val horizV_of  = Adsb_Types.horizV_of;
 val vertV_of   = Adsb_Types.vertV_of;
+val nic_of     = Adsb_Types.nic_of;
+val trackType_of = Adsb_Types.trackType_of;
 val heading_of = Adsb_Types.heading_of;
 val hVel_lower_of = Adsb_Types.hVel_lower_of;
 val hVel_upper_of = Adsb_Types.hVel_upper_of;
@@ -2037,7 +2053,7 @@ val default_TRAFFIC_REPORT =
 
 val default_TRAFFIC_REPORT_ARRAY = Array.array 150 default_TRAFFIC_REPORT;
 
-val arg_buffer    = Word8Array.array (6 * 8) Utils.w8zero;
+val arg_buffer    = Word8Array.array (11 * 8) Utils.w8zero;
 val return_buffer = Word8Array.array (6 * 8) Utils.w8zero;
 
 fun unpack_to_boundaries() =
@@ -2058,7 +2074,7 @@ fun unpack_to_boundaries() =
 
 fun add_double index d = Utils.pack_double arg_buffer index d;
 
-fun pack_args a b c d e f =
+fun pack_args a b c d e f x1 x2 x3 x4 x5 =
  let val () = Utils.clear_buf arg_buffer
      val () = add_double 0 a
      val () = add_double 8 b
@@ -2066,12 +2082,26 @@ fun pack_args a b c d e f =
      val () = add_double 24 d
      val () = add_double 32 e
      val () = add_double 40 f
+     val () = add_double 48 x1
+     val () = add_double 56 x2
+     val () = add_double 64 x3
+     val () = add_double 72 x4
+     val () = add_double 80 x5
  in
-  Word8Array.substring arg_buffer 0 48
+  Word8Array.substring arg_buffer 0 88
  end
 
-fun compute_BOUNDS a b c d e f =
- let val arg_string = pack_args a b c d e f
+(*---------------------------------------------------------------------------*)
+(* Used to take 6 args. Now the following are added                          *)
+(*                                                                           *)
+(*  double horzSpeed,                                                        *)
+(*  double nic1, double nic2,                                                *)
+(*  double trackType,                                                        *)
+(*  double vertVelocity                                                      *)
+(*---------------------------------------------------------------------------*)
+
+fun compute_BOUNDS a b c d e f x1 x2 x3 x4 x5 =
+ let val arg_string = pack_args a b c d e f x1 x2 x3 x4 x5
      val () = Utils.clear_buf return_buffer
      val () = #(compute_bounds) arg_string return_buffer
  in
@@ -2139,6 +2169,7 @@ fun bounds_VIOLATION now yest bounds =
  end
 
 fun is_airborne ship = Adsb_Types.airborne_of (Adsb_Types.misc_indicators_of ship);
+fun track_of ship    = Adsb_Types.trackType_of (Adsb_Types.misc_indicators_of ship);
 
 fun unexpected now yest =
   (targetID_of now = targetID_of yest)
@@ -2150,7 +2181,11 @@ fun unexpected now yest =
      (compute_BOUNDS
        (lat_of yest) (lat_of now)
        (lon_of yest) (lon_of now)
-       (int_to_real (alt_of yest)) (int_to_real (alt_of now)));
+       (int_to_real (alt_of yest)) (int_to_real (alt_of now))
+       (int_to_real (horizV_of now))
+       (int_to_real (nic_of yest)) (int_to_real (nic_of now))
+       (int_to_real (track_of now))
+       (int_to_real (vertV_of now)));
 
 fun is_default_report rpt = Adsb_Types.is_default_targetID (targetID_of rpt);
 
@@ -2211,12 +2246,12 @@ fun is_DUPLICATE_ID traffic1 traffic2 =
   (targetID_of traffic1 = targetID_of traffic2)
  andalso
   not (targetID_of traffic1 = default_TARGET_ID);
-  
+
 fun is_DUPLICATE_OWNSHIP msg index =
   is_DUPLICATE_ID
      (ownship_of msg)
      (Array.sub (traffic_of msg) index);
-     
+
 fun is_DUPLICATE_TRAFFIC msg traffic_len index =
  Utils.array_existsI
    (fn dup_index =>
@@ -2237,7 +2272,7 @@ fun lcDUPLICATE_IN_REPORT msg traffic_len =
 
 fun lcUPDATE_SUSPECT_IDS msg traffic_len =
  mk_monitor_report
-   2 
+   2
    (Array.tabulate (Array.length (traffic_of msg))
      (fn i =>
        if i < traffic_len andalso
@@ -2433,13 +2468,13 @@ fun stepFn inports stateVars =
          if event_observed andalso abnormal1
          then
            Some (mk_monitor_report
-                  1 
+                  1
                   (suspectIDs1
                      today unexpected_today unexpected_yest unexpected_two))
            else
              None
-      
-      val today_length = 
+
+      val today_length =
          if event_observed
          then
            (prefixLenRight is_default_report
@@ -2454,8 +2489,8 @@ fun stepFn inports stateVars =
          else
            None
       val suspect_traffic_out3 =
-         if event_observed andalso abnormal3 
-         then 
+         if event_observed andalso abnormal3
+         then
            Some (mk_monitor_report
               3
               (suspectIDs3
@@ -2476,7 +2511,7 @@ fun stepFn inports stateVars =
   in
     (newStateVarOpts,(suspect_traffic_out1, suspect_traffic_out2, suspect_traffic_out3, health_out))
   end;
- 
+
 
 (* ---------------------------------------------------------------------------*)
 (* One thread invocation                                                      *)
@@ -2576,9 +2611,13 @@ fun run_tests fileName =
    rowStep 0
  end
 
-val _ = run_tests "tests/test";
+val _ = run_tests "../tests/tc100.bytes";
+val _ = print "\n\n";
+val _ = run_tests "../tests/tc101.bytes";
 val _ = print "\n\n";
 (*
+val _ = run_tests "tests/test";
+val _ = print "\n\n";
 val _ = run_tests "../tests/tc1.bytes";
 val _ = print "\n\n";
 val _ = run_tests "../tests/tc12.bytes";

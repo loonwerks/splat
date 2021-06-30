@@ -398,28 +398,44 @@ double calculateVCalcVertHighBound(double height1, double height2)
 ///<param name="lon2">current longitude in degrees</param>
 ///<param name="height1">previous height in feet</param>
 ///<param name="height2">current height in feet</param>
+///<param name="horzSpeed">current speed in kts</param>
+///<param name="vertVelocity">vertical velocity in fpm</param>
+///<param name="trackType">heading possible values 0-3</param>
+///<param name="nic1">previous nic </param>
+///<param name="nic2">current nic </param>
 ///<returns>Record (struct) containing all boundaries.  See Boundary_s</returns>
 Boundary_s calculateBoundaries(double lat1, double lat2,
                                double lon1, double lon2,
-                               double height1, double height2)
+                               double height1, double height2, double horzSpeed, double nic1, double nic2,
+                               double trackType, double vertVelocity)
 {       
     //return struct
     Boundary_s boundaryRec;
-
+ 
     //intermediate values during calculations
     double dCalc_NmPerSec = 0.0;
     bool divideByZero = false;
+    bool invalidPosition = false;
     double betaCalc = 0.0;
     double betaCalcLb = 0.0;
     double betaCalcHb = 0.0;
     double vCalcHorz_kts = 0.0;
     double heightDiff = 0.0;
-    
+
     //convert degrees to radians:
     double latRad1 = degreesToRadians(lat1);
     double latRad2 = degreesToRadians(lat2);
     double lonRad1 = degreesToRadians(lon1);
     double lonRad2 = degreesToRadians(lon2);
+
+    //If any of the positional coordinates or nic values
+    //hinder the accurancy of calculating boundaries, use max and min boundaries.
+    //check if position is valid 
+    if ((lat1 == 0 && lon1 == 0 && nic1 == 0) || (lat2 == 0 && lon2 == 0 && nic2 == 0))
+    {
+        invalidPosition = true;
+    }
+    //end Position Validation check
 
     //get DCalc (Nm per second), which can be used as a base for the Horz velocity and angle boundaries.
     dCalc_NmPerSec = calculateDCalcNmPerSec(latRad1, latRad2, lonRad1, lonRad2);
@@ -427,8 +443,9 @@ Boundary_s calculateBoundaries(double lat1, double lat2,
     // check to ensure betaCalc won't cause DIV-BY-ZERO.
     divideByZero = checkBetaCalcForDivideByZero(latRad1, latRad2, lonRad1, lonRad2);
 
-    // if DIV-BY-ZERO, then use pre-determined values.
-    if (divideByZero)
+    // if DIV-BY-ZERO or positions and trackType are invalic, use predetermined defaults.
+    // trackType is the GDL90's Misc. Indicator's LSB
+    if (divideByZero || (trackType==0 || invalidPosition))
     {
         betaCalcLb= BETA_CALC_MIN_BOUND_DEFAULT;
         betaCalcHb = BETA_CALC_MAX_BOUND_DEFAULT;
@@ -451,12 +468,22 @@ Boundary_s calculateBoundaries(double lat1, double lat2,
     //convert to Kts
     vCalcHorz_kts = calculateVCalcHorzFromDCalc(dCalc_NmPerSec);
 
-    //calculate boundaries for vCalcHorz
-    boundaryRec.vCalcHorzLowBound = calculateVCalcHorzLowBound(vCalcHorz_kts);
-    boundaryRec.vCalcHorzHighBound = calculateVCalcHorzHighBound(vCalcHorz_kts);
+    //calculate vCalcHorz boundaries
+    //Positional coordinates and horzSpeed must be accurate to calculate
+    //else use min and max boundary defaults. 
+    if (invalidPosition || (horzSpeed == INVALID_HORZ_SPEED))
+    {
+        boundaryRec.vCalcHorzLowBound = VCALC_HORZ_MIN_BOUND_DEFAULT;
+        boundaryRec.vCalcHorzHighBound = VCALC_HORZ_MAX_BOUND_DEFAULT;
+    }
+    else   //calculate boundaries
+    {
+        boundaryRec.vCalcHorzLowBound = calculateVCalcHorzLowBound(vCalcHorz_kts);
+        boundaryRec.vCalcHorzHighBound = calculateVCalcHorzHighBound(vCalcHorz_kts);
+    } //end-if check for horizontal boundaries
 
-    // if altitude is invalid, use pretermined boundaries
-    if (height1 >= INVALID_HEIGHT || height2 >= INVALID_HEIGHT)
+    // if altitude or vertical velocity are invalid, use pretermined boundaries
+    if (height1 >= INVALID_HEIGHT || height2 >= INVALID_HEIGHT || (vertVelocity == INVALID_VERTICAL_VEL))
     {
         boundaryRec.vCalcVertLowBound = VCALC_VERT_MIN_BOUND_DEFAULT;
         boundaryRec.vCalcVertHighBound = VCALC_VERT_MAX_BOUND_DEFAULT;
