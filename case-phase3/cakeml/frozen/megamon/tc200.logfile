@@ -1,0 +1,435 @@
+Mega Monitor: running tests from file: ../tests/tc200.bytes
+
+Row 0
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 1
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 2
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 3
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 4
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 5
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 6
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 7
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 8
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 9
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 10
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 11
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 12
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 13
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 14
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 15
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 16
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 17
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 18
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 19
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 20
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 21
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 22
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 23
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 24
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 25
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 26
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 27
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 28
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 29
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
+
+Row 30
+===========
+   Ownship ID  : targetID : (0,52746757)   callSign : N71755
+
+   Traffic IDs :
+      [0 |-> targetID : (0,52746760)   callSign : N01ABC  ]
+      [1 |-> targetID : (0,52746761)   callSign : N02CVW  ]
+      [2 |-> targetID : (0,52746762)   callSign : N034    ]
+      [3 |-> targetID : (0,52746763)   callSign : N04041  ]
+      [4 |-> targetID : (0,52746764)   callSign : N05FXYZ2]
+Output on Suspect_Traffic_Out1 port : No output because no abnormalities found.
+Output on Suspect_Traffic_Out2 port : No output because no duplicates found.
+Output on Suspect_Traffic_Out3 port : No output because no abnormalities found.
