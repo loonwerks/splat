@@ -2615,6 +2615,10 @@ fun run_tests fileName =
    rowStep 0
  end
 
+val _ = run_tests "../tests/tc200.bytes";
+val _ = print "\n\n";
+
+(*
 val _ = run_tests "../tests/tc1.bytes";
 val _ = print "\n\n";
 
@@ -2645,28 +2649,18 @@ val _ = print "\n\n";
 val _ = Monitor.reset_monitor_state();
 val _ = run_tests "../tests/tc28.bytes";
 val _ = print "\n\n";
+
 val _ = Monitor.reset_monitor_state();
 val _ = run_tests "../tests/tc100.bytes";
 val _ = print "\n\n";
+
 val _ = Monitor.reset_monitor_state();
 val _ = run_tests "../tests/tc101.bytes";
+val _ = print "\n\n";
 
-(*
-val _ = run_tests "../tests/tc101.bytes";
+val _ = Monitor.reset_monitor_state();
+val _ = run_tests "../tests/tc200.bytes";
 val _ = print "\n\n";
-val _ = run_tests "tests/test";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc1.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc12.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc13.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc14.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc5.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc6.bytes";
-val _ = print "\n\n";
-val _ = run_tests "../tests/tc17.bytes";
+
+val _ = Monitor.reset_monitor_state();
 *)
