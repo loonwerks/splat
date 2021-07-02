@@ -17,13 +17,27 @@ fun pp_qid ("",s) = s
 
 fun qid_string p = pp_qid p;
 
-fun pp_pkg_qid pkgName (qid as (pkg,s)) =
- if pkg = "" then pp_qid qid else
- if pkgName="Defs" then pp_qid ("",s) else pp_qid ("Defs",s);
+(*---------------------------------------------------------------------------*)
+(* Important decisions made here. All type and fun definitions made in       *)
+(* various source AADL packages and annexes are swept into the "Defs" CakeML *)
+(* structure. So, when the current structure is Defs, then don't print the   *)
+(* struct name.  Otherwise, if the package name is "", then that's a sign    *)
+(* that a builtin of some kind is being used, and so don't print the package *)
+(* name.                                                                     *)
+(*                                                                           *)
+(* That leaves all other cases. This means pp_pkg_qid is being invoked on    *)
+(* a qid not "in" the Defs package, and it also means we aren't doing        *)
+(* systemsy things, so it must mean that we are in the actual code           *)
+(* specified in the gadget body, so all remaining struct names are referring *)
+(* back to the Defs structure.                                               *)
+(*---------------------------------------------------------------------------*)
 
-(*fun pp_pkg_qid pkgName (pkg,s) =
-    if pkg=pkgName then pp_qid ("",s) else pp_qid (pkg,s);
- *)
+fun pp_pkg_qid pkgName (qid as (pkg,s)) =
+ if pkg = "" then
+    pp_qid qid else
+ if pkgName="Defs" then
+    pp_qid ("",s)
+ else pp_qid ("Defs",s);
 
 fun AppExp elist = Fncall(("","App"), elist);
 fun listLit elts = Fncall(("","List"), elts);
@@ -578,14 +592,6 @@ fun transRval E e =
    | otherwise => fst(proj_intro E e)
 ;
 
-fun transRval_decl E tmdec =
- case tmdec
-  of ConstDec (qid,ty,exp)
-       => ConstDec (qid,ty,transRval (E,empty_varE) exp)
-   | FnDec (qid,params,ty,exp)
-       => FnDec (qid,params,ty, transRval (E,assocFn params) exp)
-;
-
 (*---------------------------------------------------------------------------*)
 (* Superseded by code in splat.sml                                           *)
 (*---------------------------------------------------------------------------*)
@@ -710,6 +716,46 @@ fun pp_tmdec depth pkgName env tmdec =
        end
  end;
 
+fun pp_api (structName,inbufs,fillFns,sendFns,logInfo) =
+ let open PolyML
+     val depth = ~1
+     fun pp_inbuf d (bufName,n) =
+         PrettyBlock(2,true,[],
+           [PrettyString "val ", PrettyString bufName, PrettyString " = " ,
+            PrettyString "Word8Array.array ", PrettyString (Int.toString n),
+            PrettyString " Utils.w8zero;"
+           ])
+     fun pp_fillFn d (bufName,api_call) =
+         PrettyBlock(2,true,[],
+           [PrettyString"fun ", PrettyString ("fill_"^bufName), PrettyString " () = " ,
+            Line_Break,
+            PrettyBlock(0,true,[],
+               [PrettyString "let val () = Utils.clear_buf ",
+                PrettyString bufName, Line_Break,
+                 PrettyString "in ", PrettyString api_call, Line_Break,
+                 PrettyString "end;"])
+           ])
+     fun pp_sendFn d (portName,api_call) =
+         PrettyBlock(2,true,[],
+           [PrettyString"fun ", PrettyString ("send_"^portName), PrettyString " string = " ,
+            PrettyString api_call
+           ])
+ in
+    PrettyBlock(0,true,[],
+        [PrettyString ("structure "^structName^" = "), Line_Break,
+         PrettyString "struct", Line_Break_2,
+         end_pp_list Line_Break Line_Break (pp_inbuf  depth) inbufs,  Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_fillFn depth) fillFns, Line_Break,
+	 Line_Break,
+         end_pp_list Line_Break Line_Break (pp_sendFn depth) sendFns, Line_Break,
+	 Line_Break,
+         PrettyString logInfo,
+         Line_Break,
+	 Line_Break,
+         PrettyString "end"
+        ])
+ end
 
 (*---------------------------------------------------------------------------*)
 (* Write out :                                                               *)
@@ -873,14 +919,6 @@ fun pp_defs_struct env (structName,tydecs,tmdecs) =
 (* where (ie1,...,iek) = init = the updates made in the first step           *)
 (* and (e1,...,ek) = step = updates made in all subsequent steps.            *)
 (*                                                                           *)
-(* Contiguity type parser can be written to model ports as follows:          *)
-(*                                                                           *)
-(*   EventDataPort = 'a option                                               *)
-(*   DataPort = 'a                                                           *)
-(*   Event = bool  (* or possibly unit option *)                             *)
-(*                                                                           *)
-(* For each call to Event(p), the type of port for p has to be calculated so *)
-(* that the correct projection function can be used.                         *)
 (*---------------------------------------------------------------------------*)
 
 val unitExp = Fncall(("","unitExp"),[]);
@@ -902,31 +940,9 @@ fun mk_deref e = Fncall(("","!"),[e]);
 fun mk_condExp(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 
 (*---------------------------------------------------------------------------*)
-(* There should be enough information in the outgoing FnDecl so that code    *)
-(* can be generated, and also logic definitions.                             *)
-(*                                                                           *)
-(* Wondering if output ports should be part of the state. Seems like there   *)
-(* should be a state variable for an output port if the port value is used   *)
-(* subsequent computations. But it would be possible to have an output port  *)
-(* value calculated from an expression ... hmmm maybe this isn't a           *)
-(* distinction worth making.                                                 *)
-(*                                                                           *)
 (* TODO: sort Lustre variables in dependency order. Right now I assume that  *)
 (* has been done by the programmer/system designer.                          *)
 (*---------------------------------------------------------------------------*)
-
-datatype portsy = EventData of string * ty | Data of string * ty | Event of string;
-
-fun portname (Event s) = s
-  | portname (Data(s,ty)) = s
-  | portname (EventData(s,ty)) = s;
-
-fun feature2port (s,ty,dir,kind) =
- case kind
-  of "EventDataPort" => EventData(s,ty)
-   | "DataPort" => Data(s,ty)
-   | "EventPort" => Event s
-   | otherwise => raise ERR "feature2port" "";
 
 fun split_fby exp =
   case exp
@@ -991,43 +1007,6 @@ val outVal_comment =
               "(* Compute output values *)",
               "(*-----------------------*)", ""]);
 
-fun mk_mon_stepFn mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
-     val stepFn_name = "stepFn"
-     val (inports,outports) = Lib.partition (fn (_,_,mode,_) => mode = "in") ports
-     val inputs    = map feature2port inports
-     val outputs   = map outCode_target outCode
-     val outVars   = map VarExp outputs
-     val outVarT   = mk_tuple outVars
-     val stateVars = map (fn (name,ty,exp) => VarExp name) ivardecs
-     val stateVarT = mk_tuple stateVars
-     val pre_stmts = map (fn (s,ty,exp) => (VarExp s, split_fby exp)) ivardecs
-     val init_code = map (fn (v,(e1,e2)) => (v, e1)) pre_stmts
-                     @ [(unitExp, mk_assignExp initStepVar (ConstExp(BoolLit false)))]
-     val step_code = map (fn (v,(e1,e2)) => (v, e2)) pre_stmts
-     val inportBs  = (mk_tuple(map (VarExp o portname) inputs),VarExp"inports")
-(*     val inportVs  = (mk_tuple(map (VarExp o portname) inputs),
-                      mk_tuple (map mk_parse inputs))
-*)
-     val stateBs   = (mk_tuple stateVars,VarExp"stateVars")
-     val outportBs = (mk_tuple(map VarExp outputs),VarExp"outports")
-     val pre_def   = localFnExp("pre",[VarExp"x"],VarExp"x")
-     val retTuple  = mk_tuple stateVars
-     val initExp   = letExp init_code retTuple
-     val stepExp   = letExp step_code retTuple
-     val condExp   = Fncall(("","IfThenElse"),[mk_deref initStepVar,initExp,stepExp])
-     val topBinds  = letExp ([inportBs,(* inportVs,*)
-                              stateBs,pre_def, stateVal_comment,
-                              (stateVarT,condExp),outVal_comment]
-                             @ zip outVars (map mk_outExp outCode))
-                            (mk_tuple [stateVarT,outVarT])
-  in
-    FnDec((fst qid,"stepFn"),
-          [("inports",dummyTy),("stateVars",dummyTy)],
-          dummyTy,
-          topBinds)
- end;
-
 (*---------------------------------------------------------------------------*)
 (* Takes a "code guarantee" and generates output code from it. There are 3   *)
 (* possible forms expected for the guarantee, depending on the output port   *)
@@ -1063,46 +1042,6 @@ fun mk_mon_stepFn mondec =
 (* ports and state variables only.                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_callFFI_out portName d =
-  Fncall(("API","callFFI"),[VarExp (Lib.quote ("put_"^portName)),d]);
-
-fun mk_output ports (gName,docstring,code) =
- case code
-  of Binop(Equal,e1,e2) =>
-      (case e1
-        of Fncall(("","event"),[VarExp p]) =>
-            mk_ite(e2,mk_callFFI_out p (VarExp (Lib.quote"")),
-                   unitExp)
-         | VarExp portName => mk_callFFI_out portName e2
-         | otherwise => raise ERR "mk_output"
-            "unexpected syntax in output port code spec")
-   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
-        (case e1
-          of Binop(And,Fncall(("","event"),[VarExp p]), Binop(Equal,VarExp p1,exp))
-             => mk_ite(b,mk_callFFI_out p exp, unitExp)
-           | otherwise => raise ERR "mk_output"
-                         "unexpected syntax in output port code spec")
-   | otherwise => raise ERR "mk_output" "unexpected syntax in output port code spec"
-
-
-fun mk_monFn mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,outCode) = mondec
-     val inputsVar = VarExp "inputs"
-     val theStateVar = VarExp "theState"
-     val stateValsVar = VarExp "stateVals"
-     val outputValsVar = VarExp "outputVals"
-     val inputsBind = (unitExp, Fncall(("","receiveInputs"),[unitExp]))
-     val inbufsBind = (inputsVar, Fncall(("","fill_input_buffers"),[unitExp]))
-     val stepRetBind = (mk_tuple[stateValsVar,outputValsVar],
-                        Fncall(("","stepFn"),[inputsVar,mk_deref theStateVar]))
-     val fill_outbufs = (unitExp, Fncall(("","fill_output_buffers"),[outputValsVar]))
-     val update_state = (unitExp, mk_assignExp theStateVar stateValsVar)
-     val outputsBind = (unitExp, Fncall(("","sendOutputs"),[unitExp]))
-     val bodyExp = letExp [inputsBind,inbufsBind,stepRetBind,
-                           fill_outbufs,update_state,outputsBind] unitExp
- in
-    FnDec((fst qid,"monFn"), [], dummyTy, bodyExp)
- end
 
 val comment1 =
   mk_comment ["",
@@ -1399,148 +1338,10 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
       )
  end;
 
-
-(*---------------------------------------------------------------------------*)
-(* Buffer sizes for messages declared in CM_Property_Set.                    *)
-(*---------------------------------------------------------------------------*)
-
-fun byteSize e = Binop(Divide,e,mk_uintLit 8);
-
-fun mk_buf pkgName (name,ty,dir,kind) =
- case ty
-  of NamedTy(pkg,tyName) =>
-     let val exp = Fncall(("Word8Array","array"),
-             [byteSize(VarExp("CM_Property_Set."^tyName^"_Bit_Codec_Max_Size")),
-              VarExp("Utils.w8zero")])
-     in ConstDec((pkgName,name^"Buf"),dummyTy, exp)
-     end
-  | otherwise => raise ERR "mk_buf" "expected a named type";
-
-fun is_data_port (name,ty,dir,kind) = not(kind = "EventPort");
-fun is_inport (name,ty,dir,kind) = (dir = "in")
-
-fun mk_fillFn inports =
- let val names = map (fn (name,ty,dir,kind) => name)  inports
-     val bufnames = map (fn p => p^"Buf") names
-     val bufVars = map VarExp bufnames
-     fun mk_clear v = (unitExp,Fncall(("Utils","clearBuf"),[v]))
-     fun mk_get name v = (unitExp,Fncall(("","#(api_get_"^name^")"),[emptyString,v]))
-     fun mk_b2s v = Fncall(("Utils","buf2string"),[v])
-     val clears = map mk_clear bufVars
-     val gets = map2 mk_get names bufVars
-     val strings = mk_tuple (map mk_b2s bufVars)
-     val bodyExp = letExp (clears @ gets) strings
- in
-  FnDec (("","fill_input_buffers"),[],dummyTy, bodyExp)
- end
-
-fun mk_stateVardecs n =
-  let val NoneExp = ConstrExp(("","Option"),"None",[])
-      val nexpList = map (K NoneExp) (upto 1 n)
-      val Some_True_Exp = ConstrExp(("","Option"),"Some",[ConstExp(BoolLit true)])
-      val intial_stateVar_contents = Some_True_Exp::nexpList
-      val refTuple = Fncall(("","Ref"),[mk_tuple nexpList])
-  in ConstDec(("","theState"),dummyTy, refTuple)
-  end
-
-(*---------------------------------------------------------------------------*)
-(* Monitor declaration results in                                            *)
-(*                                                                           *)
-(* - I/O buffers declared, one per port, sizes taken from CM_Property_Set    *)
-(* - declare maps (decoders) from buffers to datastructures                  *)
-(* - declare stateVars as refs to NONE                                       *)
-(* - declare stepFn and all related computational support                    *)
-(* - declare cycleFn                                                         *)
-(*---------------------------------------------------------------------------*)
-(*
-fun pp_monitor depth mondec =
- let val MonitorDec(qid,ports,latched,decs,ivardecs,guars) = mondec
-     val stepFn = mk_mon_stepFn mondec
-     val monFn = mk_monFn mondec
-     val dataports = filter is_data_port ports
-     val iobufdecs = map (mk_buf (fst qid)) dataports
-     val infiller_dec = mk_fillFn (filter is_inport dataports)
-     val stateVars_dec = mk_stateVardecs (length ivardecs)
-     val decs1 = iobufdecs @ [infiller_dec,stateVars_dec] @ decs @ [stepFn,monFn]
-     val decs2 = stateVars_dec :: (decs @ [stepFn])
- in
-  end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) (fst qid)) decs2
- end
-*)
-
-fun pp_api (structName,inbufs,fillFns,sendFns,logInfo) =
- let open PolyML
-     val depth = ~1
-     fun pp_inbuf d (bufName,n) =
-         PrettyBlock(2,true,[],
-           [PrettyString "val ", PrettyString bufName, PrettyString " = " ,
-            PrettyString "Word8Array.array ", PrettyString (Int.toString n),
-            PrettyString " Utils.w8zero;"
-           ])
-     fun pp_fillFn d (bufName,api_call) =
-         PrettyBlock(2,true,[],
-           [PrettyString"fun ", PrettyString ("fill_"^bufName), PrettyString " () = " ,
-            Line_Break,
-            PrettyBlock(0,true,[],
-               [PrettyString "let val () = Utils.clear_buf ",
-                PrettyString bufName, Line_Break,
-                 PrettyString "in ", PrettyString api_call, Line_Break,
-                 PrettyString "end;"])
-           ])
-     fun pp_sendFn d (portName,api_call) =
-         PrettyBlock(2,true,[],
-           [PrettyString"fun ", PrettyString ("send_"^portName), PrettyString " string = " ,
-            PrettyString api_call
-           ])
- in
-    PrettyBlock(0,true,[],
-        [PrettyString ("structure "^structName^" = "), Line_Break,
-         PrettyString "struct", Line_Break_2,
-         end_pp_list Line_Break Line_Break (pp_inbuf  depth) inbufs,  Line_Break,
-	 Line_Break,
-         end_pp_list Line_Break Line_Break (pp_fillFn depth) fillFns, Line_Break,
-	 Line_Break,
-         end_pp_list Line_Break Line_Break (pp_sendFn depth) sendFns, Line_Break,
-	 Line_Break,
-         PrettyString logInfo,
-         Line_Break,
-	 Line_Break,
-         PrettyString "end"
-        ])
- end
-
-(*---------------------------------------------------------------------------*)
-(* Add in projection functions, and tranform expressions with field          *)
-(* projections.                                                              *)
-(*---------------------------------------------------------------------------*)
-(*
-
-fun pp_pkg depth (Pkg(pkgName,(types,consts,filters,monitors))) =
- let open PolyML
-     val projFns = mk_recd_projns types
-     val consts' = projFns @ consts
- in if depth = 0 then PrettyString "<decl>"
-   else
-    PrettyBlock(2,true,[],
-        [PrettyString ("structure "^pkgName^" = "), Line_Break,
-         PrettyString "struct", Line_Break_2,
-         end_pp_list Line_Break Line_Break (pp_tydec (depth-1) pkgName) types,   Line_Break,
-         end_pp_list Line_Break Line_Break (pp_tmdec (depth-1) pkgName) consts', Line_Break,
-         end_pp_list Line_Break Line_Break (pp_monitor (depth-1)) monitors,      Line_Break,
-         PrettyString "end"
-        ])
- end
-*)
-
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn ty => pp_cake_ty i "<pkg>" ty);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_cake_exp  i "<pkg>" triv_env e);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tydec => pp_tydec i "<pkg>" tydec);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn tmdec => pp_tmdec i "<pkg>" triv_env tmdec);
-(*
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn mon => pp_monitor i mon);
-val _ = PolyML.addPrettyPrinter (fn i => fn () => fn pkg => pp_pkg i pkg);
-*)
-
 
 
 end (* PP_CakeML *)

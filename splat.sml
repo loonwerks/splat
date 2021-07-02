@@ -239,7 +239,6 @@ fun mk_gadgets pkgs = snd (rev_itlist configure pkgs (([],[]),[]));
 val empty_varE = PP_CakeML.empty_varE;
 val assocFn = PP_CakeML.assocFn;
 val transRval = PP_CakeML.transRval;
-val transRval_decl = PP_CakeML.transRval_decl;
 val mk_tyE = PP_CakeML.mk_tyE;
 val mk_constE = PP_CakeML.mk_constE;
 val mk_recd_projns = PP_CakeML.mk_recd_projns;
@@ -278,7 +277,7 @@ fun ivarE ivars =
 
 fun transRval_gadget E gadget =
  let val Gadget (qid,tydecs, tmdecs, ports,ivardecs,guars) = gadget
-     val tmdecs'  = map (transRval_decl E) tmdecs
+     val tmdecs'  = map (transRval_dec E) tmdecs
      val tmdecs'' = mk_recd_projns tydecs @ tmdecs'
      val varE     = catE (portE ports) (ivarE ivardecs)
      val ivardecs' = map (trans_ivardec (E,varE)) ivardecs

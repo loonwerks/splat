@@ -26,7 +26,6 @@ sig
     val assocFn        : (''a * 'b) list -> ''a -> 'b option
     val transRval      : ((qid -> ty option) * (id -> ty option)) * (id -> ty option)
                           -> exp -> exp
-    val transRval_decl : (qid -> ty option) * (id -> ty option) -> tmdec -> tmdec
     val tydec_to_ty    : tydec -> ty
     val contig_to_exp  : (string * contig) list -> contig -> exp
     val AppExp         : exp list -> exp
