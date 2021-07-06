@@ -26,3 +26,5 @@ fun loop () =
 fun start () = (pacer_emit(); loop());
 
 end (* Control *)
+
+val _ = val _ = Control.start();
