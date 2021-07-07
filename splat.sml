@@ -16,7 +16,7 @@ val ERR = Feedback.mk_HOL_ERR "splat";
 
 fun printHelp() =
   MiscLib.stdErr_print
-    ("Usage: splat [-target (hamr | standalone)]\n\
+    ("Usage: splat [-target (Hamr | Standalone)]\n\
      \             [-outdir <dirname>]\n\
      \             [-intwidth <int>]\n\
      \             [-endian (LSB | MSB)]\n\
@@ -43,9 +43,9 @@ val FLAGS =
 
 fun set_target s =
   case !(#target FLAGS)
-    of NONE => (#target FLAGS := SOME "Standalone")
-     | SOME "standalone" => ()
-     | SOME "hamr" => ()
+    of NONE => (#target FLAGS := SOME "Hamr")
+     | SOME "Hamr" => (#target FLAGS := SOME "Hamr")
+     | SOME "Standalone" => (#target FLAGS := SOME "Standalone")
      | SOME other => fail()
 
 fun set_codegen lang =
@@ -142,7 +142,7 @@ fun parse_args args =
               set_codegen "CakeML";
               set_outDir "./splat_outputs";
               set_intwidth "32";
-              set_endian "MSB";
+              set_endian "LSB";
               set_encoding "Twos_comp";
               set_preserve_model_nums false
             end
@@ -479,17 +479,30 @@ fun set_type_constrs gdt =
 (*---------------------------------------------------------------------------*)
 (* CakeML uses case to distinguish datatype constructors from variables      *)
 (* (val bindings, fun params, etc). Constructors start with an upper case    *)
-(* letter. Variables start with lower case. We have a pass lowering all      *)
-(* names that don't comply. Probably need a corresponding                    *)
-(* "upper-case-ification" for any constructors that happen to start with a   *)
-(* lower case letter.                                                        *)
-(*                                                                           *)
+(* letter. Variables start with lower case. "set_defs_lower_case" is a pass  *)
+(* lowering all const and fun names that don't comply. Probably need a       *)
+(* corresponding "upper-case-ification" for any constructors that happen to  *)
+(* start with a lower case letter.                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun set_vars_lower_case gdt =
+fun svariants start vlist =
+ let fun fresh v (freshV,supp) =
+      let val v' = MiscLib.numeric_string_variant "_" supp v
+      in (v' :: freshV, v'::supp)
+      end
+ in
+     fst(itlist fresh vlist ([],start))
+ end;
+
+fun is_upper s = 0 < String.size s andalso Char.isUpper (String.sub(s,0));
+val mk_low = String.map Char.toLower
+
+(*
+FOO;
+*)
+fun set_defs_lower_case gdt =
  let open AST
    val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
-   val mk_low = String.map Char.toLower
    fun mk_low_qid (qid as (s1,s2)) acc =
        if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
           acc
@@ -497,6 +510,23 @@ fun set_vars_lower_case gdt =
    val gqids = gadgetQids gdt []
    val theta = itlist mk_low_qid gqids []
 
+(*   fun tmdecIds tmdec set =
+    case tmdec
+     of ConstDec (qid,ty,exp) => AST.expIds exp (insert (snd qid) set)
+      | FnDec (qid,params,rty,exp) =>
+         let val pIds = map fst params
+AST.expIds exp (insert (snd qid) set);
+fun ivardec_qids (s,ty,exp) set = AST.expQids exp set
+fun guar_qids (s1,s2,exp) set = AST.expQids exp set
+
+fun gadgetQids gdt set =
+ let val Gadget(qid,_,tmdecs,_,ivars,guars) = gdt
+     val set1 = itlist tmdec_qids tmdecs set
+     val set2 = itlist ivardec_qids ivars set1
+     val set3 = itlist guar_qids guars set2
+ in set3
+ end
+*)
    fun subTy ty =   (* Not sure this is needed right now *)
     case ty
      of RecdTy(qid,flist) => RecdTy (qid,map (I##subTy) flist)
@@ -552,15 +582,6 @@ fun set_ports_and_ivars_lower_case gdt =
            map substPort ports,
            map (substIvar theta) ivars,
            map (substGuar theta) guars)
- end;
-
-fun svariants start vlist =
- let fun fresh v (freshV,supp) =
-      let val v' = MiscLib.numeric_string_variant "_" supp v
-      in (v' :: freshV, v'::supp)
-      end
- in
-     fst(itlist fresh vlist ([],start))
  end;
 
 (*
@@ -786,6 +807,7 @@ val ByteContig_Src = getFile "Lego/ByteContig.cml";
 val basis_ffi_Src  = getFile "Lego/basis_ffi.c";
 val Makefile_Src   = getFile "Lego/Makefile";
 val Control_Src    = getFile "Lego/Control";
+val Make_Sh_Src    = getFile "Lego/make.sh";
 
 (* val Cake_Src       = getFile "Lego/cake.S"; *)
 
@@ -806,6 +828,11 @@ fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
      val ostrm = TextIO.openOut "Makefile"
      val () = TextIO.output(ostrm, Makefile_Src)
      val () = TextIO.closeOut ostrm
+     val _ = stdErr_print ("  Writing make.sh\n")
+     val ostrm = TextIO.openOut "make.sh"
+     val () = TextIO.output(ostrm, Make_Sh_Src)
+     val () = TextIO.closeOut ostrm
+     val _ = OS.Process.system "chmod +x make.sh" handle _ => OS.Process.failure
      val gadgetFile = gadgetName^".cml"
      val () = stdErr_print ("  Writing "^gadgetFile^"\n")
      val ostrm = TextIO.openOut gadgetFile
@@ -841,7 +868,7 @@ fun process_model jsonFile =
      val gdts = apply gdts1
                  [map corrall_rogue_vars,
                   map set_type_constrs,
-                  map set_vars_lower_case,
+                  map set_defs_lower_case,
                   map set_ports_and_ivars_lower_case,
                   elim_projections tyE tmE,
                   map set_Defs_struct,
