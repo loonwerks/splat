@@ -43,13 +43,6 @@ in end;
                  * (string * ty * exp) list
                  * (string * string * exp) list
 
-(*
-datatype port
-    = Event of string
-    | Data of string * ty
-    | EventData of string * ty
-*)
-
 type decls =
   (* pkgName *)   string
   (* types *)     * (tydec list *
@@ -994,7 +987,8 @@ fun get_monitor comp =
      val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
      val eq_stmts   = mapfilter dest_eq_or_property_stmt others
      val guar_stmts = mapfilter dest_guar_stmt others
-     val code_guars = filter (C mem codespecNames o #1) guar_stmts
+     fun is_code_guar (s,_,_) = Lib.mem s codespecNames
+     val code_guars = filter is_code_guar guar_stmts
  in
      MonitorDec(qid, ports, is_latched, decs, eq_stmts, code_guars)
  end
@@ -1099,7 +1093,6 @@ fun scrape pkg =
             val comp_fndecls =  List.concat(mapfilter mk_comp_defs complist)
             val filters = mapfilter get_filter complist
             val monitors = mapfilter get_monitor complist
-(*            val mon_fndecls = List.concat (map decs_of_monitor monitors) *)
         in
            (pkgName,(tydecls,annex_fndecls@comp_fndecls,filters, monitors))
         end
@@ -1118,9 +1111,9 @@ fun dest_with ("with", List wlist) = map dropString wlist
 fun uptoWith string lo hi =
   print
    (String.concat
-     ["[", String.concatWith ","
+     ["val [", String.concatWith ","
             (map (fn i => string^Int.toString i) (upto lo hi)),
-     "]\n"]);
+     "] = \n"]);
 
 (*
 uptoWith "comp" 1 108;
@@ -1261,5 +1254,37 @@ fun called_by (FnDec((_,id),_,_,_)) (FnDec(_,_,_,exp)) =
   | called_by (ConstDec((_,id),_,_)) (ConstDec (_,_,exp)) = mem id (expIds exp []);
 
 fun sort_tmdecs list = topsort called_by list;
+
+
+(*
+fun uses (A as AList (("name", String AName) ::
+                           ("kind", String "AadlPackage") ::
+                           ("public", AList publist):: _))
+              (B as AList (("name", String BName) :: _)) =
+          let val Auses = List.concat (mapfilter dest_with publist)
+          in mem BName Auses
+          end
+       | uses other wise = false
+
+val pkgs0 =
+  case jpkg
+   of List pkgs => pkgs
+    | AList alist => dropList (assoc "modelUnits" alist)
+
+val opkgs = rev (topsort uses pkgs0)
+val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14,pkg15] = opkgs;
+
+val modlist = mapfilter scrape
+    [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14];
+
+scrape pkg15;  (* the only relevant one *)
+
+
+val modlist = mapfilter scrape opkgs
+val modlist' = replace_null_fields modlist
+val modlist'' = map extend_recd_decs modlist'
+val modlist''' = filter (not o empty_pkg) modlist''
+
+*)
 
 end

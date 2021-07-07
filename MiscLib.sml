@@ -452,8 +452,8 @@ fun suffix_string_variant suffix =
  in gen_variant delta
  end
 
-fun numeric_string_variant spacer  =
- let val counter = ref 0
+fun numeric_string_variant spacer =
+ let val counter = ref 1
      fun delta s =
       let val s' = String.concat [s,spacer,Int.toString (!counter)]
       in counter := !counter + 1;

@@ -289,5 +289,118 @@ fun twos_compBE bytes =
 fun unsignedLE bytes = unsignedBE (List.rev bytes)
 fun twos_compLE bytes = twos_compBE (List.rev bytes)
 
+(*---------------------------------------------------------------------------*)
+(* Have to implement Double on ARM8 by going through C calls.                *)
+(*---------------------------------------------------------------------------*)
+
+fun double_negate n =
+  let val buf = Word8Array.array 8 (Word8.fromInt 0)
+      val _ = pack_double buf 0 n
+      val s = Word8Array.substring buf 0 8
+      val _ = #(DoubleNeg) s buf
+      val r = unpack_double buf 0
+  in
+    r
+  end;
+
+fun double_add lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleAdd) s buf
+      val r = unpack_double buf 0
+  in
+    r
+  end;
+
+fun double_sub lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleSub) s buf
+      val r = unpack_double buf 0
+  in
+    r
+  end;
+
+fun double_mult lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleMult) s buf
+      val r = unpack_double buf 0
+  in
+    r
+  end;
+
+fun double_div lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleDiv) s buf
+      val r = unpack_double buf 0
+  in
+    r
+  end;
+
+fun double_eq lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleEQ) s buf
+      val r = boolVal (Word8.toInt (Word8Array.sub buf 0))
+  in
+    r
+  end;
+
+fun double_lt lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleLT) s buf
+      val r = boolVal (Word8.toInt (Word8Array.sub buf 0))
+  in
+    r
+  end;
+
+fun double_gt lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleGT) s buf
+      val r = boolVal (Word8.toInt (Word8Array.sub buf 0))
+  in
+    r
+  end;
+
+fun double_lte lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleLE) s buf
+      val r = boolVal (Word8.toInt (Word8Array.sub buf 0))
+  in
+    r
+  end;
+
+fun double_gte lop rop =
+  let val buf = Word8Array.array 16 (Word8.fromInt 0)
+      val _ = pack_double buf 0 lop
+      val _ = pack_double buf 8 rop
+      val s = Word8Array.substring buf 0 16
+      val _ = #(DoubleGE) s buf
+      val r = boolVal (Word8.toInt (Word8Array.sub buf 0))
+  in
+    r
+  end;
+
 
 end (* Utils *)

@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <assert.h>
+#include <math.h>
 
 /* This flag is on by default. It catches CakeML's out-of-memory exit codes
  * and prints a helpful message to stderr.
@@ -248,25 +249,129 @@ void ffidouble_toString (unsigned char *c, long clen, unsigned char *a, long ale
   assert (bytes_written <= 255);
 }
 
-void ffifloat2double(unsigned char *parameter, long parameterSizeBytes,
-                     unsigned char *output,    long outputSizeBytes)
-{
-  char bytes [4];
-  assert (4 == parameterSizeBytes);
-  /* reverse cuz big-endian for UXAS */
-  bytes[3] = parameter[0];
-  bytes[2] = parameter[1];
-  bytes[1] = parameter[2];
-  bytes[0] = parameter[3];
-
-  double result = *((float*)bytes);
-  memcpy(output, (unsigned char*) &result, sizeof(double));
-}
-
-// Promotes a float to a double for the current architecture.
+// Promotes a float two a double for the current architecture.
 void ffifloat2doublePromote(unsigned char *parameter, long parameterSizeBytes,
                      unsigned char *output,    long outputSizeBytes) {
 
   double result = *((float*)parameter);
   memcpy(output, (unsigned char*) &result, sizeof(double));
+}
+
+// Double.fma: Word64.word -> Word64.word -> Word64.word -> Word64.word
+void ffiDoubleFma(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double x = *((double *)parameter);
+  double y = *((double *)(parameter + 8));
+  double z = *((double *)(parameter + 16));
+  
+  *((double *)output) = (x * y) + z;
+}
+
+// Double.+: Word64.word -> Word64.word -> Word64.word
+void ffiDoubleAdd(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *((double *)output) = lop + rop;
+}
+
+// Double.-: Word64.word -> Word64.word -> Word64.word
+void ffiDoubleSub(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *((double *)output) = lop - rop;
+}
+
+// Double.*: Word64.word -> Word64.word -> Word64.word
+void ffiDoubleMult(unsigned char *parameter, long parameterSizeBytes,
+                   unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *((double *)output) = lop * rop;
+}
+
+// Double./: Word64.word -> Word64.word -> Word64.word
+void ffiDoubleDiv(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *((double *)output) = lop / rop;
+}
+
+// Double.<: Word64.word -> Word64.word -> bool
+void ffiDoubleLT(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *output = (lop < rop);
+}
+
+// Double.>: Word64.word -> Word64.word -> bool
+void ffiDoubleGT(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *output = (lop > rop);
+}
+
+// Double.<=: Word64.word -> Word64.word -> bool
+void ffiDoubleLE(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *output = (lop <= rop);
+}
+
+
+// Double.>=: Word64.word -> Word64.word -> bool
+void ffiDoubleGE(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *output = (lop >= rop);
+}
+
+// Double.=: Word64.word -> Word64.word -> bool
+void ffiDoubleEQ(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  double rop = *((double *)(parameter + 8));
+  *output = (lop == rop);
+}
+
+// Double.abs: Word64.word -> Word64.word
+void ffiDoubleAbs(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  *((double *)output) = fabs(lop);
+}
+
+/*
+// Double.sqrt: Word64.word -> Word64.word
+void ffiDoubleSqrt(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  *((double *)output) = sqrt(lop);
+}
+*/
+
+// Double.~: Word64.word -> Word64.word
+void ffiDoubleNeg(unsigned char *parameter, long parameterSizeBytes,
+                 unsigned char *output,    long outputSizeBytes) {
+
+  double lop = *((double *)parameter);
+  *((double *)output) = -lop;
 }

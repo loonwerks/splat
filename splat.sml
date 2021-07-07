@@ -554,6 +554,86 @@ fun set_ports_and_ivars_lower_case gdt =
            map (substGuar theta) guars)
  end;
 
+fun svariants start vlist =
+ let fun fresh v (freshV,supp) =
+      let val v' = MiscLib.numeric_string_variant "_" supp v
+      in (v' :: freshV, v'::supp)
+      end
+ in
+     fst(itlist fresh vlist ([],start))
+ end;
+
+(*
+fun set_lower_case gdt =
+ let open AST
+   val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+
+   val mk_low = String.map Char.toLower
+   fun mk_low_qid (qid as (s1,s2)) acc =
+       if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
+          acc
+       else (qid |-> (s1,mk_low s2))::acc
+   val gqids = gadgetQids gdt []
+   val theta = itlist mk_low_qid gqids []
+
+   fun subTy ty =   (* Not sure this is needed right now *)
+    case ty
+     of RecdTy(qid,flist) => RecdTy (qid,map (I##subTy) flist)
+      | ArrayTy(ty,elist) => ArrayTy (subTy ty, map subExp elist)
+      | otherwise => ty
+   and
+   subExp (exp:exp) =
+   case exp
+    of VarExp _ => exp
+     | ConstExp (IdConst qid) => ConstExp(IdConst (substFn theta qid))
+     | ConstExp _ => exp
+     | Unop(opr,e) => Unop(opr,subExp e)
+     | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
+     | ArrayExp elist => ArrayExp(map subExp elist)
+     | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
+     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
+     | Fncall(qid,elist) => Fncall(substFn theta(qid), map subExp elist)
+     | RecdExp(qid,fields) => RecdExp(qid, map (I##subExp) fields)
+     | RecdProj(e,id) => RecdProj(subExp e,id)
+     | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
+   fun subDec tmdec =
+     case tmdec
+      of ConstDec(qid,ty,exp) =>
+         ConstDec(substFn theta qid,ty,subExp exp)
+       | FnDec(qid,params,rty,exp) =>
+         FnDec(substFn theta qid,params,rty,subExp exp)
+   fun subIvar (s,ty,exp) = (s,ty,subExp exp)
+   fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
+ in
+    Gadget(qid,tydecs,
+	   map subDec tmdecs,
+           ports,
+           map subIvar ivars,
+           map subGuar guars)
+ end;
+
+fun set_ports_and_ivars_lower_case gdt =
+ let open AST
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val portNames = map #1 ports
+     val ivarNames = map #1 ivars
+     val lower = String.map Char.toLower
+     fun mk_lowId id acc =
+	 if Char.isLower(String.sub(id,0)) then
+	     acc
+         else (VarExp id |-> VarExp (lower id))::acc
+     val theta = itlist mk_lowId (portNames@ivarNames) []
+     fun substId s = if Char.isLower(String.sub(s,0)) then s else lower s
+     fun substPort (s,ty,dir,kind) = (substId s,ty,dir,kind)
+     fun substIvar theta (s,ty,exp) = (substId s,ty,substExp theta exp)
+     fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
+ in Gadget(qid,tydecs,tmdecs,
+           map substPort ports,
+           map (substIvar theta) ivars,
+           map (substGuar theta) guars)
+ end;
+*)
+
 (*---------------------------------------------------------------------------*)
 (* Replace all "event inport" syntax by "event_inport" variables. Then       *)
 (* replace all "inport" variables by "valOf inport" calls. If the user has   *)
@@ -776,11 +856,10 @@ fun process_model jsonFile =
 
 (*
 val jsonFile = "examples/SW.json";
-val args = [jsonFile];
-val thyName = "SW";
-val dir = ".";
+val jsonFile = "examples/UAS.json";
+val jsonFile = "examples/uxaslite.json";
 
-val (apis,parsers,defs,gdt_pps,gdts) = process_model "examples/SW.json";
+val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
 val [gdt1, gdt2, gdt3] = gdts;
 val [api1,api2,api3] = apis;
 val [p1,p2,p3] = parsers;

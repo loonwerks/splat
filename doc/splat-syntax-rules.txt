@@ -1,9 +1,19 @@
 SPLAT Syntax.
 -----------------
 
-Splat takes in architecture models in a restricted subset of
-AADL+AGREE. If Splat is given a model whose syntax is outside this
-subset it will certainly fail to produce code the from the model.
+ Splat generates code for filters, monitors, and gates expressed in a
+restricted, but expressive, subset of AADL+AGREE. If Splat is given a
+model whose syntax is outside this subset it will certainly fail to
+produce code from the model. If, however, it is given a properly
+expressed model, it will producte CakeML code that will be compiled
+into the final system by HAMR.
+
+The current version of Splat does not generate proofs as part of its
+execution; that will be added in the next phase of work.
+
+
+Expected Syntax of Specifications.
+----------------------------------
 
 Briefly:
 
@@ -14,8 +24,10 @@ Briefly:
    [Restrictions? E.G. array initialization ...]
 
  - Basic AGREE types (int, real) denote mathematical numbers and so
-   are unbounded. Splat will map an int to a default bitwidth
-   (currently 32), settable when Splat is invoked.
+   are unbounded. Splat will map an int to a default bitwidth and
+   interpretation (currently bits = 32, format is little-endian, and
+   encoding is twos-complement), settable when Splat is
+   invoked.
 
  - Splat doesn't currently support
 
@@ -23,8 +35,8 @@ Briefly:
       * Lustre node definitions
 
 
-Code Guarantees.
-----------------
+Code Guarantees Have an Expected Form
+--------------------------------------
 
 A "Code Guarantee" is a guarantee able to be interpreted by the Splat
 code generator. It specifies how the component outputs are to be
@@ -49,7 +61,8 @@ depending on the output port type.
 
       if exp1 then
         event (port) and port = exp2
-      else not (event port)
+      else
+        not (event port);
 
     This checks the condition exp1 to see whether an event on port will
     happen, and exp2 gives the output value if so. Note that any input
@@ -59,3 +72,17 @@ depending on the output port type.
 In all of 1,2,3, the expressions should not mention any output ports,
 i.e. the value to be sent out is determined by a computation over input
 ports and state variables only.
+
+
+Syntactic Restrictions and Things to be Aware of
+-------------------------------------------------
+
+1. `eq` statements are assumed to be written in dependency order
+
+1a. Discussion of input, initialization, nad e1 -> e2
+
+2. Array indices in AGREE/AADL are 1-based
+
+3. Decoders are there; encoders are not. This means that output ports
+   can either pass on (or not) the contents of input ports, but that
+   sending *other* kinds of data out is not currently supported.

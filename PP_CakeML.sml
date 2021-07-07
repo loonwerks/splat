@@ -158,7 +158,7 @@ fun pp_cake_exp depth pkgName env exp =
       | ConstExp (FloatLit r) =>
           if Real.sign r < 0 then
             PrettyString (String.concat
-              ["(Double.~(Double.fromString ",
+              ["(Utils.double_negate(Double.fromString ",
                Lib.quote (Real.toString (Real.abs r)), "))"])
           else
             PrettyString (String.concat
@@ -168,57 +168,61 @@ fun pp_cake_exp depth pkgName env exp =
             PrettyString"(",pp_cake_exp (depth-1) pkgName env e,PrettyString")"])
       | Unop(UMinus,ConstExp(FloatLit r)) =>
            PrettyString (String.concat
-              ["(Double.~(Double.fromString ",
+              ["(Utils.double_negate(Double.fromString ",
                Lib.quote (Real.toString (Real.abs r)), "))"])
       | Unop(UMinus,ConstExp(IntLit{value,...})) => PrettyString ("~"^Int.toString value)
       | Unop(UMinus,e) =>
          if is_float env e then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.~"),[e]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_negate"),[e]))
          else
            PrettyBlock(2,true,[],
             [PrettyString"~(", pp_cake_exp (depth-1) pkgName env e, PrettyString")"])
       | Binop(Or,e1,e2) => pp_infix depth pkgName env ("orelse",e1,e2)
       | Binop(And,e1,e2) => pp_infix depth pkgName env ("andalso",e1,e2)
-      | Binop(Equal,e1,e2) => pp_infix depth pkgName env ("=",e1,e2)
-      | Binop(NotEqual,e1,e2) => pp_infix depth pkgName env ("<>",e1,e2)
+      | Binop(Equal,e1,e2) =>
+         if is_float env e1 orelse is_float env e2 then
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_eq"),[e1,e2]))
+         else
+           pp_infix depth pkgName env ("=",e1,e2)
+      | Binop(NotEqual,e1,e2) => pp_cake_exp depth pkgName env (Unop(Not,Binop(Equal,e1,e2)))
       | Binop(Greater,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.>"),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_gt"),[e1,e2]))
          else
             pp_infix depth pkgName env (">",e1,e2)
       | Binop(GreaterEqual,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.>="),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_gte"),[e1,e2]))
          else
             pp_infix depth pkgName env (">=",e1,e2)
       | Binop(Less,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.<"),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_lt"),[e1,e2]))
          else
             pp_infix depth pkgName env ("<",e1,e2)
       | Binop(LessEqual,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.<="),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_lte"),[e1,e2]))
          else
             pp_infix depth pkgName env ("<=",e1,e2)
       | Binop(Minus,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.-"),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_sub"),[e1,e2]))
          else
             pp_infix depth pkgName env ("-",e1,e2)
       | Binop(Multiply,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.*"),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_mult"),[e1,e2]))
          else
             pp_infix depth pkgName env ("*",e1,e2)
       | Binop(Plus,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double.+"),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_add"),[e1,e2]))
          else
             pp_infix depth pkgName env ("+",e1,e2)
       | Binop(Divide,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
-             pp_cake_exp (depth-1) pkgName env (Fncall (("","Double./"),[e1,e2]))
+             pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_div"),[e1,e2]))
          else
              pp_cake_exp depth pkgName env (Fncall (("","Int.div"),[e1,e2]))
       | Binop(Modulo,e1,e2) =>
