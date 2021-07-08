@@ -1317,7 +1317,8 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
             Space,
             PrettyString "in", Space,
             outputCalls, Space,
-            PrettyString"end"
+            PrettyString"end", Space,
+            PrettyString "handle _ => (API.logInfo \"gadgetFn: exception raised (and caught); continuing\"; ())"
           ])
        end
  in
