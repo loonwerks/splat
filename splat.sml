@@ -177,11 +177,9 @@ fun alistFn alist x = assoc x alist;
 
 open AST AADL;
 
-type port = string * ty * string * string;  (* (id,ty,dir,kind) *)
-
+type port    = string * ty * string * string;  (* (id,ty,dir,kind) *)
 type ivardec = string * ty * exp;
-
-type guar = string * string * exp;
+type guar    = string * string * exp;
 
 datatype gadget =
  Gadget of qid
@@ -494,73 +492,204 @@ fun svariants start vlist =
      fst(itlist fresh vlist ([],start))
  end;
 
+val svariant = MiscLib.numeric_string_variant "_";
+
+fun insertList list set = itlist insert list set;
+fun id_of_qid (pkg,s) = if String.size pkg = 0 then "" else s;
+
+fun gadgetIds gdt set =
+ let fun expIds exp set =
+      case exp
+       of VarExp id => insert id set
+        | ConstExp (IdConst qid) => insert (id_of_qid qid) set
+        | ConstExp _ => set
+        | Unop(opr,e) => expIds e set
+        | Binop(opr,e1,e2) => expIds e2 (expIds e1 set)
+        | ArrayExp elist => itlist expIds elist set
+        | ArrayIndex(e,elist) => itlist expIds (e::elist) set
+        | ConstrExp((_,id1),id2,elist) => itlist expIds elist set
+        | Fncall(qid,elist) => itlist expIds elist (insert (id_of_qid qid) set)
+        | RecdExp(qid,fields) => itlist expIds (map snd fields) set
+        | RecdProj(e,id) => expIds e set
+        | Quantified(q,qvars,e) => set
+
+     fun tyExpIds ty set =
+      case ty
+       of BaseTy _ => set
+       | NamedTy (_,id) => set
+       | RecdTy((_,id),flist) => itlist (tyExpIds o snd) flist set
+       | ArrayTy(ty,elist) => tyExpIds ty (itlist expIds elist set)
+
+      fun tydecIds tydec set = (* constants can occur in array decs *)
+       case tydec
+        of EnumDec (qid, slist) => set
+         | RecdDec (qid, flds) => itlist tyExpIds (map snd flds) set
+         | ArrayDec (qid,ty) => tyExpIds ty set
+         | UnionDec (qid, constrs) =>
+           let fun constrIds (cname,ty) set = tyExpIds ty set
+           in itlist constrIds constrs set
+           end
+
+      fun tmdecIds tmdec set =
+        case tmdec
+         of ConstDec (qid,ty,exp) =>
+               expIds exp (tyExpIds ty (insert (id_of_qid qid) set))
+          | FnDec (qid,params,rty,exp) =>
+             let val (pIds,ptys) = unzip params
+             in
+              expIds exp
+                 (itlist tyExpIds ptys
+                      (insertList (id_of_qid qid :: pIds) set))
+             end
+      fun portIds (name,ty,_,_) set = tyExpIds ty (insert name set);
+      fun ivardecIds (s,ty,exp) set = expIds exp (tyExpIds ty (insert s set));
+      fun guarIds (s1,s2,exp) set = expIds exp set;
+      val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+ in
+       itlist guarIds guars
+        (itlist ivardecIds ivars
+          (itlist portIds ports
+            (itlist tmdecIds tmdecs
+              (itlist tydecIds tydecs set))))
+ end;
+
 fun is_upper s = 0 < String.size s andalso Char.isUpper (String.sub(s,0));
+fun is_lower s = 0 < String.size s andalso Char.isLower (String.sub(s,0));
 val mk_low = String.map Char.toLower
 
+fun mk_low_qid (qid as (s1,s2)) (acc as (binds,taken)) =
+ if s1 = "" orelse is_lower s2 then
+    acc
+ else
+   let val s2' = svariant taken (mk_low s2)
+   in ((qid |-> (s1,s2'))::binds, s2' :: taken)
+   end
+
 (*
-FOO;
-*)
-fun set_defs_lower_case gdt =
+fun set_sig_lower_case gdt =
  let open AST
    val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
-   fun mk_low_qid (qid as (s1,s2)) acc =
-       if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
-          acc
-       else (qid |-> (s1,mk_low s2))::acc
-   val gqids = gadgetQids gdt []
-   val theta = itlist mk_low_qid gqids []
-
-(*   fun tmdecIds tmdec set =
-    case tmdec
-     of ConstDec (qid,ty,exp) => AST.expIds exp (insert (snd qid) set)
-      | FnDec (qid,params,rty,exp) =>
-         let val pIds = map fst params
-AST.expIds exp (insert (snd qid) set);
-fun ivardec_qids (s,ty,exp) set = AST.expQids exp set
-fun guar_qids (s1,s2,exp) set = AST.expQids exp set
-
-fun gadgetQids gdt set =
- let val Gadget(qid,_,tmdecs,_,ivars,guars) = gdt
-     val set1 = itlist tmdec_qids tmdecs set
-     val set2 = itlist ivardec_qids ivars set1
-     val set3 = itlist guar_qids guars set2
- in set3
- end
-*)
-   fun subTy ty =   (* Not sure this is needed right now *)
-    case ty
-     of RecdTy(qid,flist) => RecdTy (qid,map (I##subTy) flist)
-      | ArrayTy(ty,elist) => ArrayTy (subTy ty, map subExp elist)
-      | otherwise => ty
-   and
-   subExp (exp:exp) =
-   case exp
-    of VarExp _ => exp
-     | ConstExp (IdConst qid) => ConstExp(IdConst (substFn theta qid))
-     | ConstExp _ => exp
-     | Unop(opr,e) => Unop(opr,subExp e)
-     | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
-     | ArrayExp elist => ArrayExp(map subExp elist)
-     | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
-     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
-     | Fncall(qid,elist) => Fncall(substFn theta(qid), map subExp elist)
-     | RecdExp(qid,fields) => RecdExp(qid, map (I##subExp) fields)
-     | RecdProj(e,id) => RecdProj(subExp e,id)
-     | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
+   val gQids = gadgetQids gdt []
+   val gIds = gadgetIds gdt []
+   val (UC,LC_0) = List.partition is_upper gIds
+   val LC = filter (fn s => 0 < String.size s) LC_0
+   val (theta,LC') = itlist mk_low_qid gqids ([],LC)
+   fun subExp (exp:exp) =
+     case exp
+      of VarExp _ => exp
+       | ConstExp (IdConst qid) => ConstExp(IdConst (substFn theta qid))
+       | ConstExp _ => exp
+       | Unop(opr,e) => Unop(opr,subExp e)
+       | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
+       | ArrayExp elist => ArrayExp(map subExp elist)
+       | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
+       | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
+       | Fncall(qid,elist) => Fncall(substFn theta(qid), map subExp elist)
+       | RecdExp(qid,fields) => RecdExp(qid, map (I##subExp) fields)
+       | RecdProj(e,id) => RecdProj(subExp e,id)
+       | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
+   fun subTyExp ty =
+      case ty
+       of BaseTy _ => ty
+        | NamedTy _ => ty
+        | RecdTy(qid,flist) => RecdTy(qid, map (I##subTyExp) flist)
+        | ArrayTy(ty,elist) => ArrayTy(subTyExp ty, map subExp elist)
    fun subDec tmdec =
      case tmdec
-      of ConstDec(qid,ty,exp) =>
-         ConstDec(substFn theta qid,ty,subExp exp)
-       | FnDec(qid,params,rty,exp) =>
-         FnDec(substFn theta qid,params,rty,subExp exp)
-   fun subIvar (s,ty,exp) = (s,ty,subExp exp)
+       of ConstDec(qid,ty,exp) =>
+          ConstDec(substFn theta qid,subTyExp ty,subExp exp)
+        | FnDec(qid,params,rty,exp) =>
+          FnDec(substFn theta qid,
+                map (I##subTyExp) params,
+                subTyExp rty,subExp exp)
+   fun subTyDec tydec =
+     case tydec
+      of EnumDec => tydec
+       | RecdDec (qid, flds) => RecdDec(qid, map (I##subTyExp) flds)
+       | ArrayDec (qid,ty) => ArrayDec(qid,subTyExp ty)
+       | UnionDec (qid, constrs) =>
+           let fun subConstr (cname,ty) = (cname,subTyExp ty)
+           in UnionDec(qid,map subConstr constrs)
+           end
+   fun subPort (n,ty,x,y) = (n,subTyExp ty,x,y)
+   fun subIvar (s,ty,exp) = (s,subTyExp ty,subExp exp)
    fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
  in
-    Gadget(qid,tydecs,
-	   map subDec tmdecs,
-           ports,
-           map subIvar ivars,
-           map subGuar guars)
+   Gadget(qid,
+          map subTyDec tydecs,
+          map subDec tmdecs,
+          map subPort ports,
+          map subIvar ivars,
+          map subGuar guars)
+ end;
+
+    fun set_ports_and_ivars_lower_case gdt =
+     let open AST
+         val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+         val portNames = map #1 ports
+         val ivarNames = map #1 ivars
+         val lower = String.map Char.toLower
+         fun mk_lowId id acc =
+    	 if Char.isLower(String.sub(id,0)) then
+    	     acc
+             else (VarExp id |-> VarExp (lower id))::acc
+         val theta = itlist mk_lowId (portNames@ivarNames) []
+         fun substId s = if Char.isLower(String.sub(s,0)) then s else lower s
+         fun substPort (s,ty,dir,kind) = (substId s,ty,dir,kind)
+         fun substIvar theta (s,ty,exp) = (substId s,ty,substExp theta exp)
+         fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
+     in Gadget(qid,tydecs,tmdecs,
+               map substPort ports,
+               map (substIvar theta) ivars,
+               map (substGuar theta) guars)
+     end;
+*)
+
+fun set_sig_lower_case gdt =
+ let open AST
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val mk_low = String.map Char.toLower
+     fun mk_low_qid (qid as (s1,s2)) acc =
+         if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
+            acc
+         else (qid |-> (s1,mk_low s2))::acc
+     val gqids = gadgetQids gdt []
+     val theta = itlist mk_low_qid gqids []
+
+     fun subTy ty =   (* Not sure this is needed right now *)
+      case ty
+       of RecdTy(qid,flist) => RecdTy (qid,map (I##subTy) flist)
+        | ArrayTy(ty,elist) => ArrayTy (subTy ty, map subExp elist)
+        | otherwise => ty
+     and
+     subExp (exp:exp) =
+     case exp
+      of VarExp _ => exp
+       | ConstExp (IdConst qid) => ConstExp(IdConst (substFn theta qid))
+       | ConstExp _ => exp
+       | Unop(opr,e) => Unop(opr,subExp e)
+       | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
+       | ArrayExp elist => ArrayExp(map subExp elist)
+       | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
+       | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
+       | Fncall(qid,elist) => Fncall(substFn theta(qid), map subExp elist)
+       | RecdExp(qid,fields) => RecdExp(qid, map (I##subExp) fields)
+       | RecdProj(e,id) => RecdProj(subExp e,id)
+       | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
+     fun subDec tmdec =
+       case tmdec
+        of ConstDec(qid,ty,exp) =>
+           ConstDec(substFn theta qid,ty,subExp exp)
+         | FnDec(qid,params,rty,exp) =>
+           FnDec(substFn theta qid,params,rty,subExp exp)
+     fun subIvar (s,ty,exp) = (s,ty,subExp exp)
+     fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
+ in
+   Gadget(qid,tydecs,
+          map subDec tmdecs,
+          ports,
+          map subIvar ivars,
+          map subGuar guars)
  end;
 
 fun set_ports_and_ivars_lower_case gdt =
@@ -583,77 +712,6 @@ fun set_ports_and_ivars_lower_case gdt =
            map (substIvar theta) ivars,
            map (substGuar theta) guars)
  end;
-
-(*
-fun set_lower_case gdt =
- let open AST
-   val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
-
-   val mk_low = String.map Char.toLower
-   fun mk_low_qid (qid as (s1,s2)) acc =
-       if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
-          acc
-       else (qid |-> (s1,mk_low s2))::acc
-   val gqids = gadgetQids gdt []
-   val theta = itlist mk_low_qid gqids []
-
-   fun subTy ty =   (* Not sure this is needed right now *)
-    case ty
-     of RecdTy(qid,flist) => RecdTy (qid,map (I##subTy) flist)
-      | ArrayTy(ty,elist) => ArrayTy (subTy ty, map subExp elist)
-      | otherwise => ty
-   and
-   subExp (exp:exp) =
-   case exp
-    of VarExp _ => exp
-     | ConstExp (IdConst qid) => ConstExp(IdConst (substFn theta qid))
-     | ConstExp _ => exp
-     | Unop(opr,e) => Unop(opr,subExp e)
-     | Binop(opr,e1,e2) => Binop(opr,subExp e1,subExp e2)
-     | ArrayExp elist => ArrayExp(map subExp elist)
-     | ArrayIndex(e,elist) => ArrayIndex (subExp e, map subExp elist)
-     | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map subExp elist)
-     | Fncall(qid,elist) => Fncall(substFn theta(qid), map subExp elist)
-     | RecdExp(qid,fields) => RecdExp(qid, map (I##subExp) fields)
-     | RecdProj(e,id) => RecdProj(subExp e,id)
-     | Quantified(q,qvars,e) => Quantified(q,qvars,subExp e)
-   fun subDec tmdec =
-     case tmdec
-      of ConstDec(qid,ty,exp) =>
-         ConstDec(substFn theta qid,ty,subExp exp)
-       | FnDec(qid,params,rty,exp) =>
-         FnDec(substFn theta qid,params,rty,subExp exp)
-   fun subIvar (s,ty,exp) = (s,ty,subExp exp)
-   fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
- in
-    Gadget(qid,tydecs,
-	   map subDec tmdecs,
-           ports,
-           map subIvar ivars,
-           map subGuar guars)
- end;
-
-fun set_ports_and_ivars_lower_case gdt =
- let open AST
-     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
-     val portNames = map #1 ports
-     val ivarNames = map #1 ivars
-     val lower = String.map Char.toLower
-     fun mk_lowId id acc =
-	 if Char.isLower(String.sub(id,0)) then
-	     acc
-         else (VarExp id |-> VarExp (lower id))::acc
-     val theta = itlist mk_lowId (portNames@ivarNames) []
-     fun substId s = if Char.isLower(String.sub(s,0)) then s else lower s
-     fun substPort (s,ty,dir,kind) = (substId s,ty,dir,kind)
-     fun substIvar theta (s,ty,exp) = (substId s,ty,substExp theta exp)
-     fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
- in Gadget(qid,tydecs,tmdecs,
-           map substPort ports,
-           map (substIvar theta) ivars,
-           map (substGuar theta) guars)
- end;
-*)
 
 (*---------------------------------------------------------------------------*)
 (* Replace all "event inport" syntax by "event_inport" variables. Then       *)
@@ -706,16 +764,16 @@ fun gadget_tyEnvs gdt =
      (alistFn varE, alistFn tyE, alistFn tmE)
  end
 
-(*     fun chase n tyqid alist =
-       if n <= 0 then
-          raise ERR "gadget_tyEnvs" "possible cycle in type abbrevs"
-       else
-         case assoc1 qid alist
-          of SOME (_,NamedTy qid') => chase qid' (n-1)
-           | SOME (_, ty) => ty
-           | NONE => raise ERR "rgadget_tyEnvs"
-                     ("unknown type abbrev: "^qid_string qid)
-*)
+    (*     fun chase n tyqid alist =
+           if n <= 0 then
+              raise ERR "gadget_tyEnvs" "possible cycle in type abbrevs"
+           else
+             case assoc1 qid alist
+              of SOME (_,NamedTy qid') => chase qid' (n-1)
+               | SOME (_, ty) => ty
+               | NONE => raise ERR "rgadget_tyEnvs"
+                         ("unknown type abbrev: "^qid_string qid)
+    *)
 
 fun defs_struct_of gdt =
  let val tyEnvs = gadget_tyEnvs gdt
@@ -734,8 +792,7 @@ fun API_of (orig_gdt,gdt) =
 let val qid = gadget_qid gdt
     val (inports, outports) = get_ports gdt
     val tyE = assocFn (gadget_tyE gdt)
-
-    fun mk_inport_buf (iport as (id,ty,dir,kind)) =
+     fun mk_inport_buf (iport as (id,ty,dir,kind)) =
       let val contig = Gen_Contig.contig_of tyE (port_ty iport)
           val size = Gen_Contig.size_of trivEnv contig
           val esize = if kind = "EventDataPort" then size+1 else size
@@ -762,24 +819,24 @@ let val qid = gadget_qid gdt
     val logInfo = "fun logInfo s = #(api_logInfo) s Utils.emptybuf;"
     val fodder = ("API",inport_bufs,fillFns,sendFns,logInfo)
     val pretty = PP_CakeML.pp_api fodder
-in
-  pretty
-end;
+ in
+   pretty
+ end;
 
 fun parser_struct_of gdt =
-let val qid = gadget_qid gdt
-    val tydecs = gadget_tydecs gdt
-    val ports = gadget_ports gdt
-    val inports = filter is_in_port ports
-    val tyEalist = gadget_tyE gdt
-    val tyE = assocFn tyEalist
-    val contig_binds = map (I##Gen_Contig.contig_of tyE) tyEalist
-    val decoder_defs = Gen_Contig.decoders tyE tydecs
-    val fodder = ("Parse",inports, contig_binds, decoder_defs)
-    val pretty = PP_CakeML.pp_parser_struct fodder
-in
-  pretty
-end
+ let val qid = gadget_qid gdt
+     val tydecs = gadget_tydecs gdt
+     val ports = gadget_ports gdt
+     val inports = filter is_in_port ports
+     val tyEalist = gadget_tyE gdt
+     val tyE = assocFn tyEalist
+     val contig_binds = map (I##Gen_Contig.contig_of tyE) tyEalist
+     val decoder_defs = Gen_Contig.decoders tyE tydecs
+     val fodder = ("Parse",inports, contig_binds, decoder_defs)
+     val pretty = PP_CakeML.pp_parser_struct fodder
+ in
+   pretty
+ end
 
 fun gadget_struct_of gdt =
 let open AST
@@ -868,7 +925,7 @@ fun process_model jsonFile =
      val gdts = apply gdts1
                  [map corrall_rogue_vars,
                   map set_type_constrs,
-                  map set_defs_lower_case,
+                  map set_sig_lower_case,
                   map set_ports_and_ivars_lower_case,
                   elim_projections tyE tmE,
                   map set_Defs_struct,
@@ -885,6 +942,7 @@ fun process_model jsonFile =
 val jsonFile = "examples/SW.json";
 val jsonFile = "examples/UAS.json";
 val jsonFile = "examples/uxaslite.json";
+val jsonFile = "examples/SimpleFFA.json";
 
 val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
 val [gdt1, gdt2, gdt3] = gdts;

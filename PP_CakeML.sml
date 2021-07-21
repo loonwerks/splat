@@ -823,6 +823,8 @@ val boilerplate1 = String.concatWith "\n"
   "val char = unsigned 1;",
   "val u16  = unsigned 2;",
   "val u32  = unsigned 4;",
+  "val u64  = unsigned 8;",
+  "val i16  = signed 2;",
   "val i32  = signed 4;",
   "val i64  = signed 8;",
   "val f32  = ByteContig.Basic(ByteContig.Float);",
@@ -1093,8 +1095,8 @@ val gadget_struct_boilerplate = String.concatWith "\n"
 
 fun pp_gadget_struct env (structName,ports,ivars,guars) =
  let open PolyML
-     val ppExp = pp_cake_exp ~1 structName env
      val depth = ~1
+     val ppExp = pp_cake_exp depth structName env
      fun valBind (left,right) = ppBind (ppExp left) (ppExp right)
      fun valBinds vblist = end_pp_list Line_Break Line_Break valBind vblist
      fun letBinds (binds,exp) =
@@ -1198,6 +1200,11 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
           ])
        end
 
+     fun splice x [] = []
+       | splice x [y] = [y]
+       | splice x (h::t) = h::x::splice x t;
+
+     val gadgetFnId = "gadgetFn"
      val inportIds = map port_name inports
      val inportTyNames = map (ty_name o port_ty) inports
 
@@ -1211,14 +1218,9 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
 	       "  end;"]
            val strings = map2 inportParser_dec inportIds inportTyNames
        in
-         map PrettyString strings
+         PrettyString (String.concatWith "\n\n" strings)
        end
 
-     fun splice x [] = []
-       | splice x [y] = [y]
-       | splice x (h::t) = h::x::splice x t;
-
-     val gadgetFnId = "gadgetFn"
      val gadgetFn_dec =
        let val inportIds = map port_name inports
            val inportVars = map VarExp inportIds
@@ -1272,31 +1274,27 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
                  val srcId = dest_varexp srcVar
              in
               PrettyBlock(0,true,[],
-               ([PrettyString "let in", Line_Break,
-                PrettyString ("  case "^tgtId), Line_Break,
-                PrettyString "   of None => ()", Line_Break,
-                PrettyString "    | Some _ => "]
+               ([PrettyString ("case "^tgtId), Line_Break,
+                PrettyString   " of None => ()", Line_Break,
+                PrettyString   "  | Some _ => "]
                @
                (if mem tgtId out_signalIds
-                then [PrettyString ("API.send_"^tgtId^" \"\""),
-                      Line_Break, PrettyString "end"]
+                then [PrettyString ("API.send_"^tgtId^" \"\"")]
                 else
                 [Line_Break,
-                 PrettyString ("      let val len = Word8Array.length API."^srcId^"_buffer"),
+                 PrettyString ("    let val len = Word8Array.length API."^srcId^"_buffer"),
                  Line_Break,
-                 PrettyString ("      in API.send_"^tgtId),
+                 PrettyString ("    in API.send_"^tgtId),
                  Line_Break,
-                 PrettyString ("            (Word8Array.substring API."^srcId^"_buffer 1 (len-1))"),
+                 PrettyString ("          (Word8Array.substring API."^srcId^"_buffer 1 (len-1))"),
                  Line_Break,
-                 PrettyString  "      end",
-                 Line_Break,
-                 PrettyString  "end"
+                 PrettyString  "    end"
                 ])))
              end
 
-           val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break])
+           val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break_2])
            val outputCalls =
-             PrettyBlock(4,true,[], splice spacer (map guar_code guars))
+             PrettyBlock(2,true,[], splice spacer (map guar_code guars))
 
        in
 	   PrettyBlock(2,true,[],
@@ -1316,9 +1314,10 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
                valBind(mk_tuple outVars, VarExp"outputs")])),
             Space,
             PrettyString "in", Space,
+            PrettyString"  ",
             outputCalls, Space,
             PrettyString"end", Space,
-            PrettyString "handle _ => (API.logInfo \"gadgetFn: exception raised (and caught); continuing\"; ())"
+            PrettyString "handle _ => (API.logInfo \"gadgetFn: exception raised (and caught); continuing\"; ());"
           ])
        end
  in
@@ -1335,7 +1334,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
          Line_Break_2,
          stepFn_dec,
 	 Line_Break_2]
-      @  parseFn_decs
+      @ [parseFn_decs]
       @ [Line_Break_2,
          gadgetFn_dec,
  	 Line_Break_2,
