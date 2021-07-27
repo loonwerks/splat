@@ -832,7 +832,7 @@ fun parser_struct_of gdt =
      val tyE = assocFn tyEalist
      val contig_binds = map (I##Gen_Contig.contig_of tyE) tyEalist
      val decoder_defs = Gen_Contig.decoders tyE tydecs
-     val fodder = ("Parse",inports, contig_binds, decoder_defs)
+     val fodder = ("Parse",inports,contig_binds,decoder_defs)
      val pretty = PP_CakeML.pp_parser_struct fodder
  in
    pretty
@@ -840,16 +840,16 @@ fun parser_struct_of gdt =
 
 fun gadget_struct_of gdt =
 let open AST
-    val Gadget (qid, tydecs, tmdecs,ports,ivars,guars) = gdt
-    val fodder = (snd qid,ports, ivars, guars)
-    val tyEnvs = gadget_tyEnvs gdt
-    val pretty = PP_CakeML.pp_gadget_struct tyEnvs fodder
+    val Gadget (qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+    val fodder = (snd qid,ports,ivars,guars)
+    val env = gadget_tyEnvs gdt
+    val pretty = PP_CakeML.pp_gadget_struct env fodder
 in
   pretty
 end
 
 fun apply gdts [] = gdts
-  | apply gdts (f::t) = apply (f gdts) t ;
+  | apply gdts (f::t) = apply (f gdts) t;
 
 fun getFile path =
   let val istrm = TextIO.openIn path
@@ -943,6 +943,7 @@ val jsonFile = "examples/SW.json";
 val jsonFile = "examples/UAS.json";
 val jsonFile = "examples/uxaslite.json";
 val jsonFile = "examples/SimpleFFA.json";
+val jsonFile = "examples/WatchWordServer.json";
 
 val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
 val [gdt1, gdt2, gdt3] = gdts;
@@ -981,6 +982,6 @@ fun main () =
  end
  handle e =>
     let open MiscLib
-    in stdErr_print "\n\nSPLAT-MON FAILED!!\n\n";
+    in stdErr_print "\n\nSPLAT FAILURE!!\n\n";
        failwithERR e
     end

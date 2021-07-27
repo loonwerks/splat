@@ -376,12 +376,22 @@ fun dest_exp e =
             ("binding", String bvarname),
             ("array", jarr),
             ("expr", jexp)]
-       => mk_fncall ("","Array_Forall",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
+       => (case jarr
+            of AList[("kind", String"IndicesExpr"),("array",jarr1)]
+                => mk_fncall ("","Array_Forall_Indices",
+                              [VarExp bvarname, dest_exp jarr1, dest_exp jexp])
+            | _ => mk_fncall ("","Array_Forall",
+                              [VarExp bvarname, dest_exp jarr, dest_exp jexp]))
    | AList [("kind", String "ExistsExpr"),
             ("binding", String bvarname),
             ("array", jarr),
             ("expr", jexp)]
-       => mk_fncall ("","Array_Exists",[VarExp bvarname, dest_exp jarr, dest_exp jexp])
+       => (case jarr
+            of AList[("kind", String"IndicesExpr"),("array",jarr1)]
+                => mk_fncall ("","Array_Exists_Indices",
+                              [VarExp bvarname, dest_exp jarr1, dest_exp jexp])
+            | _ => mk_fncall ("","Array_Exists",
+                              [VarExp bvarname, dest_exp jarr, dest_exp jexp]))
    | AList [("kind", String "FlatmapExpr"),
             ("binding", String bvarname),
             ("array", jarr),
@@ -433,7 +443,7 @@ fun dest_param param =
 fun mk_fun_def compName json =
  let fun dest_binds binds =
          FnDec ((compName,dropString (assoc "name" binds)),
-                map dest_param (dropList (assoc "args" binds)),
+                 map dest_param (dropList (assoc "args" binds)),
                 dest_ty (assoc "type" binds),
                 dest_exp (assoc "expr" binds))
          handle _ => raise ERR "mk_fun_def" "unexpected format"

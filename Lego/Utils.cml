@@ -170,11 +170,12 @@ fun i2d i =
   Double.fromString (s' ^ ".0")
  end
 
-fun array_existsI pred arr =
- let val len = Array.length arr
- in if len = 0 then False
-    else List.exists pred (upto 0 (len - 1))
- end
+(*---------------------------------------------------------------------------*)
+(* Arrays in AADL/AGREE are 1-based.                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun array_allI pred arr    = List.all    pred (upto 1 (Array.length arr));
+fun array_existsI pred arr = List.exists pred (upto 1 (Array.length arr));
 
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
 

@@ -52,6 +52,8 @@ fun letExp binds exp =
     in Fncall(("","LET"),eqs@[exp])
     end;
 
+fun mk_intLit i = ConstExp(IntLit{value=i, kind=AST.Int NONE});
+
 (*---------------------------------------------------------------------------*)
 (* Translate contig types into AST expressions                               *)
 (*---------------------------------------------------------------------------*)
@@ -184,6 +186,10 @@ fun pp_cake_exp depth pkgName env exp =
              pp_cake_exp (depth-1) pkgName env (Fncall (("","Utils.double_eq"),[e1,e2]))
          else
            pp_infix depth pkgName env ("=",e1,e2)
+      | Binop(Imp,e1,e2) =>
+         let val node = Fncall(("","IfThenElse"),[e1,e2,ConstExp(BoolLit true)])
+         in pp_cake_exp depth pkgName env node
+         end
       | Binop(NotEqual,e1,e2) => pp_cake_exp depth pkgName env (Unop(Not,Binop(Equal,e1,e2)))
       | Binop(Greater,e1,e2) =>
          if is_float env e1 orelse is_float env e2 then
@@ -261,10 +267,11 @@ fun pp_cake_exp depth pkgName env exp =
       | Fncall ((_,"unitExp"),[]) => PrettyString "()"
       | Fncall ((_,"IfThenElse"),[e1,e2,e3]) =>
           PrettyBlock(2,true,[],
-            [PrettyString"if ", pp_cake_exp (depth-1) pkgName  env e1,
+            [PrettyString"(if ", pp_cake_exp (depth-1) pkgName  env e1,
              PrettyString" then", Space,
              pp_cake_exp (depth-1) pkgName  env e2, Space,
-             PrettyString"else ", pp_cake_exp (depth-1) pkgName env e3])
+             PrettyString"else ", pp_cake_exp (depth-1) pkgName env e3,
+             PrettyString")"])
       | Fncall ((_,"LET"),eqlist) =>
 	let val (binds,res) = front_last eqlist
         in PrettyBlock(5,true,[],
@@ -328,6 +335,19 @@ fun pp_cake_exp depth pkgName env exp =
                 pp_cake_exp (depth-1) pkgName env
                    (Fncall(("","Array.exists"), [Fncall(("","Lambda"),[v,P]),arry]))
             | otherwise => PrettyString "!!<Array_Exists needs 3 args>!!")
+      | Fncall(("","Array_Forall_Indices"),list) =>
+         (case list
+           of [v,arry,P] =>
+               pp_cake_exp (depth-1) pkgName env
+                    (Fncall(("","Utils.array_allI"), [Fncall(("","Lambda"),[v,P]),arry]))
+            | otherwise => PrettyString "!!<Array_Forall_Indices needs 3 args>!!")
+      | Fncall(("","Array_Exists_Indices"),list) =>
+         (case list
+           of [v,arry,P] =>
+               pp_cake_exp (depth-1) pkgName env
+                     (Fncall(("","Utils.array_existsI"),
+                             [Fncall(("","Lambda"),[v,P]),arry]))
+            | otherwise => PrettyString "!!<Array_Exists_Indices needs 3 args>!!")
       | Fncall(("","AssignExp"),[v,e]) => pp_infix (depth-1) pkgName env (":=",v,e)
       | Fncall (qid,args) => PrettyBlock(2,false,[],
            [PrettyString"(",
@@ -511,6 +531,11 @@ fun fieldFn tyE rty fieldName =
      | otherwise => raise ERR "fieldFn" "expected a RecdTy"
  end;
 
+(*---------------------------------------------------------------------------*)
+(* Need to deal with lambda-bound variables, by adding them to varE. This    *)
+(* requires the binding to have a type for the variable.                     *)
+(*---------------------------------------------------------------------------*)
+
 fun proj_intro (E as ((tyE,constE),varE)) exp =
  (case exp
    of VarExp id =>
@@ -589,7 +614,29 @@ fun transRval E e =
             in
               Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
             end
-         | otherwise => raise ERR "transRval" "malformed Array_Forall")
+         | otherwise => raise ERR "transRval" "malformed Array_Exists")
+   | Fncall(qid as ("","Array_Forall_Indices"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val indexTy = AST.intTy
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Forall_Indices")
+   | Fncall(qid as ("","Array_Exist_Indices"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val indexTy = AST.intTy
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Exists_Indices")
    | Fncall(qid,elist)      => Fncall(qid,map (transRval E) elist)
    | RecdExp(qid,fields)    => RecdExp(qid,map (I##transRval E) fields)
    | Quantified (q,params,exp) => Quantified (q,params,transRval E exp)
