@@ -290,6 +290,7 @@ fun mk_binop (opr,e1,e2) =
          | "and" => And
          | "or"  => Or
          | "->"  => Fby
+         | "div" => Divide
          | other => raise ERR "mk_binop"
                ("unknown binary operator "^Lib.quote other)
  in Binop(oexp,e1,e2)
@@ -423,14 +424,24 @@ fun dest_exp e =
      => dest_exp e
    | AList [("kind", String "FoldLeftExpr"),
             ("binding", e1), ("array", e2), ("accumulator",e3), ("initial",e4), ("expr",e5)]
-     => mk_fncall("","FoldLeft",
-             [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
-              dest_exp e2, dest_exp e4])
+     => (case e2
+          of AList[("kind", String"IndicesExpr"),("array",arr)]
+               => mk_fncall ("","Array_Foldl_Indices",
+                     [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
+                      dest_exp arr, dest_exp e4])
+           | _ => mk_fncall("","Array_Foldl",
+                     [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
+                      dest_exp e2, dest_exp e4]))
    | AList [("kind", String "FoldRightExpr"),
             ("binding", e1), ("array", e2), ("accumulator",e3), ("initial",e4), ("expr",e5)]
-     => mk_fncall("","FoldRight",
-             [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
-              dest_exp e2, dest_exp e4])
+     => (case e2
+          of AList[("kind", String"IndicesExpr"),("array",arr)]
+               => mk_fncall ("","Array_Foldr_Indices",
+                     [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
+                      dest_exp arr, dest_exp e4])
+           | _ => mk_fncall("","Array_Foldr",
+                     [VarExp (dropString e1), VarExp (dropString e3), dest_exp e5,
+                      dest_exp e2, dest_exp e4]))
 | other => raise ERR "dest_exp" "unexpected expression form"
 and
 mk_field (fname,e) = (fname, dest_exp e);

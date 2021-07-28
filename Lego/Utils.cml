@@ -177,6 +177,9 @@ fun i2d i =
 fun array_allI pred arr    = List.all    pred (upto 1 (Array.length arr));
 fun array_existsI pred arr = List.exists pred (upto 1 (Array.length arr));
 
+fun array_foldlI foldFn init arr = rev_itlist foldFn (upto 1 (Array.length arr)) init;
+fun array_foldrI foldFn init arr = itlist foldFn (upto 1 (Array.length arr)) init;
+
 fun copies x n = if n <= 0 then [] else x::copies x (n-1);
 
 fun boolVal n =

@@ -348,6 +348,46 @@ fun pp_cake_exp depth pkgName env exp =
                      (Fncall(("","Utils.array_existsI"),
                              [Fncall(("","Lambda"),[v,P]),arry]))
             | otherwise => PrettyString "!!<Array_Exists_Indices needs 3 args>!!")
+      | Fncall(("","Array_Foldr"),list) =>
+	 (case list
+           of [eltVar,accVar,body,arry,init] =>
+               let val foldFn = Fncall(("","Lambda"),[eltVar,
+                                Fncall(("","Lambda"),[accVar,body])])
+                   val exp = Fncall(("","Array.foldr"),[foldFn,init,arry])
+               in
+                 pp_cake_exp depth pkgName env exp
+               end
+            | otherwise => PrettyString "!!<Array_Foldr needs 5 args>!!")
+      | Fncall(("","Array_Foldl"),list) =>
+	 (case list
+           of [eltVar,accVar,body,arry,init] =>
+               let val foldFn = Fncall(("","Lambda"),[eltVar,
+                                Fncall(("","Lambda"),[accVar,body])])
+                   val exp = Fncall(("","Array.foldl"),[foldFn,init,arry])
+               in
+                 pp_cake_exp depth pkgName env exp
+               end
+            | otherwise => PrettyString "!!<Array_Foldl needs 5 args>!!")
+      | Fncall(("","Array_Foldr_Indices"),list) =>
+	 (case list
+           of [eltVar,accVar,body,arry,init] =>
+               let val foldFn = Fncall(("","Lambda"),[eltVar,
+                                Fncall(("","Lambda"),[accVar,body])])
+                   val exp = Fncall(("","Utils.array_foldrI"),[foldFn,init,arry])
+               in
+                 pp_cake_exp depth pkgName env exp
+               end
+            | otherwise => PrettyString "!!<Array_Foldr_Indices needs 5 args>!!")
+      | Fncall(("","Array_Foldl_Indices"),list) =>
+	 (case list
+           of [eltVar,accVar,body,arry,init] =>
+               let val foldFn = Fncall(("","Lambda"),[eltVar,
+                                Fncall(("","Lambda"),[accVar,body])])
+                   val exp = Fncall(("","Utils.array_foldlI"),[foldFn,init,arry])
+               in
+                 pp_cake_exp depth pkgName env exp
+               end
+            | otherwise => PrettyString "!!<Array_Foldl_Indices needs 5 args>!!")
       | Fncall(("","AssignExp"),[v,e]) => pp_infix (depth-1) pkgName env (":=",v,e)
       | Fncall (qid,args) => PrettyBlock(2,false,[],
            [PrettyString"(",
@@ -615,6 +655,36 @@ fun transRval E e =
               Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
             end
          | otherwise => raise ERR "transRval" "malformed Array_Exists")
+   | Fncall(qid as ("","Array_Foldl"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldl")
+   | Fncall(qid as ("","Array_Foldr"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldr")
    | Fncall(qid as ("","Array_Forall_Indices"),elist) =>
       (case elist
         of [v,arry,P] =>
@@ -637,6 +707,36 @@ fun transRval E e =
               Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
             end
          | otherwise => raise ERR "transRval" "malformed Array_Exists_Indices")
+   | Fncall(qid as ("","Array_Foldr_Indices"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldr_Indices")
+   | Fncall(qid as ("","Array_Foldl_Indices"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldl_Indices")
    | Fncall(qid,elist)      => Fncall(qid,map (transRval E) elist)
    | RecdExp(qid,fields)    => RecdExp(qid,map (I##transRval E) fields)
    | Quantified (q,params,exp) => Quantified (q,params,transRval E exp)
