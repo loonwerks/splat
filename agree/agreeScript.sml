@@ -177,13 +177,22 @@ End
 
 (*---------------------------------------------------------------------------*)
 (* Correctness of component: the effects  of the component meet its spec.    *)
-(* The below is not right: we have to iterate Comp_Effect from t=0.          *)
+(* We first define a function over t that iterates variable assignments of   *)
+(* the component. Time 0 is when the ports get their first value, so we      *)
+(* have to calculate Comp_Effect there as well.                              *)
 (*---------------------------------------------------------------------------*)
-(*
-Definition Comp_Correct_def:
-  Comp_Correct comp ⇔
-    ∀portEnv varEnv. Comp_Spec comp (portEnv, Comp_Effect (portEnv,varEnv) comp)
+
+Definition Iterate_Effect_def :
+  Iterate_Effect portEnv comp 0 = Comp_Effect (portEnv,ARB) comp 0 ∧
+  Iterate_Effect portEnv comp (SUC t) =
+    Comp_Effect (portEnv,Iterate_Effect portEnv comp t) comp (SUC t)
 End
-*)
+
+Definition Comp_Correct_def:
+  Comp_Correct comp
+    ⇔
+  ∀portEnv t. Comp_Spec comp (portEnv, Iterate_Effect portEnv comp t)
+End
+
 
 val _ = export_theory();
