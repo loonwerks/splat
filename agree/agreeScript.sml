@@ -188,6 +188,11 @@ Definition Iterate_Effect_def :
     Comp_Effect (portEnv,Iterate_Effect portEnv comp t) comp (SUC t)
 End
 
+(*---------------------------------------------------------------------------*)
+(* A component is correct if its variable assignments, when iterated, make   *)
+(* the Comp_Spec true, for any time t.                                       *)
+(*---------------------------------------------------------------------------*)
+
 Definition Comp_Correct_def:
   Comp_Correct comp
     ⇔
