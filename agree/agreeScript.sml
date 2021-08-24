@@ -5,6 +5,15 @@ val _ = intLib.prefer_int();
 
 val _ = new_theory "agree";
 
+(*---------------------------------------------------------------------------*)
+(* Arithmetic expressions. Conventional, except that there are two kinds of  *)
+(* variable: one normal and one for input ports. This allows us to get the   *)
+(* values for input ports from a separate environment than that used to get  *)
+(* the values for variables introduced by ‘eq’ statements.                   *)
+(*                                                                           *)
+(* Also we have Lustre operators "pre" and "fby"                             *)
+(*---------------------------------------------------------------------------*)
+
 Datatype:
   expr = PortExpr string
        | VarExpr string
@@ -15,6 +24,10 @@ Datatype:
        | FbyExpr expr expr
 End
 
+(*---------------------------------------------------------------------------*)
+(* Boolean expressions                                                       *)
+(*---------------------------------------------------------------------------*)
+
 Datatype:
   bexpr = BoolLit bool
         | NotExpr bexpr
@@ -24,11 +37,19 @@ Datatype:
         | LtExpr  expr expr
 End
 
+(*---------------------------------------------------------------------------*)
+(* So-called ‘eq’ statements                                                 *)
+(*---------------------------------------------------------------------------*)
+
 Datatype:
   stmt = NumStmt string expr
 (*       | BoolStmt string bexpr  *)
 
 End
+
+(*---------------------------------------------------------------------------*)
+(* Value of arithmetic expressions in given environments                     *)
+(*---------------------------------------------------------------------------*)
 
 Definition exprVal_def :
   exprVal (portEnv,varEnv) (PortExpr s) (t:num) = (portEnv ' s) t /\
@@ -41,6 +62,10 @@ Definition exprVal_def :
      (if t = 0 then exprVal E e1 0 else exprVal E e2 t)
 End
 
+(*---------------------------------------------------------------------------*)
+(* Value of boolean expressions in given environments                        *)
+(*---------------------------------------------------------------------------*)
+
 Definition bexprVal_def :
   bexprVal E (BoolLit b) t     = b /\
   bexprVal E (NotExpr b) t     = (~bexprVal E b t) /\
@@ -49,6 +74,10 @@ Definition bexprVal_def :
   bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t) /\
   bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)
 End
+
+(*---------------------------------------------------------------------------*)
+(* Value of statement in given environments                                  *)
+(*---------------------------------------------------------------------------*)
 
 Definition stmtVal_def :
  stmtVal (portEnv,varEnv) t (NumStmt varName e) =
