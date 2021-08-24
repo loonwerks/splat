@@ -147,12 +147,14 @@ Definition Comp_Spec_def:
 End
 
 (*---------------------------------------------------------------------------*)
-(* Correctness of component: the effects  of the component meet its spec     *)
+(* Correctness of component: the effects  of the component meet its spec.    *)
+(* The below is not right: we have to iterate Comp_Effect from t=0.          *)
 (*---------------------------------------------------------------------------*)
-
+(*
 Definition Comp_Correct_def:
   Comp_Correct comp ⇔
-    ∀portEnv varEnv. Comp_Spec comp (portEnv, Comp_Effect (portEnv,varEnv))
+    ∀portEnv varEnv. Comp_Spec comp (portEnv, Comp_Effect (portEnv,varEnv) comp)
 End
+*)
 
 val _ = export_theory();
