@@ -88,7 +88,7 @@ End
 (* Environments are finite maps from names to streams                        *)
 (*---------------------------------------------------------------------------*)
 
-Definition updateEnv :
+Definition updateEnv_def :
  updateEnv (fmap: 'a |-> (num -> 'b)) name value t =
    let strm = fmap ' name;
        strm' = strm (| t |-> value |)
@@ -148,12 +148,12 @@ End
 (* The "effect" of the component is the environment obtained by running the  *)
 (* variable assignments given the input port values. The variable definitions*)
 (* are run in sequence, and then the output definitions are evaluated in     *)
-(* parallel (so that no output can depend on any other output), and added to *)
-(* the bindings obtained in the first stage.                                 *)
+(* parallel (ensuring that no output can depend on any other output), and    *)
+(* and added to the bindings obtained in the first stage.                    *)
 (*---------------------------------------------------------------------------*)
 
-Definition Comp_Effect_def :
-  Comp_Effect (portEnv,varEnv) comp t =
+Definition componentEffect_def :
+  componentEffect (portEnv,varEnv) comp t =
   let (portEnv,varEnv') = stmtListEffect (portEnv,varEnv) comp.var_defs t;
       (portEnv,varEnv'') = stmtListParEffect (portEnv,varEnv') comp.out_defs t
   in varEnv''
@@ -168,36 +168,91 @@ Definition guarsVal_def:
 End
 
 (*---------------------------------------------------------------------------*)
-(* Notion of guarsVal holding for all t. Not sure if this is right yet.      *)
-(*---------------------------------------------------------------------------*)
-
-Definition Comp_Spec_def:
-   Comp_Spec comp E = ∀t. guarsVal E comp t
-End
-
-(*---------------------------------------------------------------------------*)
-(* Correctness of component: the effects  of the component meet its spec.    *)
+(* Correctness of component: the effects  of the component model its spec.   *)
 (* We first define a function over t that iterates variable assignments of   *)
 (* the component. Time 0 is when the ports get their first value, so we      *)
 (* have to calculate Comp_Effect there as well.                              *)
 (*---------------------------------------------------------------------------*)
 
 Definition Iterate_Effect_def :
-  Iterate_Effect portEnv comp 0 = Comp_Effect (portEnv,ARB) comp 0 ∧
+  Iterate_Effect portEnv comp 0 = componentEffect (portEnv,ARB) comp 0 ∧
   Iterate_Effect portEnv comp (SUC t) =
-    Comp_Effect (portEnv,Iterate_Effect portEnv comp t) comp (SUC t)
+    componentEffect (portEnv,Iterate_Effect portEnv comp t) comp (SUC t)
 End
 
 (*---------------------------------------------------------------------------*)
 (* A component is correct if its variable assignments, when iterated, make   *)
-(* the Comp_Spec true, for any time t.                                       *)
+(* the guarantees true, for any time t.                                      *)
 (*---------------------------------------------------------------------------*)
 
-Definition Comp_Correct_def:
-  Comp_Correct comp
+Definition Component_Correct_def:
+  Component_Correct comp
     ⇔
-  ∀portEnv t. Comp_Spec comp (portEnv, Iterate_Effect portEnv comp t)
+  ∀portEnv t.
+      guarsVal (portEnv, Iterate_Effect portEnv comp t) comp t
 End
 
+(*---------------------------------------------------------------------------*)
+(* Trivial beginning example                                                 *)
+(*  V = []                                                                   *)
+(*  O = [output = input]                                                     *)
+(*  G = [output ≤ input]                                                     *)
+(*---------------------------------------------------------------------------*)
+
+Theorem example_1 :
+  Component_Correct
+     <| var_defs := [];
+        out_defs := [NumStmt "output" (PortExpr "input")];
+      guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
+     |>
+Proof
+ rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> Cases_on ‘t’
+  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
+         combinTheory.APPLY_UPDATE_THM, updateEnv_def,
+         componentEffect_def,stmtListEffect_def, stmtListParEffect_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Trivial beginning example                                                 *)
+(*  V = []                                                                   *)
+(*  O = [output = input]                                                     *)
+(*  G = [output ≤ input]                                                     *)
+(*---------------------------------------------------------------------------*)
+
+Theorem example_1 :
+  Component_Correct
+     <| var_defs := [];
+        out_defs := [NumStmt "output" (PortExpr "input")];
+      guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
+     |>
+Proof
+ rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> Cases_on ‘t’
+  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
+         combinTheory.APPLY_UPDATE_THM, updateEnv_def,
+         componentEffect_def,stmtListEffect_def, stmtListParEffect_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Use of local variables                                                    *)
+(*  V = [v = input + 1]                                                      *)
+(*  O = [output = v]                                                         *)
+(*  G = [input < output]                                                     *)
+(*---------------------------------------------------------------------------*)
+
+Theorem example_2 :
+  Component_Correct
+     <| var_defs := [NumStmt "v" (AddExpr (PortExpr "input") (IntLit 1))];
+        out_defs := [NumStmt "output" (VarExpr "v")];
+      guarantees := [LtExpr (PortExpr "input") (VarExpr "output")]
+     |>
+Proof
+ rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> Cases_on ‘t’
+  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
+         combinTheory.APPLY_UPDATE_THM, updateEnv_def, componentEffect_def,
+         stmtEffect_def, stmtListEffect_def, stmtListParEffect_def]
+QED
 
 val _ = export_theory();
