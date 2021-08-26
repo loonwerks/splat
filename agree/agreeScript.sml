@@ -35,6 +35,7 @@ Datatype:
         | AndExpr bexpr bexpr
         | EqExpr  expr expr
         | LtExpr  expr expr
+        | HistExpr bexpr
 End
 
 (*---------------------------------------------------------------------------*)
@@ -71,8 +72,9 @@ Definition bexprVal_def :
   bexprVal E (NotExpr b) t     = (~bexprVal E b t) /\
   bexprVal E (OrExpr b1 b2) t  = (bexprVal E b1 t \/ bexprVal E b2 t) /\
   bexprVal E (AndExpr b1 b2) t = (bexprVal E b1 t /\ bexprVal E b2 t) /\
-  bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t) /\
-  bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)
+  bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)    /\
+  bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)    /\
+  bexprVal E (HistExpr e) t    = !n. n <= t ==> bexprVal E e n
 End
 
 (*---------------------------------------------------------------------------*)
@@ -149,7 +151,7 @@ End
 (* variable assignments given the input port values. The variable definitions*)
 (* are run in sequence, and then the output definitions are evaluated in     *)
 (* parallel (ensuring that no output can depend on any other output), and    *)
-(* and added to the bindings obtained in the first stage.                    *)
+(* added to the bindings obtained in the first stage.                        *)
 (*---------------------------------------------------------------------------*)
 
 Definition componentEffect_def :
@@ -160,7 +162,7 @@ Definition componentEffect_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* The streams in E make the guarantees of the component true at time t      *)
+(* Evaluate the conjunction of guarantees of the component at time t         *)
 (*---------------------------------------------------------------------------*)
 
 Definition guarsVal_def:
@@ -171,7 +173,7 @@ End
 (* Correctness of component: the effects  of the component model its spec.   *)
 (* We first define a function over t that iterates variable assignments of   *)
 (* the component. Time 0 is when the ports get their first value, so we      *)
-(* have to calculate Comp_Effect there as well.                              *)
+(* have to calculate componentEffect there as well.                          *)
 (*---------------------------------------------------------------------------*)
 
 Definition Iterate_Effect_def :
@@ -214,28 +216,7 @@ Proof
 QED
 
 (*---------------------------------------------------------------------------*)
-(* Trivial beginning example                                                 *)
-(*  V = []                                                                   *)
-(*  O = [output = input]                                                     *)
-(*  G = [output ≤ input]                                                     *)
-(*---------------------------------------------------------------------------*)
-
-Theorem example_1 :
-  Component_Correct
-     <| var_defs := [];
-        out_defs := [NumStmt "output" (PortExpr "input")];
-      guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
-     |>
-Proof
- rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
-  >> Cases_on ‘t’
-  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
-         combinTheory.APPLY_UPDATE_THM, updateEnv_def,
-         componentEffect_def,stmtListEffect_def, stmtListParEffect_def]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Use of local variables                                                    *)
+(* Simple use of variable assignments                                        *)
 (*  V = [v = input + 1]                                                      *)
 (*  O = [output = v]                                                         *)
 (*  G = [input < output]                                                     *)
@@ -253,6 +234,48 @@ Proof
   >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
          combinTheory.APPLY_UPDATE_THM, updateEnv_def, componentEffect_def,
          stmtEffect_def, stmtListEffect_def, stmtListParEffect_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Trivial use of Hist                                                       *)
+(*  V = []                                                                   *)
+(*  O = [output = 42]                                                        *)
+(*  G = [Hist(output = 42)]                                                  *)
+(*---------------------------------------------------------------------------*)
+
+Theorem example_3 :
+  Component_Correct
+     <| var_defs := [];
+        out_defs := [NumStmt "output" (IntLit 42)];
+      guarantees := [HistExpr (EqExpr (VarExpr "output") (IntLit 42))]
+     |>
+Proof
+ rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> Induct_on ‘t’
+  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
+         combinTheory.APPLY_UPDATE_THM, updateEnv_def, componentEffect_def,
+         stmtEffect_def, stmtListEffect_def, stmtListParEffect_def]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Fby, Pre, and Hist                                                        *)
+(*  V = [steps = 1 -> 1 + pre steps]                                         *)
+(*  O = [output = steps]                                                     *)
+(*  G = [Hist(0 < output)]                                                   *)
+(*                                                                           *)
+(* Needs some lemmas about Iterate_Effect in order to continue               *)
+(*---------------------------------------------------------------------------*)
+
+Theorem example_4 :
+  Component_Correct
+     <| var_defs := [NumStmt "steps"
+                      (FbyExpr (IntLit 1)
+                               (AddExpr (IntLit 1) (PreExpr (VarExpr "steps"))))];
+        out_defs := [NumStmt "output" (VarExpr "steps")];
+      guarantees := [HistExpr (LtExpr (IntLit 0) (VarExpr "output"))]
+     |>
+Proof
+cheat
 QED
 
 val _ = export_theory();
