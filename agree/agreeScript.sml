@@ -19,6 +19,7 @@ Datatype:
        | VarExpr string
        | IntLit int
        | AddExpr expr expr
+       | MultExpr expr expr
        | SubExpr expr expr
        | PreExpr expr
        | FbyExpr expr expr
@@ -57,6 +58,7 @@ Definition exprVal_def :
   exprVal (portEnv,varEnv) (VarExpr s) t  = (varEnv ' s) t /\
   exprVal E (IntLit i) t  = i /\
   exprVal E (AddExpr e1 e2) t = exprVal E e1 t + exprVal E e2 t /\
+  exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
   exprVal E (PreExpr e) t =
      (if t = 0 then ARB else exprVal E e (t-1)) /\
   exprVal E (FbyExpr e1 e2) t =
@@ -137,13 +139,13 @@ End
 (*                                                                           *)
 (*   - A list of variable definitions V = [v1 = e1; ...; vn = en]            *)
 (*   - A list of output definitions   O = [o1 = e(n+1); ...; ok = e(n+k)]    *)
-(*   - A list of guarantees           G = [g_1,...,gi]                       *)
+(*   - A list of guarantees           G = [g1,...,gi]                        *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-   component = <| var_defs : stmt list;
-                  out_defs : stmt list;
-                  guarantees : bexpr list |>
+  component = <| var_defs : stmt list;
+                 out_defs : stmt list;
+                 guarantees : bexpr list |>
 End
 
 (*---------------------------------------------------------------------------*)
@@ -208,12 +210,16 @@ Theorem example_1 :
       guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
      |>
 Proof
- rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
+ EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
+QED
+
+(* Previous proof of above:
+rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
   >> Cases_on ‘t’
   >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
          combinTheory.APPLY_UPDATE_THM, updateEnv_def,
          componentEffect_def,stmtListEffect_def, stmtListParEffect_def]
-QED
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Simple use of variable assignments                                        *)
@@ -229,11 +235,7 @@ Theorem example_2 :
       guarantees := [LtExpr (PortExpr "input") (VarExpr "output")]
      |>
 Proof
- rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
-  >> Cases_on ‘t’
-  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
-         combinTheory.APPLY_UPDATE_THM, updateEnv_def, componentEffect_def,
-         stmtEffect_def, stmtListEffect_def, stmtListParEffect_def]
+ EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -250,32 +252,209 @@ Theorem example_3 :
       guarantees := [HistExpr (EqExpr (VarExpr "output") (IntLit 42))]
      |>
 Proof
- rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
-  >> Induct_on ‘t’
-  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
-         combinTheory.APPLY_UPDATE_THM, updateEnv_def, componentEffect_def,
-         stmtEffect_def, stmtListEffect_def, stmtListParEffect_def]
+  EVAL_TAC >> Induct_on ‘t’ >> EVAL_TAC >> rw[]
 QED
 
 (*---------------------------------------------------------------------------*)
-(* Fby, Pre, and Hist                                                        *)
+(* Fby and Pre                                                               *)
 (*  V = [steps = 1 -> 1 + pre steps]                                         *)
 (*  O = [output = steps]                                                     *)
-(*  G = [Hist(0 < output)]                                                   *)
+(*  G = [0 < output]                                                         *)
 (*                                                                           *)
-(* Needs some lemmas about Iterate_Effect in order to continue               *)
+(* Needs some lemmas in order to do the proof                                *)
 (*---------------------------------------------------------------------------*)
 
-Theorem example_4 :
-  Component_Correct
-     <| var_defs := [NumStmt "steps"
-                      (FbyExpr (IntLit 1)
-                               (AddExpr (IntLit 1) (PreExpr (VarExpr "steps"))))];
-        out_defs := [NumStmt "output" (VarExpr "steps")];
-      guarantees := [HistExpr (LtExpr (IntLit 0) (VarExpr "output"))]
-     |>
+Definition comp4_def:
+   comp4 =
+       <| var_defs :=
+              [NumStmt "steps"
+                 (FbyExpr (IntLit 1)
+                    (AddExpr (IntLit 1) (PreExpr (VarExpr "steps"))))];
+          out_defs := [NumStmt "output" (VarExpr "steps")];
+        guarantees := [LtExpr (IntLit 0) (VarExpr "output")]|>
+End
+
+Triviality output_effect :
+ ∀t portEnv varEnv.
+     componentEffect (portEnv,varEnv) comp4 t ' "output" t =
+       (if t = 0 then 1 else 1 + varEnv ' "steps" (t − 1))
 Proof
-cheat
+ rpt gen_tac >> EVAL_TAC >> fs[]
+QED
+
+Triviality steps_effect :
+ ∀t portEnv varEnv.
+     componentEffect (portEnv,varEnv) comp4 t ' "steps" t =
+       (if t = 0 then 1 else 1 + varEnv ' "steps" (t − 1))
+Proof
+ rpt gen_tac >> EVAL_TAC >> fs[]
+QED
+
+Theorem Vars_Eq :
+   ∀t portEnv. Iterate_Effect portEnv comp4 t ' "output" t =
+                Iterate_Effect portEnv comp4 t ' "steps" t
+Proof
+  Induct >> rw [Iterate_Effect_def,output_effect,steps_effect]
+QED
+
+Theorem example_4 :
+  Component_Correct comp4
+Proof
+ rw [Component_Correct_def,comp4_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> simp_tac std_ss [GSYM comp4_def]
+  >> Induct_on ‘t’
+  >> EVAL_TAC
+  >> fs [GSYM comp4_def,Vars_Eq]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Iterative factorial is implemented by the rewrite system                  *)
+(*                                                                           *)
+(*   (n,fact) --> (n+1,fact * (n+1))                                         *)
+(*                                                                           *)
+(*  V = [n = 0 -> 1 + pre n;                                                 *)
+(*       fact = 1 -> pre fact * n]                                           *)
+(*  O = [output = fact]                                                      *)
+(*  G = [0 < fact]                                                           *)
+(*                                                                           *)
+(* We can take the iteration of this transition system into HOL and show     *)
+(* that it implements the usual recursion equation for factorial.            *)
+(*---------------------------------------------------------------------------*)
+
+Definition itFact_def:
+   itFact =
+     <| var_defs :=
+          [NumStmt "n"
+             (FbyExpr (IntLit 0) (AddExpr (IntLit 1) (PreExpr (VarExpr "n"))));
+           NumStmt "fact"
+                 (FbyExpr (IntLit 1)
+                    (MultExpr (PreExpr (VarExpr "fact")) (VarExpr "n")))];
+        out_defs := [NumStmt "output" (VarExpr "fact")];
+        guarantees := [LtExpr (IntLit 0) (VarExpr "output")]|>
+End
+
+val output_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) itFact t ' "output" t”);
+
+val n_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) itFact t ' "n" t”);
+
+val fact_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) itFact t ' "fact" t”);
+
+Theorem Vars_Eq :
+   ∀t portEnv. Iterate_Effect portEnv itFact t ' "output" t =
+                Iterate_Effect portEnv itFact t ' "fact" t
+Proof
+  Induct >> rw [Iterate_Effect_def,output_effect,fact_effect]
+QED
+
+Theorem n_is_N:
+  ∀t portEnv. Iterate_Effect portEnv itFact t ' "n" t = &t
+Proof
+  Induct
+   >> rw [Iterate_Effect_def,n_effect,integerTheory.int_of_num,integerTheory.INT_1]
+   >> pop_assum kall_tac
+   >> intLib.ARITH_TAC
+QED
+
+Theorem itFact_Meets_Spec :
+  Component_Correct itFact
+Proof
+ rw [Component_Correct_def,itFact_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> simp_tac std_ss [GSYM itFact_def]
+  >> Induct_on ‘t’
+  >> EVAL_TAC
+  >> fs [GSYM itFact_def]
+  >> fs[Vars_Eq,n_is_N]
+  >> pop_assum mp_tac
+  >> qspec_tac (‘Iterate_Effect portEnv itFact t ' "fact" t’,‘i’)
+  >> rpt strip_tac
+  >> match_mp_tac int_arithTheory.positive_product_implication
+  >> intLib.ARITH_TAC
+QED
+
+val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
+
+(*---------------------------------------------------------------------------*)
+(* Iterative factorial is equal to recursive factorial (arithmeticTheory.FACT*)
+(*---------------------------------------------------------------------------*)
+
+Theorem itFact_eq_FACT :
+ ∀t portEnv. Iterate_Effect portEnv itFact t ' "fact" t = &(FACT t)
+Proof
+ rw [Component_Correct_def,itFact_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> simp_tac std_ss [GSYM itFact_def]
+  >> Induct_on ‘t’
+  >> EVAL_TAC
+  >> fs [GSYM itFact_def]
+  >> fs[Vars_Eq,n_is_N]
+  >> rw_tac std_ss [arithmeticTheory.FACT,Once (GSYM num_mult_int)]
+  >> rw_tac std_ss [integerTheory.int_of_num,integerTheory.INT_1]
+  >> intLib.ARITH_TAC
+QED
+
+
+(*---------------------------------------------------------------------------*)
+(* Iterative Fibonacci is implemented by the rewrite system                  *)
+(*                                                                           *)
+(*       (x,y) --> (y,x+y)                                                   *)
+(*                                                                           *)
+(*  V = [x = 0 -> pre y;                                                     *)
+(*       y = 1 -> pre x + pre y]                                             *)
+(*  O = [output = y]                                                         *)
+(*  G = [0 <= x and 0 < output]                                              *)
+(*                                                                           *)
+(* We can take the iteration of this transition system into HOL and show     *)
+(* that it implements the Fibonacci recursion equations.                     *)
+(*---------------------------------------------------------------------------*)
+
+Definition itFib_def:
+   itFib =
+      <| var_defs :=
+             [NumStmt "x"
+               (FbyExpr (IntLit 0) (PreExpr (VarExpr "y")));
+              NumStmt "y"
+                 (FbyExpr (IntLit 1)
+                    (AddExpr (PreExpr (VarExpr "x")) (PreExpr (VarExpr "y"))))];
+         out_defs := [NumStmt "output" (VarExpr "y")];
+       guarantees := [AndExpr (NotExpr (LtExpr (VarExpr "x") (IntLit 0)))
+                              (LtExpr (IntLit 0) (VarExpr "output"))]
+      |>
+End
+
+val output_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) itFib t ' "output" t”);
+
+val x_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) itFib t ' "x" t”);
+
+val y_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) itFib t ' "y" t”);
+
+Theorem Vars_Eq :
+   ∀t portEnv. Iterate_Effect portEnv itFib t ' "output" t =
+                Iterate_Effect portEnv itFib t ' "y" t
+Proof
+  Induct >> rw [Iterate_Effect_def,output_effect,y_effect]
+QED
+
+Theorem itFib_Meets_Spec :
+  Component_Correct itFib
+Proof
+ simp [Component_Correct_def,itFib_def,guarsVal_def,bexprVal_def,exprVal_def]
+  >> simp_tac std_ss [GSYM itFib_def]
+  >> Induct_on ‘t’
+  >- (EVAL_TAC >> rw[])
+  >- (simp [Iterate_Effect_def]
+       >> EVAL_TAC
+       >> simp_tac arith_ss [GSYM itFib_def]
+       >> fs[Vars_Eq]
+       >> gen_tac
+       >> pop_assum (mp_tac o Q.SPEC ‘portEnv’)
+       >> qspec_tac (‘Iterate_Effect portEnv itFib t ' "x" t’,‘i’)
+       >> qspec_tac (‘Iterate_Effect portEnv itFib t ' "y" t’,‘j’)
+      >> intLib.ARITH_TAC)
 QED
 
 val _ = export_theory();
