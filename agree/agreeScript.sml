@@ -19,38 +19,26 @@ Datatype:
        | VarExpr string
        | IntLit int
        | AddExpr expr expr
-       | MultExpr expr expr
        | SubExpr expr expr
+       | MultExpr expr expr
        | PreExpr expr
        | FbyExpr expr expr
+       | CondExpr bexpr expr expr
+   ;
+ bexpr = BoolLit bool
+       | NotExpr bexpr
+       | OrExpr  bexpr bexpr
+       | AndExpr bexpr bexpr
+       | ImpExpr bexpr bexpr
+       | IffExpr bexpr bexpr
+       | EqExpr  expr expr
+       | LtExpr  expr expr
+       | LteExpr expr expr
+       | HistExpr bexpr
 End
 
 (*---------------------------------------------------------------------------*)
-(* Boolean expressions                                                       *)
-(*---------------------------------------------------------------------------*)
-
-Datatype:
-  bexpr = BoolLit bool
-        | NotExpr bexpr
-        | OrExpr  bexpr bexpr
-        | AndExpr bexpr bexpr
-        | EqExpr  expr expr
-        | LtExpr  expr expr
-        | HistExpr bexpr
-End
-
-(*---------------------------------------------------------------------------*)
-(* So-called ‘eq’ statements                                                 *)
-(*---------------------------------------------------------------------------*)
-
-Datatype:
-  stmt = NumStmt string expr
-(*       | BoolStmt string bexpr  *)
-
-End
-
-(*---------------------------------------------------------------------------*)
-(* Value of arithmetic expressions in given environments                     *)
+(* Value of expression in given environments                                 *)
 (*---------------------------------------------------------------------------*)
 
 Definition exprVal_def :
@@ -58,25 +46,33 @@ Definition exprVal_def :
   exprVal (portEnv,varEnv) (VarExpr s) t  = (varEnv ' s) t /\
   exprVal E (IntLit i) t  = i /\
   exprVal E (AddExpr e1 e2) t = exprVal E e1 t + exprVal E e2 t /\
+  exprVal E (SubExpr e1 e2) t = exprVal E e1 t - exprVal E e2 t /\
   exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
   exprVal E (PreExpr e) t =
      (if t = 0 then ARB else exprVal E e (t-1)) /\
   exprVal E (FbyExpr e1 e2) t =
-     (if t = 0 then exprVal E e1 0 else exprVal E e2 t)
-End
-
-(*---------------------------------------------------------------------------*)
-(* Value of boolean expressions in given environments                        *)
-(*---------------------------------------------------------------------------*)
-
-Definition bexprVal_def :
+     (if t = 0 then exprVal E e1 0 else exprVal E e2 t) /\
+  exprVal E (CondExpr b e1 e2) t =
+     (if bexprVal E b t then exprVal E e1 0 else exprVal E e2 t)
+  /\
   bexprVal E (BoolLit b) t     = b /\
   bexprVal E (NotExpr b) t     = (~bexprVal E b t) /\
   bexprVal E (OrExpr b1 b2) t  = (bexprVal E b1 t \/ bexprVal E b2 t) /\
   bexprVal E (AndExpr b1 b2) t = (bexprVal E b1 t /\ bexprVal E b2 t) /\
+  bexprVal E (ImpExpr b1 b2) t = (bexprVal E b1 t ⇒ bexprVal E b2 t) /\
+  bexprVal E (IffExpr b1 b2) t = (bexprVal E b1 t = bexprVal E b2 t)  /\
   bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)    /\
   bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)    /\
-  bexprVal E (HistExpr e) t    = !n. n <= t ==> bexprVal E e n
+  bexprVal E (LteExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)   /\
+  bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)
+End
+
+(*---------------------------------------------------------------------------*)
+(* Variable definitions (‘eq’ statements)                                    *)
+(*---------------------------------------------------------------------------*)
+
+Datatype:
+  stmt = NumStmt string expr
 End
 
 (*---------------------------------------------------------------------------*)
@@ -213,14 +209,6 @@ Proof
  EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
 QED
 
-(* Previous proof of above:
-rw [Component_Correct_def,guarsVal_def,bexprVal_def,exprVal_def]
-  >> Cases_on ‘t’
-  >> rw [exprVal_def,stmtVal_def,Iterate_Effect_def, insertBinding_def,
-         combinTheory.APPLY_UPDATE_THM, updateEnv_def,
-         componentEffect_def,stmtListEffect_def, stmtListParEffect_def]
-*)
-
 (*---------------------------------------------------------------------------*)
 (* Simple use of variable assignments                                        *)
 (*  V = [v = input + 1]                                                      *)
@@ -300,7 +288,7 @@ QED
 Theorem example_4 :
   Component_Correct comp4
 Proof
- rw [Component_Correct_def,comp4_def,guarsVal_def,bexprVal_def,exprVal_def]
+ rw [Component_Correct_def,comp4_def,guarsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM comp4_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -361,7 +349,7 @@ QED
 Theorem itFact_Meets_Spec :
   Component_Correct itFact
 Proof
- rw [Component_Correct_def,itFact_def,guarsVal_def,bexprVal_def,exprVal_def]
+ rw [Component_Correct_def,itFact_def,guarsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFact_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -374,16 +362,16 @@ Proof
   >> intLib.ARITH_TAC
 QED
 
-val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
-
 (*---------------------------------------------------------------------------*)
 (* Iterative factorial is equal to recursive factorial (arithmeticTheory.FACT*)
 (*---------------------------------------------------------------------------*)
 
+val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
+
 Theorem itFact_eq_FACT :
  ∀t portEnv. Iterate_Effect portEnv itFact t ' "fact" t = &(FACT t)
 Proof
- rw [Component_Correct_def,itFact_def,guarsVal_def,bexprVal_def,exprVal_def]
+ rw [Component_Correct_def,itFact_def,guarsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFact_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -405,8 +393,6 @@ QED
 (*  O = [output = y]                                                         *)
 (*  G = [0 <= x and 0 < output]                                              *)
 (*                                                                           *)
-(* We can take the iteration of this transition system into HOL and show     *)
-(* that it implements the Fibonacci recursion equations.                     *)
 (*---------------------------------------------------------------------------*)
 
 Definition itFib_def:
@@ -442,7 +428,7 @@ QED
 Theorem itFib_Meets_Spec :
   Component_Correct itFib
 Proof
- simp [Component_Correct_def,itFib_def,guarsVal_def,bexprVal_def,exprVal_def]
+ simp [Component_Correct_def,itFib_def,guarsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFib_def]
   >> Induct_on ‘t’
   >- (EVAL_TAC >> rw[])
@@ -454,7 +440,59 @@ Proof
        >> pop_assum (mp_tac o Q.SPEC ‘portEnv’)
        >> qspec_tac (‘Iterate_Effect portEnv itFib t ' "x" t’,‘i’)
        >> qspec_tac (‘Iterate_Effect portEnv itFib t ' "y" t’,‘j’)
-      >> intLib.ARITH_TAC)
+       >> intLib.ARITH_TAC)
 QED
+
+(*---------------------------------------------------------------------------*)
+(* Monitor an input stream for sortedness (w/o boolean vars)                 *)
+(*                                                                           *)
+(*  V = [diff  = 0 -> input - pre input]                                     *)
+(*  O = [alert = 0 -> if diff < 0 then 1 else pre alert]                     *)
+(*  G = [alert = 0 iff Hist (0 <= diff)]                                     *)
+(*---------------------------------------------------------------------------*)
+
+Definition sorted_def:
+   sorted =
+      <| var_defs :=
+             [NumStmt "diff"
+               (FbyExpr (IntLit 0)
+                        (SubExpr (PortExpr "input")
+                                 (PreExpr (PortExpr "input"))))] ;
+         out_defs :=
+             [NumStmt "alert"
+                (FbyExpr (IntLit 0)
+                         (CondExpr (LtExpr (VarExpr "diff") (IntLit 0))
+                                   (IntLit 1)
+                                   (PreExpr (VarExpr "alert"))))] ;
+       guarantees := [IffExpr (EqExpr (VarExpr "alert") (IntLit 0))
+                              (HistExpr (LteExpr (IntLit 0) (VarExpr "diff")))]
+      |>
+End
+
+Triviality int_lem :
+  i < 0i <=> ~(0i <= i)
+Proof
+  intLib.ARITH_TAC
+QED
+
+Theorem sorted_Meets_Spec :
+  Component_Correct sorted
+Proof
+ simp [Component_Correct_def,sorted_def,guarsVal_def,exprVal_def]
+  >> simp_tac std_ss [GSYM sorted_def]
+  >> gen_tac
+  >> Induct_on ‘t’
+  >- (EVAL_TAC >> rw[])
+  >- (simp [Iterate_Effect_def]
+       >> EVAL_TAC
+       >> simp_tac arith_ss [GSYM sorted_def]
+       >> rw[]
+       >- (qexists_tac ‘SUC t’ >> rw[] >>
+           metis_tac [int_lem])
+       >- (rw[EQ_IMP_THM]
+           >- (rw[] >> fs [int_lem])
+           >- (‘n <= SUC t /\ ~(SUC t = n)’ by decide_tac >> metis_tac[])))
+QED
+
 
 val _ = export_theory();
