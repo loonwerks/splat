@@ -1,0 +1,82 @@
+\documentclass[a4paper,UKenglish,cleveref, autoref, thm-restate]{lipics-v2021}
+
+\bibliographystyle{plainurl}% the mandatory bibstyle
+
+\title{Semantics of AGREE}
+\author{Konrad Slind}{Trusted Systems Group, Collins Aerospace, USA}{konrad.slind@collins.com}{}{}
+\authorrunning{K. Slind}
+
+\usepackage{holtexbasic}
+\usepackage{alltt}
+\usepackage{latexsym}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsbsy}
+
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\etc}{\textit{etc.}}
+\newcommand{\adhoc}{\textit{ad hoc}}
+\newcommand{\konst}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\imp}{\Rightarrow}
+\newcommand{\lval}{\ensuremath{\mathit{lval}}}
+\newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
+\newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
+\newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
+\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
+\newcommand{\SubstTheta}[2]{\ensuremath{\theta\;{#1}\; {#2}}}
+\newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+
+\begin{document}
+
+\maketitle
+
+
+\begin{abstract} The AGREE language is used to specify component-level
+behavior of AADL components. We define the semantics of AGREE and
+discuss how the semantics is leveraged to generate code that acts as a
+witness to the specification.
+
+\end{abstract}
+
+
+\section{Introduction}\label{sec:intro}
+
+\section{Syntax of AGREE}\label{sec:syntax}
+
+An AGREE \emph{component} is (for now) the element that we wish to
+study. A component has a collection of input ports and output ports,
+some (local) state variables, and, for specification purposes,
+assumptions and guarantees. Thus a component is represented by the
+following record type:
+
+\begin{alltt}
+   \HOLthm{agree.datatype_component}
+\end{alltt}
+
+A component computation reads from the input ports, updates the state
+variables, then computes the values for output ports. Assumptions are
+boolean expressions that mention only the input ports, while
+guarantees can refer to input port values and the values of variables.
+
+
+\subsection{Expressions}
+
+Since we are dealing with a core language, we leave out non-essential
+detail. AGREE expressions are conventional arithmetic/boolean
+expressions, with the addition of Lustre-style \verb+fby+ and
+\verb+pre+ operators.
+
+\begin{alltt}
+\qquad \HOLthm{agree.datatype_expr}
+\end{alltt}
+
+
+\section{Semantics of AGREE}\label{sec:semantics}
+
+\section{Code Generation}\label{sec:codegen}
+
+\bibliography{agree}
+
+\end{document}

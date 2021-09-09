@@ -21,6 +21,8 @@ Datatype:
        | AddExpr expr expr
        | SubExpr expr expr
        | MultExpr expr expr
+       | DivExpr expr expr
+       | ModExpr expr expr
        | PreExpr expr
        | FbyExpr expr expr
        | CondExpr bexpr expr expr
@@ -33,7 +35,7 @@ Datatype:
        | IffExpr bexpr bexpr
        | EqExpr  expr expr
        | LtExpr  expr expr
-       | LteExpr expr expr
+       | LeqExpr expr expr
        | HistExpr bexpr
 End
 
@@ -48,6 +50,8 @@ Definition exprVal_def :
   exprVal E (AddExpr e1 e2) t = exprVal E e1 t + exprVal E e2 t /\
   exprVal E (SubExpr e1 e2) t = exprVal E e1 t - exprVal E e2 t /\
   exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
+  exprVal E (DivExpr e1 e2) t = exprVal E e1 t / exprVal E e2 t /\
+  exprVal E (ModExpr e1 e2) t = exprVal E e1 t % exprVal E e2 t /\
   exprVal E (PreExpr e) t =
      (if t = 0 then ARB else exprVal E e (t-1)) /\
   exprVal E (FbyExpr e1 e2) t =
@@ -63,7 +67,7 @@ Definition exprVal_def :
   bexprVal E (IffExpr b1 b2) t = (bexprVal E b1 t = bexprVal E b2 t)  /\
   bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)    /\
   bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)    /\
-  bexprVal E (LteExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)   /\
+  bexprVal E (LeqExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)   /\
   bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)
 End
 
@@ -131,17 +135,19 @@ Definition stmtListParEffect_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* A component = (V,O,G) comprises                                           *)
+(* A component = (V,O,A,G) comprises                                         *)
 (*                                                                           *)
 (*   - A list of variable definitions V = [v1 = e1; ...; vn = en]            *)
 (*   - A list of output definitions   O = [o1 = e(n+1); ...; ok = e(n+k)]    *)
-(*   - A list of guarantees           G = [g1,...,gi]                        *)
+(*   - A list of assumptions          A = [a1,...,ai]                        *)
+(*   - A list of guarantees           G = [g1,...,gj]                        *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  component = <| var_defs : stmt list;
-                 out_defs : stmt list;
-                 guarantees : bexpr list |>
+  component = <| var_defs    : stmt list;
+                 out_defs    : stmt list;
+                 assumptions : bexpr list;
+                 guarantees  : bexpr list |>
 End
 
 (*---------------------------------------------------------------------------*)
@@ -168,6 +174,16 @@ Definition guarsVal_def:
 End
 
 (*---------------------------------------------------------------------------*)
+(* Evaluate the conjunction of assumptions of the component at time t. Only  *)
+(* the input port values can be accessed.                                    *)
+(*---------------------------------------------------------------------------*)
+
+Definition assumsVal_def:
+   assumsVal portEnv comp t =
+      EVERY (\a. bexprVal (portEnv,FEMPTY) a t) comp.assumptions
+End
+
+(*---------------------------------------------------------------------------*)
 (* Correctness of component: the effects  of the component model its spec.   *)
 (* We first define a function over t that iterates variable assignments of   *)
 (* the component. Time 0 is when the ports get their first value, so we      *)
@@ -189,6 +205,8 @@ Definition Component_Correct_def:
   Component_Correct comp
     ⇔
   ∀portEnv t.
+      assumsVal portEnv comp t
+        ==>
       guarsVal (portEnv, Iterate_Effect portEnv comp t) comp t
 End
 
@@ -196,14 +214,16 @@ End
 (* Trivial beginning example                                                 *)
 (*  V = []                                                                   *)
 (*  O = [output = input]                                                     *)
+(*  A = []                                                                   *)
 (*  G = [output ≤ input]                                                     *)
 (*---------------------------------------------------------------------------*)
 
 Theorem example_1 :
   Component_Correct
-     <| var_defs := [];
-        out_defs := [NumStmt "output" (PortExpr "input")];
-      guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
+     <|   var_defs := [];
+          out_defs := [NumStmt "output" (PortExpr "input")];
+       assumptions := [];
+        guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
      |>
 Proof
  EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
@@ -213,6 +233,7 @@ QED
 (* Simple use of variable assignments                                        *)
 (*  V = [v = input + 1]                                                      *)
 (*  O = [output = v]                                                         *)
+(*  A = []                                                                   *)
 (*  G = [input < output]                                                     *)
 (*---------------------------------------------------------------------------*)
 
@@ -220,6 +241,7 @@ Theorem example_2 :
   Component_Correct
      <| var_defs := [NumStmt "v" (AddExpr (PortExpr "input") (IntLit 1))];
         out_defs := [NumStmt "output" (VarExpr "v")];
+       assumptions := [];
       guarantees := [LtExpr (PortExpr "input") (VarExpr "output")]
      |>
 Proof
@@ -230,6 +252,7 @@ QED
 (* Trivial use of Hist                                                       *)
 (*  V = []                                                                   *)
 (*  O = [output = 42]                                                        *)
+(*  A = []                                                                   *)
 (*  G = [Hist(output = 42)]                                                  *)
 (*---------------------------------------------------------------------------*)
 
@@ -237,6 +260,7 @@ Theorem example_3 :
   Component_Correct
      <| var_defs := [];
         out_defs := [NumStmt "output" (IntLit 42)];
+       assumptions := [];
       guarantees := [HistExpr (EqExpr (VarExpr "output") (IntLit 42))]
      |>
 Proof
@@ -247,6 +271,7 @@ QED
 (* Fby and Pre                                                               *)
 (*  V = [steps = 1 -> 1 + pre steps]                                         *)
 (*  O = [output = steps]                                                     *)
+(*  A = []                                                                   *)
 (*  G = [0 < output]                                                         *)
 (*                                                                           *)
 (* Needs some lemmas in order to do the proof                                *)
@@ -259,6 +284,7 @@ Definition comp4_def:
                  (FbyExpr (IntLit 1)
                     (AddExpr (IntLit 1) (PreExpr (VarExpr "steps"))))];
           out_defs := [NumStmt "output" (VarExpr "steps")];
+       assumptions := [];
         guarantees := [LtExpr (IntLit 0) (VarExpr "output")]|>
 End
 
@@ -288,7 +314,7 @@ QED
 Theorem example_4 :
   Component_Correct comp4
 Proof
- rw [Component_Correct_def,comp4_def,guarsVal_def,exprVal_def]
+ rw [Component_Correct_def,comp4_def,assumsVal_def,guarsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM comp4_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -303,6 +329,7 @@ QED
 (*  V = [n = 0 -> 1 + pre n;                                                 *)
 (*       fact = 1 -> pre fact * n]                                           *)
 (*  O = [output = fact]                                                      *)
+(*  A = []                                                                   *)
 (*  G = [0 < fact]                                                           *)
 (*                                                                           *)
 (* We can take the iteration of this transition system into HOL and show     *)
@@ -318,6 +345,7 @@ Definition itFact_def:
                  (FbyExpr (IntLit 1)
                     (MultExpr (PreExpr (VarExpr "fact")) (VarExpr "n")))];
         out_defs := [NumStmt "output" (VarExpr "fact")];
+        assumptions := [];
         guarantees := [LtExpr (IntLit 0) (VarExpr "output")]|>
 End
 
@@ -349,7 +377,7 @@ QED
 Theorem itFact_Meets_Spec :
   Component_Correct itFact
 Proof
- rw [Component_Correct_def,itFact_def,guarsVal_def,exprVal_def]
+ rw [Component_Correct_def,itFact_def,guarsVal_def,assumsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFact_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -371,7 +399,7 @@ val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
 Theorem itFact_eq_FACT :
  ∀t portEnv. Iterate_Effect portEnv itFact t ' "fact" t = &(FACT t)
 Proof
- rw [Component_Correct_def,itFact_def,guarsVal_def,exprVal_def]
+ rw [Component_Correct_def,itFact_def,guarsVal_def,assumsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFact_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -382,7 +410,6 @@ Proof
   >> intLib.ARITH_TAC
 QED
 
-
 (*---------------------------------------------------------------------------*)
 (* Iterative Fibonacci is implemented by the rewrite system                  *)
 (*                                                                           *)
@@ -391,6 +418,7 @@ QED
 (*  V = [x = 0 -> pre y;                                                     *)
 (*       y = 1 -> pre x + pre y]                                             *)
 (*  O = [output = y]                                                         *)
+(*  A = []                                                                   *)
 (*  G = [0 <= x and 0 < output]                                              *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
@@ -404,6 +432,7 @@ Definition itFib_def:
                  (FbyExpr (IntLit 1)
                     (AddExpr (PreExpr (VarExpr "x")) (PreExpr (VarExpr "y"))))];
          out_defs := [NumStmt "output" (VarExpr "y")];
+       assumptions := [];
        guarantees := [AndExpr (NotExpr (LtExpr (VarExpr "x") (IntLit 0)))
                               (LtExpr (IntLit 0) (VarExpr "output"))]
       |>
@@ -428,7 +457,7 @@ QED
 Theorem itFib_Meets_Spec :
   Component_Correct itFib
 Proof
- simp [Component_Correct_def,itFib_def,guarsVal_def,exprVal_def]
+ simp [Component_Correct_def,itFib_def,guarsVal_def,assumsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFib_def]
   >> Induct_on ‘t’
   >- (EVAL_TAC >> rw[])
@@ -446,6 +475,7 @@ QED
 (*---------------------------------------------------------------------------*)
 (* Monitor an input stream for sortedness (w/o boolean vars)                 *)
 (*                                                                           *)
+(*  A = []                                                                   *)
 (*  V = [diff  = 0 -> input - pre input]                                     *)
 (*  O = [alert = 0 -> if diff < 0 then 1 else pre alert]                     *)
 (*  G = [alert = 0 iff Hist (0 <= diff)]                                     *)
@@ -464,8 +494,9 @@ Definition sorted_def:
                          (CondExpr (LtExpr (VarExpr "diff") (IntLit 0))
                                    (IntLit 1)
                                    (PreExpr (VarExpr "alert"))))] ;
+       assumptions := [];
        guarantees := [IffExpr (EqExpr (VarExpr "alert") (IntLit 0))
-                              (HistExpr (LteExpr (IntLit 0) (VarExpr "diff")))]
+                              (HistExpr (LeqExpr (IntLit 0) (VarExpr "diff")))]
       |>
 End
 
@@ -478,7 +509,7 @@ QED
 Theorem sorted_Meets_Spec :
   Component_Correct sorted
 Proof
- simp [Component_Correct_def,sorted_def,guarsVal_def,exprVal_def]
+ simp [Component_Correct_def,sorted_def,guarsVal_def,assumsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM sorted_def]
   >> gen_tac
   >> Induct_on ‘t’
@@ -487,12 +518,94 @@ Proof
        >> EVAL_TAC
        >> simp_tac arith_ss [GSYM sorted_def]
        >> rw[]
-       >- (qexists_tac ‘SUC t’ >> rw[] >>
-           metis_tac [int_lem])
+       >- (qexists_tac ‘SUC t’ >> rw[] >> metis_tac [int_lem])
        >- (rw[EQ_IMP_THM]
            >- (rw[] >> fs [int_lem])
            >- (‘n <= SUC t /\ ~(SUC t = n)’ by decide_tac >> metis_tac[])))
 QED
 
+
+(*---------------------------------------------------------------------------*)
+(* A division node                                                           *)
+(*                                                                           *)
+(*  A = [0 ≤ i1, 0 < i2]                                                     *)
+(*  V = [divsum = (i1 / i2) -> pre divsum + (i1/i2)]                         *)
+(*  O = [output = divsum]                                                    *)
+(*  G = [0 ≤ output]                                                         *)
+(*                                                                           *)
+(* Subtlety: one might think that we could have written                      *)
+(*                                                                           *)
+(*  V = []                                                                   *)
+(*  O = [output = (i1 / i2) -> pre output + (i1/i2)]                         *)
+(*                                                                           *)
+(* but output variables aren't allowed to be state-holding                   *)
+(*---------------------------------------------------------------------------*)
+
+Definition divsum_def:
+  divsum =
+     <| var_defs :=
+          [NumStmt "divsum"
+               (FbyExpr (DivExpr (PortExpr "i1") (PortExpr "i2"))
+                        (AddExpr (PreExpr (VarExpr "divsum"))
+                                 (DivExpr (PortExpr "i1") (PortExpr "i2"))))];
+         out_defs := [NumStmt "output" (VarExpr "divsum")];
+      assumptions := [LtExpr (IntLit 0) (PortExpr"i2");
+                      LeqExpr (IntLit 0) (PortExpr"i1")];
+       guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
+      |>
+End
+
+val lem = intLib.ARITH_PROVE “0i < x ⇒ ((x = ((x/2) * 2)) ⇔ (x%2 = 0))”;
+DECIDE “(if x = T then T else y) = (if y = F then x else T)”;
+
+val divsum_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) divsum t ' "divsum" t”);
+
+val output_effect = SIMP_RULE (srw_ss()) []
+  (EVAL “componentEffect (portEnv,varEnv) divsum t ' "output" t”);
+
+Theorem Vars_Eq :
+   ∀t portEnv. Iterate_Effect portEnv divsum t ' "output" t =
+                Iterate_Effect portEnv divsum t ' "divsum" t
+Proof
+  Induct >> rw [Iterate_Effect_def,output_effect,divsum_effect]
+QED
+
+(*
+Theorem divsum_Meets_Spec :
+  Component_Correct divsum
+Proof
+ simp [Component_Correct_def,divsum_def,guarsVal_def,assumsVal_def,exprVal_def]
+  >> simp_tac std_ss [GSYM divsum_def]
+  >> gen_tac
+  >> completeInduct_on ‘t’
+  >> strip_tac
+  >> Cases_on ‘t’
+    >- (EVAL_TAC >> rw[])
+    >- (fs [GSYM divsum_def,Iterate_Effect_def,lem]
+        >> rw[componentEffect_def, stmtListEffect_def,stmtListParEffect_def]
+
+
+
+ EVAL_TAC
+  >> simp_tac std_ss [GSYM divsum_def]
+  >> gen_tac
+  >> Induct_on ‘t’
+  >- (EVAL_TAC
+       >> qspec_tac(‘portEnv ' "i2" 0’,‘j’)
+       >> qspec_tac(‘portEnv ' "i1" 0’,‘i’)
+       >> rpt gen_tac
+       >> ‘~(j=0)’ by rw[]
+ rw [integerTheory.int_div]
+  >- (simp [Iterate_Effect_def]
+       >> EVAL_TAC
+       >> rw[]
+       >- (fs[lem]
+qexists_tac ‘SUC t’ >> rw[] >> metis_tac [int_lem])
+       >- (rw[EQ_IMP_THM]
+           >- (rw[] >> fs [int_lem])
+           >- (‘n <= SUC t /\ ~(SUC t = n)’ by decide_tac >> metis_tac[])))
+QED
+*)
 
 val _ = export_theory();
