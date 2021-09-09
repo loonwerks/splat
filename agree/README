@@ -26,11 +26,13 @@ Holmake.
 Latex Document
 ---------------
 
-The Latex document is in a "sugared" version of the document, held in file
+The Latex document is in a "sugared" version, held in file
 
   agree.htex
 
-To process it, one would run the following Unix command
+The sugared version has various extra calls that "know" how to display
+HOL elements (types, terms, theorems). To process it, one would run
+the following Unix command
 
   (./munge.exe < agree.htex > agree.tex; pdflatex agree)
 
@@ -45,3 +47,12 @@ to create a standard Latex file. To build munge.exe:
   b. The munge.exe has to have been built, via
 
         <HOLDIR>/bin/mkmunge.exe agreeTheory
+
+Further documentation on how the munger output can be configured can
+be found Section 8.6 of the HOL Description document, which can be found under
+
+   HOLDIR/Manual
+
+of the HOL distribution, or on the web at
+
+http://sourceforge.net/projects/hol/files/hol/kananaskis-14/kananaskis-14-description.pdf
