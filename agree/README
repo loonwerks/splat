@@ -9,9 +9,9 @@ theory you need to have a recent version of HOL
 
    https://github.com/HOL-Theorem-Prover/HOL
 
-One that is installed and built then the "agree" theory can be built with
+Once HOL is installed and built then the "agree" theory can be built with
 
-  <HOLDIR>/bin/Holmake
+  $ <HOLDIR>/bin/Holmake
 
 This generates (among other by-products) the files
 
@@ -30,21 +30,21 @@ The Latex document is in a "sugared" version, held in file
 
   agree.htex
 
-The sugared version has various extra calls that "know" how to display
+The sugared version has various extra calls that know how to display
 HOL elements (types, terms, theorems). To process it, one would run
 the following Unix command
 
   (./munge.exe < agree.htex > agree.tex; pdflatex agree)
 
-This requires a executable
+This requires an executable
 
    munge.exe
 
-to be in the "agree" directory. This "munger" does some preprocessing
-to create a standard Latex file. To build munge.exe:
+to be in the "agree" directory. This munger does preprocessing in order to
+create a standard Latex file. To build munge.exe:
 
   a. The "agree" theory has to have been built
-  b. The munge.exe has to have been built, via
+  b. Invoke mkmunge.exe on the theories being mentioned in the document:
 
         <HOLDIR>/bin/mkmunge.exe agreeTheory
 
