@@ -5,18 +5,28 @@ val _ = intLib.prefer_int();
 
 val _ = new_theory "agree";
 
+val _ = TeX_notation {hol = "(|", TeX = ("\\HOLTokenWhiteParenLeft", 1)}
+val _ = TeX_notation {hol = "|)", TeX = ("\\HOLTokenWhiteParenRight", 1)};
+val _ = TeX_notation {hol = "|->", TeX = ("\\HOLTokenMapto", 1)};
+
+val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 1)}
+val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
+val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
+
+
 (*---------------------------------------------------------------------------*)
 (* Arithmetic expressions. Conventional, except that there are two kinds of  *)
 (* variable: one normal and one for input ports. This allows us to get the   *)
 (* values for input ports from a separate environment than that used to get  *)
 (* the values for variables introduced by ‘eq’ statements.                   *)
 (*                                                                           *)
-(* Also we have Lustre operators "pre" and "fby"                             *)
+(* Also we have Lustre operators "pre" and "fby" as well as a temporal       *)
+(* operator HistExpr ("Historically").                                       *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  expr = PortExpr string
-       | VarExpr string
+  expr = PortVar string
+       | ProgVar string
        | IntLit int
        | AddExpr expr expr
        | SubExpr expr expr
@@ -44,8 +54,8 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition exprVal_def :
-  exprVal (portEnv,varEnv) (PortExpr s) (t:num) = (portEnv ' s) t /\
-  exprVal (portEnv,varEnv) (VarExpr s) t  = (varEnv ' s) t /\
+  exprVal (portEnv,varEnv) (PortVar s) (t:num) = (portEnv ' s) t /\
+  exprVal (portEnv,varEnv) (ProgVar s) t  = (varEnv ' s) t /\
   exprVal E (IntLit i) t  = i /\
   exprVal E (AddExpr e1 e2) t = exprVal E e1 t + exprVal E e2 t /\
   exprVal E (SubExpr e1 e2) t = exprVal E e1 t - exprVal E e2 t /\
@@ -221,9 +231,9 @@ End
 Theorem example_1 :
   Component_Correct
      <|   var_defs := [];
-          out_defs := [NumStmt "output" (PortExpr "input")];
+          out_defs := [NumStmt "output" (PortVar "input")];
        assumptions := [];
-        guarantees := [NotExpr (LtExpr (VarExpr "output") (PortExpr "input"))]
+        guarantees := [NotExpr (LtExpr (ProgVar "output") (PortVar "input"))]
      |>
 Proof
  EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
@@ -239,10 +249,10 @@ QED
 
 Theorem example_2 :
   Component_Correct
-     <| var_defs := [NumStmt "v" (AddExpr (PortExpr "input") (IntLit 1))];
-        out_defs := [NumStmt "output" (VarExpr "v")];
+     <| var_defs := [NumStmt "v" (AddExpr (PortVar "input") (IntLit 1))];
+        out_defs := [NumStmt "output" (ProgVar "v")];
        assumptions := [];
-      guarantees := [LtExpr (PortExpr "input") (VarExpr "output")]
+      guarantees := [LtExpr (PortVar "input") (ProgVar "output")]
      |>
 Proof
  EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
@@ -261,7 +271,7 @@ Theorem example_3 :
      <| var_defs := [];
         out_defs := [NumStmt "output" (IntLit 42)];
        assumptions := [];
-      guarantees := [HistExpr (EqExpr (VarExpr "output") (IntLit 42))]
+      guarantees := [HistExpr (EqExpr (ProgVar "output") (IntLit 42))]
      |>
 Proof
   EVAL_TAC >> Induct_on ‘t’ >> EVAL_TAC >> rw[]
@@ -282,10 +292,10 @@ Definition comp4_def:
        <| var_defs :=
               [NumStmt "steps"
                  (FbyExpr (IntLit 1)
-                    (AddExpr (IntLit 1) (PreExpr (VarExpr "steps"))))];
-          out_defs := [NumStmt "output" (VarExpr "steps")];
+                    (AddExpr (IntLit 1) (PreExpr (ProgVar "steps"))))];
+          out_defs := [NumStmt "output" (ProgVar "steps")];
        assumptions := [];
-        guarantees := [LtExpr (IntLit 0) (VarExpr "output")]|>
+        guarantees := [LtExpr (IntLit 0) (ProgVar "output")]|>
 End
 
 Triviality output_effect :
@@ -340,13 +350,13 @@ Definition itFact_def:
    itFact =
      <| var_defs :=
           [NumStmt "n"
-             (FbyExpr (IntLit 0) (AddExpr (IntLit 1) (PreExpr (VarExpr "n"))));
+             (FbyExpr (IntLit 0) (AddExpr (IntLit 1) (PreExpr (ProgVar "n"))));
            NumStmt "fact"
                  (FbyExpr (IntLit 1)
-                    (MultExpr (PreExpr (VarExpr "fact")) (VarExpr "n")))];
-        out_defs := [NumStmt "output" (VarExpr "fact")];
+                    (MultExpr (PreExpr (ProgVar "fact")) (ProgVar "n")))];
+        out_defs := [NumStmt "output" (ProgVar "fact")];
         assumptions := [];
-        guarantees := [LtExpr (IntLit 0) (VarExpr "output")]|>
+        guarantees := [LtExpr (IntLit 0) (ProgVar "output")]|>
 End
 
 val output_effect = SIMP_RULE (srw_ss()) []
@@ -427,14 +437,14 @@ Definition itFib_def:
    itFib =
       <| var_defs :=
              [NumStmt "x"
-               (FbyExpr (IntLit 0) (PreExpr (VarExpr "y")));
+               (FbyExpr (IntLit 0) (PreExpr (ProgVar "y")));
               NumStmt "y"
                  (FbyExpr (IntLit 1)
-                    (AddExpr (PreExpr (VarExpr "x")) (PreExpr (VarExpr "y"))))];
-         out_defs := [NumStmt "output" (VarExpr "y")];
+                    (AddExpr (PreExpr (ProgVar "x")) (PreExpr (ProgVar "y"))))];
+         out_defs := [NumStmt "output" (ProgVar "y")];
        assumptions := [];
-       guarantees := [AndExpr (NotExpr (LtExpr (VarExpr "x") (IntLit 0)))
-                              (LtExpr (IntLit 0) (VarExpr "output"))]
+       guarantees := [AndExpr (NotExpr (LtExpr (ProgVar "x") (IntLit 0)))
+                              (LtExpr (IntLit 0) (ProgVar "output"))]
       |>
 End
 
@@ -486,17 +496,17 @@ Definition sorted_def:
       <| var_defs :=
              [NumStmt "diff"
                (FbyExpr (IntLit 0)
-                        (SubExpr (PortExpr "input")
-                                 (PreExpr (PortExpr "input"))))] ;
+                        (SubExpr (PortVar "input")
+                                 (PreExpr (PortVar "input"))))] ;
          out_defs :=
              [NumStmt "alert"
                 (FbyExpr (IntLit 0)
-                         (CondExpr (LtExpr (VarExpr "diff") (IntLit 0))
+                         (CondExpr (LtExpr (ProgVar "diff") (IntLit 0))
                                    (IntLit 1)
-                                   (PreExpr (VarExpr "alert"))))] ;
+                                   (PreExpr (ProgVar "alert"))))] ;
        assumptions := [];
-       guarantees := [IffExpr (EqExpr (VarExpr "alert") (IntLit 0))
-                              (HistExpr (LeqExpr (IntLit 0) (VarExpr "diff")))]
+       guarantees := [IffExpr (EqExpr (ProgVar "alert") (IntLit 0))
+                              (HistExpr (LeqExpr (IntLit 0) (ProgVar "diff")))]
       |>
 End
 
@@ -545,13 +555,13 @@ Definition divsum_def:
   divsum =
      <| var_defs :=
           [NumStmt "divsum"
-               (FbyExpr (DivExpr (PortExpr "i1") (PortExpr "i2"))
-                        (AddExpr (PreExpr (VarExpr "divsum"))
-                                 (DivExpr (PortExpr "i1") (PortExpr "i2"))))];
-         out_defs := [NumStmt "output" (VarExpr "divsum")];
-      assumptions := [LtExpr (IntLit 0) (PortExpr"i2");
-                      LeqExpr (IntLit 0) (PortExpr"i1")];
-       guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
+               (FbyExpr (DivExpr (PortVar "i1") (PortVar "i2"))
+                        (AddExpr (PreExpr (ProgVar "divsum"))
+                                 (DivExpr (PortVar "i1") (PortVar "i2"))))];
+         out_defs := [NumStmt "output" (ProgVar "divsum")];
+      assumptions := [LtExpr (IntLit 0) (PortVar"i2");
+                      LeqExpr (IntLit 0) (PortVar"i1")];
+       guarantees := [LeqExpr (IntLit 0) (ProgVar"output")]
       |>
 End
 

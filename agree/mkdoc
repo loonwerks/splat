@@ -1,0 +1,1 @@
+Holmake && ~/Projects/HOL-14/bin/mkmunge.exe agreeTheory && ./munge.exe < agree.htex > agree.tex && pdflatex agree

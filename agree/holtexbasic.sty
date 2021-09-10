@@ -6,7 +6,7 @@
 % -------------------------------------------------------
 
 \NeedsTeXFormat{LaTeX2e}
-\usepackage{amssymb, underscore, fancyvrb, amsmath}
+\usepackage{amssymb, underscore, fancyvrb, amsmath, stmaryrd}
 
 \fvset{commandchars=\\\{\},xleftmargin=1mm,framesep=1.2mm,fontsize=\small}
 
@@ -130,3 +130,9 @@
 \newcommand{\HOLTokenOne}{\ensuremath{\mathbbm{1}}}
 \newcommand{\HOLTokenIntegral}{\ensuremath{\int}}
 \newcommand{\HOLTokenIntegralPlus}{\ensuremath{\int^{+}}}
+
+% Syntax for function update (combinTheory)
+% The latex symbols come from the stmaryrd package
+
+\newcommand{\HOLTokenWhiteParenLeft}{\ensuremath{\llparenthesis}}
+\newcommand{\HOLTokenWhiteParenRight}{\ensuremath{\rrparenthesis}}

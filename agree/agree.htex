@@ -27,14 +27,15 @@
 \newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
 \newcommand{\SubstTheta}[2]{\ensuremath{\theta\;{#1}\; {#2}}}
 \newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+\newcommand{\agree}{\textsc{AGREE}}
 
 \begin{document}
 
 \maketitle
 
 
-\begin{abstract} The AGREE language is used to specify component-level
-behavior of AADL components. We define the semantics of AGREE and
+\begin{abstract} The {\agree} language is used to specify component-level
+behavior of AADL components. We define the semantics of {\agree} and
 discuss how the semantics is leveraged to generate code that acts as a
 witness to the specification.
 
@@ -43,37 +44,193 @@ witness to the specification.
 
 \section{Introduction}\label{sec:intro}
 
-\section{Syntax of AGREE}\label{sec:syntax}
+\section{{\agree} syntax}\label{sec:syntax}
 
-An AGREE \emph{component} is (for now) the element that we wish to
+An {\agree} leaf-level \emph{component} is the element that we wish to
 study. A component has a collection of input ports and output ports,
-some (local) state variables, and, for specification purposes,
-assumptions and guarantees. Thus a component is represented by the
-following record type:
+some (local) state variable assignments, and, for specification
+purposes, assumptions and guarantees. At runtime, a component reads
+from its input ports, updates state variables, then computes values
+for output ports. A component is represented by the following record
+type:
 
 \begin{alltt}
-   \HOLthm{agree.datatype_component}
+\HOLthm[>>3]{agree.datatype_component}
 \end{alltt}
 
-A component computation reads from the input ports, updates the state
-variables, then computes the values for output ports. Assumptions are
-boolean expressions that mention only the input ports, while
-guarantees can refer to input port values and the values of variables.
+ Assumptions are boolean expressions over the input ports, while
+guarantees are boolean expressions that can refer to input port
+values and the values of variables.  We will use the following
+notation to describe a component:
 
+\[
+\begin{array}{rcll}
+\multicolumn{3}{c}{A_1 \land \cdots \land A_i} & \text{assumptions} \\
+  v_1 & = & e_1 & \text{variable assignments} \\
+     & \cdots & & \\
+ v_j & = & e_j &   \\
+ o_1 & = & e_{j+1} & \text{output assignments} \\
+     & \cdots & &  \\
+ o_k & = & e_{j+k} & \\
+\multicolumn{3}{c}{G_1 \land \cdots \land G_m} & \text{guarantees} \\
+\end{array}
+\]
+
+\begin{remark}
+For now, the sets of port variables and program variables are not
+explicitly declared in the component declaration; instead, the set of
+variables occurring in the component implicitly defines the input port
+variables (arguments to \konst{PortVar}), program variables (left-hand
+sides of variable assignments), and output port variables (left-hand
+sides of output assignments).
+\end{remark}
+
+
+\subsection{Statements}
+
+There is only one statement: assignment.
+\begin{alltt}
+\HOLthm[>>3]{agree.datatype_stmt}
+\end{alltt}
 
 \subsection{Expressions}
 
-Since we are dealing with a core language, we leave out non-essential
-detail. AGREE expressions are conventional arithmetic/boolean
-expressions, with the addition of Lustre-style \verb+fby+ and
-\verb+pre+ operators.
+{\agree} expressions are conventional arithmetic/boolean
+expressions, defined by a mutual recursion.
 
 \begin{alltt}
-\qquad \HOLthm{agree.datatype_expr}
+\HOLthm[>>3]{agree.datatype_expr}
+\end{alltt}
+
+There are also a few special aspects to note:
+
+\begin{itemize}
+
+\item There are three kinds of variable: \emph{port} variables are
+  distinguished from \emph{program} variables. An input port variable
+  holds the value of an input port, and is immutable; a program
+  variable is a mutable location. Output port variables are mutable
+  locations, the values of which are used as output of the component.
+
+\item Lustre-style \verb+fby+ and \verb+pre+ operators help specify
+  temporally-influenced behaviours. We also provide a
+  \emph{Historically} operator (\verb+Hist+)
+
+\end{itemize}
+
+\section{{\agree} semantics}\label{sec:semantics}
+
+The \emph{environment} of a component is a finite map from a \emph{name}
+(port name or variable name) to a stream of type $\tau$. Currently all
+streams are of type $\mathbb{Z}$. Thus
+
+\[
+  \konst{env} = \konst{string} \mapsto (\konst{nat} \to \konst{int})
+\]
+
+Variable assignment is modelled by updating the relevant stream at a point in time:
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.updateEnv_def}
+\end{alltt}
+
+\begin{remark}[Notation]
+The expression \HOLtm{env ' name t} means `the value of variable
+$\mathit{name}$ in environment $\mathit{env}$ at time $t$'.
+\end{remark}
+
+\subsection{Expression valuation}
+We employ separate environments for input ports ($\mathit{portEnv}$) and
+program variables ($\mathit{varEnv}$). Following is the definition of
+expression valuation in a $(\mathit{portEnv},\mathit{varEnv})$
+environment at a time $t$.
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.exprVal_def}
+\end{alltt}
+
+\begin{remark}[Partiality]
+The semantics of \konst{PreExpr} requires that it is undefined at time
+0. Because HOL does not support true undefinedness, we have used the
+\konst{ARB} constant of HOL which is a polymorphic constant denoting a
+fixed arbitrary element of its type (\konst{int}
+currently). \konst{ARB} is useful for specification but it does not
+have a computational value. We have considered using some fixed
+integer---such as 42---instead, but that will not extend well to a
+more complex type regime. Instead, we could make expression evaluation
+explicitly partial, by using option types. We have done this in our
+actual implementation, but for now we will stick with \konst{ARB}.
+\end{remark}
+
+
+\subsection{Statement valuation and effect}
+
+The value of a statement $v = e$ is $(v,i)$ where $i$ is the value of $e$ in the current state.
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.stmtVal_def}
+\end{alltt}
+
+The meaning of an assignment statement is a transformation on the environment:
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.stmtEffect_def}
+\end{alltt}
+
+Assignment lists need to be dealt with sequentially (via a
+\konst{fold} from the left) and also in parallel (via a \konst{map}
+follwed by a \konst{fold} from the right):
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.stmtListEffect_def}
+
+\HOLthm[def,>>3]{agree.stmtListParEffect_def}
+\end{alltt}
+
+\subsection{Component effect and correctness}
+
+The \emph{effect} of a component is the environment obtained by
+evaluating the variable assignments given the input port values. The
+variable definitions are evaluated in sequence, and then the output
+definitions are evaluated in parallel (ensuring that no output can
+depend on any other output), and added to the bindings obtained from
+the variable assignments.
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.componentEffect_def}
+\end{alltt}
+
+We now have almost enough definitions to define correctness of a
+component. We only need to extend the component behaviour through
+time, and do this by iterating the effect of the component.
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.Iterate_Effect_def}
+\end{alltt}
+
+Note that the component effect is not given, as one might expect, a
+default value at time 0. The first input of the component arrives at
+time 0, and thus there is also an output at time 0.
+
+Given values on the input ports, and the values for variables, the
+\emph{contract} of the component can be given a value:
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.assumsVal_def}
+
+\HOLthm[def,>>3]{agree.guarsVal_def}
+\end{alltt}
+
+Finally, the correctness of a leaf-level component can be defined: the
+component is correct if, for any time $t$, the guarantees hold after
+iterating for $t+1$ steps, starting with an arbitrary initial state,
+and providing that the assumptions hold.
+
+\begin{alltt}
+\HOLthm[def,>>3]{agree.Component_Correct_def}
 \end{alltt}
 
 
-\section{Semantics of AGREE}\label{sec:semantics}
 
 \section{Code Generation}\label{sec:codegen}
 
