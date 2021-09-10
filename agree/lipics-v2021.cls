@@ -552,7 +552,7 @@
 	\definecolor[named]{lipicsLightGray}{rgb}{0.85,0.85,0.86}
 	\definecolor[named]{lipicsYellow}{rgb}{0.99,0.78,0.07}
 }
-\RequirePackage{babel}
+\RequirePackage[english]{babel}
 \RequirePackage[tbtags,fleqn]{amsmath}
 \AtBeginDocument{
 	\@ifpackageloaded{enumitem}{\ClassWarning{Package 'enuitem' incompatible}{Don't use package 'enumitem'; Package enumerate preloaded!}}{}
