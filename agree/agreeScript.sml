@@ -7,10 +7,11 @@ val _ = new_theory "agree";
 
 val _ = TeX_notation {hol = "(|", TeX = ("\\HOLTokenWhiteParenLeft", 1)}
 val _ = TeX_notation {hol = "|)", TeX = ("\\HOLTokenWhiteParenRight", 1)};
-val _ = TeX_notation {hol = "|->", TeX = ("\\HOLTokenMapto", 1)};
 
 val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 1)}
 val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
+
+val _ = TeX_notation {hol = "|->",           TeX = ("\\HOLTokenMapto", 1)};
 val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
 
 
@@ -180,17 +181,19 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition guarsVal_def:
-   guarsVal E comp t = EVERY (\g. bexprVal E g t) comp.guarantees
+   guarsVal E comp = bexprVal E (FOLDR AndExpr (BoolLit T) comp.guarantees)
 End
 
 (*---------------------------------------------------------------------------*)
 (* Evaluate the conjunction of assumptions of the component at time t. Only  *)
-(* the input port values can be accessed.                                    *)
+(* the input port values can be accessed. At a time t we can assume that the *)
+(* assumptions hold for all j ≤ t.                                           *)
 (*---------------------------------------------------------------------------*)
 
 Definition assumsVal_def:
-   assumsVal portEnv comp t =
-      EVERY (\a. bexprVal (portEnv,FEMPTY) a t) comp.assumptions
+   assumsVal portEnv comp =
+        bexprVal (portEnv,FEMPTY)
+             (HistExpr (FOLDR AndExpr (BoolLit T) comp.assumptions))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -222,9 +225,9 @@ End
 
 (*---------------------------------------------------------------------------*)
 (* Trivial beginning example                                                 *)
+(*  A = []                                                                   *)
 (*  V = []                                                                   *)
 (*  O = [output = input]                                                     *)
-(*  A = []                                                                   *)
 (*  G = [output ≤ input]                                                     *)
 (*---------------------------------------------------------------------------*)
 
@@ -260,9 +263,9 @@ QED
 
 (*---------------------------------------------------------------------------*)
 (* Trivial use of Hist                                                       *)
+(*  A = []                                                                   *)
 (*  V = []                                                                   *)
 (*  O = [output = 42]                                                        *)
-(*  A = []                                                                   *)
 (*  G = [Hist(output = 42)]                                                  *)
 (*---------------------------------------------------------------------------*)
 
@@ -279,9 +282,9 @@ QED
 
 (*---------------------------------------------------------------------------*)
 (* Fby and Pre                                                               *)
+(*  A = []                                                                   *)
 (*  V = [steps = 1 -> 1 + pre steps]                                         *)
 (*  O = [output = steps]                                                     *)
-(*  A = []                                                                   *)
 (*  G = [0 < output]                                                         *)
 (*                                                                           *)
 (* Needs some lemmas in order to do the proof                                *)
@@ -336,10 +339,10 @@ QED
 (*                                                                           *)
 (*   (n,fact) --> (n+1,fact * (n+1))                                         *)
 (*                                                                           *)
-(*  V = [n = 0 -> 1 + pre n;                                                 *)
+(*  A = []                                                                   *)
+(*  V = [n    = 0 -> 1 + pre n;                                              *)
 (*       fact = 1 -> pre fact * n]                                           *)
 (*  O = [output = fact]                                                      *)
-(*  A = []                                                                   *)
 (*  G = [0 < fact]                                                           *)
 (*                                                                           *)
 (* We can take the iteration of this transition system into HOL and show     *)
@@ -425,10 +428,10 @@ QED
 (*                                                                           *)
 (*       (x,y) --> (y,x+y)                                                   *)
 (*                                                                           *)
+(*  A = []                                                                   *)
 (*  V = [x = 0 -> pre y;                                                     *)
 (*       y = 1 -> pre x + pre y]                                             *)
 (*  O = [output = y]                                                         *)
-(*  A = []                                                                   *)
 (*  G = [0 <= x and 0 < output]                                              *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
@@ -536,7 +539,8 @@ QED
 
 
 (*---------------------------------------------------------------------------*)
-(* A division node                                                           *)
+(* A division node implementing summation of pointwise division of stream    *)
+(* i1 by i2                                                                  *)
 (*                                                                           *)
 (*  A = [0 ≤ i1, 0 < i2]                                                     *)
 (*  V = [divsum = (i1 / i2) -> pre divsum + (i1/i2)]                         *)
@@ -565,9 +569,6 @@ Definition divsum_def:
       |>
 End
 
-val lem = intLib.ARITH_PROVE “0i < x ⇒ ((x = ((x/2) * 2)) ⇔ (x%2 = 0))”;
-DECIDE “(if x = T then T else y) = (if y = F then x else T)”;
-
 val divsum_effect = SIMP_RULE (srw_ss()) []
   (EVAL “componentEffect (portEnv,varEnv) divsum t ' "divsum" t”);
 
@@ -581,41 +582,38 @@ Proof
   Induct >> rw [Iterate_Effect_def,output_effect,divsum_effect]
 QED
 
-(*
 Theorem divsum_Meets_Spec :
   Component_Correct divsum
 Proof
- simp [Component_Correct_def,divsum_def,guarsVal_def,assumsVal_def,exprVal_def]
-  >> simp_tac std_ss [GSYM divsum_def]
-  >> gen_tac
-  >> completeInduct_on ‘t’
-  >> strip_tac
-  >> Cases_on ‘t’
-    >- (EVAL_TAC >> rw[])
-    >- (fs [GSYM divsum_def,Iterate_Effect_def,lem]
-        >> rw[componentEffect_def, stmtListEffect_def,stmtListParEffect_def]
-
-
-
- EVAL_TAC
-  >> simp_tac std_ss [GSYM divsum_def]
-  >> gen_tac
+EVAL_TAC
+  >> rw [GSYM divsum_def,Vars_Eq]
   >> Induct_on ‘t’
-  >- (EVAL_TAC
-       >> qspec_tac(‘portEnv ' "i2" 0’,‘j’)
-       >> qspec_tac(‘portEnv ' "i1" 0’,‘i’)
-       >> rpt gen_tac
-       >> ‘~(j=0)’ by rw[]
- rw [integerTheory.int_div]
-  >- (simp [Iterate_Effect_def]
-       >> EVAL_TAC
-       >> rw[]
-       >- (fs[lem]
-qexists_tac ‘SUC t’ >> rw[] >> metis_tac [int_lem])
-       >- (rw[EQ_IMP_THM]
-           >- (rw[] >> fs [int_lem])
-           >- (‘n <= SUC t /\ ~(SUC t = n)’ by decide_tac >> metis_tac[])))
+  >> strip_tac
+    >- (EVAL_TAC
+        >> pop_assum (mp_tac o Q.SPEC ‘0n’) >> rw[]
+        >> rpt (pop_assum mp_tac)
+        >> qspec_tac(‘portEnv ' "i2" 0’,‘j’)
+        >> qspec_tac(‘portEnv ' "i1" 0’,‘i’)
+        >> rpt gen_tac
+        >> rw []
+        >> ‘~(j=0)’ by intLib.ARITH_TAC
+        >> rw [integerTheory.int_div])
+    >- (simp_tac std_ss [Iterate_Effect_def,divsum_effect]
+        >> rw[]
+        >> ‘t ≤ SUC t’ by rw[]
+        >> ‘0 ≤ Iterate_Effect portEnv divsum t ' "divsum" t’ by fs[]
+        >> irule integerTheory.INT_LE_ADD
+        >> conj_tac
+        >- metis_tac[]
+        >- (‘0 < portEnv ' "i2" (SUC t) ∧ 0 ≤ portEnv ' "i1" (SUC t)’ by fs[]
+            >> ntac 2 (pop_assum mp_tac)
+            >> rpt (pop_assum kall_tac)
+            >> qspec_tac(‘portEnv ' "i2" (SUC t)’,‘j’)
+            >> qspec_tac(‘portEnv ' "i1" (SUC t)’,‘i’)
+            >> rpt gen_tac
+            >> rw []
+            >> ‘~(j=0)’ by intLib.ARITH_TAC
+            >> rw [integerTheory.int_div]))
 QED
-*)
 
 val _ = export_theory();

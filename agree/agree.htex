@@ -65,14 +65,14 @@ notation to describe a component:
 
 \[
 \begin{array}{rcll}
-\multicolumn{3}{c}{A_1 \land \cdots \land A_i} & \text{assumptions} \\
-  v_1 & = & e_1 & \text{variable assignments} \\
+\multicolumn{3}{c}{A_1 \land \cdots \land A_i} & \text{; assumptions} \\
+  v_1 & = & e_1 & \text{; variable definitions} \\
      & \cdots & & \\
  v_j & = & e_j &   \\
- o_1 & = & e_{j+1} & \text{output assignments} \\
+ o_1 & = & e_{j+1} & \text{; output definitions} \\
      & \cdots & &  \\
  o_k & = & e_{j+k} & \\
-\multicolumn{3}{c}{G_1 \land \cdots \land G_m} & \text{guarantees} \\
+\multicolumn{3}{c}{G_1 \land \cdots \land G_m} & \text{; guarantees} \\
 \end{array}
 \]
 
@@ -213,7 +213,9 @@ default value at time 0. The first input of the component arrives at
 time 0, and thus there is also an output at time 0.
 
 Given values on the input ports, and the values for variables, the
-\emph{contract} of the component can be given a value:
+\emph{contract} of the component can be expressed. The assumptions are
+assumed to hold for all times up to the present, and the guarantees
+need to hold at the present time.
 
 \begin{alltt}
 \HOLthm[def,>>3]{agree.assumsVal_def}
@@ -231,6 +233,7 @@ and providing that the assumptions hold.
 \end{alltt}
 
 
+\section{example}
 
 \section{Code Generation}\label{sec:codegen}
 
