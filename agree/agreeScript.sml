@@ -203,10 +203,10 @@ End
 (* have to calculate componentEffect there as well.                          *)
 (*---------------------------------------------------------------------------*)
 
-Definition Iterate_Effect_def :
-  Iterate_Effect portEnv comp 0 = componentEffect (portEnv,ARB) comp 0 ∧
-  Iterate_Effect portEnv comp (SUC t) =
-    componentEffect (portEnv,Iterate_Effect portEnv comp t) comp (SUC t)
+Definition iterateEffect_def :
+  iterateEffect portEnv comp 0 = componentEffect (portEnv,ARB) comp 0 ∧
+  iterateEffect portEnv comp (SUC t) =
+    componentEffect (portEnv,iterateEffect portEnv comp t) comp (SUC t)
 End
 
 (*---------------------------------------------------------------------------*)
@@ -220,7 +220,7 @@ Definition Component_Correct_def:
   ∀portEnv t.
       assumsVal portEnv comp t
         ==>
-      guarsVal (portEnv, Iterate_Effect portEnv comp t) comp t
+      guarsVal (portEnv, iterateEffect portEnv comp t) comp t
 End
 
 (*---------------------------------------------------------------------------*)
@@ -318,10 +318,10 @@ Proof
 QED
 
 Theorem Vars_Eq :
-   ∀t portEnv. Iterate_Effect portEnv comp4 t ' "output" t =
-                Iterate_Effect portEnv comp4 t ' "steps" t
+   ∀t portEnv. iterateEffect portEnv comp4 t ' "output" t =
+                iterateEffect portEnv comp4 t ' "steps" t
 Proof
-  Induct >> rw [Iterate_Effect_def,output_effect,steps_effect]
+  Induct >> rw [iterateEffect_def,output_effect,steps_effect]
 QED
 
 Theorem example_4 :
@@ -372,17 +372,17 @@ val fact_effect = SIMP_RULE (srw_ss()) []
   (EVAL “componentEffect (portEnv,varEnv) itFact t ' "fact" t”);
 
 Theorem Vars_Eq :
-   ∀t portEnv. Iterate_Effect portEnv itFact t ' "output" t =
-                Iterate_Effect portEnv itFact t ' "fact" t
+   ∀t portEnv. iterateEffect portEnv itFact t ' "output" t =
+                iterateEffect portEnv itFact t ' "fact" t
 Proof
-  Induct >> rw [Iterate_Effect_def,output_effect,fact_effect]
+  Induct >> rw [iterateEffect_def,output_effect,fact_effect]
 QED
 
 Theorem n_is_N:
-  ∀t portEnv. Iterate_Effect portEnv itFact t ' "n" t = &t
+  ∀t portEnv. iterateEffect portEnv itFact t ' "n" t = &t
 Proof
   Induct
-   >> rw [Iterate_Effect_def,n_effect,integerTheory.int_of_num,integerTheory.INT_1]
+   >> rw [iterateEffect_def,n_effect,integerTheory.int_of_num,integerTheory.INT_1]
    >> pop_assum kall_tac
    >> intLib.ARITH_TAC
 QED
@@ -397,7 +397,7 @@ Proof
   >> fs [GSYM itFact_def]
   >> fs[Vars_Eq,n_is_N]
   >> pop_assum mp_tac
-  >> qspec_tac (‘Iterate_Effect portEnv itFact t ' "fact" t’,‘i’)
+  >> qspec_tac (‘iterateEffect portEnv itFact t ' "fact" t’,‘i’)
   >> rpt strip_tac
   >> match_mp_tac int_arithTheory.positive_product_implication
   >> intLib.ARITH_TAC
@@ -410,7 +410,7 @@ QED
 val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
 
 Theorem itFact_eq_FACT :
- ∀t portEnv. Iterate_Effect portEnv itFact t ' "fact" t = &(FACT t)
+ ∀t portEnv. iterateEffect portEnv itFact t ' "fact" t = &(FACT t)
 Proof
  rw [Component_Correct_def,itFact_def,guarsVal_def,assumsVal_def,exprVal_def]
   >> simp_tac std_ss [GSYM itFact_def]
@@ -461,10 +461,10 @@ val y_effect = SIMP_RULE (srw_ss()) []
   (EVAL “componentEffect (portEnv,varEnv) itFib t ' "y" t”);
 
 Theorem Vars_Eq :
-   ∀t portEnv. Iterate_Effect portEnv itFib t ' "output" t =
-                Iterate_Effect portEnv itFib t ' "y" t
+   ∀t portEnv. iterateEffect portEnv itFib t ' "output" t =
+                iterateEffect portEnv itFib t ' "y" t
 Proof
-  Induct >> rw [Iterate_Effect_def,output_effect,y_effect]
+  Induct >> rw [iterateEffect_def,output_effect,y_effect]
 QED
 
 Theorem itFib_Meets_Spec :
@@ -474,14 +474,14 @@ Proof
   >> simp_tac std_ss [GSYM itFib_def]
   >> Induct_on ‘t’
   >- (EVAL_TAC >> rw[])
-  >- (simp [Iterate_Effect_def]
+  >- (simp [iterateEffect_def]
        >> EVAL_TAC
        >> simp_tac arith_ss [GSYM itFib_def]
        >> fs[Vars_Eq]
        >> gen_tac
        >> pop_assum (mp_tac o Q.SPEC ‘portEnv’)
-       >> qspec_tac (‘Iterate_Effect portEnv itFib t ' "x" t’,‘i’)
-       >> qspec_tac (‘Iterate_Effect portEnv itFib t ' "y" t’,‘j’)
+       >> qspec_tac (‘iterateEffect portEnv itFib t ' "x" t’,‘i’)
+       >> qspec_tac (‘iterateEffect portEnv itFib t ' "y" t’,‘j’)
        >> intLib.ARITH_TAC)
 QED
 
@@ -527,7 +527,7 @@ Proof
   >> gen_tac
   >> Induct_on ‘t’
   >- (EVAL_TAC >> rw[])
-  >- (simp [Iterate_Effect_def]
+  >- (simp [iterateEffect_def]
        >> EVAL_TAC
        >> simp_tac arith_ss [GSYM sorted_def]
        >> rw[]
@@ -576,10 +576,10 @@ val output_effect = SIMP_RULE (srw_ss()) []
   (EVAL “componentEffect (portEnv,varEnv) divsum t ' "output" t”);
 
 Theorem Vars_Eq :
-   ∀t portEnv. Iterate_Effect portEnv divsum t ' "output" t =
-                Iterate_Effect portEnv divsum t ' "divsum" t
+   ∀t portEnv. iterateEffect portEnv divsum t ' "output" t =
+                iterateEffect portEnv divsum t ' "divsum" t
 Proof
-  Induct >> rw [Iterate_Effect_def,output_effect,divsum_effect]
+  Induct >> rw [iterateEffect_def,output_effect,divsum_effect]
 QED
 
 Theorem divsum_Meets_Spec :
@@ -598,10 +598,10 @@ EVAL_TAC
         >> rw []
         >> ‘~(j=0)’ by intLib.ARITH_TAC
         >> rw [integerTheory.int_div])
-    >- (simp_tac std_ss [Iterate_Effect_def,divsum_effect]
+    >- (simp_tac std_ss [iterateEffect_def,divsum_effect]
         >> rw[]
         >> ‘t ≤ SUC t’ by rw[]
-        >> ‘0 ≤ Iterate_Effect portEnv divsum t ' "divsum" t’ by fs[]
+        >> ‘0 ≤ iterateEffect portEnv divsum t ' "divsum" t’ by fs[]
         >> irule integerTheory.INT_LE_ADD
         >> conj_tac
         >- metis_tac[]

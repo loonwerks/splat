@@ -26,10 +26,18 @@
 \newenvironment{HOLmath}{\begin{displaymath}\begin{array}{l}}{\end{array}\end{displaymath}\ignorespacesafterend}
 \newenvironment{HOLarray}{\begin{array}[t]{l}}{\end{array}}
 
-\newcommand{\HOLKeyword}[1]{{\bfseries{\textsf{#1}}}}
 \newcommand{\HOLBoundVar}[1]{\ensuremath{\mathit{#1}}}
 \newcommand{\HOLFreeVar}[1]{\ensuremath{\mathit{#1}}}
-\newcommand{\HOLConst}[1]{\texttt{#1}}
+
+%\newcommand{\HOLKeyword}[1]{{\bfseries{\textsf{#1}}}}
+%\newcommand{\HOLConst}[1]{\texttt{#1}}
+
+\newcommand{\HOLConst}[1]{\ensuremath{\mathsf{#1}}}
+\newcommand{\HOLKeyword}[1]{\ensuremath{\mathsf{#1}}}
+
+%\renewcommand{\HOLConst}[1]{\textsf{#1}}
+%\renewcommand{\HOLKeyword}[1]{\textsf{#1}}
+
 \newcommand{\HOLSymConst}[1]{#1}
 \newcommand{\HOLTyOp}[1]{\texttt{#1}}
 \newcommand{\HOLStringLit}[1]{\textrm{``#1''}}

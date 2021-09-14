@@ -41,22 +41,21 @@ witness to the specification.
 
 \end{abstract}
 
-
 \section{Introduction}\label{sec:intro}
 
 \section{{\agree} syntax}\label{sec:syntax}
 
 An {\agree} leaf-level \emph{component} is the element that we wish to
 study. A component has a collection of input ports and output ports,
-some (local) state variable assignments, and, for specification
-purposes, assumptions and guarantees. At runtime, a component reads
-from its input ports, updates state variables, then computes values
-for output ports. A component is represented by the following record
-type:
+local state variable assignments, output port assignments, and, for
+specification purposes, assumptions and guarantees. At runtime, a
+component reads from its input ports, updates state variables, then
+computes values for output ports. A component is represented by the
+following record type:
 
-\begin{alltt}
-\HOLthm[>>3]{agree.datatype_component}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,>>3]{agree.datatype_component}
+\end{HOLmath}
 
  Assumptions are boolean expressions over the input ports, while
 guarantees are boolean expressions that can refer to input port
@@ -86,21 +85,14 @@ sides of output assignments).
 \end{remark}
 
 
-\subsection{Statements}
+\subsection{Expressions and statements}
 
-There is only one statement: assignment.
-\begin{alltt}
-\HOLthm[>>3]{agree.datatype_stmt}
-\end{alltt}
+{\agree} expressions are conventional arithmetic/boolean expressions,
+defined by a mutual recursion.
 
-\subsection{Expressions}
-
-{\agree} expressions are conventional arithmetic/boolean
-expressions, defined by a mutual recursion.
-
-\begin{alltt}
-\HOLthm[>>3]{agree.datatype_expr}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,>>3]{agree.datatype_expr}
+\end{HOLmath}
 
 There are also a few special aspects to note:
 
@@ -118,36 +110,62 @@ There are also a few special aspects to note:
 
 \end{itemize}
 
+There is only one kind of statement: assignment.
+\begin{HOLmath}
+\HOLthm[m;,>>3]{agree.datatype_stmt}
+\end{HOLmath}
+
 \section{{\agree} semantics}\label{sec:semantics}
 
-The \emph{environment} of a component is a finite map from a \emph{name}
-(port name or variable name) to a stream of type $\tau$. Currently all
-streams are of type $\mathbb{Z}$. Thus
+Component \emph{environments} are finite maps from a \emph{name} (port
+name or variable name) to a stream of type $\tau$. Currently all
+streams are of type \konst{int}. Thus
 
 \[
   \konst{env} = \konst{string} \mapsto (\konst{nat} \to \konst{int})
 \]
 
-Variable assignment is modelled by updating the relevant stream at a point in time:
+\begin{definition}[Environment update]
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.updateEnv_def}
-\end{alltt}
+Variable assignment is modelled by updating the named stream in an
+environment at a point in time:
+
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{agree.updateEnv_def}
+\end{HOLmath}
 
 \begin{remark}[Notation]
 The expression \HOLtm{env ' name t} means `the value of variable
 $\mathit{name}$ in environment $\mathit{env}$ at time $t$'.
 \end{remark}
 
+\end{definition}
+
 \subsection{Expression valuation}
+
 We employ separate environments for input ports ($\mathit{portEnv}$) and
 program variables ($\mathit{varEnv}$). Following is the definition of
 expression valuation in a $(\mathit{portEnv},\mathit{varEnv})$
-environment at a time $t$.
+environment at a time $t$. Some cases have been elided.
+%
+\begin{definition}[Expression values]
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.exprVal_def}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3,conj1]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj2]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj3]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj4,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj9,width=95]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj10,width=95]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj11]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj13,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj14,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj18,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj19,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj21,width=75]{agree.exprVal_def} \\
+\end{HOLmath}
+
+\end{definition}
 
 \begin{remark}[Partiality]
 The semantics of \konst{PreExpr} requires that it is undefined at time
@@ -163,29 +181,35 @@ actual implementation, but for now we will stick with \konst{ARB}.
 \end{remark}
 
 
-\subsection{Statement valuation and effect}
+\subsection{Statement value and effect}
 
 The value of a statement $v = e$ is $(v,i)$ where $i$ is the value of $e$ in the current state.
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.stmtVal_def}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{agree.stmtVal_def}
+\end{HOLmath}
 
 The meaning of an assignment statement is a transformation on the environment:
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.stmtEffect_def}
-\end{alltt}
+\begin{definition}[Statement effect]
 
-Assignment lists need to be dealt with sequentially (via a
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{agree.stmtEffect_def}
+\end{HOLmath}
+
+In the following, lists of assignments need to be dealt with both sequentially (via a
 \konst{fold} from the left) and also in parallel (via a \konst{map}
-follwed by a \konst{fold} from the right):
+followed by an accumulating \konst{fold} from the right):
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.stmtListEffect_def}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{agree.stmtListEffect_def}
 
-\HOLthm[def,>>3]{agree.stmtListParEffect_def}
-\end{alltt}
+\\ \\
+
+\HOLthm[m;,def,>>3]{agree.stmtListParEffect_def}
+\end{HOLmath}
+
+\end{definition}
 
 \subsection{Component effect and correctness}
 
@@ -196,44 +220,44 @@ definitions are evaluated in parallel (ensuring that no output can
 depend on any other output), and added to the bindings obtained from
 the variable assignments.
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.componentEffect_def}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3,width=90]{agree.componentEffect_def}
+\end{HOLmath}
 
 We now have almost enough definitions to define correctness of a
 component. We only need to extend the component behaviour through
 time, and do this by iterating the effect of the component.
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.Iterate_Effect_def}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3,width=85]{agree.iterateEffect_def}
+\end{HOLmath}
 
 Note that the component effect is not given, as one might expect, a
 default value at time 0. The first input of the component arrives at
-time 0, and thus there is also an output at time 0.
+time 0, and thus there is also a computation and output at time 0.
 
 Given values on the input ports, and the values for variables, the
 \emph{contract} of the component can be expressed. The assumptions are
 assumed to hold for all times up to the present, and the guarantees
 need to hold at the present time.
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.assumsVal_def}
-
-\HOLthm[def,>>3]{agree.guarsVal_def}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3,width=75]{agree.assumsVal_def}
+\\ \\
+\HOLthm[m;,def,>>3]{agree.guarsVal_def}
+\end{HOLmath}
 
 Finally, the correctness of a leaf-level component can be defined: the
 component is correct if, for any time $t$, the guarantees hold after
 iterating for $t+1$ steps, starting with an arbitrary initial state,
 and providing that the assumptions hold.
 
-\begin{alltt}
-\HOLthm[def,>>3]{agree.Component_Correct_def}
-\end{alltt}
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{agree.Component_Correct_def}
+\end{HOLmath}
 
 
-\section{example}
+\section{Example}
 
 \section{Code Generation}\label{sec:codegen}
 
