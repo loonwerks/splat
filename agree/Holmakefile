@@ -1,0 +1,11 @@
+all: $(DEFAULT_TARGETS) doc
+
+.PHONY: all
+
+EXTRA_CLEANS = agree.aux agree.log agree.out agree.pdf agree.tex agree.vtc munge.exe
+
+munge.exe : $(DEFAULT_TARGETS)
+	$(protect $(HOLDIR)/bin/mkmunge.exe) agreeTheory
+
+doc : munge.exe
+	./munge.exe < agree.htex > agree.tex && pdflatex agree
