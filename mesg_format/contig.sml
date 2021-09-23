@@ -1,10 +1,13 @@
+structure Contig :> Contig =
+struct
+
+val ERR = mk_HOL_ERR "Contig";
+
 (*---------------------------------------------------------------------------*)
 (* lvals designate locations where data lives. Exps are r-values. Since an   *)
 (* lval can depend on runtime values, and rvals depend on lvals to read the  *)
 (* values at locations, the types are mutually recursive.                    *)
 (*---------------------------------------------------------------------------*)
-
-val ERR = mk_HOL_ERR "contig";
 
 datatype lval
   = VarName of string
@@ -34,127 +37,7 @@ datatype bexp
 ;
 
 (*---------------------------------------------------------------------------*)
-(* lval comparison function used to build lval-keyed finite map.             *)
-(*---------------------------------------------------------------------------*)
-
-fun lval_compare pair =
- case pair
-  of (VarName s1, VarName s2) => String.compare(s1,s2)
-   | (VarName _, _) => LESS
-   | (RecdProj _, VarName _) => GREATER
-   | (RecdProj (e1,s1),RecdProj (e2,s2)) =>
-       (case lval_compare(e1,e2)
-         of EQUAL => String.compare(s1,s2)
-	  | other => other)
-   | (RecdProj _,_) => LESS
-   | (ArraySub (a,b),ArraySub (c,d)) =>
-       (case lval_compare(a,c)
-         of EQUAL => exp_compare(b,d)
-	  | other => other)
-   | (ArraySub _, _) => GREATER
-and
- exp_compare pair =
- case pair
-  of (Loc lv1, Loc lv2) => lval_compare(lv1,lv2)
-   | (Loc lv1, _) => LESS
-   | (intLit _, Loc _) => GREATER
-   | (intLit i, intLit j) => Int.compare(i,j)
-   | (intLit i, other) => LESS
-   | (ConstName _, Loc _) => GREATER
-   | (ConstName _, intLit _) => GREATER
-   | (ConstName s1, ConstName s2) => String.compare(s1,s2)
-   | (ConstName s, _) => LESS
-   | (Add _, Mult _) => LESS
-   | (Add(a,b), Add(c,d)) =>
-       (case exp_compare(a,c)
-         of EQUAL => exp_compare(b,d)
-	  | other => other)
-   | (Add _, _) => GREATER
-   | (Mult(a,b), Mult(c,d)) =>
-       (case exp_compare(a,c)
-         of EQUAL => exp_compare(b,d)
-	  | other => other)
-   | (Mult _, _) => GREATER
-;
-
-(*---------------------------------------------------------------------------*)
-(* A distinctive feature of our approach is the use of lvals to describe     *)
-(* locations in the message where values are stored. These values are used   *)
-(* as the sizes for variable-sized arrays in the message. For convenience,   *)
-(* we allow "location completion", so that partly-given locations can be     *)
-(* as a convenient notation.                                                 *)
-(*---------------------------------------------------------------------------*)
-
-fun lval_append p lval =
- case lval
-  of VarName s => RecdProj(p,s)
-   | RecdProj (q,s) => RecdProj(lval_append p q, s)
-   | ArraySub (q,dim) => ArraySub(lval_append p q, dim)
-;
-
-fun path_prefixes lval =
- case lval
-  of VarName _ => [lval]
-   | RecdProj (p,s) => lval :: path_prefixes p
-   | ArraySub (VarName _,d) => [lval]
-   | ArraySub (RecdProj(p,s),dim) => lval :: path_prefixes p
-   | ArraySub (arr,dim) => lval :: path_prefixes arr (* goofy, may need to be revisited. *)
-
-
-fun resolve_lval lvalMap path lval =
- let val prefixes = path_prefixes path
-     val prospects = map (C lval_append lval) prefixes @ [lval]
- in Lib.first (can (curry Redblackmap.find lvalMap)) prospects
- end
- handle HOL_ERR _ => raise ERR "resolve_lval" "unsuccessful";
-
-fun resolveExp lvalMap p exp =
- case exp
-  of Loc lval     => Loc(resolve_lval lvalMap p lval)
-   | Add (e1,e2)  => Add(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | Mult (e1,e2) => Mult(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | otherwise    => exp
-
-fun resolveBexp lvalMap p bexp =
- case bexp
-  of boolLit _   => bexp
-   | BLoc lval   => BLoc(resolve_lval lvalMap p lval)
-   | Bnot b      => Bnot(resolveBexp lvalMap p b)
-   | Bor(b1,b2)  => Bor(resolveBexp lvalMap p b1,resolveBexp lvalMap p b2)
-   | Band(b1,b2) => Band(resolveBexp lvalMap p b1,resolveBexp lvalMap p b2)
-   | Beq(e1,e2)  => Beq(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | Blt (e1,e2) => Blt(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | Bgt (e1,e2) => Bgt(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | Ble (e1,e2) => Ble(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | Bge (e1,e2) => Bge(resolveExp lvalMap p e1,resolveExp lvalMap p e2)
-   | DleA (r,e)  => DleA (r,resolveExp lvalMap p e)
-   | DleB (e,r)  => DleB (resolveExp lvalMap p e,r)
-;
-
-
-(*---------------------------------------------------------------------------*)
-(* Expression evaluation                                                     *)
-(*---------------------------------------------------------------------------*)
-
-fun evalExp (E as (Delta,lvalMap,valFn)) exp =
- case exp
-  of Loc lval =>
-       (case Redblackmap.peek(lvalMap,lval)
-         of SOME (a,s) => valFn a s
-          | NONE => raise ERR "evalExp" "Lval binding failure")
-   | intLit i => i
-   | ConstName s =>
-     (case assoc1 s Delta
-       of SOME(_,i) => i
-        | NONE => raise ERR "evalExp"
-            ("unable to find value for constant named "^Lib.quote s))
-   | Add(e1,e2) => evalExp E e1 + evalExp E e2
-   | Mult(e1,e2) => evalExp E e1 * evalExp E e2
-;
-
-(*---------------------------------------------------------------------------*)
-(* Leaves of contig types. These are basically tags, needing to be defined   *)
-(* before evalBexp.                                                          *)
+(* Leaves of contig types. These are basically tags                          *)
 (*---------------------------------------------------------------------------*)
 
 datatype atom
@@ -167,55 +50,6 @@ datatype atom
   | Enum of string
   | Blob
   | Scanned;
-
-(*---------------------------------------------------------------------------*)
-(* Map from lvals to (atom,string) pairs, where kind signals what kind of    *)
-(* type the string should be interpeted as.                                  *)
-(*---------------------------------------------------------------------------*)
-
-val empty_lvalMap
-  : (lval,atom * string) Redblackmap.dict = Redblackmap.mkDict lval_compare;
-
-(*---------------------------------------------------------------------------*)
-(* Formulas.                                                                 *)
-(*---------------------------------------------------------------------------*)
-
-fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) bexp =
- let val evalE = evalExp (Delta,lvalMap,valFn)
-   fun eval bexp =
-    case bexp
-     of boolLit b => b
-      | BLoc lval =>
-         (case Redblackmap.peek(lvalMap,lval)
-           of SOME (Bool,s) =>
-               let val bint = valFn Bool s
-               in if bint = 0 then false else true
-               end
-            | SOME (atom,_) =>
-               raise ERR "evalBexp" "expected Bool location"
-            | NONE => raise ERR "evalBexp" "Lval binding failure")
-      | Bnot b      => not (eval b)
-      | Bor(b1,b2)  => (eval b1 orelse eval b2)
-      | Band(b1,b2) => (eval b1 andalso eval b2)
-      | Beq (e1,e2) => (evalE e1 = evalE e2)
-      | Blt (e1,e2) => (evalE e1 < evalE e2)
-      | Bgt (e1,e2) => (evalE e1 > evalE e2)
-      | Ble (e1,e2) => (evalE e1 <= evalE e2)
-      | Bge (e1,e2) => (evalE e1 >= evalE e2)
-      | DleA (r,Loc lval) =>
-         (case Redblackmap.peek(lvalMap,lval)
-            of SOME (Double,s) => Real.<=(r,dvalFn Double s)
-             | SOME (atom,_)   => raise ERR "evalBexp(DleA)" "expected Double location"
-             | NONE => raise ERR "evalBexp" "DleA: lval binding failure")
-      | DleB (Loc lval,r) =>
-         (case Redblackmap.peek(lvalMap,lval)
-           of SOME (Double,s) => Real.<=(dvalFn Double s,r)
-            | SOME (atom,_)   => raise ERR "evalBexp(DleB)" "expected Double location"
-            | NONE => raise ERR "evalBexp" "DleB: lval binding failure")
-      | otherwise  => raise ERR "evalBexp" "expected an lval expression in comparison"
- in
-  eval bexp
- end;
 
 (*---------------------------------------------------------------------------*)
 (* Contiguity types                                                          *)
@@ -232,155 +66,16 @@ datatype contig
   | Array of contig * exp
   | Union of (bexp * contig) list;
 
-(*---------------------------------------------------------------------------*)
-(* Take n elements off the front of a string, if possible.                   *)
-(*---------------------------------------------------------------------------*)
-
-fun tdrop n s =
- let open Substring
-     val (ss1,ss2) = splitAt(extract(s,0,NONE),n)
- in SOME (string ss1, string ss2)
- end
- handle _ => NONE;
 
 (*---------------------------------------------------------------------------*)
-(* Environments:                                                             *)
-(*                                                                           *)
-(*   Consts : maps constant names to integers                                *)
-(*   Decls  : maps names to previously declared contigs                      *)
-(*   atomicWidths : gives width info for basic types                         *)
-(*   valFn : function for computing a integer value stored at the            *)
-(*           designated location in the string.                              *)
-(*                                                                           *)
-(* segFn operates on a state tuple (segs,s,wvMap)                            *)
-(*                                                                           *)
-(*  segs : (string * int) list  ;;; list of segments and associated values   *)
-(*  s    :  string              ;;; remainder of string                      *)
-(* wvMap : (lval |-> int)       ;;; previously seen values, accessed by path *)
-(*                                                                           *)
-(* which is wrapped in the error monad.                                      *)
+(* Parse trees (generated by parseFn).                                       *)
 (*---------------------------------------------------------------------------*)
 
-fun segFn E path contig state =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
-     val (segs,s,WidthValMap) = state
- in
- case contig
-  of Void => NONE
-   | Basic a =>
-       let val awidth = atomicWidths a
-       in case tdrop awidth s
-         of NONE => NONE
-          | SOME (segment,rst) =>
-             SOME(segs@[segment],rst,
-                  Redblackmap.insert(WidthValMap,path,(a,segment)))
-       end
-   | Declared name => segFn E path (assoc name Decls) state
-   | Raw exp =>
-       let val exp' = resolveExp WidthValMap path exp
-           val width = evalExp (Consts,WidthValMap,valFn) exp'
-       in
-         case tdrop width s
-         of NONE => NONE
-          | SOME (segment,rst) =>
-              SOME(segs@[segment],rst,
-                   Redblackmap.insert(WidthValMap,path,(Blob,segment)))
-       end
-   | Assert bexp =>
-       let val bexp' = resolveBexp WidthValMap path bexp
-           val tval = evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
-       in
-         if tval then SOME state
-         else (print "Assertion failure"; NONE)
-       end
-   | Scanner scanFn =>
-      (case scanFn s
-        of NONE => raise ERR "segFn" "Scanner failed"
-         | SOME(segment,rst) =>
-              SOME(segs@[segment],rst,
-                   Redblackmap.insert(WidthValMap,path,(Scanned,segment))))
-   | Recd fields =>
-       let fun fieldFn fld NONE = NONE
-             | fieldFn (fName,c) (SOME st) = segFn E (RecdProj(path,fName)) c st
-       in rev_itlist fieldFn fields (SOME state)
-       end
-   | Array (c,exp) =>
-       let val exp' = resolveExp WidthValMap path exp
-           val dim = evalExp (Consts,WidthValMap,valFn) exp'
-           fun indexFn i NONE = NONE
-             | indexFn i (SOME state) = segFn E (ArraySub(path,intLit i)) c state
-       in rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
-       end
-   | Union choices =>
-       let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp WidthValMap path bexp
-             in evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
-             end
-       in case filter choiceFn choices
-           of [(_,c)] => segFn E path c state
-            | otherwise => raise ERR "segFn" "Union: expected exactly one successful choice"
-       end
- end
+datatype ptree
+  = LEAF of atom * string
+  | RECD of (string * ptree) list
+  | ARRAY of ptree list
 ;
-
-fun segments E contig s = segFn E (VarName"root") contig ([],s,empty_lvalMap);
-
-fun atom_width atm =
- case atm
-  of Bool       => 1
-   | Char       => 1
-   | Signed i   => i
-   | Unsigned i => i
-   | Float      => 4
-   | Double     => 8
-   | Enum _     => 4
-   | other      => raise ERR "atom_width" "unknown width of Raw or Scanner"
-;
-
-val u8  = Basic(Unsigned 1);
-val u16 = Basic(Unsigned 2);
-val u32 = Basic(Unsigned 4);
-val u64 = Basic(Unsigned 8);
-val i16 = Basic(Signed 2);
-val i32 = Basic(Signed 4);
-val i64 = Basic(Signed 8);
-val f32 = Basic Float;
-val f64 = Basic Double;
-
-fun add_enum_decl E (s,bindings) =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
-     val enum = Basic(Enum s)
-     val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
- in
-   (bindings' @ Consts, (s,enum)::Decls, atomicWidths,valFn,dvalFn)
- end
-
-
-(*---------------------------------------------------------------------------*)
-(* Support for the Scanner constructor. The end delimiter is left on the     *)
-(* string.                                                                   *)
-(*---------------------------------------------------------------------------*)
-
-fun scanTo delim s =
- let open Substring
-     val k = String.size delim
-     val ss = full s
-     val (ss1,ss2) = position delim ss
- in if isEmpty ss2 then
-       NONE
-    else
-      let val (_,_,j) = base ss1
-      in SOME ((string##string)(splitAt (ss,j+k)))
-      end
- end
-
-val scanCstring = scanTo (String.str(Char.chr 0));
-
-(*---------------------------------------------------------------------------*)
-(* A way of expressing the language consisting of just the empty string      *)
-(*---------------------------------------------------------------------------*)
-
-val SKIP = Recd [];
 
 (*---------------------------------------------------------------------------*)
 (* Pretty printing                                                           *)
@@ -499,76 +194,522 @@ val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn bexp => pp_bexp bexp);
 val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn atm => pp_atom atm);
 val _ = PolyML.addPrettyPrinter (fn d => fn _ => fn contig => pp_contig contig);
 
+
 (*---------------------------------------------------------------------------*)
-(* Parsing. First define a universal target type to parse into. It provides  *)
-(* structure, but the leaf elements are left uninterpreted.                  *)
+(* Environments                                                              *)
 (*---------------------------------------------------------------------------*)
 
-datatype ptree
-  = LEAF of atom * string
-  | RECD of (string * ptree) list
-  | ARRAY of ptree list
+  type lvalMap = (lval, atom * string) Redblackmap.dict
+
+  type evalenv =   (*  (constMap,lvalMap,valFn)  *)
+      (string * int) list
+    * (lval, atom * string) Redblackmap.dict
+    * (atom -> string -> int option)
+
+  type evalBenv =   (*  (constMap,lvalMap,valFn,dvalFn)  *)
+      (string * int) list
+    * (lval, atom * string) Redblackmap.dict
+    * (atom -> string -> int option)
+    * (atom -> string -> real option)
+
+  type env = (*  (constMap,Decls,atomWidth,valFn,dvalFn)  *)
+      (string * int) list
+    * (string * contig) list
+    * (atom -> int)
+    * (atom -> string -> int option)
+    * (atom -> string -> real option)
+
+  type randenv =  (*  env ++ (repFn,scanRandFn,gn)  *)
+      (string * int) list
+    * (string * contig) list
+    * (atom -> int)
+    * (atom -> string -> int option)
+    * (atom -> string -> real option)
+    * (atom -> int -> string)
+    * (lval -> string)
+    * Random.generator
+
+  type state = (lval * contig) list * string * lvalMap  (*  (worklist,s,theta)  *)
+  type parsestate = ptree list * string * lvalMap       (*  (stack, s, lvmap)  *)
+
+  datatype verdict = datatype Lib.verdict;
+
+
+(*---------------------------------------------------------------------------*)
+(* A way of expressing the language consisting of just the empty string.     *)
+(* Also note that Void can be defined as Union[], but we build it in.        *)
+(*---------------------------------------------------------------------------*)
+
+val SKIP = Recd [];
+
+
+(*---------------------------------------------------------------------------*)
+(* lval comparison function used to build lval-keyed finite map.             *)
+(*---------------------------------------------------------------------------*)
+
+fun lval_compare pair =
+ case pair
+  of (VarName s1, VarName s2) => String.compare(s1,s2)
+   | (VarName _, _) => LESS
+   | (RecdProj _, VarName _) => GREATER
+   | (RecdProj (e1,s1),RecdProj (e2,s2)) =>
+       (case lval_compare(e1,e2)
+         of EQUAL => String.compare(s1,s2)
+	  | other => other)
+   | (RecdProj _,_) => LESS
+   | (ArraySub (a,b),ArraySub (c,d)) =>
+       (case lval_compare(a,c)
+         of EQUAL => exp_compare(b,d)
+	  | other => other)
+   | (ArraySub _, _) => GREATER
+and
+ exp_compare pair =
+ case pair
+  of (Loc lv1, Loc lv2) => lval_compare(lv1,lv2)
+   | (Loc lv1, _) => LESS
+   | (intLit _, Loc _) => GREATER
+   | (intLit i, intLit j) => Int.compare(i,j)
+   | (intLit i, other) => LESS
+   | (ConstName _, Loc _) => GREATER
+   | (ConstName _, intLit _) => GREATER
+   | (ConstName s1, ConstName s2) => String.compare(s1,s2)
+   | (ConstName s, _) => LESS
+   | (Add _, Mult _) => LESS
+   | (Add(a,b), Add(c,d)) =>
+       (case exp_compare(a,c)
+         of EQUAL => exp_compare(b,d)
+	  | other => other)
+   | (Add _, _) => GREATER
+   | (Mult(a,b), Mult(c,d)) =>
+       (case exp_compare(a,c)
+         of EQUAL => exp_compare(b,d)
+	  | other => other)
+   | (Mult _, _) => GREATER
 ;
 
+(*---------------------------------------------------------------------------*)
+(* Expression evaluation                                                     *)
+(*---------------------------------------------------------------------------*)
+
+fun unopFn g e f = Option.map f (g e);
+
+fun binopFn g e1 e2 f =
+  case (g e1, g e2)
+   of (SOME v1, SOME v2) => SOME (f v1 v2)
+    | otherwise => NONE;
+
+fun firstOpt f [] = NONE
+  | firstOpt f (h::t) =
+    case f h
+     of NONE => firstOpt f t
+      | SOME x => SOME h;
+
+fun concatOpts optlist =
+    SOME(String.concat(List.map Option.valOf optlist)) handle _ => NONE;
+
+ fun evalExp (E as (Delta,lvalMap,valFn)) exp =
+ case exp
+  of Loc lval =>
+       (case Redblackmap.peek(lvalMap,lval)
+         of NONE => NONE
+          | SOME (a,s) => valFn a s)
+   | intLit i =>  SOME i
+   | ConstName s =>
+       (case assoc1 s Delta
+         of SOME(_,i) => SOME i
+          | NONE => NONE)
+   | Add(e1,e2) => binopFn (evalExp E) e1 e2 (curry op+)
+   | Mult(e1,e2) => binopFn (evalExp E) e1 e2 (curry op*)
+;
+
+(*---------------------------------------------------------------------------*)
+(* Formulas.                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun evalBexp (E as (Delta,lvalMap,valFn,dvalFn)) bexp =
+ let val evalE = evalExp (Delta,lvalMap,valFn)
+   fun evalB bexp =
+    case bexp
+     of boolLit b => SOME b
+      | BLoc lval =>
+         (case Redblackmap.peek(lvalMap,lval)
+           of NONE => NONE
+            | SOME (Bool,s) =>
+               (case valFn Bool s
+                 of NONE => NONE
+                  | SOME bint => (if bint = 0 then SOME false else SOME true))
+            | otherwise => NONE)
+      | Bnot b      => unopFn evalB b not
+      | Bor(b1,b2)  => binopFn evalB b1 b2 (fn x => fn y => x orelse y)
+      | Band(b1,b2) => binopFn evalB b1 b2 (fn x => fn y => x andalso y)
+      | Beq (e1,e2) => binopFn evalE e1 e2 (curry op=)
+      | Blt (e1,e2) => binopFn evalE e1 e2 (curry op<)
+      | Bgt (e1,e2) => binopFn evalE e1 e2 (curry op>)
+      | Ble (e1,e2) => binopFn evalE e1 e2 (curry op<=)
+      | Bge (e1,e2) => binopFn evalE e1 e2 (curry op>=)
+      | DleA (r,Loc lval) =>
+         (case Redblackmap.peek(lvalMap,lval)
+            of SOME (Double,s) =>
+                (case dvalFn Double s
+                  of NONE => NONE
+                   | SOME r1 => SOME (Real.<=(r,r1)))
+             | otherwise => NONE)
+      | DleB (Loc lval,r) =>
+         (case Redblackmap.peek(lvalMap,lval)
+           of SOME (Double,s) =>
+               (case dvalFn Double s
+                  of NONE => NONE
+                  | SOME r1 => SOME (Real.<=(r1,r)))
+            | otherwise => NONE)
+      | otherwise => NONE
+ in
+  evalB bexp
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* A distinctive feature of our approach is the use of lvals to describe     *)
+(* locations in the message where values are stored. These values may, for   *)
+(* example, be used as the sizes for variable-sized arrays in the message.   *)
+(* For convenience, we allow "location completion", so that partly-given     *)
+(* locations can be employed as a convenient notation.                       *)
+(*---------------------------------------------------------------------------*)
+
+fun lval_append p lval =
+ case lval
+  of VarName s => RecdProj(p,s)
+   | RecdProj (q,s) => RecdProj(lval_append p q, s)
+   | ArraySub (q,dim) => ArraySub(lval_append p q, dim)
+;
+
+fun path_prefixes lval =
+ case lval
+  of VarName _ => [lval]
+   | RecdProj (p,s) => lval :: path_prefixes p
+   | ArraySub (VarName _,d) => [lval]
+   | ArraySub (RecdProj(p,s),dim) => lval :: path_prefixes p
+   | ArraySub (arr,dim) => lval :: path_prefixes arr (* goofy, may need to be revisited. *)
+
+
+fun resolve_lval lvalMap path lval =
+ let val prefixes = path_prefixes path
+     val prospects = map (C lval_append lval) prefixes @ [lval]
+ in firstOpt (Lib.curry Redblackmap.peek lvalMap) prospects
+ end
+
+fun resolveExp lvalMap p exp =
+ case exp
+  of Loc lval     => unopFn (resolve_lval lvalMap p) lval Loc
+   | Add (e1,e2)  => binopFn(resolveExp lvalMap p) e1 e2 (curry Add)
+   | Mult (e1,e2) => binopFn(resolveExp lvalMap p) e1 e2 (curry Mult)
+   | otherwise    => SOME exp
+
+fun resolveBexp lvalMap p bexp =
+ case bexp
+  of boolLit _   => SOME bexp
+   | BLoc lval   => unopFn (resolve_lval lvalMap p) lval BLoc
+   | Bnot b      => unopFn (resolveBexp lvalMap p) b Bnot
+   | Bor(b1,b2)  => binopFn (resolveBexp lvalMap p) b1 b2 (curry Bor)
+   | Band(b1,b2) => binopFn (resolveBexp lvalMap p) b1 b2 (curry Band)
+   | Beq(e1,e2)  => binopFn (resolveExp lvalMap p) e1 e2 (curry Beq)
+   | Blt (e1,e2) => binopFn (resolveExp lvalMap p) e1 e2 (curry Blt)
+   | Bgt (e1,e2) => binopFn (resolveExp lvalMap p) e1 e2 (curry Bgt)
+   | Ble (e1,e2) => binopFn (resolveExp lvalMap p) e1 e2 (curry Ble)
+   | Bge (e1,e2) => binopFn (resolveExp lvalMap p) e1 e2 (curry Bge)
+   | DleA (r,e)  => unopFn (resolveExp lvalMap p) e (curry DleA r)
+   | DleB (e,r)  => unopFn (resolveExp lvalMap p) e (fn v => DleB(v,r))
+;
+
+(*---------------------------------------------------------------------------*)
+(* Map from lvals to (atom,string) pairs, where kind signals what kind of    *)
+(* type the string should be interpeted as.                                  *)
+(*---------------------------------------------------------------------------*)
+
+val empty_lvalMap : lvalMap = Redblackmap.mkDict lval_compare;
+
+(*---------------------------------------------------------------------------*)
+(* Take n elements off the front of a string (list, resp.) if possible.      *)
+(*---------------------------------------------------------------------------*)
+
+fun tdrop n s =
+ let open Substring
+     val (ss1,ss2) = splitAt(extract(s,0,NONE),n)
+ in SOME (string ss1, string ss2)
+ end
+ handle _ => NONE;
+
 fun take_drop n list =
- SOME(List.take(list, n),List.drop(list, n)) handle _ => NONE
+    SOME(List.take(list, n),List.drop(list, n)) handle _ => NONE
+
+(*---------------------------------------------------------------------------*)
+(* Filter with ('a -> bool option) predicate. Strict: return NONE if pred    *)
+(* returns NONE.                                                             *)
+(*---------------------------------------------------------------------------*)
+
+fun filterOpt P list =
+ let fun filt [] acc = SOME (rev acc)
+       | filt (h::t) acc =
+         case P h
+          of NONE => NONE
+           | SOME true => filt t (h::acc)
+           | SOME false => filt t acc
+ in
+   filt list []
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* substFn is given an assignment for a contig and applies it to the contig, *)
+(* yielding a string.                                                        *)
+(*---------------------------------------------------------------------------*)
+
+fun substFn E theta path contig =
+ let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
+     fun thetaFn lval = Option.map snd (Redblackmap.peek(theta,lval))
+ in
+  case contig
+   of Void     => NONE
+    | Basic _  => thetaFn path  (* Should check expected width and actual? *)
+    | Raw _    => thetaFn path
+    | Assert b =>
+       (case resolveBexp theta path b
+         of NONE => NONE
+          | SOME b' =>
+        case evalBexp (Consts,theta,valFn,dvalFn) b'
+         of SOME  true => SOME ""
+          | otherwise => NONE)
+    | Scanner _ => thetaFn path
+    | Declared name => substFn E theta path (assoc name Decls)
+    | Recd fields =>
+       let fun fieldFn (fName,c) = substFn E theta (RecdProj(path,fName)) c
+       in concatOpts (List.map fieldFn fields)
+       end
+    | Array (c,exp) =>
+       (case resolveExp theta path exp
+         of NONE => NONE
+          | SOME exp' =>
+        let val dim = Option.valOf (evalExp (Consts,theta,valFn) exp')
+            fun indexFn i = substFn E theta (ArraySub(path,intLit i)) c
+        in concatOpts (List.map indexFn (upto 0 (dim - 1)))
+        end)
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (Consts,theta,valFn,dvalFn))
+               (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of SOME [(_,c)] => substFn E theta path c
+            | otherwise => NONE
+       end
+ end
+;
+
+(*---------------------------------------------------------------------------*)
+(* Matcher in worklist style                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun fieldFn path (fName,c) = (RecdProj(path,fName),c)
+fun indexFn path c i = (ArraySub(path,intLit i),c)
+
+fun matchFn E (state as (worklist,s,theta)) =
+ let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
+ in
+ case worklist
+  of [] => SOME (s,theta)
+   | (_,Void)::_ => NONE
+   | (path,Basic a)::t =>
+       (case tdrop (atomWidth a) s
+         of NONE => NONE
+          | SOME (segment,rst) =>
+              matchFn E (t,rst,
+                         Redblackmap.insert(theta,path,(a,segment))))
+   | (path,Declared name)::t => matchFn E ((path,assoc name Decls)::t,s,theta)
+   | (path,Raw exp)::t =>
+       (case resolveExp theta path exp
+         of NONE => NONE
+          | SOME exp' =>
+        case evalExp (Consts,theta,valFn) exp'
+         of NONE => NONE
+          | SOME width =>
+        case tdrop width s
+           of NONE => NONE
+            | SOME (segment,rst) =>
+              matchFn E (t,rst,
+                         Redblackmap.insert(theta,path,(Blob,segment))))
+   | (path,Assert bexp)::t =>
+       (case resolveBexp theta path bexp
+        of NONE => NONE
+         | SOME bexp' =>
+        case evalBexp (Consts,theta,valFn,dvalFn) bexp'
+         of NONE => NONE
+          | SOME false => NONE
+          | SOME true => matchFn E (t,s,theta))
+   | (path,Scanner scanFn)::t =>
+      (case scanFn s
+        of NONE => NONE
+         | SOME(segment,rst) =>
+             matchFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
+   | (path,Recd fields)::t => matchFn E (map (fieldFn path) fields @ t,s,theta)
+   | (path,Array (c,exp))::t =>
+       (case resolveExp theta path exp
+         of NONE => NONE
+          | SOME exp'=>
+        case evalExp (Consts,theta,valFn) exp'
+         of NONE => NONE
+          | SOME dim =>
+        matchFn E (map (indexFn path c) (upto 0 (dim - 1)) @ t,s,theta))
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+                (evalBexp (Consts,theta,valFn,dvalFn))
+                (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of SOME[(_,c)] => matchFn E ((path,c)::t,s,theta)
+            | otherwise => NONE
+       end
+ end
+;
+
+fun match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap);
+
+fun check_match E contig s =
+ case match E contig s
+  of NONE => raise ERR "check_match" "no match"
+  |  SOME(s2,theta) =>
+      case substFn E theta (VarName"root") contig
+       of SOME s1 => (s1^s2 = s)
+       |  NONE => raise ERR "check_match" "substFn failed"
+
+(*---------------------------------------------------------------------------*)
+(* Version of matchFn that checks assertions, acting as a predicate on       *)
+(* messages.                                                                 *)
+(*---------------------------------------------------------------------------*)
+
+fun predFn E (state as (worklist,s,theta)) =
+ let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
+ in
+ case worklist
+  of [] => PASS (s,theta)
+   | (path,Void)::t => FAIL state
+   | (path,Basic a)::t =>
+       (case tdrop (atomWidth a) s
+         of NONE => FAIL state
+          | SOME (segment,rst) =>
+              predFn E (t,rst,Redblackmap.insert(theta,path,(a,segment))))
+   | (path,Declared name)::t => predFn E ((path,assoc name Decls)::t,s,theta)
+   | (path,Raw exp)::t =>
+       (case resolveExp theta path exp
+         of NONE => FAIL state
+          | SOME exp' =>
+        case evalExp (Consts,theta,valFn) exp'
+         of NONE => FAIL state
+          | SOME width =>
+        case tdrop width s
+           of NONE => FAIL state
+            | SOME (segment,rst) =>
+        predFn E (t,rst, Redblackmap.insert(theta,path,(Blob,segment))))
+   | (path,Assert bexp)::t =>
+       (case resolveBexp theta path bexp
+        of NONE => FAIL state
+         | SOME bexp' =>
+        case evalBexp (Consts,theta,valFn,dvalFn) bexp'
+         of SOME true => predFn E (t,s,theta)
+          | otherwise => FAIL state)
+   | (path,Scanner scanFn)::t =>
+      (case scanFn s
+        of NONE => FAIL state
+         | SOME(segment,rst) =>
+             predFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
+   | (path,Recd fields)::t => predFn E (map (fieldFn path) fields @ t,s,theta)
+   | (path,Array (c,exp))::t =>
+      (case resolveExp theta path exp
+        of NONE => FAIL state
+         | SOME exp'=>
+       case evalExp (Consts,theta,valFn) exp'
+        of NONE => FAIL state
+         | SOME dim => predFn E (map (indexFn path c) (upto 0 (dim - 1)) @ t,s,theta))
+   | (path,Union choices)::t =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (Consts,theta,valFn,dvalFn))
+               (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of SOME[(_,c)] => predFn E ((path,c)::t,s,theta)
+            | otherwise => FAIL state
+       end
+ end
+;
+
+fun wellformed E contig s =
+ case predFn E ([(VarName"root",contig)],s,empty_lvalMap)
+  of PASS _ => true
+   | FAIL _ => false;
+
+(*---------------------------------------------------------------------------*)
+(* Parsing into the ptree type. It provides record and array structure, but  *)
+(* leaves leaf elements uninterpreted.                                       *)
+(*---------------------------------------------------------------------------*)
 
 (*---------------------------------------------------------------------------*)
 (* Environments:                                                             *)
 (*                                                                           *)
 (*   Consts : maps constant names to integers                                *)
 (*   Decls  : maps names to previously declared contigs                      *)
-(*   atomicWidths : gives width info for basic types                         *)
-(*   valFn : function for computing a value                                  *)
-(*             stored at the designated location in the string.              *)
+(*   atomWidth : gives width info for basic types                            *)
+(*   valFn  : function for computing an integer value                        *)
+(*            stored at the designated location in the string.               *)
+(*   dvalFn : function for computing a double value                          *)
+(*            stored at the designated location in the string.               *)
 (*                                                                           *)
-(* parseFn operates on a state tuple (segs,s,wvMap)                          *)
+(* parseFn operates on a state tuple (stk,s,lvmap)                           *)
 (*                                                                           *)
-(*  stk : ptree list        ;;; parser stack                                 *)
-(*  s    :  string          ;;; remainder of string                          *)
-(* wvMap : (lval |-> int)   ;;; previously seen values, accessed by path     *)
+(*  stk  : ptree list         ;;; parser stack                               *)
+(*  s    : string             ;;; remainder of string                        *)
+(* lvmap : (lval |-> string)  ;;; previously seen values, accessed by path   *)
 (*                                                                           *)
 (* which is wrapped in the error monad.                                      *)
 (*---------------------------------------------------------------------------*)
 
 fun parseFn E path contig state =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
-     val (stk,s,WidthValMap) = state
+ let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
+     val (stk,s,lvmap) = state
  in
  case contig
   of Void => NONE
    | Basic a =>
-       let val awidth = atomicWidths a
+       let val awidth = atomWidth a
        in case tdrop awidth s
          of NONE => NONE
           | SOME (segment,rst) =>
              SOME(LEAF(a,segment)::stk,rst,
-                  Redblackmap.insert(WidthValMap,path,(a,segment)))
+                  Redblackmap.insert(lvmap,path,(a,segment)))
        end
    | Declared name => parseFn E path (assoc name Decls) state
    | Raw exp =>
-       let val exp' = resolveExp WidthValMap path exp
-           val width = evalExp (Consts,WidthValMap,valFn) exp'
-       in
-         case tdrop width s
+       (case resolveExp lvmap path exp
+         of NONE => NONE
+          | SOME exp' =>
+        case evalExp (Consts,lvmap,valFn) exp'
+         of NONE => NONE
+          | SOME width =>
+        case tdrop width s
          of NONE => NONE
           | SOME (segment,rst) =>
               SOME(LEAF(Blob,segment)::stk,rst,
-                   Redblackmap.insert(WidthValMap,path,(Blob,segment)))
-       end
+                   Redblackmap.insert(lvmap,path,(Blob,segment))))
    | Assert bexp =>
-       let val bexp' = resolveBexp WidthValMap path bexp
-           val tval = evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
-       in
+       (case resolveBexp lvmap path bexp
+         of NONE => NONE
+	  | SOME  bexp' =>
+         case evalBexp (Consts,lvmap,valFn,dvalFn) bexp'
+          of NONE => NONE
+           | SOME tval =>
          if tval then SOME state
-         else (print "Assertion failure"; NONE)
-       end
+         else (print "Assertion failure"; NONE))
    | Scanner scanFn =>
       (case scanFn s
         of NONE => raise ERR "parseFn" "Scanner failed"
          | SOME(segment,rst) =>
               SOME(LEAF(Scanned,segment)::stk,rst,
-                   Redblackmap.insert(WidthValMap,path,(Scanned,segment))))
+                   Redblackmap.insert(lvmap,path,(Scanned,segment))))
    | Recd fields =>
        let fun fieldFn fld NONE = NONE
              | fieldFn (fName,c) (SOME st) = parseFn E (RecdProj(path,fName)) c st
@@ -577,33 +718,36 @@ fun parseFn E path contig state =
           val fields' = filter (not o is_assert) fields
        in case rev_itlist fieldFn fields (SOME state)
            of NONE => NONE
-            | SOME (stk',s',WidthValMap') =>
+            | SOME (stk',s',lvmap') =>
                case take_drop (length fields') stk'
                 of NONE => NONE
                  | SOME(elts,stk'') =>
                      SOME(RECD (zip (map fst fields') (rev elts))::stk'',
-                          s', WidthValMap')
+                          s', lvmap')
        end
    | Array (c,exp) =>
-       let val exp' = resolveExp WidthValMap path exp
-           val dim = evalExp (Consts,WidthValMap,valFn) exp'
-           fun indexFn i NONE = NONE
+       let fun indexFn i NONE = NONE
              | indexFn i (SOME state) = parseFn E (ArraySub(path,intLit i)) c state
-       in case rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
+       in case resolveExp lvmap path exp
            of NONE => NONE
-            | SOME (stk',s',WidthValMap') =>
-               case take_drop dim stk'
-                of NONE => NONE
-                 | SOME(elts,stk'') =>
-                     SOME(ARRAY (rev elts)::stk'', s', WidthValMap')
+	    | SOME exp' =>
+          case evalExp (Consts,lvmap,valFn) exp'
+           of NONE => NONE
+            | SOME dim =>
+          case rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
+           of NONE => NONE
+            | SOME (stk',s',lvmap') =>
+          case take_drop dim stk'
+           of NONE => NONE
+            | SOME(elts,stk'') => SOME(ARRAY (rev elts)::stk'', s', lvmap')
        end
    | Union choices =>
        let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp WidthValMap path bexp
-             in evalBexp (Consts,WidthValMap,valFn,dvalFn) bexp'
-             end
-       in case filter choiceFn choices
-           of [(_,c)] => parseFn E path c state
+             Option.mapPartial
+               (evalBexp (Consts,lvmap,valFn,dvalFn))
+               (resolveBexp lvmap path bexp)
+       in case filterOpt choiceFn choices
+           of SOME[(_,c)] => parseFn E path c state
             | otherwise => raise ERR "parseFn" "Union: expected exactly one successful choice"
        end
  end
@@ -615,183 +759,6 @@ fun parse E contig s =
    | SOME otherwise => raise ERR "parse" "expected stack of size 1"
    | NONE => raise ERR "parse" ""
 ;
-
-(*---------------------------------------------------------------------------*)
-(* Version of segFn that uses a worklist style                               *)
-(*---------------------------------------------------------------------------*)
-
-fun matchFn E (state as (worklist,s,theta)) =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
- in
- case worklist
-  of [] => SOME (s,theta)
-   | (_,Void)::_ => NONE
-   | (path,Basic a)::t =>
-       let val awidth = atomicWidths a
-       in case tdrop awidth s
-           of NONE => NONE
-            | SOME (segment,rst) =>
-              matchFn E (t,rst,
-                         Redblackmap.insert(theta,path,(a,segment)))
-       end
-   | (path,Declared name)::t => matchFn E ((path,assoc name Decls)::t,s,theta)
-   | (path,Raw exp)::t =>
-       let val exp' = resolveExp theta path exp
-           val width = evalExp (Consts,theta,valFn) exp'
-       in case tdrop width s
-           of NONE => NONE
-            | SOME (segment,rst) =>
-              matchFn E (t,rst,
-                         Redblackmap.insert(theta,path,(Blob,segment)))
-       end
-   | (path,Assert bexp)::t =>
-       let val bexp' = resolveBexp theta path bexp
-       in if evalBexp (Consts,theta,valFn,dvalFn) bexp'
-            then matchFn E (t,s,theta)
-            else raise ERR "matchFn" "Assert evaluates to false"
-       end
-   | (path,Scanner scanFn)::t =>
-      (case scanFn s
-        of NONE => raise ERR "matchFn" "Scanner failed"
-         | SOME(segment,rst) =>
-             matchFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
-   | (path,Recd fields)::t =>
-       let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
-       in matchFn E (map fieldFn fields @ t,s,theta)
-       end
-   | (path,Array (c,exp))::t =>
-       let val exp' = resolveExp theta path exp
-           val dim = evalExp (Consts,theta,valFn) exp'
-           fun indexFn i = (ArraySub(path,intLit i),c)
-       in matchFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
-       end
-   | (path,Union choices)::t =>
-       let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
-             end
-       in case filter choiceFn choices
-           of [(_,c)] => matchFn E ((path,c)::t,s,theta)
-            | otherwise => raise ERR "matchFn" "expected exactly one successful choice"
-       end
- end
-;
-
-fun match E contig s = matchFn E ([(VarName"root",contig)],s,empty_lvalMap);
-
-(*---------------------------------------------------------------------------*)
-(* substFn is given an assignment for a contig and applies it to the contig, *)
-(* yielding a string.                                                        *)
-(*---------------------------------------------------------------------------*)
-
-fun substFn E theta path contig =
- let fun thetaFn lval = snd (Redblackmap.find(theta,lval))
-     val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
- in
-  case contig
-   of Void     => raise ERR "substFn" "Void"
-    | Basic _  => thetaFn path
-    | Raw _    => thetaFn path
-    | Assert b =>
-       let val b' = resolveBexp theta path b
-       in if evalBexp (Consts,theta,valFn,dvalFn) b' then
-              ""
-          else raise ERR "substFn" "Assert failure"
-       end
-    | Scanner _ => thetaFn path
-    | Declared name => substFn E theta path (assoc name Decls)
-    | Recd fields =>
-       let fun fieldFn (fName,c) = substFn E theta (RecdProj(path,fName)) c
-       in String.concat (map fieldFn fields)
-       end
-    | Array (c,exp) =>
-       let val exp' = resolveExp theta path exp
-           val dim = evalExp (Consts,theta,valFn) exp'
-           fun indexFn i = substFn E theta (ArraySub(path,intLit i)) c
-       in String.concat (map indexFn (upto 0 (dim - 1)))
-       end
-   | Union choices =>
-       let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
-             end
-       in case filter choiceFn choices
-           of [(_,c)] => substFn E theta path c
-            | otherwise => raise ERR "matchFn" "Union: expected exactly one successful choice"
-       end
- end
-;
-
-fun check_match E contig s =
- case match E contig s
-  of NONE => raise ERR "check_match" "unable to match"
-  |  SOME(s',theta) =>
-       String.concat [substFn E theta (VarName"root") contig,s'] = s;
-
-(*---------------------------------------------------------------------------*)
-(* Version of matchFn that checks assertions, acting as a predicate on       *)
-(* messages.                                                                 *)
-(*---------------------------------------------------------------------------*)
-
-fun predFn E (state as (worklist,s,theta)) =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn) = E
- in
- case worklist
-  of [] => PASS (s,theta)
-   | (path,Void)::t => FAIL state
-   | (path,Basic a)::t =>
-       (case tdrop (atomicWidths a) s
-         of NONE => FAIL state
-          | SOME (segment,rst) =>
-              predFn E (t,rst,Redblackmap.insert(theta,path,(a,segment))))
-   | (path,Declared name)::t => predFn E ((path,assoc name Decls)::t,s,theta)
-   | (path,Raw exp)::t =>
-       let val exp' = resolveExp theta path exp
-           val width = evalExp (Consts,theta,valFn) exp'
-       in case tdrop width s
-           of NONE => FAIL state
-            | SOME (segment,rst) =>
-              predFn E (t,rst,
-                        Redblackmap.insert(theta,path,(Blob,segment)))
-       end
-   | (path,Assert bexp)::t =>
-       let val bexp' = resolveBexp theta path bexp
-       in if evalBexp (Consts,theta,valFn,dvalFn) bexp'
-            then predFn E (t,s,theta)
-            else FAIL state
-       end
-   | (path,Scanner scanFn)::t =>
-      (case scanFn s
-        of NONE => FAIL state
-         | SOME(segment,rst) =>
-             predFn E (t,rst, Redblackmap.insert(theta,path,(Scanned,segment))))
-   | (path,Recd fields)::t =>
-       let fun fieldFn (fName,c) = (RecdProj(path,fName),c)
-       in predFn E (map fieldFn fields @ t,s,theta)
-       end
-   | (path,Array (c,exp))::t =>
-       let val exp' = resolveExp theta path exp
-           val dim = evalExp (Consts,theta,valFn) exp'
-           fun indexFn i = (ArraySub(path,intLit i),c)
-       in predFn E (map indexFn (upto 0 (dim - 1)) @ t,s,theta)
-       end
-   | (path,Union choices)::t =>
-       let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
-             end
-       in case filter choiceFn choices
-           of [(_,c)] => predFn E ((path,c)::t,s,theta)
-            | otherwise => FAIL state
-       end
- end
-;
-
-fun wellformed E contig s =
- case predFn E ([(VarName"root",contig)],s,empty_lvalMap)
-  of PASS _ => true
-   | FAIL _ => false;
-
 
 (*---------------------------------------------------------------------------*)
 (* Generation of strings conforming to a contig.                             *)
@@ -870,6 +837,7 @@ fun specified_field path e = (last_path_elt path = vname_of e)
 
 fun gen_segment a path bexp (Consts,lvalMap,valFn,repFn,gn) =
  let val E = (Consts,lvalMap,valFn)
+     fun evalE e = Option.valOf (evalExp E e)
      fun randElt (lo,hi) = Random.range (lo,hi+1) gn
      fun randRealElt (lo,hi) =
        let open Real
@@ -882,14 +850,14 @@ fun gen_segment a path bexp (Consts,lvalMap,valFn,repFn,gn) =
  case bexp
   of Beq (e1,e2) =>
        if specified_field path e1 then
-          repFn a (evalExp E e2)
+          repFn a (evalE e2)
        else
        if specified_field path e2 then
-          repFn a (evalExp E e1)
+          repFn a (evalE e1)
        else randRep a
    | Blt (e1,e2) =>
        if specified_field path e1 then
-          let val i = evalExp E e2
+          let val i = evalE e2
           in if 0 < i then
                repFn a (randElt (0,i-1))
              else
@@ -898,7 +866,7 @@ fun gen_segment a path bexp (Consts,lvalMap,valFn,repFn,gn) =
        else randRep a
    | Ble (e1,e2) =>
        if specified_field path e1 then
-          let val i = evalExp E e2
+          let val i = evalE e2
           in if 0 <= i then
                repFn a (randElt (0,i))
              else
@@ -907,8 +875,8 @@ fun gen_segment a path bexp (Consts,lvalMap,valFn,repFn,gn) =
        else randRep a
    | Band(Ble(e1,e2),Ble(e3,e4)) =>
       if specified_field path e2 andalso e2=e3 then
-        let val i = evalExp E e1
-            val j = evalExp E e4
+        let val i = evalE e1
+            val j = evalE e4
         in if i <= j then
              repFn a (randElt (i,j))
             else
@@ -933,7 +901,7 @@ end
 (*---------------------------------------------------------------------------*)
 
 fun randFn E (worklist,theta,acc) =
- let val (Consts,Decls,atomicWidths,valFn,dvalFn,repFn,scanRandFn,gn) = E
+ let val (Consts,Decls,atomWidth,valFn,dvalFn,repFn,scanRandFn,gn) = E
  in
  case worklist
   of [] => rev acc
@@ -951,16 +919,16 @@ fun randFn E (worklist,theta,acc) =
           randFn E (t,Redblackmap.insert(theta,path,(a,segment)),segment::acc)
        end
    | (path,Raw exp)::t =>
-       let val exp' = resolveExp theta path exp
-           val width = evalExp (Consts,theta,valFn) exp'
+       let val exp' = valOf (resolveExp theta path exp)
+           val width = valOf (evalExp (Consts,theta,valFn) exp')
            val elts = List.tabulate (width, fn i => Random.range default_u8_range gn)
            val segment = String.implode (List.map Char.chr elts)
        in randFn E (t, Redblackmap.insert(theta,path,(Blob,segment)),segment::acc)
        end
    | (path,Declared name)::t => randFn E ((path,assoc name Decls)::t,theta,acc)
    | (path,Assert bexp)::t =>
-       let val bexp' = resolveBexp theta path bexp
-       in if evalBexp (Consts,theta,valFn,dvalFn) bexp'
+       let val bexp' = valOf (resolveBexp theta path bexp)
+       in if valOf(evalBexp (Consts,theta,valFn,dvalFn) bexp')
             then randFn E (t,theta,acc)
             else raise ERR "randFn" "Assert failure"
        end
@@ -973,15 +941,15 @@ fun randFn E (worklist,theta,acc) =
        in randFn E (map fieldFn fields @ t,theta,acc)
        end
    | (path,Array (c,exp))::t =>
-       let val exp' = resolveExp theta path exp
-           val dim = evalExp (Consts,theta,valFn) exp'
+       let val exp' = valOf (resolveExp theta path exp)
+           val dim = valOf (evalExp (Consts,theta,valFn) exp')
            fun indexFn i = (ArraySub(path,intLit i),c)
        in randFn E (map indexFn (upto 0 (dim - 1)) @ t,theta,acc)
        end
    | (path,Union choices)::t =>
        let fun choiceFn(bexp,c) =
-             let val bexp' = resolveBexp theta path bexp
-             in evalBexp (Consts,theta,valFn,dvalFn) bexp'
+             let val bexp' = valOf (resolveBexp theta path bexp)
+             in valOf(evalBexp (Consts,theta,valFn,dvalFn) bexp')
              end
        in case filter choiceFn choices
            of [(_,c)] => randFn E ((path,c)::t,theta,acc)
@@ -994,14 +962,16 @@ fun Interval fName (i,j) =
   Band(Ble(intLit i,Loc(VarName fName)),
        Ble(Loc(VarName fName),intLit j));
 
-fun constInterval fName (s1,s2) =
- Band (Ble (ConstName s1,Loc(VarName fName)),
-       Ble (Loc(VarName fName),ConstName s2));
+(* -------------------------------------------------------------------------- *)
+(* Needs fixing so that Decls have Asserts deleted. Maybe.                    *)
+(*                                                                            *)
+(*                                                                            *)
+(* -------------------------------------------------------------------------- *)
 
 fun delete_asserts Decls contig =
  case contig
   of Declared s => delete_asserts Decls (assoc s Decls)
-   | Assert _ => Recd []
+   | Assert _ => SKIP
    | Recd fields =>
       let fun is_empty (s,Recd[]) = true
             | is_empty otherwise = false
@@ -1016,26 +986,74 @@ fun delete_asserts Decls contig =
    | Union bclist => Union(map (fn (b,c) => (b, delete_asserts Decls c)) bclist)
    | otherwise => contig;
 
-fun lvals_of e =
- case e
-  of Loc lval => [lval]
-   | Add (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | Mult (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | otherwise => []
+
+
+(* -------------------------------------------------------------------------- *)
+(* Add enum contig to environment: the enum is a Basic thingy, and the        *)
+(* constants (with associated numeric values) get added to the Consts.        *)
+(* -------------------------------------------------------------------------- *)
+
+fun add_enum_decl E (s,bindings) =
+ let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
+     val enum = Basic(Enum s)
+     val bindings' = map (fn (name,i) => (s^"'"^name,i)) bindings
+ in
+   (bindings' @ Consts, (s,enum)::Decls, atomWidth,valFn,dvalFn)
+ end
+
+
+
+(* -------------------------------------------------------------------------- *)
+(* Widths for basic items, for UXAS. Only interesting thing is that enums are *)
+(* 4 bytes and that bool is special: not an ordinary enum, since it takes     *)
+(* 1 byte.                                                                    *)
+(* -------------------------------------------------------------------------- *)
+
+fun uxas_atom_width atm =
+ case atm
+  of Bool       => 1
+   | Char       => 1
+   | Signed i   => i
+   | Unsigned i => i
+   | Enum _     => 4
+   | Float      => 4
+   | Double     => 8
+   | other      => raise ERR "atom_width" "unknown width of Raw or Scanner"
 ;
 
-fun lvals_of_bexp bexp =
- case bexp
-  of boolLit _ => []
-   | BLoc lval => [lval]
-   | Bnot b => lvals_of_bexp b
-   | Bor (b1,b2) => union (lvals_of_bexp b1) (lvals_of_bexp b2)
-   | Band (b1,b2) => union (lvals_of_bexp b1) (lvals_of_bexp b2)
-   | Beq  (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | Blt  (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | Bgt  (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | Ble  (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | Bge  (e1,e2) => union (lvals_of e1) (lvals_of e2)
-   | DleA (r,e) => lvals_of e
-   | DleB (e,r) => lvals_of e
-;
+(* -------------------------------------------------------------------------- *)
+(* Some basic contig types.                                                   *)
+(* -------------------------------------------------------------------------- *)
+
+val bool = Basic Bool;
+val u8  = Basic(Unsigned 1);
+val u16 = Basic(Unsigned 2);
+val u32 = Basic(Unsigned 4);
+val u64 = Basic(Unsigned 8);
+val i16 = Basic(Signed 2);
+val i32 = Basic(Signed 4);
+val i64 = Basic(Signed 8);
+val f32 = Basic Float;
+val f64 = Basic Double;
+
+(*---------------------------------------------------------------------------*)
+(* Support for the Scanner constructor. The end delimiter is left on the     *)
+(* string.                                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun scanTo delim s =
+ let open Substring
+     val k = String.size delim
+     val ss = full s
+     val (ss1,ss2) = position delim ss
+ in if isEmpty ss2 then
+       NONE
+    else
+      let val (_,_,j) = base ss1
+      in SOME ((string##string)(splitAt (ss,j+k)))
+      end
+ end
+
+val scanCstring = scanTo (String.str(Char.chr 0));
+
+end (* Contig *)
