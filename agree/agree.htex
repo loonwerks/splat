@@ -34,8 +34,8 @@
 \maketitle
 
 
-\begin{abstract} The {\agree} language is used to specify component-level
-behavior of AADL components. We define the semantics of {\agree} and
+\begin{abstract} The {\agree} language is used to specify
+behavior of AADL models. We define the semantics of {\agree} and
 discuss how the semantics is leveraged to generate code that acts as a
 witness to the specification.
 

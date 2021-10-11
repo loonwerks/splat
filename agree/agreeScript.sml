@@ -82,6 +82,7 @@ Definition exprVal_def :
   bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)
 End
 
+
 (*---------------------------------------------------------------------------*)
 (* Variable definitions (‘eq’ statements)                                    *)
 (*---------------------------------------------------------------------------*)

@@ -1,11 +1,13 @@
+# INCLUDES = ../contig/
+
 all: $(DEFAULT_TARGETS) doc
 
 .PHONY: all
 
 EXTRA_CLEANS = agree.aux agree.log agree.out agree.pdf agree.tex agree.vtc munge.exe
 
-munge.exe : $(DEFAULT_TARGETS)
-	$(protect $(HOLDIR)/bin/mkmunge.exe) agreeTheory
+agree-munge : $(DEFAULT_TARGETS)
+	$(protect $(HOLDIR)/bin/mkmunge.exe) -o agree-munge agreeTheory
 
-doc : munge.exe
-	./munge.exe < agree.htex > agree.tex && pdflatex agree
+doc : agree-munge
+	./agree-munge < agree.htex > agree.tex && pdflatex agree
