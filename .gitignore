@@ -13,5 +13,11 @@
 *.vrb
 splat
 splat-mon
+*.fdb_latexmk
+*.fls
+*.tex
+*.vtc
+munge.exe
+*.synctex.gz
 **/.HOLMK
 **/.hollogs
