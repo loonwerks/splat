@@ -48,7 +48,7 @@ Datatype:
 End
 
 Definition List_Conj_def :
- List_Conj blist = FOLDR AndExpr (BoolLit T) blist
+   List_Conj blist = FOLDR AndExpr (BoolLit T) blist
 End
 
 (*---------------------------------------------------------------------------*)
@@ -144,15 +144,6 @@ End
 
 
 (*---------------------------------------------------------------------------*)
-(* Value of statement in given environment                                   *)
-(*---------------------------------------------------------------------------*)
-
-Definition stmtVal_def :
- stmtVal E t (IntStmt s e) = (s, IntValue(exprVal E e t)) ∧
- stmtVal E t (BoolStmt s b) = (s, BoolValue(bexprVal E b t))
-End
-
-(*---------------------------------------------------------------------------*)
 (* A statement updates a binding in environment E                            *)
 (*---------------------------------------------------------------------------*)
 
@@ -186,9 +177,8 @@ Definition iterateFn_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Evaluate the conjunction of assumptions of the component at time t. The   *)
-(* use of HistExpr means that at time t we can assume that the assumptions   *)
-(* hold for all j ≤ t.                                                       *)
+(* Assumptions and guarantees. The use of HistExpr for assumptions means     *)
+(* that, at time t, we can assume that the assumptions hold for all j ≤ t.   *)
 (*---------------------------------------------------------------------------*)
 
 Definition assumsVal_def:
@@ -204,11 +194,7 @@ Definition guarsVal_def:
 End
 
 (*---------------------------------------------------------------------------*)
-(* Syntactic restrictions on components                                      *)
-(*---------------------------------------------------------------------------*)
-
-(*---------------------------------------------------------------------------*)
-(* Well-formedness of component                                              *)
+(* Support defs for well-formedness of component                             *)
 (*---------------------------------------------------------------------------*)
 
 Definition exprVarNames_def :
@@ -255,6 +241,10 @@ Definition def_varNames_def :
   def_varNames (BoolStmt s b) = bexprVarNames b
 End
 
+(* -------------------------------------------------------------------------- *)
+(* Declared variables of a component                                          *)
+(* -------------------------------------------------------------------------- *)
+
 Definition varDecs_def :
   varDecs comp = comp.inports ++ MAP defName (comp.var_defs ++ comp.out_defs)
 End
@@ -263,8 +253,8 @@ End
 (* Variable names in any rhs of a component's definitions                     *)
 (* -------------------------------------------------------------------------- *)
 
-Definition defVars_def:
- defVars comp =
+Definition rhsNames_def:
+ rhsNames comp =
    FOLDL (UNION) {} (MAP def_varNames (comp.var_defs ++ comp.out_defs))
 End
 
@@ -272,54 +262,62 @@ End
 (* Variable names in rhs of defs and in assums + guarantees                   *)
 (* -------------------------------------------------------------------------- *)
 
-Definition compVars_def:
- compVars comp =
-   FOLDL (UNION) (defVars comp)
+Definition compOccs_def:
+ compOccs comp =
+   FOLDL (UNION) (rhsNames comp)
          (MAP bexprVarNames (comp.assumptions ++ comp.guarantees))
 End
 
 (*---------------------------------------------------------------------------*)
-(* A (environment,component) pair (E,C) is wellformed if                     *)
+(* An (environment,component) pair (E,C) is wellformed if                    *)
 (*                                                                           *)
 (*   (a) All the declared variables of C are distinct                        *)
-(*   (b) Each declared variable of C is in the domain of E                   *)
-(*   (c) There are no undeclared variables occurring in C                    *)
-(*   (d) Output port variables (defined in C.out_defs) do not occur in the   *)
+(*   (b) There are no undeclared variables occurring in C                    *)
+(*   (c) Output port variables (defined in C.out_defs) do not occur in the   *)
 (*       rhs of any definition                                               *)
 (*---------------------------------------------------------------------------*)
 
 Definition Wellformed_def:
- Wellformed E comp <=>
+ Wellformed comp <=>
     ALL_DISTINCT (varDecs comp) /\
-    (set (varDecs comp) SUBSET FDOM E) /\
-    (compVars comp SUBSET set(varDecs comp)) /\
-    (DISJOINT (set (MAP defName comp.out_defs)) (defVars comp))
+    (compOccs comp SUBSET set(varDecs comp)) /\
+    (DISJOINT (set (MAP defName comp.out_defs)) (rhsNames comp))
 End
 
 (*---------------------------------------------------------------------------*)
-(* A component is correct if its variable assignments, when iterated, make   *)
-(* the guarantees true, for any time t.                                      *)
+(* "Supports E comp": each declared variable of C is in the domain of E.  s  *)
+(* This combines with (b) to ensure that every variable in the program has a *)
+(* value in E.                                                               *)
+(*---------------------------------------------------------------------------*)
+
+Definition Supports_def:
+  Supports E comp <=> (set (varDecs comp) SUBSET FDOM E)
+End
+
+
+(*---------------------------------------------------------------------------*)
+(* A component is correct if it is syntactically well-formed and its variable*)
+(* assignments, when iterated t+1 times, make the guarantees true at t.      *)
 (*---------------------------------------------------------------------------*)
 
 Definition Component_Correct_def:
   Component_Correct comp
     ⇔
+  Wellformed comp /\
   ∀E t.
-     Wellformed E comp /\
-     assumsVal E comp t
-        ==>
-      guarsVal (iterateFn E comp t) comp t
+     Supports E comp ∧ assumsVal E comp t
+       ==>
+     guarsVal (iterateFn E comp t) comp t
 End
 
-
 (*---------------------------------------------------------------------------*)
-(* A sequence of proofs that end up showing that a wellformed (env,comp)     *)
-(* pair never overwrites the input variables of the component.               *)
+(* A sequence of proofs that end up showing that a wellformed component      *)
+(* never overwrites the input variables of the component.                    *)
 (*---------------------------------------------------------------------------*)
 
 Theorem Comp_Vars_Disjoint:
- ∀E comp.
-    Wellformed E comp ⇒
+ ∀comp.
+    Wellformed comp ⇒
      DISJOINT (set (comp.inports)) (set (MAP defName comp.var_defs)) ∧
      DISJOINT (set (MAP defName comp.var_defs)) (set (MAP defName comp.out_defs)) ∧
      DISJOINT (set (MAP defName comp.out_defs)) (set (comp.inports))
@@ -328,80 +326,15 @@ Proof
  >> metis_tac[]
 QED
 
-Theorem stmtFn_fdom_stable:
-  ∀E comp stmt t.
-     set (varDecs comp) SUBSET FDOM E
-     ⇒
-     set (varDecs comp) SUBSET FDOM (stmtFn t E stmt)
-Proof
- Cases_on ‘stmt’
-   >> EVAL_TAC
-   >> rw[]
-   >> metis_tac [SUBSET_INSERT_RIGHT]
-QED
-
-Theorem stmtListFn_fdom_stable:
-  ∀list E comp t.
-     set (varDecs comp) SUBSET FDOM E
-     ⇒
-     set (varDecs comp) SUBSET FDOM (stmtListFn E list t)
-Proof
- Induct
-  >> fs [stmtListFn_def]
-  >> metis_tac [stmtFn_fdom_stable]
-QED
-
-Theorem componentFn_fdom_stable:
-  ∀E comp t.
-     set (varDecs comp) SUBSET FDOM E
-     ⇒
-     set (varDecs comp) SUBSET FDOM (componentFn E comp t)
-Proof
-  metis_tac [componentFn_def,stmtListFn_fdom_stable]
-QED
-
-Theorem Wellformed_stmtFn:
-  ∀E comp stmt t.
-     Wellformed E comp ∧
-     (MEM stmt comp.var_defs ∨ MEM stmt comp.out_defs)
-     ⇒ Wellformed (stmtFn t E stmt) comp
-Proof
- Cases_on ‘stmt’
- >> EVAL_TAC
- >> rw[]
- >> metis_tac [SUBSET_INSERT_RIGHT]
-QED
-
-Theorem Wellformed_componentFn:
-  ∀E comp t.
-     Wellformed E comp
-     ⇒
-    Wellformed (componentFn E comp t) comp
-Proof
- rw[Wellformed_def] >> metis_tac [componentFn_fdom_stable]
-QED
-
-Theorem Wellformed_iterateFn:
-  ∀E comp stmt.
-     Wellformed E comp
-     ⇒
-     ∀t. Wellformed (iterateFn E comp t) comp
-Proof
- rpt gen_tac
- >> strip_tac
- >> Induct
- >> rw [iterateFn_def]
- >> metis_tac [Wellformed_componentFn]
-QED
-
 Theorem stmtFn_Stable:
   ∀E stmt s.
-     Wellformed E comp ∧ s IN set (comp.inports) ∧
-     (MEM stmt comp.var_defs ∨ MEM stmt comp.out_defs)
+     Wellformed comp ∧
+     s IN set (comp.inports) ∧
+     MEM stmt (comp.var_defs ++ comp.out_defs)
      ⇒
     ∀t. (stmtFn t E stmt ' s) = (E ' s)
 Proof
- rpt gen_tac >> strip_tac
+  rw_tac std_ss []
   >> ‘DISJOINT (set (comp.inports)) (set (MAP defName comp.var_defs)) ∧
       DISJOINT (set (comp.inports)) (set (MAP defName comp.out_defs))’
        by metis_tac [DISJOINT_SYM,Comp_Vars_Disjoint]
@@ -412,39 +345,33 @@ Proof
   >> metis_tac[defName_def]
 QED
 
-Theorem stmtFn_FOLDL_Stable:
-  ∀list E s comp.
-     Wellformed E comp ∧ s IN set (comp.inports) ∧
-     (set list SUBSET (set comp.var_defs UNION set comp.out_defs))
+Theorem stmtFn_foldl[local]:
+  ∀comp list E s.
+     Wellformed comp ∧
+     s IN set (comp.inports) ∧
+     (set list SUBSET set (comp.var_defs ++ comp.out_defs))
      ⇒
     (FOLDL (stmtFn t) E list ' s) = (E ' s)
 Proof
- Induct
-  >> rw[]
-  >> ‘DISJOINT (set (comp.inports)) (set (MAP defName comp.var_defs)) ∧
-      DISJOINT (set (comp.inports)) (set (MAP defName comp.out_defs))’
-       by metis_tac [DISJOINT_SYM,Comp_Vars_Disjoint]
-  >> EVAL_TAC
-  >> rw[]
-  >> metis_tac [stmtFn_Stable,Wellformed_stmtFn]
+ gen_tac
+  >> Induct
+  >> rw[] >> EVAL_TAC >> rw[]
+  >> metis_tac [stmtFn_Stable,MEM_APPEND]
 QED
 
 Theorem componentFn_Stable:
-  ∀E comp t s.
-     Wellformed E comp ∧ s IN set (comp.inports)
+  ∀comp E t s.
+     Wellformed comp ∧
+     s IN set (comp.inports)
      ⇒
     (componentFn E comp t ' s) = (E ' s)
 Proof
-  rw [componentFn_def,stmtListFn_def]
-  >> irule stmtFn_FOLDL_Stable
-  >> fs[Wellformed_def]
-  >> qexists_tac ‘comp’
-  >> rw[]
+ rw[componentFn_def, stmtListFn_def] >> metis_tac [stmtFn_foldl,SUBSET_REFL]
 QED
 
 Theorem Inputs_Stable:
   ∀E comp s.
-     Wellformed E comp ∧ s IN set (comp.inports)
+     Wellformed comp ∧ s IN set (comp.inports)
      ⇒
     ∀t. (iterateFn E comp t ' s) = (E ' s)
 Proof
@@ -452,9 +379,7 @@ Proof
   >> strip_tac
   >> Induct
   >> rw [iterateFn_def]
-  >- metis_tac [componentFn_Stable]
-  >- metis_tac [componentFn_Stable,Wellformed_iterateFn]
+  >> metis_tac [componentFn_Stable]
 QED
-
 
 val _ = export_theory();

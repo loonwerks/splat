@@ -6,6 +6,8 @@ val _ = intLib.prefer_int();
 
 val _ = new_theory "examples";
 
+val conj_lemma = DECIDE “!a b. a /\ (a ==> b) ==> a /\ b”;
+
 (* ========================================================================== *)
 (*                                                                            *)
 (*                Examples                                                    *)
@@ -34,7 +36,7 @@ End
 Theorem comp1_correct :
   Component_Correct comp1
 Proof
-  EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw []
+  EVAL_TAC >> simp [] >> Cases_on ‘t’ >> EVAL_TAC >> rw []
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -59,7 +61,7 @@ End
 Theorem comp2_correct :
   Component_Correct comp2
 Proof
- EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
+ EVAL_TAC >> simp [] >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -81,10 +83,11 @@ Definition comp3_def:
      |>
 End
 
-Theorem example_3 :
+Theorem comp3_correct :
   Component_Correct comp3
 Proof
   EVAL_TAC
+  >> simp []
   >> Induct_on ‘t’
   >> EVAL_TAC
   >- rw[int_of_def]
@@ -117,7 +120,7 @@ End
 val output_effect = EVAL “componentFn E itFact t ' "output" t” |> SIMP_RULE (srw_ss()) [];
 val steps_effect  = EVAL “componentFn E comp4 t ' "steps" t”   |> SIMP_RULE (srw_ss()) [];
 
-Theorem Vars_Eq :
+Theorem Vars_Eq[local] :
   ∀t E. iterateFn E comp4 t ' "steps" t = iterateFn E comp4 t ' "output" t
 Proof
   Induct
@@ -126,10 +129,11 @@ Proof
   >> rw [GSYM comp4_def]
 QED
 
-Theorem example_4 :
+Theorem comp4_correct :
   Component_Correct comp4
 Proof
  EVAL_TAC
+  >> simp []
   >> rw [GSYM comp4_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
@@ -170,7 +174,7 @@ val output_effect = EVAL “componentFn E itFact t ' "output" t” |> SIMP_RULE 
 val n_effect      = EVAL “componentFn E itFact t ' "n" t”      |> SIMP_RULE (srw_ss()) [];
 val fact_effect   = EVAL “componentFn E itFact t ' "fact" t”   |> SIMP_RULE (srw_ss()) [];
 
-Theorem Vars_Eq :
+Theorem Vars_Eq[local] :
  ∀t E. iterateFn E itFact t ' "output" t = iterateFn E itFact t ' "fact" t
 Proof
   Induct >> rw [iterateFn_def,output_effect,fact_effect]
@@ -189,7 +193,7 @@ Theorem itFact_Meets_Spec :
   Component_Correct itFact
 Proof
  EVAL_TAC
-  >> simp_tac std_ss [GSYM itFact_def]
+  >> simp [GSYM itFact_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
   >> fs [GSYM itFact_def,Vars_Eq,n_is_N]
@@ -253,7 +257,7 @@ val output_effect = EVAL “componentFn E itFib t ' "output" t” |> SIMP_RULE (
 val x_effect      = EVAL “componentFn E itFib t ' "x" t”      |> SIMP_RULE (srw_ss()) [];
 val y_effect      = EVAL “componentFn E itFib t ' "y" t”      |> SIMP_RULE (srw_ss()) [];
 
-Theorem Vars_Eq :
+Theorem Vars_Eq[local] :
    ∀t E. iterateFn E itFib t ' "output" t = iterateFn E itFib t ' "y" t
 Proof
   Induct >> rw [iterateFn_def,output_effect,y_effect]
@@ -263,7 +267,7 @@ Theorem itFib_Meets_Spec :
   Component_Correct itFib
 Proof
  EVAL_TAC
-  >> simp_tac std_ss [GSYM itFib_def]
+  >> simp [GSYM itFib_def]
   >> Induct_on ‘t’
   >> EVAL_TAC
   >- rw[]
@@ -305,13 +309,10 @@ Definition sorted_def:
       |>
 End
 
-Triviality int_lem :
-  i < 0i <=> ~(0i <= i)
-Proof
-  intLib.ARITH_TAC
-QED
+Triviality int_lem = intLib.ARITH_PROVE “i < 0i <=> ~(0i <= i)”;
 
-Theorem output_equal_alert:
+
+Theorem output_equal_alert[local] :
  ∀E t.
     bool_of (iterateFn E sorted t ' "output" t)
      <=>
@@ -340,7 +341,8 @@ Proof
         >> qspec_tac (‘int_of j - int_of i’,‘k’)
         >> gen_tac >> rpt (pop_assum kall_tac)
         >> intLib.ARITH_TAC)
-    >- (rw[EQ_IMP_THM] >> rw[]
+    >- (rw[EQ_IMP_THM]
+        >> rw[]
           >- (qpat_x_assum ‘~(x - y < 0i)’ mp_tac
               >> qspec_tac (‘iterateFn E sorted t ' "input" (SUC t)’,‘j’)
               >> qspec_tac (‘iterateFn E sorted t ' "input" t’,‘i’)
@@ -356,7 +358,7 @@ QED
 
 (*---------------------------------------------------------------------------*)
 (* A division node implementing summation of pointwise division of stream    *)
-(* i1 by i2                                                                  *)
+(* i1 by i2. This example uses constraints on the assumptions.               *)
 (*                                                                           *)
 (*  I = [i1,i2]                                                              *)
 (*  A = [0 ≤ i1, 0 < i2]                                                     *)
@@ -390,7 +392,7 @@ End
 val divsum_effect = EVAL “componentFn E divsum t ' "divsum" t” |> SIMP_RULE (srw_ss()) [];
 val output_effect = EVAL “componentFn E divsum t ' "output" t” |> SIMP_RULE (srw_ss()) [];
 
-Theorem Vars_Eq :
+Theorem Vars_Eq[local] :
  ∀t E. iterateFn E divsum t ' "output" t = iterateFn E divsum t ' "divsum" t
 Proof
   Induct >> rw [iterateFn_def,output_effect,divsum_effect]
@@ -400,45 +402,50 @@ Theorem divsum_Meets_Spec :
   Component_Correct divsum
 Proof
  simp [Component_Correct_def]
-  >> gen_tac
-  >> Induct_on ‘t’
-  >- (EVAL_TAC
-      >> rw [GSYM divsum_def]
-      >> ntac 2 (pop_assum mp_tac)
-      >> rpt (pop_assum kall_tac)
-      >> qspec_tac(‘int_of(E ' "i2" 0)’,‘j’)
-      >> qspec_tac(‘int_of(E ' "i1" 0)’,‘i’)
-      >> rpt gen_tac
-      >> rw []
-      >> ‘~(j=0)’ by intLib.ARITH_TAC
-      >> rw [integerTheory.int_div])
-  >- (strip_tac
-      >> ‘assumsVal E divsum t’ by (rpt (pop_assum mp_tac) >> EVAL_TAC >> fs[] >> rw[])
-      >> fs[]
-      >> pop_assum kall_tac
-      >> pop_assum mp_tac
-      >> EVAL_TAC
-      >> rw [GSYM divsum_def]
-      >> ‘0 < int_of (E ' "i2" (SUC t)) ∧ 0 ≤ int_of (E ' "i1" (SUC t))’
-         by metis_tac[LESS_EQ_REFL]
-      >> WEAKEN_TAC is_forall
-      >> ‘MEM "i1" divsum.inports ∧ MEM "i2" divsum.inports’ by EVAL_TAC
-      >> rw[Inputs_Stable]
-      >> ntac 2 (pop_assum kall_tac)
-      >> qpat_x_assum ‘guarsVal x y z’ mp_tac
-      >> EVAL_TAC
-      >> rw[GSYM divsum_def]
-      >> fs[Vars_Eq]
-      >> irule integerTheory.INT_LE_ADD
-      >> rw[]
-      >> pop_assum kall_tac
-      >> ntac 2 (pop_assum mp_tac)
-      >> qspec_tac(‘int_of(E ' "i2" (SUC t))’,‘j’)
-      >> qspec_tac(‘int_of(E ' "i1" (SUC t))’,‘i’)
-      >> rpt gen_tac
-      >> rw []
-      >> ‘~(j=0)’ by intLib.ARITH_TAC
-      >> rw [integerTheory.int_div])
+  >> irule conj_lemma
+  >> conj_tac
+  >- (EVAL_TAC >> rw[])
+  >- (disch_tac
+      >> gen_tac
+      >> Induct_on ‘t’
+      >- (EVAL_TAC
+          >> rw [GSYM divsum_def]
+          >> ntac 2 (pop_assum mp_tac)
+          >> rpt (pop_assum kall_tac)
+          >> qspec_tac(‘int_of(E ' "i2" 0)’,‘j’)
+          >> qspec_tac(‘int_of(E ' "i1" 0)’,‘i’)
+          >> rpt gen_tac
+          >> rw []
+          >> ‘~(j=0)’ by intLib.ARITH_TAC
+          >> rw [integerTheory.int_div])
+      >- (strip_tac
+          >> ‘assumsVal E divsum t’ by (rpt (pop_assum mp_tac) >> EVAL_TAC >> fs[] >> rw[])
+          >> fs[]
+          >> pop_assum kall_tac
+          >> pop_assum mp_tac
+          >> EVAL_TAC
+          >> rw [GSYM divsum_def]
+          >> ‘0 < int_of (E ' "i2" (SUC t)) ∧ 0 ≤ int_of (E ' "i1" (SUC t))’
+             by metis_tac[LESS_EQ_REFL]
+          >> WEAKEN_TAC is_forall
+          >> ‘MEM "i1" divsum.inports ∧ MEM "i2" divsum.inports’ by EVAL_TAC
+          >> rw[Inputs_Stable]
+          >> ntac 2 (pop_assum kall_tac)
+          >> qpat_x_assum ‘guarsVal x y z’ mp_tac
+          >> EVAL_TAC
+          >> rw[GSYM divsum_def]
+          >> fs[Vars_Eq]
+          >> irule integerTheory.INT_LE_ADD
+          >> rw[]
+          >> pop_assum kall_tac
+          >> ntac 2 (pop_assum mp_tac)
+          >> qspec_tac(‘int_of(E ' "i2" (SUC t))’,‘j’)
+          >> qspec_tac(‘int_of(E ' "i1" (SUC t))’,‘i’)
+          >> rpt gen_tac
+          >> rw []
+          >> ‘~(j=0)’ by intLib.ARITH_TAC
+          >> rw [integerTheory.int_div])
+     )
 QED
 
 val _ = export_theory();
