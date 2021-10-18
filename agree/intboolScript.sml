@@ -122,8 +122,7 @@ Definition exprVal_def :
   exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
   exprVal E (DivExpr e1 e2) t = exprVal E e1 t / exprVal E e2 t /\
   exprVal E (ModExpr e1 e2) t = exprVal E e1 t % exprVal E e2 t /\
-  exprVal E (PreExpr e) t =
-     (if t = 0 then ARB else exprVal E e (t-1)) /\
+  exprVal E (PreExpr e) t = (if t=0 then ARB else exprVal E e (t-1)) /\
   exprVal E (FbyExpr e1 e2) t =
      (if t = 0 then exprVal E e1 0 else exprVal E e2 t) /\
   exprVal E (CondExpr b e1 e2) t =
@@ -380,6 +379,49 @@ Proof
   >> Induct
   >> rw [iterateFn_def]
   >> metis_tac [componentFn_Stable]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* A sequence of proofs showing that iteration doesn't alter earlier values  *)
+(* in the stream that it generates.                                          *)
+(*---------------------------------------------------------------------------*)
+
+Theorem stmtFn_timeframe :
+ ∀E stmt t1 t2. ~(t1=t2) ⇒ ∀s. stmtFn t1 E stmt ' s t2 = E ' s t2
+Proof
+ Cases_on ‘stmt’ >> EVAL_TAC >> rw[] >> rw[combinTheory.APPLY_UPDATE_THM]
+QED
+
+Theorem stmtFn_foldl_timeframe[local]:
+ ∀list E t1 t2 s. ~(t1=t2) ⇒ (FOLDL (stmtFn t2) E list ' s) t1 = (E ' s) t1
+Proof
+ Induct >> EVAL_TAC >> rw[stmtFn_timeframe]
+QED
+
+Theorem componentFn_timeframe:
+ ∀comp E t1 t2. ~(t1=t2) ⇒ ∀s. (componentFn E comp t2 ' s) t1 = (E ' s) t1
+Proof
+ rw[componentFn_def,stmtListFn_def,stmtFn_foldl_timeframe]
+QED
+
+Theorem iterateFn_mono_lem[local] :
+ !k m E comp s.
+    (iterateFn E comp m ' s) m = (iterateFn E comp (m + k) ' s) m
+Proof
+ Induct
+  >> simp_tac std_ss [ADD_CLAUSES]
+  >> rw_tac std_ss [Once iterateFn_def]
+  >> rw [componentFn_timeframe]
+QED
+
+Theorem iterateFn_timeframe :
+ !E comp s m n.
+   m ≤ n ⇒ ((iterateFn E comp n ' s) m = (iterateFn E comp m ' s) m)
+Proof
+ rpt strip_tac
+  >> ‘∃k. n = m + k’ by intLib.ARITH_TAC
+  >> rw[]
+  >> metis_tac [ADD_SYM,iterateFn_mono_lem]
 QED
 
 val _ = export_theory();

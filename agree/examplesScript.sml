@@ -1,6 +1,7 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
-     arithmeticTheory listTheory pred_setTheory intboolTheory;
+     arithmeticTheory listTheory pred_setTheory
+     intboolTheory;
 
 val _ = intLib.prefer_int();
 
@@ -447,5 +448,110 @@ Proof
           >> rw [integerTheory.int_div])
      )
 QED
+
+(*---------------------------------------------------------------------------*)
+(* Nesting of "pre" in order to look both 1 and 2 steps back in the          *)
+(* computation. Simulates a recursive Fibonacci                              *)
+(*                                                                           *)
+(*  I = []                                                                   *)
+(*  A = []                                                                   *)
+(*  V = [fib = 1 -> pre(1 -> fib + pre fib)]                                 *)
+(*  O = [output = fib]                                                       *)
+(*  G = [0 ≤ output]                                                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+val example =
+ “exprVal E
+    (FbyExpr (IntLit 1)
+             (PreExpr (FbyExpr (IntLit 1)
+                               (AddExpr (IntVar "fib") (PreExpr (IntVar "fib"))))))
+    t”
+ |> EVAL
+ |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
+
+Definition recFib_def:
+  recFib =
+     <| inports := [];
+        var_defs :=
+          [IntStmt "recFib"
+             (FbyExpr (IntLit 1)
+                (PreExpr (FbyExpr (IntLit 1)
+                         (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))))];
+         out_defs := [IntStmt "output" (IntVar "recFib")];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
+
+val th0 = EVAL“(iterateFn E recFib 0 ' "output") 0”
+val th1 = EVAL“(iterateFn E recFib 1 ' "output") 1”
+val th2 = EVAL“(iterateFn E recFib 2 ' "output") 2”
+val th3 = EVAL“(iterateFn E recFib 3 ' "output") 3”
+val th4 = EVAL“(iterateFn E recFib 4 ' "output") 4”
+val th5 = EVAL“(iterateFn E recFib 5 ' "output") 5”
+val th6 = EVAL“(iterateFn E recFib 6 ' "output") 6”
+
+val recFib_effect = EVAL “componentFn E recFib t ' "recFib" t” |> SIMP_RULE (srw_ss()) [];
+val output_effect = EVAL “componentFn E recFib t ' "output" t” |> SIMP_RULE (srw_ss()) [];
+
+Theorem Vars_Eq[local] :
+ ∀t E. iterateFn E recFib t ' "output" t = iterateFn E recFib t ' "recFib" t
+Proof
+  Induct >> rw [iterateFn_def,output_effect,recFib_effect]
+QED
+
+Theorem recFib_Meets_Spec :
+  Component_Correct recFib
+Proof
+ EVAL_TAC
+  >> simp [GSYM recFib_def,Vars_Eq]
+  >> gen_tac
+  >> completeInduct_on ‘t’
+  >> EVAL_TAC
+  >> fs [GSYM recFib_def,output_effect]
+  >> rw []
+  >> fs[]
+  >> Cases_on ‘t’
+  >- (EVAL_TAC >> rw [GSYM recFib_def])
+  >- (Cases_on ‘n’
+      >- (EVAL_TAC >> rw [GSYM recFib_def])
+      >- (‘n' < SUC (SUC n') /\ SUC n' < SUC (SUC n')’ by decide_tac
+          >> res_tac
+          >> rpt (WEAKEN_TAC numSyntax.is_less)
+          >> ntac 2 (pop_assum mp_tac)
+          >> EVAL_TAC
+          >> rw [GSYM recFib_def,int_of_def]))
+QED
+
+Definition Fib_def :
+  Fib 0n = 1n ∧
+  Fib (SUC 0) = 1 ∧
+  Fib (SUC (SUC n)) = Fib n + Fib (SUC n)
+End
+
+Theorem recFib_Sanity:
+  ∀t E. (iterateFn E recFib t ' "output") t = IntValue(&(Fib t))
+Proof
+ recInduct Fib_ind
+ >> rw[Vars_Eq]
+ >- (EVAL_TAC >> rw[])
+ >- (EVAL_TAC >> rw[] >> metis_tac [DECIDE“1 = SUC 0”, Fib_def])
+ >- (pop_assum mp_tac
+      >> EVAL_TAC
+      >> fs[GSYM recFib_def,int_of_def]
+      >> disch_then kall_tac
+      >> intLib.ARITH_TAC)
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Note: eliminating nested "pre" expressions is a little bit tricky. The    *)
+(* following (thanks to Junaid Babar and Eric Mercer) is what we think is    *)
+(* the correct lifting of recFib:                                            *)
+(*                                                                           *)
+(*   X   = 42 -> (1 -> pre fib)                                              *)
+(*   fib = 1 -> (pre fib + pre X)                                            *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
 
 val _ = export_theory();
