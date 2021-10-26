@@ -268,12 +268,15 @@ Definition compOccs_def:
 End
 
 (*---------------------------------------------------------------------------*)
-(* An (environment,component) pair (E,C) is wellformed if                    *)
+(* A component C is wellformed if                                            *)
 (*                                                                           *)
 (*   (a) All the declared variables of C are distinct                        *)
 (*   (b) There are no undeclared variables occurring in C                    *)
 (*   (c) Output port variables (defined in C.out_defs) do not occur in the   *)
 (*       rhs of any definition                                               *)
+(*   (d) to add: if a var occurs before its defining eqn, it must be under   *)
+(*       a pre.                                                              *)
+(*   (e) to add: in every pre(e) expression, e is a variable                 *)
 (*---------------------------------------------------------------------------*)
 
 Definition Wellformed_def:
@@ -284,9 +287,9 @@ Definition Wellformed_def:
 End
 
 (*---------------------------------------------------------------------------*)
-(* "Supports E comp": each declared variable of C is in the domain of E.  s  *)
-(* This combines with (b) to ensure that every variable in the program has a *)
-(* value in E.                                                               *)
+(* "Supports E comp": each declared variable of C is in the domain of E.     *)
+(* This combines with (b) above to ensure that every variable in the program *)
+(* has a value in E.                                                         *)
 (*---------------------------------------------------------------------------*)
 
 Definition Supports_def:
@@ -311,7 +314,8 @@ End
 
 (*---------------------------------------------------------------------------*)
 (* A sequence of proofs that end up showing that a wellformed component      *)
-(* never overwrites the input variables of the component.                    *)
+(* never overwrites the input variables of the component. A kind of frame    *)
+(* condition.                                                                *)
 (*---------------------------------------------------------------------------*)
 
 Theorem Comp_Vars_Disjoint:
@@ -383,7 +387,7 @@ QED
 
 (*---------------------------------------------------------------------------*)
 (* A sequence of proofs showing that iteration doesn't alter earlier values  *)
-(* in the stream that it generates.                                          *)
+(* in the stream that it generates. Monotonicity?                            *)
 (*---------------------------------------------------------------------------*)
 
 Theorem stmtFn_timeframe :

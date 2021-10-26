@@ -524,6 +524,10 @@ Proof
           >> rw [GSYM recFib_def,int_of_def]))
 QED
 
+(*---------------------------------------------------------------------------*)
+(* Check that recFib is indeed Fibonacci as we know it.                      *)
+(*---------------------------------------------------------------------------*)
+
 Definition Fib_def :
   Fib 0n = 1n ∧
   Fib (SUC 0) = 1 ∧
@@ -536,22 +540,12 @@ Proof
  recInduct Fib_ind
  >> rw[Vars_Eq]
  >- (EVAL_TAC >> rw[])
- >- (EVAL_TAC >> rw[] >> metis_tac [DECIDE“1 = SUC 0”, Fib_def])
+ >- (EVAL_TAC >> metis_tac [ONE, Fib_def])
  >- (pop_assum mp_tac
       >> EVAL_TAC
       >> fs[GSYM recFib_def,int_of_def]
       >> disch_then kall_tac
       >> intLib.ARITH_TAC)
 QED
-
-(*---------------------------------------------------------------------------*)
-(* Note: eliminating nested "pre" expressions is a little bit tricky. The    *)
-(* following (thanks to Junaid Babar and Eric Mercer) is what we think is    *)
-(* the correct lifting of recFib:                                            *)
-(*                                                                           *)
-(*   X   = 42 -> (1 -> pre fib)                                              *)
-(*   fib = 1 -> (pre fib + pre X)                                            *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
 
 val _ = export_theory();
