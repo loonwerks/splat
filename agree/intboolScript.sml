@@ -13,7 +13,7 @@ val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 
 val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
 
 val _ = TeX_notation {hol = "|->",           TeX = ("\\HOLTokenMapto", 1)};
-val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
+val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)};
 
 
 (*---------------------------------------------------------------------------*)
