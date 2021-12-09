@@ -1,0 +1,49 @@
+Splat todo list (August 9, 2021)
+----------------------------------
+
+- Get Briefcase install
+
+- Lowering of identifier case passes finished
+
+- Integrate flatmap into code gen
+
+- Support type declarations in body of filter/monitor/gate things
+
+- Implement "standalone" mode
+
+- Incoming JSON is untyped, but eventually typed CakeML programs are
+  created. Current plan is to map untyped JSON to HOL preterms and
+  then use the HOL type inferencer to get well-typed terms. These can
+  then be readily mapped to CakeML, possibly by an Emit_CakeML module.
+
+- Need to have a discussion on how to specify the correct contig-types
+  for a port type. Things that need to be solved:
+
+        * varying length arrays
+	* how to map encoded data to datatypes
+	* can AADL handle unbounded lists somehow
+
+- Merge DFA stuff in
+
+- Merge bit-oriented and byte-oriented approaches. Get phase 2 and
+  phase 3 examples to go through in the new set-up
+
+- Add list construction to contig type implementations
+- Investigate sentinel-terminated lists
+
+- Proofs and Formalizations
+
+  * completeness
+  * upgrade formalization to have locations be (pos,width) elements
+    rather than slices
+  * compilation
+  * formalized compilation
+  * TV-style proofs via symbolic eval. of contig-types
+  * recursive contig-types
+  * Component semantics
+  * Correctness of code gen
+
+- Examples
+
+  * Cong example
+  * Ben example
