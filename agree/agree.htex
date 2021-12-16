@@ -2,7 +2,7 @@
 
 \bibliographystyle{plainurl}% the mandatory bibstyle
 
-\title{Semantics of AGREE}
+\title{Semantics of AGREE \\ (With Application to Correct Code Generation)}
 \author{Konrad Slind}{Trusted Systems Group, Collins Aerospace, USA}{konrad.slind@collins.com}{}{}
 \authorrunning{K. Slind}
 
@@ -34,14 +34,46 @@
 \maketitle
 
 
-\begin{abstract} The {\agree} language is used to specify
-behavior of AADL models. We define the semantics of {\agree} and
-discuss how the semantics is leveraged to generate code that acts as a
-witness to the specification.
+\begin{abstract}
+
+We define the formal semantics of the {\agree} contract specification
+language in terms of streams and discuss how the semantics is
+leveraged to formally prove the correctness of code generation from
+{\agree} specifications.
 
 \end{abstract}
 
 \section{Introduction}\label{sec:intro}
+
+{\agree}\cite{agree} is a language for specifying the behaviour of
+systems expressed in the AADL system modelling language
+\cite{aadl}. In {\agree}, the behaviour of an AADL component is
+expressed via \emph{Assume-Guarantee} contracts on the external ports
+of the component. These contracts are essentially predicates over the
+streams of values on the ports. There is an {\agree} model-checker
+which follows the hierarchical structure of a system in order to
+verify upper-level contracts in terms of lower-level contracts. All of
+this ultimately reduces to the behaviour of leaf-level components in
+an architecture, and the correctness issue resolves to the question:
+\emph{do the implementations of the leaf components meet their
+  contracts?}  This proof obligation is approachable in various ways:
+for example, it can be dealt with by inspection, unit testing, or by
+formal proof. We take a version of the formal proof route:
+synthesis. In particular, given a sufficiently detailed contract, we
+generate code from it and formally prove that the code indeed meets
+the contract.
+
+The synthesis step requires that the component have a \emph{computable}
+contract. In this document, we go into detail about what this exactly
+means. In particular, we give a formal syntax and semantics for a
+stream-valued language called \emph{Core Lustre}---abbreviated
+\konst{CLustre}---and argue that it captures the essence of
+      {\agree}. Then we show how \konst{CLustre} programs are
+      translated to a sequential language with no streams, and prove
+      the correctness of the translation. At that point we can inject
+      the (transformed) program into the verified CakeML compiler
+      infrastructure and obtain a binary that behaves as the original
+      contract specifies.
 
 \section{{\agree} syntax}\label{sec:syntax}
 
@@ -54,7 +86,7 @@ computes values for output ports. A component is represented by the
 following record type:
 
 \begin{HOLmath}
-\HOLthm[m;,>>3]{agree.datatype_component}
+\HOLthm[m;,>>3]{intbool.datatype_component}
 \end{HOLmath}
 
  Assumptions are boolean expressions over the input ports, while
@@ -63,66 +95,69 @@ values and the values of variables.  We will use the following
 notation to describe a component:
 
 \[
-\begin{array}{rcll}
-\multicolumn{3}{c}{A_1 \land \cdots \land A_i} & \text{; assumptions} \\
-  v_1 & = & e_1 & \text{; variable definitions} \\
-     & \cdots & & \\
- v_j & = & e_j &   \\
- o_1 & = & e_{j+1} & \text{; output definitions} \\
-     & \cdots & &  \\
- o_k & = & e_{j+k} & \\
-\multicolumn{3}{c}{G_1 \land \cdots \land G_m} & \text{; guarantees} \\
+\begin{array}{ll}
+{A_1 \land \cdots \land A_i}       & \text{-- assumptions} \\
+  v_1 = e_1;\  \cdots ;\ v_j = e_j    & \text{-- variable definitions} \\
+  o_1 = e_{j+1};\ \cdots ;\ o_k = e_{j+k} & \text{-- output definitions} \\
+{G_1 \land \cdots \land G_m}       & \text{-- guarantees} \\
 \end{array}
 \]
 
-\begin{remark}
-For now, the sets of port variables and program variables are not
-explicitly declared in the component declaration; instead, the set of
-variables occurring in the component implicitly defines the input port
-variables (arguments to \konst{PortVar}), program variables (left-hand
-sides of variable assignments), and output port variables (left-hand
-sides of output assignments).
-\end{remark}
+%% \begin{remark}
+%% For now, the sets of port variables and program variables are not
+%% explicitly declared in the component declaration; instead, the set of
+%% variables occurring in the component implicitly defines the input port
+%% variables (arguments to \konst{PortVar}), program variables (left-hand
+%% sides of variable assignments), and output port variables (left-hand
+%% sides of output assignments).
+%% \end{remark}
 
 
-\subsection{Expressions and statements}
+\subsection{Expressions, values, and statements}
 
 {\agree} expressions are conventional arithmetic/boolean expressions,
-defined by a mutual recursion.
+extended with Lustre-style \verb+fby+ and \verb+pre+ operators to help specify
+temporally-influenced behaviours. We also provide a
+\emph{Historically} operator (\verb+Hist+).
 
 \begin{HOLmath}
-\HOLthm[m;,>>3]{agree.datatype_expr}
+\HOLthm[m;,>>3]{intbool.datatype_expr}
 \end{HOLmath}
 
-There are also a few special aspects to note:
-
-\begin{itemize}
-
-\item There are three kinds of variable: \emph{port} variables are
-  distinguished from \emph{program} variables. An input port variable
-  holds the value of an input port, and is immutable; a program
-  variable is a mutable location. Output port variables are mutable
-  locations, the values of which are used as output of the component.
-
-\item Lustre-style \verb+fby+ and \verb+pre+ operators help specify
-  temporally-influenced behaviours. We also provide a
-  \emph{Historically} operator (\verb+Hist+)
-
-\end{itemize}
-
-There is only one kind of statement: assignment.
+Values of expressions are combined into a joint type of integer
+literals and boolean literals. This supports the definition of
+environments, which map variable names to value streams.
+%
 \begin{HOLmath}
-\HOLthm[m;,>>3]{agree.datatype_stmt}
+\HOLthm[m;,>>3;width=5]{intbool.datatype_value}
+\\ \\
+\HOLthm[m;,def,>>3]{intbool.bool_of_def} \\
+\HOLthm[m;,def,>>3]{intbool.int_of_def}
+\end{HOLmath}
+
+Variable definitions are treated as assignment statements. In the
+current work there are only integer and boolean assignments. We are
+deferring issues about types for now.
+
+\begin{HOLmath}
+\HOLthm[m;,>>3]{intbool.datatype_stmt}
 \end{HOLmath}
 
 \section{{\agree} semantics}\label{sec:semantics}
 
-Component \emph{environments} are finite maps from a \emph{name} (port
-name or variable name) to a stream of type $\tau$. Currently all
-streams are of type \konst{int}. Thus
-
+AGREE components express computations over streams, where a stream is
+defined as a function from time (natural numbers) to values. Input
+streams are immutable, while the value of an output stream at time $t$
+is computed using the values of variables at time $t$ or earlier.
+%
 \[
-  \konst{env} = \konst{string} \mapsto (\konst{nat} \to \konst{int})
+\mathit{stream} = \konst{nat} \to \konst{value}
+\]
+An \emph{environment} is a finite map from a \emph{name} (input port
+name, output port name, or variable name) to a \konst{value} stream.
+%
+\[
+  \konst{env} = \konst{string} \mapsto (\konst{nat} \to \konst{value})
 \]
 
 \begin{definition}[Environment update]
@@ -131,7 +166,7 @@ Variable assignment is modelled by updating the named stream in an
 environment at a point in time:
 
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{agree.updateEnv_def}
+\HOLthm[m;,def,>>3]{intbool.updateEnv_def}
 \end{HOLmath}
 
 \begin{remark}[Notation]
@@ -143,26 +178,24 @@ $\mathit{name}$ in environment $\mathit{env}$ at time $t$'.
 
 \subsection{Expression valuation}
 
-We employ separate environments for input ports ($\mathit{portEnv}$) and
-program variables ($\mathit{varEnv}$). Following is the definition of
-expression valuation in a $(\mathit{portEnv},\mathit{varEnv})$
-environment at a time $t$. Some cases have been elided.
+Evaluation of an expression is defined with respect to a given
+environment $E$ and a time $t$. (Some cases of the definition have
+been elided.)
 %
-\begin{definition}[Expression values]
-
+\begin{definition}[Expression evaluation]
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,conj1]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj2]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj3]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj4,width=75]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj9,width=95]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj10,width=95]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj11]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj13,width=75]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj14,width=75]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj18,width=75]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj19,width=75]{agree.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj21,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj1]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj2,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj3,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj8,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj9,width=95]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj10,width=95]{intbool.exprVal_def} \\  \\
+\HOLthm[m;,def,>>3,conj11]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj13,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj14,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj18,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj19,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj21,width=75]{intbool.exprVal_def} \\
 \end{HOLmath}
 
 \end{definition}
@@ -171,8 +204,7 @@ environment at a time $t$. Some cases have been elided.
 The semantics of \konst{PreExpr} requires that it is undefined at time
 0. Because HOL does not support true undefinedness, we have used the
 \konst{ARB} constant of HOL which is a polymorphic constant denoting a
-fixed arbitrary element of its type (\konst{int}
-currently). \konst{ARB} is useful for specification but it does not
+fixed arbitrary element of its type. \konst{ARB} is useful for specification but it does not
 have a computational value. We have considered using some fixed
 integer---such as 42---instead, but that will not extend well to a
 more complex type regime. Instead, we could make expression evaluation
@@ -181,83 +213,212 @@ actual implementation, but for now we will stick with \konst{ARB}.
 \end{remark}
 
 
-\subsection{Statement value and effect}
+\subsection{Statement and component semantics}
 
-The value of a statement $v = e$ is $(v,i)$ where $i$ is the value of $e$ in the current state.
-
+The \emph{effect} of a statement $s = \mathit{exp}$ in an environment $E$ at time
+$t$ is an updated environment $E'$, where variable $s$ has its value
+at time $t$ set to the value of $\mathit{exp}$.
+%
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{agree.stmtVal_def}
+\HOLthm[m;,def,>>3,width=95]{intbool.stmtFn_def}
 \end{HOLmath}
-
-The meaning of an assignment statement is a transformation on the environment:
-
-\begin{definition}[Statement effect]
-
+The sequential composition of a list of statements at time $t$ is
+defined with a left-to-right fold.
+%
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{agree.stmtEffect_def}
+\HOLthm[m;,def,>>3]{intbool.stmtListFn_def}
 \end{HOLmath}
-
-In the following, lists of assignments need to be dealt with both sequentially (via a
-\konst{fold} from the left) and also in parallel (via a \konst{map}
-followed by an accumulating \konst{fold} from the right):
-
+The effect of a component is the environment obtained by evaluating
+the variable assignments given the input port values. The variable
+definitions are evaluated in sequence, and then the output definitions
+are evaluated in sequence. Time does not advance as the definitions
+are evaluated. Because of syntactic constraints, described later, the
+output statements are independent of each other and can be thought of
+as being evaluated in parallel.
+%
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{agree.stmtListEffect_def}
-
-\\ \\
-
-\HOLthm[m;,def,>>3]{agree.stmtListParEffect_def}
+\HOLthm[m;,def,>>3,width=90]{intbool.componentFn_def}
 \end{HOLmath}
-
-\end{definition}
-
-\subsection{Component effect and correctness}
-
-The \emph{effect} of a component is the environment obtained by
-evaluating the variable assignments given the input port values. The
-variable definitions are evaluated in sequence, and then the output
-definitions are evaluated in parallel (ensuring that no output can
-depend on any other output), and added to the bindings obtained from
-the variable assignments.
-
+%
+We now extend the component behaviour through time, and do this by
+iterating the effect of the component, starting from a given
+environment.
+%
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=90]{agree.componentEffect_def}
-\end{HOLmath}
-
-We now have almost enough definitions to define correctness of a
-component. We only need to extend the component behaviour through
-time, and do this by iterating the effect of the component.
-
-\begin{HOLmath}
-\HOLthm[m;,def,>>3,width=85]{agree.iterateEffect_def}
+\HOLthm[m;,def,>>3,width=85]{intbool.iterateFn_def}
 \end{HOLmath}
 
 Note that the component effect is not given, as one might expect, a
 default value at time 0. The first input of the component arrives at
 time 0, and thus there is also a computation and output at time 0.
 
-Given values on the input ports, and the values for variables, the
-\emph{contract} of the component can be expressed. The assumptions are
-assumed to hold for all times up to the present, and the guarantees
-need to hold at the present time.
+\subsection{Component correctness}
+
+Given value streams at the input ports, and the value streams for
+state and output variables, the \emph{contract} of the component can
+be expressed. The assumptions are assumed to hold for all times up to
+the present, and the guarantees need to hold at the present time (but
+can of course refer to previous values in the variable streams by use
+of the temporal operators).
 
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=75]{agree.assumsVal_def}
-\\ \\
-\HOLthm[m;,def,>>3]{agree.guarsVal_def}
+\HOLthm[m;,def,>>3,width=75]{intbool.assumsVal_def}
+\\
+\HOLthm[m;,def,>>3]{intbool.guarsVal_def}
 \end{HOLmath}
 
-Finally, the correctness of a leaf-level component can be defined: the
-component is correct if, for any time $t$, the guarantees hold after
-iterating for $t+1$ steps, starting with an arbitrary initial state,
-and providing that the assumptions hold.
+Finally, the correctness of a component can be defined: under some
+wellformedness conditions, a component is \emph{correct} if its
+guarantees hold after any finite number of steps.
 
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{agree.Component_Correct_def}
+\HOLthm[m;,def,>>3]{intbool.Component_Correct_def}
+\end{HOLmath}
+
+Correctness is conditional on the assumptions holding in the given
+environment $E$. Thus, should the inputs to a component \emph{not}
+satisfy the assumptions, the component is deemed to be correct, no
+matter how it behaves.\footnote{Bear in mind, however, that the component
+can't crash, act in a badly typed manner, \etc}
+
+\subsection{Wellformedness and support}
+
+A component $C$ is required to have the following (statically checkable)
+wellformedness conditions.
+%
+\begin{enumerate}
+\item All the declared variables of $C$ are distinct
+\item There are no undeclared variables in the body of $C$
+\item Output port variables (those declared in $\mathit{C.out\_defs}$)
+  do not occur in the right hand side of any definition.
+\item If a variable occurs before its defining equation it has to
+  occur as an argument to $\konst{pre}$
+\item In every $\konst{pre}(e)$ expression, $e$ is a variable
+\end{enumerate}
+
+Condition 1 prevents re-declaration of variables. Condition 2 helps
+ensure that every expression in the component will have a
+value. Condition 3 ensures that output variables are independent of
+each other: they only depend on their right hand sides (and can not be
+recursive). Moreover, the value of an output does not affect the value
+of any other variable.
+
+Conditions 4 and 5 support the implementation of $C$ in an ordinary
+sequential manner. Variables must be defined before use, except that
+$\konst{pre}(v)$, if it occurs, must occur before the definition of
+variable $v$. Programs that look further back than one time step in
+their value streams are banned by 4 and 5. We will discuss a program
+transformation that treats such programs.
+
+There is also a requirement that an environment \emph{supports} a
+component, \ie{} provides streams corresponding to each input port,
+state variable, and output variable in the component.
+%
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{intbool.Supports_def}
+\end{HOLmath}
+
+As a consequence of these conditions, input port streams are
+immutable: program execution will not alter them.
+%
+\begin{HOLmath}
+\HOLthm[m;,>>3]{intbool.Inputs_Stable}
+\end{HOLmath}
+
+In contrast, the state and output variable streams, initially
+arbitrary, are incrementally determined as execution via
+\konst{iterateFn} progresses. Once a state- or output-variable stream
+element is determined at time $t$, subsequent computation will not
+change it.
+%
+\begin{HOLmath}
+\HOLthm[m;,>>3]{intbool.iterateFn_timeframe}
 \end{HOLmath}
 
 
-\section{Example}
+\section{Examples}
+
+\subsection{Sorted}
+
+{\small
+\begin{verbatim}
+  I = [input]
+  A = []
+  V = [diff  = 0 -> input - pre input]
+       alert = 0 -> if diff < 0 then 1 else pre alert
+  O = [output = (alert = 0)]
+  G = [output iff Hist (0 <= diff)]
+\end{verbatim}
+}
+
+
+\subsection{Divsum}
+
+{\small
+\begin{verbatim}
+  I = [i1,i2]
+  A = [0 <= i1, 0 < i2]
+  V = [divsum = (i1 / i2) -> pre divsum + (i1/i2)]
+  O = [output = divsum]
+  G = [0 <= output]
+\end{verbatim}
+}
+
+\subsection{Fibonacci}
+
+The \emph{Fibonacci} sequence is a famous mathematical entity. It proceeds
+%
+\[
+  1,1,2,3,5,8,13, \ldots
+\]
+and is defined recursively as
+%
+\[
+ \konst{fib}(t) = \mathtt{if}\; t\; \leq 1 \; \mathtt{then}\; 1 \; \mathtt{else}\; \konst{fib}(t-1) + \konst{fib}(t-2)
+\]
+
+{\small
+\begin{verbatim}
+  I = []
+  A = []
+  V = [fib = 1 -> pre(1 -> fib + pre fib)]
+  O = [output = fib]
+  G = [0 <= output]
+\end{verbatim}
+}
+
+\subsection{Arithmetic Progression}
+
+An \emph{arithmetic progression} is a sequence of numbers where the
+difference between adjacent elements is constant. For example
+%
+\[
+  2,6,10,14, \ldots
+\]
+is an arithmetic progression with a common difference of 4. Formally,
+we can define the adjacency check as follows (where $\mathit{in}$ is
+the input stream):
+%
+\[\mathit{output}(t) =
+ \mathtt{if}\; t \leq 1 \;\mathtt{then}\; \konst{true}\; \mathtt{else}\;
+\mathit{in}_t - \mathit{in}_{t-1} = \mathit{in}_{t-1} - \mathit{in}_{t-2}
+\]
+The following CLustre program iteratively tests whether its input stream
+$\mathit{in}$ is an arithmetic progression, performing repeated
+tests. Note that the program features no state variables, but looks
+back two positions in the input stream. (The following component is
+still ``under construction'': it is not right since it does not have
+values for the first two outputs.)
+
+{\small
+\begin{verbatim}
+  I = [in]
+  A = []
+  V = []
+  O = [output = (in - pre in = pre in - pre(pre in))]
+  G = []
+\end{verbatim}
+}
 
 \section{Code Generation}\label{sec:codegen}
 

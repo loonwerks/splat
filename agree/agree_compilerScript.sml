@@ -34,6 +34,7 @@ val _ = new_theory "agree_compiler";
 (*     need to be distinguished in stepFn                                     *)
 (* ========================================================================== *)
 
+(*
 Theorem Pre_Fby:
  exprVal E (PreExpr e) t = exprVal E (FbyExpr ARB e) t
 Proof
@@ -50,5 +51,6 @@ Theorem Pre_Add :
 Proof
  rw [FUN_EQ_THM] >> EVAL_TAC >> rw_tac std_ss [EQ_IMP_THM]
 QED
+*)
 
 val _ = export_theory();
