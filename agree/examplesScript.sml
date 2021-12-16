@@ -548,4 +548,14 @@ Proof
       >> intLib.ARITH_TAC)
 QED
 
+
+(*###########################################################################*)
+(* Some examples of stream elements being accessed at depth > 1              *)
+(*###########################################################################*)
+
+  N = 0 -> pre N + 1;
+  Fib = if N < 2 then 1 else pre Fib + pre (pre Fib)
+  ArithProg = if N < 2 then true
+                else input - pre input = pre input - pre(pre input)
+
 val _ = export_theory();

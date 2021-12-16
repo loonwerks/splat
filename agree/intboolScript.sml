@@ -45,6 +45,7 @@ Datatype:
        | LtExpr  expr expr
        | LeqExpr expr expr
        | HistExpr bexpr
+       | BoolCondExpr bexpr bexpr bexpr
 End
 
 Definition List_Conj_def :
@@ -99,10 +100,10 @@ End
 (* An environment is a finite map from port names to value streams            *)
 (* -------------------------------------------------------------------------- *)
 
-Type env = “:'a |-> (num -> value)”
+Type env = “:string |-> (num -> value)”
 
 Definition updateEnv_def :
- updateEnv (fmap: 'a env) name value t =
+ updateEnv (fmap: env) name value t =
    let strm = fmap ' name;
        strm' = strm (| t |-> value |)
    in
@@ -126,7 +127,7 @@ Definition exprVal_def :
   exprVal E (FbyExpr e1 e2) t =
      (if t = 0 then exprVal E e1 0 else exprVal E e2 t) /\
   exprVal E (CondExpr b e1 e2) t =
-     (if bexprVal E b t then exprVal E e1 0 else exprVal E e2 t)
+     (if bexprVal E b t then exprVal E e1 t else exprVal E e2 t)
   /\
   bexprVal E (BoolVar s) t     = bool_of ((E ' s) t) /\
   bexprVal E (BoolLit b) t     = b /\
@@ -134,11 +135,13 @@ Definition exprVal_def :
   bexprVal E (OrExpr b1 b2) t  = (bexprVal E b1 t \/ bexprVal E b2 t) /\
   bexprVal E (AndExpr b1 b2) t = (bexprVal E b1 t /\ bexprVal E b2 t) /\
   bexprVal E (ImpExpr b1 b2) t = (bexprVal E b1 t ⇒ bexprVal E b2 t) /\
-  bexprVal E (IffExpr b1 b2) t = (bexprVal E b1 t = bexprVal E b2 t)  /\
-  bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)    /\
-  bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)    /\
-  bexprVal E (LeqExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)   /\
-  bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)
+  bexprVal E (IffExpr b1 b2) t = (bexprVal E b1 t = bexprVal E b2 t) /\
+  bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)   /\
+  bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)   /\
+  bexprVal E (LeqExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)  /\
+  bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)     ∧
+  bexprVal E (BoolCondExpr b b1 b2) t =
+     (if bexprVal E b t then bexprVal E b1 t else bexprVal E b2 t)
 End
 
 
@@ -219,7 +222,9 @@ Definition exprVarNames_def :
   bexprVarNames (EqExpr e1 e2)  = (exprVarNames e1 UNION exprVarNames e2)   /\
   bexprVarNames (LtExpr e1 e2)  = (exprVarNames e1 UNION  exprVarNames e2)  /\
   bexprVarNames (LeqExpr e1 e2) = (exprVarNames e1 UNION exprVarNames e2)   /\
-  bexprVarNames (HistExpr b)    = bexprVarNames b
+  bexprVarNames (HistExpr b)    = bexprVarNames b ∧
+  bexprVarNames (BoolCondExpr b b1 b2) =
+       (bexprVarNames b UNION bexprVarNames b1 UNION bexprVarNames b2)
 End
 
 (* -------------------------------------------------------------------------- *)
@@ -295,7 +300,6 @@ End
 Definition Supports_def:
   Supports E comp <=> (set (varDecs comp) SUBSET FDOM E)
 End
-
 
 (*---------------------------------------------------------------------------*)
 (* A component is correct if it is syntactically well-formed and its variable*)
