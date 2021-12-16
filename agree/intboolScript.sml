@@ -6,16 +6,6 @@ val _ = intLib.prefer_int();
 
 val _ = new_theory "intbool";
 
-val _ = TeX_notation {hol = "(|", TeX = ("\\HOLTokenWhiteParenLeft", 1)}
-val _ = TeX_notation {hol = "|)", TeX = ("\\HOLTokenWhiteParenRight", 1)};
-
-val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 1)}
-val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
-
-val _ = TeX_notation {hol = "|->",           TeX = ("\\HOLTokenMapto", 1)};
-val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)};
-
-
 (*---------------------------------------------------------------------------*)
 (* Arithmetic and boolean expressions. Conventional, except that we have     *)
 (* Lustre operators "pre" and "fby" as well as a temporal operator HistExpr  *)
@@ -103,7 +93,7 @@ End
 Type env = “:string |-> (num -> value)”
 
 Definition updateEnv_def :
- updateEnv (fmap: env) name value t =
+ updateEnv (fmap:env) name value t =
    let strm = fmap ' name;
        strm' = strm (| t |-> value |)
    in
@@ -117,9 +107,9 @@ End
 
 Definition exprVal_def :
   exprVal E (IntVar s) (t:num) = int_of ((E ' s) t) /\
-  exprVal E (IntLit i) t  = i /\
-  exprVal E (AddExpr e1 e2) t = exprVal E e1 t + exprVal E e2 t /\
-  exprVal E (SubExpr e1 e2) t = exprVal E e1 t - exprVal E e2 t /\
+  exprVal E (IntLit i) t       = i /\
+  exprVal E (AddExpr e1 e2) t  = exprVal E e1 t + exprVal E e2 t /\
+  exprVal E (SubExpr e1 e2) t  = exprVal E e1 t - exprVal E e2 t /\
   exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
   exprVal E (DivExpr e1 e2) t = exprVal E e1 t / exprVal E e2 t /\
   exprVal E (ModExpr e1 e2) t = exprVal E e1 t % exprVal E e2 t /\
@@ -144,6 +134,10 @@ Definition exprVal_def :
      (if bexprVal E b t then bexprVal E b1 t else bexprVal E b2 t)
 End
 
+
+Definition prev_def :
+ PrevExpr (x,y) = FbyExpr y (PreExpr x)
+End
 
 (*---------------------------------------------------------------------------*)
 (* A statement updates a binding in environment E                            *)
@@ -184,7 +178,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition assumsVal_def:
-   assumsVal E comp = bexprVal E (HistExpr (List_Conj comp.assumptions))
+  assumsVal E comp = bexprVal E (HistExpr (List_Conj comp.assumptions))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -192,7 +186,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition guarsVal_def:
-   guarsVal E comp = bexprVal E (List_Conj comp.guarantees)
+  guarsVal E comp = bexprVal E (List_Conj comp.guarantees)
 End
 
 (*---------------------------------------------------------------------------*)
@@ -240,9 +234,9 @@ End
 (* Variable names in the body of a definition                                 *)
 (* -------------------------------------------------------------------------- *)
 
-Definition def_varNames_def :
-  def_varNames (IntStmt s e) = exprVarNames e ∧
-  def_varNames (BoolStmt s b) = bexprVarNames b
+Definition def_rhsNames_def :
+  def_rhsNames (IntStmt s e) = exprVarNames e ∧
+  def_rhsNames (BoolStmt s b) = bexprVarNames b
 End
 
 (* -------------------------------------------------------------------------- *)
@@ -259,7 +253,7 @@ End
 
 Definition rhsNames_def:
  rhsNames comp =
-   FOLDL (UNION) {} (MAP def_varNames (comp.var_defs ++ comp.out_defs))
+   FOLDL (UNION) {} (MAP def_rhsNames (comp.var_defs ++ comp.out_defs))
 End
 
 (* -------------------------------------------------------------------------- *)
@@ -423,13 +417,32 @@ Proof
 QED
 
 Theorem iterateFn_timeframe :
- !E comp s m n.
-   m ≤ n ⇒ ((iterateFn E comp n ' s) m = (iterateFn E comp m ' s) m)
+ !E comp s t u.
+   t ≤ u ⇒ ((iterateFn E comp u ' s) t = (iterateFn E comp t ' s) t)
 Proof
  rpt strip_tac
-  >> ‘∃k. n = m + k’ by intLib.ARITH_TAC
+  >> ‘∃k. u = t + k’ by intLib.ARITH_TAC
   >> rw[]
   >> metis_tac [ADD_SYM,iterateFn_mono_lem]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* Stuff to help the Latex output look nicer                                 *)
+(*---------------------------------------------------------------------------*)
+
+val _ = TeX_notation {hol = "(|", TeX = ("\\HOLTokenWhiteParenLeft", 1)}
+val _ = TeX_notation {hol = "|)", TeX = ("\\HOLTokenWhiteParenRight", 1)};
+
+val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 1)}
+val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
+
+val _ = TeX_notation {hol = "|->",           TeX = ("\\HOLTokenMapto", 1)};
+val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
+
+val _ = TeX_notation {hol = "int_of", TeX = ("int\\_of", 6)};
+val _ = TeX_notation {hol = "bool_of", TeX = ("bool\\_of", 7)};
+
+val _ = TeX_notation {hol = "List_Conj", TeX = ("List\\_Conj", 6)};
+val _ = TeX_notation {hol = "Component_Correct", TeX = ("Component\\_Correct", 6)};
 
 val _ = export_theory();

@@ -367,7 +367,7 @@ QED
 (*  O = [output = divsum]                                                    *)
 (*  G = [0 ≤ output]                                                         *)
 (*                                                                           *)
-(* Subtlety: one might think that we could have written                      *)
+(* Subtlety: one might think that we could have been written                 *)
 (*                                                                           *)
 (*  V = []                                                                   *)
 (*  O = [output = (i1 / i2) -> pre output + (i1/i2)]                         *)
@@ -399,6 +399,11 @@ Proof
   Induct >> rw [iterateFn_def,output_effect,divsum_effect]
 QED
 
+(*---------------------------------------------------------------------------*)
+(* Note that this proof requires that the inputs are not over-written        *)
+(* (Inputs_Stable)                                                           *)
+(*---------------------------------------------------------------------------*)
+
 Theorem divsum_Meets_Spec :
   Component_Correct divsum
 Proof
@@ -415,7 +420,6 @@ Proof
           >> rpt (pop_assum kall_tac)
           >> qspec_tac(‘int_of(E ' "i2" 0)’,‘j’)
           >> qspec_tac(‘int_of(E ' "i1" 0)’,‘i’)
-          >> rpt gen_tac
           >> rw []
           >> ‘~(j=0)’ by intLib.ARITH_TAC
           >> rw [integerTheory.int_div])
@@ -442,7 +446,6 @@ Proof
           >> ntac 2 (pop_assum mp_tac)
           >> qspec_tac(‘int_of(E ' "i2" (SUC t))’,‘j’)
           >> qspec_tac(‘int_of(E ' "i1" (SUC t))’,‘i’)
-          >> rpt gen_tac
           >> rw []
           >> ‘~(j=0)’ by intLib.ARITH_TAC
           >> rw [integerTheory.int_div])
@@ -461,15 +464,6 @@ QED
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-val example =
- “exprVal E
-    (FbyExpr (IntLit 1)
-             (PreExpr (FbyExpr (IntLit 1)
-                               (AddExpr (IntVar "fib") (PreExpr (IntVar "fib"))))))
-    t”
- |> EVAL
- |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
-
 Definition recFib_def:
   recFib =
      <| inports := [];
@@ -483,6 +477,16 @@ Definition recFib_def:
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
 End
+
+val example =
+ “exprVal E
+    (FbyExpr (IntLit 1)
+             (PreExpr (FbyExpr (IntLit 1)
+                               (AddExpr (IntVar "fib")
+                                        (PreExpr (IntVar "fib"))))))
+    t”
+ |> EVAL
+ |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
 
 val th0 = EVAL“(iterateFn E recFib 0 ' "output") 0”
 val th1 = EVAL“(iterateFn E recFib 1 ' "output") 1”
@@ -548,14 +552,264 @@ Proof
       >> intLib.ARITH_TAC)
 QED
 
+Theorem recFib_Sanity_Below:
+  ∀t n E. n <= t ==> (iterateFn E recFib t ' "output") n = IntValue(&(Fib n))
+Proof
+ metis_tac [iterateFn_timeframe,recFib_Sanity]
+QED
 
-(*###########################################################################*)
-(* Some examples of stream elements being accessed at depth > 1              *)
-(*###########################################################################*)
+(*===========================================================================*)
+(* Investigate some alternate definitions. Some work and some don't          *)
+(*===========================================================================*)
 
-  N = 0 -> pre N + 1;
-  Fib = if N < 2 then 1 else pre Fib + pre (pre Fib)
-  ArithProg = if N < 2 then true
-                else input - pre input = pre input - pre(pre input)
+(*---------------------------------------------------------------------------*)
+(* The following has an appealing form, but does not work:                   *)
+(*                                                                           *)
+(* V = [fib = 1 -> 1 -> fib + pre fib]                                       *)
+(*                                                                           *)
+(* Why? Because the "innermost fby", namely 1 -> fib + pre fib, does not     *)
+(* nest as one might want with the outermost 1 -> .... The expansion with    *)
+(* the semantics shows why. For clarity, we will use 1 -> 42 -> ...          *)
+(*                                                                           *)
+(* |- exprVal E                                                              *)
+(*       (FbyExpr (IntLit 1)                                                 *)
+(*          (FbyExpr (IntLit 42)                                             *)
+(*             (AddExpr (PreExpr (IntVar "fib"))                             *)
+(*                (PreExpr (PreExpr (IntVar "fib")))))) t =                  *)
+(*     if t = 0 then 1                                                       *)
+(*     else                                                                  *)
+(*       int_of (E ' "fib" (t − 1)) +                                        *)
+(*       if t ≤ 1 then ARB else int_of (E ' "fib" (t − 2))                   *)
+(*                                                                           *)
+(* We can see that the nesting of fbys essentially overwrites the initial    *)
+(* element (42) of the second fby. To do this properly requires that a pre   *)
+(* gets placed above the inner fby in the syntax tree.                       *)
+(*---------------------------------------------------------------------------*)
+
+val alt_example =
+ “exprVal E
+    (FbyExpr (IntLit 1)
+    (FbyExpr (IntLit 42)
+       (AddExpr (PreExpr (IntVar "fib"))
+                (PreExpr (PreExpr (IntVar "fib"))))))
+    t”
+ |> EVAL
+ |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
+
+(*---------------------------------------------------------------------------*)
+(* The following also does not work:                                         *)
+(*                                                                           *)
+(* V = [fib = prev(fib + prev(fib,1),1)]                                     *)
+(*   = [fib = 1 -> pre(fib + (1 -> pre fib))]                              *)
+(*                                                                           *)
+(* because at t=1, the result is 2, but should be 1                          *)
+(*---------------------------------------------------------------------------*)
+
+val alt1 =
+ “exprVal E
+    (PrevExpr(AddExpr (IntVar "fib")
+                      (PrevExpr (IntVar "fib",IntLit 1)),
+              IntLit 1))
+   t”
+ |> EVAL
+ |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
+
+(*---------------------------------------------------------------------------*)
+(* The following *does* work:                                                *)
+(*                                                                           *)
+(* V = [altfib = prev(altfib + prev(altfib,0),1)]                            *)
+(*   = [altfib = 1 -> prev(altfib + (0 -> prev altfib))]                     *)
+(*                                                                           *)
+(* because at t=1, the result is 1 + 0 = 1                                   *)
+(*---------------------------------------------------------------------------*)
+
+Definition altFib_def:
+  altFib =
+     <| inports := [];
+        var_defs :=
+          [IntStmt "altFib"
+             (PrevExpr(AddExpr (IntVar "altFib")
+                 (PrevExpr (IntVar "altFib",IntLit 1)), IntLit 0))];
+         out_defs := [IntStmt "output" (IntVar "altFib")];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
+
+val expand_altFib = altFib_def |> SIMP_RULE std_ss [prev_def] ;
+
+val th0 = EVAL“(iterateFn E altFib 0 ' "output") 0”
+val th1 = EVAL“(iterateFn E altFib 1 ' "output") 1”
+val th2 = EVAL“(iterateFn E altFib 2 ' "output") 2”
+val th3 = EVAL“(iterateFn E altFib 3 ' "output") 3”
+val th4 = EVAL“(iterateFn E altFib 4 ' "output") 4”
+val th5 = EVAL“(iterateFn E altFib 5 ' "output") 5”
+val th6 = EVAL“(iterateFn E altFib 6 ' "output") 6”
+
+(*---------------------------------------------------------------------------*)
+(* The following also works:                                                      *)
+(*                                                                           *)
+(* fib = 1 -> pre fib + pre (0 -> pre fib))                                  *)
+(*                                                                           *)
+(* because the pre distributes over + when 0 < t.                            *)
+(*---------------------------------------------------------------------------*)
+
+val alt2 =
+ “exprVal E
+    (FbyExpr (IntLit 1)
+             (AddExpr (PreExpr(IntVar "fib"))
+                      (PreExpr (FbyExpr (IntLit 1)
+                                        (PreExpr(IntVar "fib"))))))
+   t”
+ |> EVAL
+ |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
+
+val check1 = “exprVal E (PreExpr (FbyExpr e1 e2)) t” |> EVAL;
+val check2 = “exprVal E (PreExpr (AddExpr e1 e2)) t” |> EVAL;
+
+(*---------------------------------------------------------------------------*)
+(* Hand-rolled compilation into stepFn form. Starting point:                 *)
+(*                                                                           *)
+(*   fib = 1 -> pre(1 -> fib + pre fib)                                      *)
+(*                                                                           *)
+(* This code looks back more than one slot in the fib value stream, and must *)
+(* be transformed into a version where the look-back depth is max 1. First   *)
+(* step of the transformation lifts the arg of the topmost pre out and binds *)
+(* it to fresh variable X:                                                   *)
+(*                                                                           *)
+(*   fib = 1 -> pre X                                                        *)
+(*   X   = 1 -> fib + pre fib                                                *)
+(*                                                                           *)
+(* Now, there's a problem because the "pre fib" expression needs to occur    *)
+(* before the equation defining fib (otherwise it would not be wellformed).  *)
+(* So, make a binding for "pre fib" and put it before the binding for fib:   *)
+(*                                                                           *)
+(*   A   = nil -> pre fib                                                    *)
+(*   fib = 1 -> pre X                                                        *)
+(*   X   = 1 -> fib + A                                                      *)
+(*                                                                           *)
+(* Now we are done. The code can be translated directly to sequential code.  *)
+(* It is structured so that the arguments to stepFn are the values from the  *)
+(* previous iteration (hence, the "pre" values). Thus we declare pre as the  *)
+(* identity function.                                                        *)
+(*                                                                           *)
+(*   pre x = x;                                                              *)
+(*   initStep = ref true;                                                    *)
+(*                                                                           *)
+(*   stepFn state =                                                          *)
+(*     if !initStep then  /* initialize */                                   *)
+(*         (initStep := false;                                               *)
+(*          (nil,1,1))                                                       *)
+(*     else                                                                  *)
+(*        let (A,fib,X) = state;                                             *)
+(*            A'   = pre fib ;                                               *)
+(*            fib' = pre X ;                                                 *)
+(*            X'   = fib' + A' ;                                             *)
+(*        in                                                                 *)
+(*           (A',fib'.X')                                                    *)
+(*        end                                                                *)
+(*                                                                           *)
+(* What is lacking at this point is input and output. Fibonacci is a self-   *)
+(* generated sequence, so doesn't need any input. But for generality the     *)
+(* stepFn should have the type                                               *)
+(*                                                                           *)
+(*   stepFn : inputs X state -> state X outputs                              *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition uFib_def:
+  uFib =
+     <| inports := [];
+        var_defs :=
+          [IntStmt "A"    (FbyExpr ARB (PreExpr (IntVar "uFib")));
+           IntStmt "uFib" (FbyExpr (IntLit 1) (PreExpr (IntVar "X")));
+           IntStmt "X"    (FbyExpr (IntLit 1) (AddExpr (IntVar "uFib") (IntVar "A")))];
+         out_defs := [IntStmt "output" (IntVar "uFib")];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
+
+val th0 = EVAL“(iterateFn E uFib 0 ' "output") 0”
+val th1 = EVAL“(iterateFn E uFib 1 ' "output") 1”
+val th2 = EVAL“(iterateFn E uFib 2 ' "output") 2”
+val th3 = EVAL“(iterateFn E uFib 3 ' "output") 3”
+val th4 = EVAL“(iterateFn E uFib 4 ' "output") 4”
+val th5 = EVAL“(iterateFn E uFib 5 ' "output") 5”
+val th6 = EVAL“(iterateFn E uFib 6 ' "output") 6”
+
+val lem = SIMP_CONV std_ss [] “p = q ⇒ f x p y = f x q y” |> EQT_ELIM;
+
+val A_effect    = “componentFn E uFib t ' "A"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val uFib_effect = “componentFn E uFib t ' "uFib"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val X_effect    = “componentFn E uFib t ' "X"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val output_effect_uFib = “componentFn E uFib t ' "output"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val output_effect_recFib =
+  “componentFn E recFib t ' "output"”
+   |> EVAL
+   |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
+
+(*
+Theorem recFib_pass :
+ ∀t. (iterateFn E recFib t ' "output") = (iterateFn E uFib t ' "output")
+Proof
+ Induct
+   >- EVAL_TAC
+   >- (rw [iterateFn_def]
+       >> rw [output_effect_uFib,output_effect_recFib]
+       >> EVAL_TAC >> fs[GSYM recFib_def, GSYM uFib_def]
+       >> irule lem
+   >> rw [FUN_EQ_THM]
+QED
+*)
+
+(*---------------------------------------------------------------------------*)
+(* Arithmetic progressions, detection of.                                    *)
+(*                                                                           *)
+(*  inports = [in]                                                           *)
+(*  V = [N = 0 -> pre(N) + 1;                                                *)
+(*       isProg = if N ≤ 1 then                                              *)
+(*                   T                                                       *)
+(*                else                                                       *)
+(*                   in - pre in = pre in - pre(pre in)]                     *)
+(*                                                                           *)
+(* This can be an accumulative verdict, by making isProg recursive:          *)
+(*                                                                           *)
+(* isProg = if N ≤ 1 then                                                    *)
+(*              T                                                            *)
+(*           else                                                            *)
+(*            (in - pre in = pre in - pre(pre in)) and pre isProg            *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+(*
+Definition isProg_def:
+  isProg =
+    <| inports   := ["in"];
+       var_defs  :=
+          [IntStmt "N" (FbyExpr (IntLit 0)
+                                (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
+           BoolStmt "isProg"
+            (CondExpr (LeqExpr (IntVar "N") (IntLit 1))
+                      (BoolLit T)
+                      (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
+                              (SubExpr (PreExpr (IntVar "in"))
+                                       (PreExpr (PreExpr(IntVar "in"))))))];
+         out_defs := [BoolStmt "out" (BoolVar "isProg")];
+      assumptions := [];
+      guarantees  := []
+      |>
+End
+
+val isprog_example =
+ “(CondExpr (LeqExpr (IntVar "N") (IntLit 1))
+            (BoolLit T)
+            (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
+                    (SubExpr (PreExpr (IntVar "in"))
+                             (PreExpr (PreExpr(IntVar "in"))))))
+    t”
+ |> EVAL
+ |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
+*)
+>>>>>>> 693fd7e8468368bb38c41c50344dce3507d1ff17
 
 val _ = export_theory();
