@@ -53,7 +53,7 @@ of the component. These contracts are essentially predicates over the
 streams of values on the ports. There is an {\agree} model-checker
 which follows the hierarchical structure of a system in order to
 verify upper-level contracts in terms of lower-level contracts. All of
-this ultimately reduces to the behaviour of leaf-level components in
+this ultimately focuses on the behaviour of leaf-level components in
 an architecture, and the correctness issue resolves to the question:
 \emph{do the implementations of the leaf components meet their
   contracts?}  This proof obligation is approachable in various ways:
@@ -77,22 +77,26 @@ stream-valued language called \emph{Core Lustre}---abbreviated
 
 \section{{\agree} syntax}\label{sec:syntax}
 
-An {\agree} leaf-level \emph{component} is the element that we wish to
-study. A component has a collection of input ports and output ports,
-local state variable assignments, output port assignments, and, for
+An {\agree} leaf-level \emph{component} is the object of study. A
+component has a collection of input ports and output ports, local
+state variable assignments, output port assignments, and, for
 specification purposes, assumptions and guarantees. At runtime, a
-component reads from its input ports, updates state variables, then
-computes values for output ports. A component is represented by the
-following record type:
+component is perpetually (re-)invoked; in an invocation it reads from
+the input ports, updates its state variables, then computes values to be
+written to its output ports. However, a \konst{CLustre} component is
+abstract and part of our discussion shows how an abstract component is
+refined to the target behaviour.
+
+A component is represented by the following record type:
 
 \begin{HOLmath}
-\HOLthm[m;,>>3]{intbool.datatype_component}
+\HOLthm[m;,>>3]{agree.datatype_component}
 \end{HOLmath}
 
- Assumptions are boolean expressions over the input ports, while
+Assumptions are boolean expressions over the input ports, while
 guarantees are boolean expressions that can refer to input port
-values and the values of variables.  We will use the following
-notation to describe a component:
+values, the values of variables, and the values on output ports.  We
+will use the following notation to describe a component:
 
 \[
 \begin{array}{ll}
@@ -121,7 +125,7 @@ temporally-influenced behaviours. We also provide a
 \emph{Historically} operator (\verb+Hist+).
 
 \begin{HOLmath}
-\HOLthm[m;,>>3]{intbool.datatype_expr}
+\HOLthm[m;,>>3]{agree.datatype_expr}
 \end{HOLmath}
 
 Values of expressions are combined into a joint type of integer
@@ -129,10 +133,10 @@ literals and boolean literals. This supports the definition of
 environments, which map variable names to value streams.
 %
 \begin{HOLmath}
-\HOLthm[m;,>>3;width=5]{intbool.datatype_value}
+\HOLthm[m;,>>3;width=5]{agree.datatype_value}
 \\ \\
-\HOLthm[m;,def,>>3]{intbool.bool_of_def} \\
-\HOLthm[m;,def,>>3]{intbool.int_of_def}
+\HOLthm[m;,def,>>3]{agree.bool_of_def} \\
+\HOLthm[m;,def,>>3]{agree.int_of_def}
 \end{HOLmath}
 
 Variable definitions are treated as assignment statements. In the
@@ -140,7 +144,7 @@ current work there are only integer and boolean assignments. We are
 deferring issues about types for now.
 
 \begin{HOLmath}
-\HOLthm[m;,>>3]{intbool.datatype_stmt}
+\HOLthm[m;,>>3]{agree.datatype_stmt}
 \end{HOLmath}
 
 \section{{\agree} semantics}\label{sec:semantics}
@@ -151,7 +155,7 @@ streams are immutable, while the value of an output stream at time $t$
 is computed using the values of variables at time $t$ or earlier.
 %
 \[
-\mathit{stream} = \konst{nat} \to \konst{value}
+\konst{stream} = \konst{nat} \to \konst{value}
 \]
 An \emph{environment} is a finite map from a \emph{name} (input port
 name, output port name, or variable name) to a \konst{value} stream.
@@ -164,9 +168,9 @@ name, output port name, or variable name) to a \konst{value} stream.
 
 Variable assignment is modelled by updating the named stream in an
 environment at a point in time:
-
+%
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{intbool.updateEnv_def}
+\HOLthm[m;,def,>>3]{agree.updateEnv_def}
 \end{HOLmath}
 
 \begin{remark}[Notation]
@@ -184,18 +188,18 @@ been elided.)
 %
 \begin{definition}[Expression evaluation]
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,conj1]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj2,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj3,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj8,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj9,width=95]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj10,width=95]{intbool.exprVal_def} \\  \\
-\HOLthm[m;,def,>>3,conj11]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj13,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj14,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj18,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj19,width=75]{intbool.exprVal_def} \\
-\HOLthm[m;,def,>>3,conj21,width=75]{intbool.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj1]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj2,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj3,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj8,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj9,width=95]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj10,width=95]{agree.exprVal_def} \\  \\
+\HOLthm[m;,def,>>3,conj11]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj13,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj14,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj18,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj19,width=75]{agree.exprVal_def} \\
+\HOLthm[m;,def,>>3,conj21,width=75]{agree.exprVal_def} \\
 \end{HOLmath}
 
 \end{definition}
@@ -220,13 +224,13 @@ $t$ is an updated environment $E'$, where variable $s$ has its value
 at time $t$ set to the value of $\mathit{exp}$.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=95]{intbool.stmtFn_def}
+\HOLthm[m;,def,>>3,width=95]{agree.stmtFn_def}
 \end{HOLmath}
 The sequential composition of a list of statements at time $t$ is
 defined with a left-to-right fold.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{intbool.stmtListFn_def}
+\HOLthm[m;,def,>>3]{agree.stmtListFn_def}
 \end{HOLmath}
 The effect of a component is the environment obtained by evaluating
 the variable assignments given the input port values. The variable
@@ -237,7 +241,7 @@ output statements are independent of each other and can be thought of
 as being evaluated in parallel.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=90]{intbool.componentFn_def}
+\HOLthm[m;,def,>>3,width=90]{agree.componentFn_def}
 \end{HOLmath}
 %
 We now extend the component behaviour through time, and do this by
@@ -245,7 +249,7 @@ iterating the effect of the component, starting from a given
 environment.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=85]{intbool.iterateFn_def}
+\HOLthm[m;,def,>>3,width=85]{agree.iterateFn_def}
 \end{HOLmath}
 
 Note that the component effect is not given, as one might expect, a
@@ -262,9 +266,9 @@ can of course refer to previous values in the variable streams by use
 of the temporal operators).
 
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=75]{intbool.assumsVal_def}
+\HOLthm[m;,def,>>3,width=75]{agree.assumsVal_def}
 \\
-\HOLthm[m;,def,>>3]{intbool.guarsVal_def}
+\HOLthm[m;,def,>>3]{agree.guarsVal_def}
 \end{HOLmath}
 
 Finally, the correctness of a component can be defined: under some
@@ -272,7 +276,7 @@ wellformedness conditions, a component is \emph{correct} if its
 guarantees hold after any finite number of steps.
 
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{intbool.Component_Correct_def}
+\HOLthm[m;,def,>>3]{agree.Component_Correct_def}
 \end{HOLmath}
 
 Correctness is conditional on the assumptions holding in the given
@@ -315,24 +319,24 @@ component, \ie{} provides streams corresponding to each input port,
 state variable, and output variable in the component.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{intbool.Supports_def}
+\HOLthm[m;,def,>>3]{agree.Supports_def}
 \end{HOLmath}
 
 As a consequence of these conditions, input port streams are
 immutable: program execution will not alter them.
 %
 \begin{HOLmath}
-\HOLthm[m;,>>3]{intbool.Inputs_Stable}
+\HOLthm[m;,>>3]{agree.Inputs_Stable}
 \end{HOLmath}
 
 In contrast, the state and output variable streams, initially
-arbitrary, are incrementally determined as execution via
+unconstrained, are incrementally determined as execution via
 \konst{iterateFn} progresses. Once a state- or output-variable stream
 element is determined at time $t$, subsequent computation will not
 change it.
 %
 \begin{HOLmath}
-\HOLthm[m;,>>3]{intbool.iterateFn_timeframe}
+\HOLthm[m;,>>3]{agree.iterateFn_timeframe}
 \end{HOLmath}
 
 
