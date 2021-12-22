@@ -767,28 +767,20 @@ QED
 (* Arithmetic progressions, detection of.                                    *)
 (*                                                                           *)
 (*  inports = [in]                                                           *)
-(*  V = [N = 0 -> pre(N) + 1;                                                *)
-(*       isProg = if N ≤ 1 then                                              *)
-(*                   T                                                       *)
-(*                else                                                       *)
-(*                   in - pre in = pre in - pre(pre in)]                     *)
-(*                                                                           *)
-(* This can be an accumulative verdict, by making isProg recursive:          *)
-(*                                                                           *)
-(* isProg = if N ≤ 1 then                                                    *)
+(*  arithprog = if N ≤ 1 then                                                *)
 (*              T                                                            *)
 (*           else                                                            *)
-(*            (in - pre in = pre in - pre(pre in)) and pre isProg            *)
+(*            (in - pre in = pre in - pre(pre in)) and pre arithprog         *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-Definition isProg_def:
-  isProg =
+Definition arithprog_def:
+  arithprog =
     <| inports   := ["in"];
        var_defs  :=
           [IntStmt "N" (FbyExpr (IntLit 0)
                                 (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
-           BoolStmt "isProg"
+           BoolStmt "arithprog"
             (BoolCondExpr
                  (LeqExpr (IntVar "N") (IntLit 1))
                  (BoolLit T)
@@ -796,19 +788,19 @@ Definition isProg_def:
                     (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
                             (SubExpr (PreExpr (IntVar "in"))
                                      (PreExpr (PreExpr(IntVar "in")))))
-                    (BoolPreExpr (BoolVar "isProg"))))];
-         out_defs := [BoolStmt "out" (BoolVar "isProg")];
+                    (BoolPreExpr (BoolVar "arithprog"))))];
+         out_defs := [BoolStmt "out" (BoolVar "arithprog")];
       assumptions := [];
       guarantees  := []
       |>
 End
 
-val th0 = EVAL“(iterateFn E isProg 0 ' "out") 0”
-val th1 = EVAL“(iterateFn E isProg 1 ' "out") 1”
-val th2 = EVAL“(iterateFn E isProg 2 ' "out") 2”
-val th3 = EVAL“(iterateFn E isProg 3 ' "out") 3”
-val th4 = EVAL“(iterateFn E isProg 4 ' "out") 4”
-val th5 = EVAL“(iterateFn E isProg 5 ' "out") 5”
-val th6 = EVAL“(iterateFn E isProg 6 ' "out") 6”
+val th0 = EVAL“(iterateFn E arithprog 0 ' "out") 0”
+val th1 = EVAL“(iterateFn E arithprog 1 ' "out") 1”
+val th2 = EVAL“(iterateFn E arithprog 2 ' "out") 2”
+val th3 = EVAL“(iterateFn E arithprog 3 ' "out") 3”
+val th4 = EVAL“(iterateFn E arithprog 4 ' "out") 4”
+val th5 = EVAL“(iterateFn E arithprog 5 ' "out") 5”
+val th6 = EVAL“(iterateFn E arithprog 6 ' "out") 6”
 
 val _ = export_theory();
