@@ -2,7 +2,7 @@ open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib regexpLib ASCIInumbersLib;
 
 open pairTheory arithmeticTheory listTheory rich_listTheory pred_setTheory
-		stringTheory combinTheory optionTheory numposrepTheory FormalLangTheory;
+     stringTheory combinTheory optionTheory numposrepTheory FormalLangTheory;
 
 open finite_mapTheory bagTheory;  (* For termination of predFn, need to use mlt_list *)
 open concatPartialTheory;
