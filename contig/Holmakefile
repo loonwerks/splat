@@ -1,0 +1,4 @@
+INCLUDES = $(HOLDIR)/examples/formal-languages/regular \
+	   $(HOLDIR)/examples/formal-languages \
+           $(HOLDIR)/examples/balanced_bst \
+           /home/guardol/Projects/cakeml/basis/pure/
