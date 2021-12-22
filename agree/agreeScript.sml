@@ -1,33 +1,20 @@
 open HolKernel Parse boolLib bossLib BasicProvers
-     pred_setLib stringLib intLib finite_mapTheory;
+     pred_setLib stringLib intLib finite_mapTheory
+     arithmeticTheory listTheory pred_setTheory;
 
 val _ = intLib.prefer_int();
 
 val _ = new_theory "agree";
 
-val _ = TeX_notation {hol = "(|", TeX = ("\\HOLTokenWhiteParenLeft", 1)}
-val _ = TeX_notation {hol = "|)", TeX = ("\\HOLTokenWhiteParenRight", 1)};
-
-val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 1)}
-val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
-
-val _ = TeX_notation {hol = "|->",           TeX = ("\\HOLTokenMapto", 1)};
-val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
-
-
 (*---------------------------------------------------------------------------*)
-(* Arithmetic expressions. Conventional, except that there are two kinds of  *)
-(* variable: one normal and one for input ports. This allows us to get the   *)
-(* values for input ports from a separate environment than that used to get  *)
-(* the values for variables introduced by ‘eq’ statements.                   *)
-(*                                                                           *)
-(* Also we have Lustre operators "pre" and "fby" as well as a temporal       *)
-(* operator HistExpr ("Historically").                                       *)
+(* Arithmetic and boolean expressions. Conventional, except that we have     *)
+(* Lustre operators "pre" and "fby" as well as a temporal operator HistExpr  *)
+(* ("Historically"). The polymorphic operators equality, pre, fby, and cond  *)
+(* are copied to cover both integers and booleans.                           *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  expr = PortVar string
-       | ProgVar string
+  expr = IntVar string
        | IntLit int
        | AddExpr expr expr
        | SubExpr expr expr
@@ -38,7 +25,8 @@ Datatype:
        | FbyExpr expr expr
        | CondExpr bexpr expr expr
    ;
- bexpr = BoolLit bool
+ bexpr = BoolVar string
+       | BoolLit bool
        | NotExpr bexpr
        | OrExpr  bexpr bexpr
        | AndExpr bexpr bexpr
@@ -48,107 +36,28 @@ Datatype:
        | LtExpr  expr expr
        | LeqExpr expr expr
        | HistExpr bexpr
+       | BoolCondExpr bexpr bexpr bexpr
+       | BoolPreExpr bexpr
+       | BoolFbyExpr bexpr bexpr
 End
 
-(*---------------------------------------------------------------------------*)
-(* Value of expression in given environments                                 *)
-(*---------------------------------------------------------------------------*)
-
-Definition exprVal_def :
-  exprVal (portEnv,varEnv) (PortVar s) (t:num) = (portEnv ' s) t /\
-  exprVal (portEnv,varEnv) (ProgVar s) t  = (varEnv ' s) t /\
-  exprVal E (IntLit i) t  = i /\
-  exprVal E (AddExpr e1 e2) t = exprVal E e1 t + exprVal E e2 t /\
-  exprVal E (SubExpr e1 e2) t = exprVal E e1 t - exprVal E e2 t /\
-  exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
-  exprVal E (DivExpr e1 e2) t = exprVal E e1 t / exprVal E e2 t /\
-  exprVal E (ModExpr e1 e2) t = exprVal E e1 t % exprVal E e2 t /\
-  exprVal E (PreExpr e) t =
-     (if t = 0 then ARB else exprVal E e (t-1)) /\
-  exprVal E (FbyExpr e1 e2) t =
-     (if t = 0 then exprVal E e1 0 else exprVal E e2 t) /\
-  exprVal E (CondExpr b e1 e2) t =
-     (if bexprVal E b t then exprVal E e1 0 else exprVal E e2 t)
-  /\
-  bexprVal E (BoolLit b) t     = b /\
-  bexprVal E (NotExpr b) t     = (~bexprVal E b t) /\
-  bexprVal E (OrExpr b1 b2) t  = (bexprVal E b1 t \/ bexprVal E b2 t) /\
-  bexprVal E (AndExpr b1 b2) t = (bexprVal E b1 t /\ bexprVal E b2 t) /\
-  bexprVal E (ImpExpr b1 b2) t = (bexprVal E b1 t ⇒ bexprVal E b2 t) /\
-  bexprVal E (IffExpr b1 b2) t = (bexprVal E b1 t = bexprVal E b2 t)  /\
-  bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)    /\
-  bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)    /\
-  bexprVal E (LeqExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)   /\
-  bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)
+Definition List_Conj_def :
+   List_Conj blist = FOLDR AndExpr (BoolLit T) blist
 End
-
 
 (*---------------------------------------------------------------------------*)
 (* Variable definitions (‘eq’ statements)                                    *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  stmt = NumStmt string expr
+  stmt = IntStmt string expr
+       | BoolStmt string bexpr
 End
 
 (*---------------------------------------------------------------------------*)
-(* Value of statement in given environments                                  *)
-(*---------------------------------------------------------------------------*)
-
-Definition stmtVal_def :
- stmtVal (portEnv,varEnv) t (NumStmt varName e) =
-      (varName, exprVal (portEnv,varEnv) e t)
-End
-
-(*---------------------------------------------------------------------------*)
-(* Environments are finite maps from names to streams                        *)
-(*---------------------------------------------------------------------------*)
-
-Definition updateEnv_def :
- updateEnv (fmap: 'a |-> (num -> 'b)) name value t =
-   let strm = fmap ' name;
-       strm' = strm (| t |-> value |)
-   in
-     fmap |+ (name,strm')
-End
-
-(*---------------------------------------------------------------------------*)
-(* A statement updates a binding in varEnv                                   *)
-(*---------------------------------------------------------------------------*)
-
-Definition stmtEffect_def :
- stmtEffect t (portEnv,varEnv) (NumStmt varName e) =
-    let i = exprVal (portEnv,varEnv) e t
-    in (portEnv,updateEnv varEnv varName i t)
-End
-
-(*---------------------------------------------------------------------------*)
-(* Sequential accumulation of variable updates                               *)
-(*---------------------------------------------------------------------------*)
-
-Definition stmtListEffect_def :
-  stmtListEffect (portEnv,varEnv) stmts t =
-     FOLDL (stmtEffect t) (portEnv,varEnv) stmts
-End
-
-(*---------------------------------------------------------------------------*)
-(* Accumulation of parallel updates                                          *)
-(*---------------------------------------------------------------------------*)
-
-Definition insertBinding_def:
-  insertBinding t (s,i) varEnv = updateEnv varEnv s i t
-End
-
-Definition stmtListParEffect_def :
- stmtListParEffect (portEnv,varEnv) stmts t =
-   let outBindings = MAP (stmtVal (portEnv,varEnv) t) stmts;
-       varEnv' = FOLDR (insertBinding t) varEnv outBindings
-   in (portEnv,varEnv')
-End
-
-(*---------------------------------------------------------------------------*)
-(* A component = (V,O,A,G) comprises                                         *)
+(* A component = (I,V,O,A,G) comprises                                       *)
 (*                                                                           *)
+(*   - A list of input ports          I = [p1; ...; pi]                      *)
 (*   - A list of variable definitions V = [v1 = e1; ...; vn = en]            *)
 (*   - A list of output definitions   O = [o1 = e(n+1); ...; ok = e(n+k)]    *)
 (*   - A list of assumptions          A = [a1,...,ai]                        *)
@@ -156,25 +65,126 @@ End
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  component = <| var_defs    : stmt list;
+  component = <| inports     : string list;
+                 var_defs    : stmt list;
                  out_defs    : stmt list;
                  assumptions : bexpr list;
                  guarantees  : bexpr list |>
 End
 
 (*---------------------------------------------------------------------------*)
-(* The "effect" of the component is the environment obtained by running the  *)
-(* variable assignments given the input port values. The variable definitions*)
-(* are run in sequence, and then the output definitions are evaluated in     *)
-(* parallel (ensuring that no output can depend on any other output), and    *)
-(* added to the bindings obtained in the first stage.                        *)
+(* Type of expression values                                                 *)
 (*---------------------------------------------------------------------------*)
 
-Definition componentEffect_def :
-  componentEffect (portEnv,varEnv) comp t =
-  let (portEnv,varEnv') = stmtListEffect (portEnv,varEnv) comp.var_defs t;
-      (portEnv,varEnv'') = stmtListParEffect (portEnv,varEnv') comp.out_defs t
-  in varEnv''
+Datatype:
+  value = BoolValue bool
+        | IntValue int
+End
+
+Definition bool_of_def :
+  bool_of (BoolValue b) = b
+End
+
+Definition int_of_def :
+  int_of (IntValue i) = i
+End
+
+(* -------------------------------------------------------------------------- *)
+(* An environment is a finite map from port names to value streams            *)
+(* -------------------------------------------------------------------------- *)
+
+Type env = “:string |-> (num -> value)”
+
+Definition updateEnv_def :
+ updateEnv (fmap:env) name value t =
+   let strm = fmap ' name;
+       strm' = strm (| t |-> value |)
+   in
+     fmap |+ (name,strm')
+End
+
+
+(*---------------------------------------------------------------------------*)
+(* Value of expression in given environments                                 *)
+(*---------------------------------------------------------------------------*)
+
+Definition exprVal_def :
+  exprVal E (IntVar s) (t:num) = int_of ((E ' s) t) /\
+  exprVal E (IntLit i) t       = i /\
+  exprVal E (AddExpr e1 e2) t  = exprVal E e1 t + exprVal E e2 t /\
+  exprVal E (SubExpr e1 e2) t  = exprVal E e1 t - exprVal E e2 t /\
+  exprVal E (MultExpr e1 e2) t = exprVal E e1 t * exprVal E e2 t /\
+  exprVal E (DivExpr e1 e2) t = exprVal E e1 t / exprVal E e2 t /\
+  exprVal E (ModExpr e1 e2) t = exprVal E e1 t % exprVal E e2 t /\
+  exprVal E (PreExpr e) t = (if t=0 then ARB else exprVal E e (t-1)) /\
+  exprVal E (FbyExpr e1 e2) t =
+     (if t = 0 then exprVal E e1 0 else exprVal E e2 t) /\
+  exprVal E (CondExpr b e1 e2) t =
+     (if bexprVal E b t then exprVal E e1 t else exprVal E e2 t)
+  /\
+  bexprVal E (BoolVar s) t     = bool_of ((E ' s) t) /\
+  bexprVal E (BoolLit b) t     = b /\
+  bexprVal E (NotExpr b) t     = (~bexprVal E b t) /\
+  bexprVal E (OrExpr b1 b2) t  = (bexprVal E b1 t \/ bexprVal E b2 t) /\
+  bexprVal E (AndExpr b1 b2) t = (bexprVal E b1 t /\ bexprVal E b2 t) /\
+  bexprVal E (ImpExpr b1 b2) t = (bexprVal E b1 t ⇒ bexprVal E b2 t) /\
+  bexprVal E (IffExpr b1 b2) t = (bexprVal E b1 t = bexprVal E b2 t) /\
+  bexprVal E (EqExpr e1 e2) t  = (exprVal E e1 t = exprVal E e2 t)   /\
+  bexprVal E (LtExpr e1 e2) t  = (exprVal E e1 t < exprVal E e2 t)   /\
+  bexprVal E (LeqExpr e1 e2) t = (exprVal E e1 t <= exprVal E e2 t)  /\
+  bexprVal E (HistExpr b) t    = (!n. n <= t ==> bexprVal E b n)     ∧
+  bexprVal E (BoolPreExpr b) t = (if t=0 then ARB else bexprVal E b (t-1)) /\
+  bexprVal E (BoolFbyExpr b1 b2) t =
+     (if t = 0 then bexprVal E b1 0 else bexprVal E b2 t) /\
+  bexprVal E (BoolCondExpr b b1 b2) t =
+     (if bexprVal E b t then bexprVal E b1 t else bexprVal E b2 t)
+End
+
+
+Definition prev_def :
+ PrevExpr (x,y) = FbyExpr y (PreExpr x)
+End
+
+(*---------------------------------------------------------------------------*)
+(* A statement updates a binding in environment E                            *)
+(*---------------------------------------------------------------------------*)
+
+Definition stmtFn_def :
+ stmtFn t E (IntStmt s exp)   = updateEnv E s (IntValue(exprVal E exp t)) t ∧
+ stmtFn t E (BoolStmt s bexp) = updateEnv E s (BoolValue(bexprVal E bexp t)) t
+End
+
+(*---------------------------------------------------------------------------*)
+(* Sequential accumulation of variable updates.                              *)
+(*---------------------------------------------------------------------------*)
+
+Definition stmtListFn_def :
+   stmtListFn E stmts t = FOLDL (stmtFn t) E stmts
+End
+
+Definition componentFn_def :
+  componentFn E comp t = stmtListFn E (comp.var_defs ++ comp.out_defs) t
+End
+
+(*---------------------------------------------------------------------------*)
+(* Correctness of component: the effects  of the component model its spec.   *)
+(* We first define a function over t that iterates variable assignments of   *)
+(* the component. Time 0 is when the ports get their first value, so we      *)
+(* have to calculate componentFn there as well.                              *)
+(*---------------------------------------------------------------------------*)
+
+Definition iterateFn_def :
+  iterateFn E comp 0 = componentFn E comp 0 ∧
+  iterateFn E comp (SUC t) = componentFn (iterateFn E comp t) comp (SUC t)
+End
+
+(*---------------------------------------------------------------------------*)
+(* Assumptions and guarantees. The use of HistExpr for assumptions means     *)
+(* that, at time t, we can assume that the assumptions hold for all j ≤ t.   *)
+(*---------------------------------------------------------------------------*)
+
+Definition assumsVal_def:
+  assumsVal E comp = bexprVal E (HistExpr (List_Conj comp.assumptions))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -182,439 +192,266 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition guarsVal_def:
-   guarsVal E comp = bexprVal E (FOLDR AndExpr (BoolLit T) comp.guarantees)
+  guarsVal E comp = bexprVal E (List_Conj comp.guarantees)
 End
 
 (*---------------------------------------------------------------------------*)
-(* Evaluate the conjunction of assumptions of the component at time t. Only  *)
-(* the input port values can be accessed. At a time t we can assume that the *)
-(* assumptions hold for all j ≤ t.                                           *)
+(* Support defs for well-formedness of component                             *)
 (*---------------------------------------------------------------------------*)
 
-Definition assumsVal_def:
-   assumsVal portEnv comp =
-        bexprVal (portEnv,FEMPTY)
-             (HistExpr (FOLDR AndExpr (BoolLit T) comp.assumptions))
+Definition exprVarNames_def :
+  exprVarNames (IntVar s) = {s} /\
+  exprVarNames (IntLit i) = {} /\
+  exprVarNames (AddExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (SubExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (MultExpr e1 e2) = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (DivExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (ModExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (PreExpr e)      = exprVarNames e /\
+  exprVarNames (FbyExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (CondExpr b e1 e2) =
+       (bexprVarNames b UNION exprVarNames e1 UNION exprVarNames e2)
+  /\
+  bexprVarNames (BoolVar s)     = {s} /\
+  bexprVarNames (BoolLit b)     = {} /\
+  bexprVarNames (NotExpr b)     = bexprVarNames b /\
+  bexprVarNames (OrExpr b1 b2)  = (bexprVarNames b1 UNION bexprVarNames b2) /\
+  bexprVarNames (AndExpr b1 b2) = (bexprVarNames b1 UNION bexprVarNames b2) /\
+  bexprVarNames (ImpExpr b1 b2) = (bexprVarNames b1 UNION bexprVarNames b2) /\
+  bexprVarNames (IffExpr b1 b2) = (bexprVarNames b1 UNION bexprVarNames b2) /\
+  bexprVarNames (EqExpr e1 e2)  = (exprVarNames e1 UNION exprVarNames e2)   /\
+  bexprVarNames (LtExpr e1 e2)  = (exprVarNames e1 UNION  exprVarNames e2)  /\
+  bexprVarNames (LeqExpr e1 e2) = (exprVarNames e1 UNION exprVarNames e2)   /\
+  bexprVarNames (HistExpr b)    = bexprVarNames b ∧
+  exprVarNames (BoolPreExpr b)  = bexprVarNames b /\
+  exprVarNames (BoolFbyExpr b1 b2)  = bexprVarNames e1 UNION bexprVarNames e2 /\
+  bexprVarNames (BoolCondExpr b b1 b2) =
+       (bexprVarNames b UNION bexprVarNames b1 UNION bexprVarNames b2)
+End
+
+(* -------------------------------------------------------------------------- *)
+(* Variable name of a definition                                              *)
+(* -------------------------------------------------------------------------- *)
+
+Definition defName_def :
+ defName (IntStmt s e) = s ∧
+ defName (BoolStmt s b) = s
+End
+
+(* -------------------------------------------------------------------------- *)
+(* Variable names in the body of a definition                                 *)
+(* -------------------------------------------------------------------------- *)
+
+Definition def_rhsNames_def :
+  def_rhsNames (IntStmt s e) = exprVarNames e ∧
+  def_rhsNames (BoolStmt s b) = bexprVarNames b
+End
+
+(* -------------------------------------------------------------------------- *)
+(* Declared variables of a component                                          *)
+(* -------------------------------------------------------------------------- *)
+
+Definition varDecs_def :
+  varDecs comp = comp.inports ++ MAP defName (comp.var_defs ++ comp.out_defs)
+End
+
+(* -------------------------------------------------------------------------- *)
+(* Variable names in any rhs of a component's definitions                     *)
+(* -------------------------------------------------------------------------- *)
+
+Definition rhsNames_def:
+ rhsNames comp =
+   FOLDL (UNION) {} (MAP def_rhsNames (comp.var_defs ++ comp.out_defs))
+End
+
+(* -------------------------------------------------------------------------- *)
+(* Variable names in rhs of defs and in assums + guarantees                   *)
+(* -------------------------------------------------------------------------- *)
+
+Definition compOccs_def:
+ compOccs comp =
+   FOLDL (UNION) (rhsNames comp)
+         (MAP bexprVarNames (comp.assumptions ++ comp.guarantees))
 End
 
 (*---------------------------------------------------------------------------*)
-(* Correctness of component: the effects  of the component model its spec.   *)
-(* We first define a function over t that iterates variable assignments of   *)
-(* the component. Time 0 is when the ports get their first value, so we      *)
-(* have to calculate componentEffect there as well.                          *)
+(* A component C is wellformed if                                            *)
+(*                                                                           *)
+(*   (a) All the declared variables of C are distinct                        *)
+(*   (b) There are no undeclared variables occurring in C                    *)
+(*   (c) Output port variables (defined in C.out_defs) do not occur in the   *)
+(*       rhs of any definition                                               *)
+(*   (d) to add: if a var occurs before its defining eqn, it must be under   *)
+(*       a pre.                                                              *)
+(*   (e) to add: in every pre(e) expression, e is a variable                 *)
 (*---------------------------------------------------------------------------*)
 
-Definition iterateEffect_def :
-  iterateEffect portEnv comp 0 = componentEffect (portEnv,ARB) comp 0 ∧
-  iterateEffect portEnv comp (SUC t) =
-    componentEffect (portEnv,iterateEffect portEnv comp t) comp (SUC t)
+Definition Wellformed_def:
+ Wellformed comp <=>
+    ALL_DISTINCT (varDecs comp) /\
+    (compOccs comp SUBSET set(varDecs comp)) /\
+    (DISJOINT (set (MAP defName comp.out_defs)) (rhsNames comp))
 End
 
 (*---------------------------------------------------------------------------*)
-(* A component is correct if its variable assignments, when iterated, make   *)
-(* the guarantees true, for any time t.                                      *)
+(* "Supports E comp": each declared variable of C is in the domain of E.     *)
+(* This combines with (b) above to ensure that every variable in the program *)
+(* has a value in E.                                                         *)
+(*---------------------------------------------------------------------------*)
+
+Definition Supports_def:
+  Supports E comp <=> (set (varDecs comp) SUBSET FDOM E)
+End
+
+(*---------------------------------------------------------------------------*)
+(* A component is correct if it is syntactically well-formed and its variable*)
+(* assignments, when iterated t+1 times, make the guarantees true at t.      *)
 (*---------------------------------------------------------------------------*)
 
 Definition Component_Correct_def:
   Component_Correct comp
     ⇔
-  ∀portEnv t.
-      assumsVal portEnv comp t
-        ==>
-      guarsVal (portEnv, iterateEffect portEnv comp t) comp t
+  Wellformed comp /\
+  ∀E t.
+     Supports E comp ∧ assumsVal E comp t
+       ==>
+     guarsVal (iterateFn E comp t) comp t
 End
 
 (*---------------------------------------------------------------------------*)
-(* Trivial beginning example                                                 *)
-(*  A = []                                                                   *)
-(*  V = []                                                                   *)
-(*  O = [output = input]                                                     *)
-(*  G = [output ≤ input]                                                     *)
+(* A sequence of proofs that end up showing that a wellformed component      *)
+(* never overwrites the input variables of the component. A kind of frame    *)
+(* condition.                                                                *)
 (*---------------------------------------------------------------------------*)
 
-Theorem example_1 :
-  Component_Correct
-     <|   var_defs := [];
-          out_defs := [NumStmt "output" (PortVar "input")];
-       assumptions := [];
-        guarantees := [NotExpr (LtExpr (ProgVar "output") (PortVar "input"))]
-     |>
+Theorem Comp_Vars_Disjoint:
+ ∀comp.
+    Wellformed comp ⇒
+     DISJOINT (set (comp.inports)) (set (MAP defName comp.var_defs)) ∧
+     DISJOINT (set (MAP defName comp.var_defs)) (set (MAP defName comp.out_defs)) ∧
+     DISJOINT (set (MAP defName comp.out_defs)) (set (comp.inports))
 Proof
- EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
+ rw [Wellformed_def,varDecs_def,ALL_DISTINCT_APPEND,IN_DISJOINT]
+ >> metis_tac[]
 QED
 
-(*---------------------------------------------------------------------------*)
-(* Simple use of variable assignments                                        *)
-(*  V = [v = input + 1]                                                      *)
-(*  O = [output = v]                                                         *)
-(*  A = []                                                                   *)
-(*  G = [input < output]                                                     *)
-(*---------------------------------------------------------------------------*)
-
-Theorem example_2 :
-  Component_Correct
-     <| var_defs := [NumStmt "v" (AddExpr (PortVar "input") (IntLit 1))];
-        out_defs := [NumStmt "output" (ProgVar "v")];
-       assumptions := [];
-      guarantees := [LtExpr (PortVar "input") (ProgVar "output")]
-     |>
+Theorem stmtFn_Stable:
+  ∀E stmt s.
+     Wellformed comp ∧
+     s IN set (comp.inports) ∧
+     MEM stmt (comp.var_defs ++ comp.out_defs)
+     ⇒
+    ∀t. (stmtFn t E stmt ' s) = (E ' s)
 Proof
- EVAL_TAC >> Cases_on ‘t’ >> EVAL_TAC >> rw[]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Trivial use of Hist                                                       *)
-(*  A = []                                                                   *)
-(*  V = []                                                                   *)
-(*  O = [output = 42]                                                        *)
-(*  G = [Hist(output = 42)]                                                  *)
-(*---------------------------------------------------------------------------*)
-
-Theorem example_3 :
-  Component_Correct
-     <| var_defs := [];
-        out_defs := [NumStmt "output" (IntLit 42)];
-       assumptions := [];
-      guarantees := [HistExpr (EqExpr (ProgVar "output") (IntLit 42))]
-     |>
-Proof
-  EVAL_TAC >> Induct_on ‘t’ >> EVAL_TAC >> rw[]
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Fby and Pre                                                               *)
-(*  A = []                                                                   *)
-(*  V = [steps = 1 -> 1 + pre steps]                                         *)
-(*  O = [output = steps]                                                     *)
-(*  G = [0 < output]                                                         *)
-(*                                                                           *)
-(* Needs some lemmas in order to do the proof                                *)
-(*---------------------------------------------------------------------------*)
-
-Definition comp4_def:
-   comp4 =
-       <| var_defs :=
-              [NumStmt "steps"
-                 (FbyExpr (IntLit 1)
-                    (AddExpr (IntLit 1) (PreExpr (ProgVar "steps"))))];
-          out_defs := [NumStmt "output" (ProgVar "steps")];
-       assumptions := [];
-        guarantees := [LtExpr (IntLit 0) (ProgVar "output")]|>
-End
-
-Triviality output_effect :
- ∀t portEnv varEnv.
-     componentEffect (portEnv,varEnv) comp4 t ' "output" t =
-       (if t = 0 then 1 else 1 + varEnv ' "steps" (t − 1))
-Proof
- rpt gen_tac >> EVAL_TAC >> fs[]
-QED
-
-Triviality steps_effect :
- ∀t portEnv varEnv.
-     componentEffect (portEnv,varEnv) comp4 t ' "steps" t =
-       (if t = 0 then 1 else 1 + varEnv ' "steps" (t − 1))
-Proof
- rpt gen_tac >> EVAL_TAC >> fs[]
-QED
-
-Theorem Vars_Eq :
-   ∀t portEnv. iterateEffect portEnv comp4 t ' "output" t =
-                iterateEffect portEnv comp4 t ' "steps" t
-Proof
-  Induct >> rw [iterateEffect_def,output_effect,steps_effect]
-QED
-
-Theorem example_4 :
-  Component_Correct comp4
-Proof
- rw [Component_Correct_def,comp4_def,assumsVal_def,guarsVal_def,exprVal_def]
-  >> simp_tac std_ss [GSYM comp4_def]
-  >> Induct_on ‘t’
+  rw_tac std_ss []
+  >> ‘DISJOINT (set (comp.inports)) (set (MAP defName comp.var_defs)) ∧
+      DISJOINT (set (comp.inports)) (set (MAP defName comp.out_defs))’
+       by metis_tac [DISJOINT_SYM,Comp_Vars_Disjoint]
+  >> Cases_on ‘stmt’
   >> EVAL_TAC
-  >> fs [GSYM comp4_def,Vars_Eq]
+  >> rw[]
+  >> fs [IN_DISJOINT,MEM_MAP]
+  >> metis_tac[defName_def]
 QED
 
-(*---------------------------------------------------------------------------*)
-(* Iterative factorial is implemented by the rewrite system                  *)
-(*                                                                           *)
-(*   (n,fact) --> (n+1,fact * (n+1))                                         *)
-(*                                                                           *)
-(*  A = []                                                                   *)
-(*  V = [n    = 0 -> 1 + pre n;                                              *)
-(*       fact = 1 -> pre fact * n]                                           *)
-(*  O = [output = fact]                                                      *)
-(*  G = [0 < fact]                                                           *)
-(*                                                                           *)
-(* We can take the iteration of this transition system into HOL and show     *)
-(* that it implements the usual recursion equation for factorial.            *)
-(*---------------------------------------------------------------------------*)
-
-Definition itFact_def:
-   itFact =
-     <| var_defs :=
-          [NumStmt "n"
-             (FbyExpr (IntLit 0) (AddExpr (IntLit 1) (PreExpr (ProgVar "n"))));
-           NumStmt "fact"
-                 (FbyExpr (IntLit 1)
-                    (MultExpr (PreExpr (ProgVar "fact")) (ProgVar "n")))];
-        out_defs := [NumStmt "output" (ProgVar "fact")];
-        assumptions := [];
-        guarantees := [LtExpr (IntLit 0) (ProgVar "output")]|>
-End
-
-val output_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) itFact t ' "output" t”);
-
-val n_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) itFact t ' "n" t”);
-
-val fact_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) itFact t ' "fact" t”);
-
-Theorem Vars_Eq :
-   ∀t portEnv. iterateEffect portEnv itFact t ' "output" t =
-                iterateEffect portEnv itFact t ' "fact" t
+Theorem stmtFn_foldl[local]:
+  ∀comp list E s.
+     Wellformed comp ∧
+     s IN set (comp.inports) ∧
+     (set list SUBSET set (comp.var_defs ++ comp.out_defs))
+     ⇒
+    (FOLDL (stmtFn t) E list ' s) = (E ' s)
 Proof
-  Induct >> rw [iterateEffect_def,output_effect,fact_effect]
+ gen_tac
+  >> Induct
+  >> rw[] >> EVAL_TAC >> rw[]
+  >> metis_tac [stmtFn_Stable,MEM_APPEND]
 QED
 
-Theorem n_is_N:
-  ∀t portEnv. iterateEffect portEnv itFact t ' "n" t = &t
+Theorem componentFn_Stable:
+  ∀comp E t s.
+     Wellformed comp ∧
+     s IN set (comp.inports)
+     ⇒
+    (componentFn E comp t ' s) = (E ' s)
 Proof
-  Induct
-   >> rw [iterateEffect_def,n_effect,integerTheory.int_of_num,integerTheory.INT_1]
-   >> pop_assum kall_tac
-   >> intLib.ARITH_TAC
+ rw[componentFn_def, stmtListFn_def] >> metis_tac [stmtFn_foldl,SUBSET_REFL]
 QED
 
-Theorem itFact_Meets_Spec :
-  Component_Correct itFact
+Theorem Inputs_Stable:
+  ∀E comp s.
+     Wellformed comp ∧ s IN set (comp.inports)
+     ⇒
+    ∀t. (iterateFn E comp t ' s) = (E ' s)
 Proof
- rw [Component_Correct_def,itFact_def,guarsVal_def,assumsVal_def,exprVal_def]
-  >> simp_tac std_ss [GSYM itFact_def]
-  >> Induct_on ‘t’
-  >> EVAL_TAC
-  >> fs [GSYM itFact_def]
-  >> fs[Vars_Eq,n_is_N]
-  >> pop_assum mp_tac
-  >> qspec_tac (‘iterateEffect portEnv itFact t ' "fact" t’,‘i’)
-  >> rpt strip_tac
-  >> match_mp_tac int_arithTheory.positive_product_implication
-  >> intLib.ARITH_TAC
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Iterative factorial is equal to recursive factorial (arithmeticTheory.FACT*)
-(*---------------------------------------------------------------------------*)
-
-val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
-
-Theorem itFact_eq_FACT :
- ∀t portEnv. iterateEffect portEnv itFact t ' "fact" t = &(FACT t)
-Proof
- rw [Component_Correct_def,itFact_def,guarsVal_def,assumsVal_def,exprVal_def]
-  >> simp_tac std_ss [GSYM itFact_def]
-  >> Induct_on ‘t’
-  >> EVAL_TAC
-  >> fs [GSYM itFact_def]
-  >> fs[Vars_Eq,n_is_N]
-  >> rw_tac std_ss [arithmeticTheory.FACT,Once (GSYM num_mult_int)]
-  >> rw_tac std_ss [integerTheory.int_of_num,integerTheory.INT_1]
-  >> intLib.ARITH_TAC
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Iterative Fibonacci is implemented by the rewrite system                  *)
-(*                                                                           *)
-(*       (x,y) --> (y,x+y)                                                   *)
-(*                                                                           *)
-(*  A = []                                                                   *)
-(*  V = [x = 0 -> pre y;                                                     *)
-(*       y = 1 -> pre x + pre y]                                             *)
-(*  O = [output = y]                                                         *)
-(*  G = [0 <= x and 0 < output]                                              *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
-
-Definition itFib_def:
-   itFib =
-      <| var_defs :=
-             [NumStmt "x"
-               (FbyExpr (IntLit 0) (PreExpr (ProgVar "y")));
-              NumStmt "y"
-                 (FbyExpr (IntLit 1)
-                    (AddExpr (PreExpr (ProgVar "x")) (PreExpr (ProgVar "y"))))];
-         out_defs := [NumStmt "output" (ProgVar "y")];
-       assumptions := [];
-       guarantees := [AndExpr (NotExpr (LtExpr (ProgVar "x") (IntLit 0)))
-                              (LtExpr (IntLit 0) (ProgVar "output"))]
-      |>
-End
-
-val output_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) itFib t ' "output" t”);
-
-val x_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) itFib t ' "x" t”);
-
-val y_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) itFib t ' "y" t”);
-
-Theorem Vars_Eq :
-   ∀t portEnv. iterateEffect portEnv itFib t ' "output" t =
-                iterateEffect portEnv itFib t ' "y" t
-Proof
-  Induct >> rw [iterateEffect_def,output_effect,y_effect]
-QED
-
-Theorem itFib_Meets_Spec :
-  Component_Correct itFib
-Proof
- simp [Component_Correct_def,itFib_def,guarsVal_def,assumsVal_def,exprVal_def]
-  >> simp_tac std_ss [GSYM itFib_def]
-  >> Induct_on ‘t’
-  >- (EVAL_TAC >> rw[])
-  >- (simp [iterateEffect_def]
-       >> EVAL_TAC
-       >> simp_tac arith_ss [GSYM itFib_def]
-       >> fs[Vars_Eq]
-       >> gen_tac
-       >> pop_assum (mp_tac o Q.SPEC ‘portEnv’)
-       >> qspec_tac (‘iterateEffect portEnv itFib t ' "x" t’,‘i’)
-       >> qspec_tac (‘iterateEffect portEnv itFib t ' "y" t’,‘j’)
-       >> intLib.ARITH_TAC)
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Monitor an input stream for sortedness (w/o boolean vars)                 *)
-(*                                                                           *)
-(*  A = []                                                                   *)
-(*  V = [diff  = 0 -> input - pre input]                                     *)
-(*  O = [alert = 0 -> if diff < 0 then 1 else pre alert]                     *)
-(*  G = [alert = 0 iff Hist (0 <= diff)]                                     *)
-(*---------------------------------------------------------------------------*)
-
-Definition sorted_def:
-   sorted =
-      <| var_defs :=
-             [NumStmt "diff"
-               (FbyExpr (IntLit 0)
-                        (SubExpr (PortVar "input")
-                                 (PreExpr (PortVar "input"))))] ;
-         out_defs :=
-             [NumStmt "alert"
-                (FbyExpr (IntLit 0)
-                         (CondExpr (LtExpr (ProgVar "diff") (IntLit 0))
-                                   (IntLit 1)
-                                   (PreExpr (ProgVar "alert"))))] ;
-       assumptions := [];
-       guarantees := [IffExpr (EqExpr (ProgVar "alert") (IntLit 0))
-                              (HistExpr (LeqExpr (IntLit 0) (ProgVar "diff")))]
-      |>
-End
-
-Triviality int_lem :
-  i < 0i <=> ~(0i <= i)
-Proof
-  intLib.ARITH_TAC
-QED
-
-Theorem sorted_Meets_Spec :
-  Component_Correct sorted
-Proof
- simp [Component_Correct_def,sorted_def,guarsVal_def,assumsVal_def,exprVal_def]
-  >> simp_tac std_ss [GSYM sorted_def]
-  >> gen_tac
-  >> Induct_on ‘t’
-  >- (EVAL_TAC >> rw[])
-  >- (simp [iterateEffect_def]
-       >> EVAL_TAC
-       >> simp_tac arith_ss [GSYM sorted_def]
-       >> rw[]
-       >- (qexists_tac ‘SUC t’ >> rw[] >> metis_tac [int_lem])
-       >- (rw[EQ_IMP_THM]
-           >- (rw[] >> fs [int_lem])
-           >- (‘n <= SUC t /\ ~(SUC t = n)’ by decide_tac >> metis_tac[])))
-QED
-
-
-(*---------------------------------------------------------------------------*)
-(* A division node implementing summation of pointwise division of stream    *)
-(* i1 by i2                                                                  *)
-(*                                                                           *)
-(*  A = [0 ≤ i1, 0 < i2]                                                     *)
-(*  V = [divsum = (i1 / i2) -> pre divsum + (i1/i2)]                         *)
-(*  O = [output = divsum]                                                    *)
-(*  G = [0 ≤ output]                                                         *)
-(*                                                                           *)
-(* Subtlety: one might think that we could have written                      *)
-(*                                                                           *)
-(*  V = []                                                                   *)
-(*  O = [output = (i1 / i2) -> pre output + (i1/i2)]                         *)
-(*                                                                           *)
-(* but output variables aren't allowed to be state-holding                   *)
-(*---------------------------------------------------------------------------*)
-
-Definition divsum_def:
-  divsum =
-     <| var_defs :=
-          [NumStmt "divsum"
-               (FbyExpr (DivExpr (PortVar "i1") (PortVar "i2"))
-                        (AddExpr (PreExpr (ProgVar "divsum"))
-                                 (DivExpr (PortVar "i1") (PortVar "i2"))))];
-         out_defs := [NumStmt "output" (ProgVar "divsum")];
-      assumptions := [LtExpr (IntLit 0) (PortVar"i2");
-                      LeqExpr (IntLit 0) (PortVar"i1")];
-       guarantees := [LeqExpr (IntLit 0) (ProgVar"output")]
-      |>
-End
-
-val divsum_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) divsum t ' "divsum" t”);
-
-val output_effect = SIMP_RULE (srw_ss()) []
-  (EVAL “componentEffect (portEnv,varEnv) divsum t ' "output" t”);
-
-Theorem Vars_Eq :
-   ∀t portEnv. iterateEffect portEnv divsum t ' "output" t =
-                iterateEffect portEnv divsum t ' "divsum" t
-Proof
-  Induct >> rw [iterateEffect_def,output_effect,divsum_effect]
-QED
-
-Theorem divsum_Meets_Spec :
-  Component_Correct divsum
-Proof
-EVAL_TAC
-  >> rw [GSYM divsum_def,Vars_Eq]
-  >> Induct_on ‘t’
+ rpt gen_tac
   >> strip_tac
-    >- (EVAL_TAC
-        >> pop_assum (mp_tac o Q.SPEC ‘0n’) >> rw[]
-        >> rpt (pop_assum mp_tac)
-        >> qspec_tac(‘portEnv ' "i2" 0’,‘j’)
-        >> qspec_tac(‘portEnv ' "i1" 0’,‘i’)
-        >> rpt gen_tac
-        >> rw []
-        >> ‘~(j=0)’ by intLib.ARITH_TAC
-        >> rw [integerTheory.int_div])
-    >- (simp_tac std_ss [iterateEffect_def,divsum_effect]
-        >> rw[]
-        >> ‘t ≤ SUC t’ by rw[]
-        >> ‘0 ≤ iterateEffect portEnv divsum t ' "divsum" t’ by fs[]
-        >> irule integerTheory.INT_LE_ADD
-        >> conj_tac
-        >- metis_tac[]
-        >- (‘0 < portEnv ' "i2" (SUC t) ∧ 0 ≤ portEnv ' "i1" (SUC t)’ by fs[]
-            >> ntac 2 (pop_assum mp_tac)
-            >> rpt (pop_assum kall_tac)
-            >> qspec_tac(‘portEnv ' "i2" (SUC t)’,‘j’)
-            >> qspec_tac(‘portEnv ' "i1" (SUC t)’,‘i’)
-            >> rpt gen_tac
-            >> rw []
-            >> ‘~(j=0)’ by intLib.ARITH_TAC
-            >> rw [integerTheory.int_div]))
+  >> Induct
+  >> rw [iterateFn_def]
+  >> metis_tac [componentFn_Stable]
 QED
+
+(*---------------------------------------------------------------------------*)
+(* A sequence of proofs showing that iteration doesn't alter earlier values  *)
+(* in the stream that it generates. Monotonicity?                            *)
+(*---------------------------------------------------------------------------*)
+
+Theorem stmtFn_timeframe :
+ ∀E stmt t1 t2. ~(t1=t2) ⇒ ∀s. stmtFn t1 E stmt ' s t2 = E ' s t2
+Proof
+ Cases_on ‘stmt’ >> EVAL_TAC >> rw[] >> rw[combinTheory.APPLY_UPDATE_THM]
+QED
+
+Theorem stmtFn_foldl_timeframe[local]:
+ ∀list E t1 t2 s. ~(t1=t2) ⇒ (FOLDL (stmtFn t2) E list ' s) t1 = (E ' s) t1
+Proof
+ Induct >> EVAL_TAC >> rw[stmtFn_timeframe]
+QED
+
+Theorem componentFn_timeframe:
+ ∀comp E t1 t2. ~(t1=t2) ⇒ ∀s. (componentFn E comp t2 ' s) t1 = (E ' s) t1
+Proof
+ rw[componentFn_def,stmtListFn_def,stmtFn_foldl_timeframe]
+QED
+
+Theorem iterateFn_mono_lem[local] :
+ !k m E comp s.
+    (iterateFn E comp m ' s) m = (iterateFn E comp (m + k) ' s) m
+Proof
+ Induct
+  >> simp_tac std_ss [ADD_CLAUSES]
+  >> rw_tac std_ss [Once iterateFn_def]
+  >> rw [componentFn_timeframe]
+QED
+
+Theorem iterateFn_timeframe :
+ !E comp s t u.
+   t ≤ u ⇒ ((iterateFn E comp u ' s) t = (iterateFn E comp t ' s) t)
+Proof
+ rpt strip_tac
+  >> ‘∃k. u = t + k’ by intLib.ARITH_TAC
+  >> rw[]
+  >> metis_tac [ADD_SYM,iterateFn_mono_lem]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* Stuff to help the Latex output look nicer                                 *)
+(*---------------------------------------------------------------------------*)
+
+val _ = TeX_notation {hol = "(|", TeX = ("\\HOLTokenWhiteParenLeft", 1)}
+val _ = TeX_notation {hol = "|)", TeX = ("\\HOLTokenWhiteParenRight", 1)};
+
+val _ = TeX_notation {hol = UTF8.chr 0x2987, TeX = ("\\HOLTokenWhiteParenLeft", 1)}
+val _ = TeX_notation {hol = UTF8.chr 0x2988, TeX = ("\\HOLTokenWhiteParenRight", 1)}
+
+val _ = TeX_notation {hol = "|->",           TeX = ("\\HOLTokenMapto", 1)};
+val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
+
+val _ = TeX_notation {hol = "int_of", TeX = ("int\\_of", 6)};
+val _ = TeX_notation {hol = "bool_of", TeX = ("bool\\_of", 7)};
+
+val _ = TeX_notation {hol = "List_Conj", TeX = ("List\\_Conj", 6)};
+val _ = TeX_notation {hol = "Component_Correct", TeX = ("Component\\_Correct", 6)};
+
 
 val _ = export_theory();

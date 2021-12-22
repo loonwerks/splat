@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
      arithmeticTheory listTheory pred_setTheory
-     intboolTheory;
+     agreeTheory;
 
 val _ = intLib.prefer_int();
 
@@ -781,7 +781,7 @@ QED
 (*            (in - pre in = pre in - pre(pre in)) and pre isProg            *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
-(*
+
 Definition isProg_def:
   isProg =
     <| inports   := ["in"];
@@ -789,27 +789,26 @@ Definition isProg_def:
           [IntStmt "N" (FbyExpr (IntLit 0)
                                 (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
            BoolStmt "isProg"
-            (CondExpr (LeqExpr (IntVar "N") (IntLit 1))
-                      (BoolLit T)
-                      (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
-                              (SubExpr (PreExpr (IntVar "in"))
-                                       (PreExpr (PreExpr(IntVar "in"))))))];
+            (BoolCondExpr
+                 (LeqExpr (IntVar "N") (IntLit 1))
+                 (BoolLit T)
+                 (AndExpr
+                    (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
+                            (SubExpr (PreExpr (IntVar "in"))
+                                     (PreExpr (PreExpr(IntVar "in")))))
+                    (BoolPreExpr (BoolVar "isProg"))))];
          out_defs := [BoolStmt "out" (BoolVar "isProg")];
       assumptions := [];
       guarantees  := []
       |>
 End
 
-val isprog_example =
- “(CondExpr (LeqExpr (IntVar "N") (IntLit 1))
-            (BoolLit T)
-            (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
-                    (SubExpr (PreExpr (IntVar "in"))
-                             (PreExpr (PreExpr(IntVar "in"))))))
-    t”
- |> EVAL
- |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
-*)
->>>>>>> 693fd7e8468368bb38c41c50344dce3507d1ff17
+val th0 = EVAL“(iterateFn E isProg 0 ' "out") 0”
+val th1 = EVAL“(iterateFn E isProg 1 ' "out") 1”
+val th2 = EVAL“(iterateFn E isProg 2 ' "out") 2”
+val th3 = EVAL“(iterateFn E isProg 3 ' "out") 3”
+val th4 = EVAL“(iterateFn E isProg 4 ' "out") 4”
+val th5 = EVAL“(iterateFn E isProg 5 ' "out") 5”
+val th6 = EVAL“(iterateFn E isProg 6 ' "out") 6”
 
 val _ = export_theory();
