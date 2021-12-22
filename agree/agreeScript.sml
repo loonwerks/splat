@@ -36,9 +36,9 @@ Datatype:
        | LtExpr  expr expr
        | LeqExpr expr expr
        | HistExpr bexpr
-       | BoolCondExpr bexpr bexpr bexpr
        | BoolPreExpr bexpr
        | BoolFbyExpr bexpr bexpr
+       | BoolCondExpr bexpr bexpr bexpr
 End
 
 Definition List_Conj_def :
@@ -208,7 +208,7 @@ Definition exprVarNames_def :
   exprVarNames (DivExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
   exprVarNames (ModExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
   exprVarNames (PreExpr e)      = exprVarNames e /\
-  exprVarNames (FbyExpr e1 e2)  = exprVarNames e1 UNION exprVarNames e2 /\
+  exprVarNames (FbyExpr e1 e2)  = (exprVarNames e1 UNION exprVarNames e2) /\
   exprVarNames (CondExpr b e1 e2) =
        (bexprVarNames b UNION exprVarNames e1 UNION exprVarNames e2)
   /\
@@ -220,11 +220,11 @@ Definition exprVarNames_def :
   bexprVarNames (ImpExpr b1 b2) = (bexprVarNames b1 UNION bexprVarNames b2) /\
   bexprVarNames (IffExpr b1 b2) = (bexprVarNames b1 UNION bexprVarNames b2) /\
   bexprVarNames (EqExpr e1 e2)  = (exprVarNames e1 UNION exprVarNames e2)   /\
-  bexprVarNames (LtExpr e1 e2)  = (exprVarNames e1 UNION  exprVarNames e2)  /\
+  bexprVarNames (LtExpr e1 e2)  = (exprVarNames e1 UNION exprVarNames e2)   /\
   bexprVarNames (LeqExpr e1 e2) = (exprVarNames e1 UNION exprVarNames e2)   /\
-  bexprVarNames (HistExpr b)    = bexprVarNames b ∧
-  exprVarNames (BoolPreExpr b)  = bexprVarNames b /\
-  exprVarNames (BoolFbyExpr b1 b2)  = bexprVarNames e1 UNION bexprVarNames e2 /\
+  bexprVarNames (HistExpr b)    = bexprVarNames b /\
+  bexprVarNames (BoolPreExpr b) = bexprVarNames b /\
+  bexprVarNames (BoolFbyExpr b1 b2) = (bexprVarNames b1 UNION bexprVarNames b2) /\
   bexprVarNames (BoolCondExpr b b1 b2) =
        (bexprVarNames b UNION bexprVarNames b1 UNION bexprVarNames b2)
 End
