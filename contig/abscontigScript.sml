@@ -1,10 +1,11 @@
 open HolKernel Parse boolLib bossLib BasicProvers
-     pred_setLib stringLib regexpLib ASCIInumbersLib;
+     pred_setLib stringLib ASCIInumbersLib;
 
 open pairTheory arithmeticTheory listTheory rich_listTheory pred_setTheory
      stringTheory combinTheory optionTheory numposrepTheory FormalLangTheory;
 
-open finite_mapTheory bagTheory;  (* For termination of predFn, need to use mlt_list *)
+(* For termination of predFn, need to use mlt_list from containerTheory *)
+open finite_mapTheory bagTheory containerTheory;
 open concatPartialTheory;
 
 (*---------------------------------------------------------------------------*)
@@ -201,10 +202,6 @@ Definition csize_def :
   (csize (Alt b c1 c2) = 1 + csize c1 + csize c2)
 Termination
   WF_REL_TAC `measure contig_size`
-  >> rw_tac list_ss [contig_size_def]
-  >- (Induct_on `fields`
-      >> rw_tac list_ss [contig_size_def]
-      >> full_simp_tac list_ss [contig_size_def])
 End
 
 (*---------------------------------------------------------------------------*)
@@ -292,6 +289,7 @@ Termination
   >> imp_res_tac contig_size_lem
   >> decide_tac
 End
+
 
 (*---------------------------------------------------------------------------*)
 (* Assert derivable. Complicates termination proof for Contig_Lang, so       *)
@@ -393,12 +391,6 @@ Proof
       >- fs[]
 QED
 
-Triviality list_size_append :
- !L1 L2 f. list_size f (L1 ++ L2) = (list_size f L1 + list_size f L2)
-Proof
- Induct_on ‘L1’ >> rw_tac list_ss [list_size_def]
-QED
-
 Triviality strlen_eq_1 :
  !L. (STRLEN L = 1) ⇔ ∃n. n < 256 ∧ L = [CHR n]
 Proof
@@ -476,11 +468,10 @@ Definition predFn_def :
          | SOME T => predFn ((lval,c1)::t,s,theta)
          | SOME F => predFn ((lval,c2)::t,s,theta)
 Termination
- WF_REL_TAC ‘inv_image
-              (measure LENGTH
-               LEX
-               mlt_list (measure (csize o SND)))
-              (\(b,c,d). (c,b))’
+ WF_REL_TAC
+    ‘inv_image
+        (measure LENGTH LEX mlt_list (measure (csize o SND)))
+        (\(b,c,d). (c,b))’
    >> rw [APPEND_EQ_SELF]
    >> rw [csize_def]
    >> fs [MEM_MAP,MEM_SPLIT]
@@ -489,6 +480,7 @@ Termination
    >- (Cases_on `y` >> fs[list_size_append,list_size_def,fieldFn_def])
    >- (Cases_on `y` >> fs[list_size_append,list_size_def,indexFn_def])
 End
+
 
 (*---------------------------------------------------------------------------*)
 (* Worklist-based matcher. When it comes to add a new (lval |-> string)      *)
@@ -740,6 +732,7 @@ Proof
          >> rw []
          >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
          >> rw [Once substFn_def,ListRecd_def,evalBexp_def,evalExp_def,NilTag_def,valFn_def]
+         >> fs [l2n_def]
          >> rw [Once substFn_def,concatPartial_nil])
      >- (fs [ConsTag_def, NilTag_def] >> rw[]
          >> qpat_x_assum ‘matchFn _ = _’ kall_tac
@@ -752,6 +745,7 @@ Proof
          >> qpat_x_assum ‘~(substFn _ _ = NONE)’
                (mp_tac o SIMP_RULE (srw_ss()) [Once substFn_def,ListRecd_def])
          >> rw [evalBexp_def,evalExp_def,NilTag_def,ConsTag_def,valFn_def]
+         >> fs [l2n_def]
          >> qpat_x_assum ‘~(substFn _ _ = NONE)’
                (mp_tac o SIMP_RULE (srw_ss()) [Once substFn_def])
          >> rw [evalBexp_def,evalExp_def,NilTag_def,ConsTag_def,valFn_def]
@@ -794,7 +788,6 @@ Proof
          >> every_case_tac
          >> rw []))
 QED
-
 
 Theorem match_subst_thm :
  !vFn wklist (s:string) theta s2 theta'.
