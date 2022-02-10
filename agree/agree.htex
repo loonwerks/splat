@@ -2,7 +2,7 @@
 
 \bibliographystyle{plainurl}% the mandatory bibstyle
 
-\title{Semantics of AGREE \\ (With Application to Correct Code Generation)}
+\title{AGREE Semantics and Correct Code Generation}
 \author{Konrad Slind}{Trusted Systems Group, Collins Aerospace, USA}{konrad.slind@collins.com}{}{}
 \authorrunning{K. Slind}
 
@@ -28,6 +28,8 @@
 \newcommand{\SubstTheta}[2]{\ensuremath{\theta\;{#1}\; {#2}}}
 \newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
 \newcommand{\agree}{\textsc{AGREE}}
+\newcommand{\splat}{\textsc{SPLAT}}
+\newcommand{\clustre}{\emph{Clustre}}
 
 \begin{document}
 
@@ -53,22 +55,21 @@ of the component. These contracts are essentially predicates over the
 streams of values on the ports. There is an {\agree} model-checker
 which follows the hierarchical structure of a system in order to
 verify upper-level contracts in terms of lower-level contracts. All of
-this ultimately focuses on the behaviour of leaf-level components in
-an architecture, and the correctness issue resolves to the question:
-\emph{do the implementations of the leaf components meet their
-  contracts?}  This proof obligation is approachable in various ways:
-for example, it can be dealt with by inspection, unit testing, or by
-formal proof. We take a version of the formal proof route:
-synthesis. In particular, given a sufficiently detailed contract, we
-generate code from it and formally prove that the code indeed meets
-the contract.
+this ultimately focuses our attention on the behaviour of leaf-level
+components in an architecture, and the correctness issue resolves to
+the question: \emph{do the implementations of the leaf components meet
+their contracts?}  This proof obligation is approachable in various
+ways: for example, it can be dealt with by inspection, by unit testing,
+or by formal proof. We take a formal synthesis approach: given a
+sufficiently detailed contract, we generate code from it and formally
+prove that the code indeed meets the contract.
 
 The synthesis step requires that the component have a \emph{computable}
 contract. In this document, we go into detail about what this exactly
 means. In particular, we give a formal syntax and semantics for a
 stream-valued language called \emph{Core Lustre}---abbreviated
-\konst{CLustre}---and argue that it captures the essence of
-      {\agree}. Then we show how \konst{CLustre} programs are
+{\clustre}---and argue that it captures the essence of
+      {\agree}. Then we show how {\clustre} programs are
       translated to a sequential language with no streams, and prove
       the correctness of the translation. At that point we can inject
       the (transformed) program into the verified CakeML compiler
@@ -83,7 +84,7 @@ state variable assignments, output port assignments, and, for
 specification purposes, assumptions and guarantees. At runtime, a
 component is perpetually (re-)invoked; in an invocation it reads from
 the input ports, updates its state variables, then computes values to be
-written to its output ports. However, a \konst{CLustre} component is
+written to its output ports. However, a {\clustre} component is
 abstract and part of our discussion shows how an abstract component is
 refined to the target behaviour.
 
@@ -157,11 +158,11 @@ is computed using the values of variables at time $t$ or earlier.
 \[
 \konst{stream} = \konst{nat} \to \konst{value}
 \]
-An \emph{environment} is a finite map from a \emph{name} (input port
+A \emph{stream environment} is a finite map from a \emph{name} (input port
 name, output port name, or variable name) to a \konst{value} stream.
 %
 \[
-  \konst{env} = \konst{string} \mapsto (\konst{nat} \to \konst{value})
+  \konst{strm\_env} = \konst{string} \mapsto (\konst{nat} \to \konst{value})
 \]
 
 \begin{definition}[Environment update]
@@ -241,7 +242,7 @@ output statements are independent of each other and can be thought of
 as being evaluated in parallel.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=90]{agree.componentFn_def}
+\HOLthm[m;,def,>>3,width=90]{agree.strmStep_def}
 \end{HOLmath}
 %
 We now extend the component behaviour through time, and do this by
@@ -249,19 +250,19 @@ iterating the effect of the component, starting from a given
 environment.
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3,width=85]{agree.iterateFn_def}
+\HOLthm[m;,def,>>3,width=85]{agree.strmSteps_def}
 \end{HOLmath}
 
-Note that the component effect is not given, as one might expect, a
-default value at time 0. The first input of the component arrives at
-time 0, and thus there is also a computation and output at time 0.
+Note that the component effect is not given default value at time
+0. The first input of the component arrives at time 0, and thus there
+is also a computation and output at time 0.
 
-\subsection{Component correctness}
+\subsection{Component contracts}
 
 Given value streams at the input ports, and the value streams for
 state and output variables, the \emph{contract} of the component can
-be expressed. The assumptions are assumed to hold for all times up to
-the present, and the guarantees need to hold at the present time (but
+be expressed. The \emph{assumptions} are assumed to hold for all times up to
+the present, and the \emph{guarantees} need to hold at the present time (but
 can of course refer to previous values in the variable streams by use
 of the temporal operators).
 
@@ -271,8 +272,8 @@ of the temporal operators).
 \HOLthm[m;,def,>>3]{agree.guarsVal_def}
 \end{HOLmath}
 
-Finally, the correctness of a component can be defined: under some
-wellformedness conditions, a component is \emph{correct} if its
+Finally, the \emph{correctness} of a component can be defined: under
+some wellformedness conditions, a component is correct if its
 guarantees hold after any finite number of steps.
 
 \begin{HOLmath}
@@ -282,8 +283,7 @@ guarantees hold after any finite number of steps.
 Correctness is conditional on the assumptions holding in the given
 environment $E$. Thus, should the inputs to a component \emph{not}
 satisfy the assumptions, the component is deemed to be correct, no
-matter how it behaves.\footnote{Bear in mind, however, that the component
-can't crash, act in a badly typed manner, \etc}
+matter how it behaves.
 
 \subsection{Wellformedness and support}
 
@@ -331,18 +331,25 @@ immutable: program execution will not alter them.
 
 In contrast, the state and output variable streams, initially
 unconstrained, are incrementally determined as execution via
-\konst{iterateFn} progresses. Once a state- or output-variable stream
+\konst{strmSteps} progresses. Once a state- or output-variable stream
 element is determined at time $t$, subsequent computation will not
 change it.
 %
 \begin{HOLmath}
-\HOLthm[m;,>>3]{agree.iterateFn_timeframe}
+\HOLthm[m;,>>3]{agree.strmSteps_timeframe}
 \end{HOLmath}
 
 
 \section{Examples}
 
+We now examine some small examples. First is a program to determine
+whether a sequence is sorted.
+
 \subsection{Sorted}
+
+In this example, we pretend that only integers are available. The
+output goes high, and stays high, as soon as a negative difference
+between adjacent inputs is detected.
 
 {\small
 \begin{verbatim}
@@ -370,7 +377,7 @@ change it.
 
 \subsection{Fibonacci}
 
-The \emph{Fibonacci} sequence is a famous mathematical entity. It proceeds
+The \emph{Fibonacci} sequence proceeds
 %
 \[
   1,1,2,3,5,8,13, \ldots
@@ -381,6 +388,8 @@ and is defined recursively as
  \konst{fib}(t) = \mathtt{if}\; t\; \leq 1 \; \mathtt{then}\; 1 \; \mathtt{else}\; \konst{fib}(t-1) + \konst{fib}(t-2)
 \]
 
+\noindent One definition of Fibonacci in {\clustre} is
+%
 {\small
 \begin{verbatim}
   I = []
@@ -390,6 +399,29 @@ and is defined recursively as
   G = [0 <= output]
 \end{verbatim}
 }
+
+The nesting of the \konst{pre} operator is somewhat unnatural,
+compared to the recursive definition above. By making the stream index
+explicit, the usual recursion equation can be represented (only
+showing the state variables):
+%
+{\small
+\begin{verbatim}
+  N = 0 -> pre N + 1
+  fib = if  N <= 1 then 1 else pre fib + pre(pre fib)
+\end{verbatim}
+}
+
+\noindent The efficient iterative version is rendered as follows:
+%
+{\small
+\begin{verbatim}
+  x = 0 -> pre y;
+  y = 1 -> pre x + pre y
+  output = y
+\end{verbatim}
+}
+
 
 \subsection{Arithmetic Progression}
 
@@ -405,26 +437,123 @@ the input stream):
 %
 \[\mathit{output}(t) =
  \mathtt{if}\; t \leq 1 \;\mathtt{then}\; \konst{true}\; \mathtt{else}\;
-\mathit{in}_t - \mathit{in}_{t-1} = \mathit{in}_{t-1} - \mathit{in}_{t-2}
+ \mathit{in}_t - \mathit{in}_{t-1} = \mathit{in}_{t-1} - \mathit{in}_{t-2}
 \]
-The following CLustre program iteratively tests whether its input stream
-$\mathit{in}$ is an arithmetic progression, performing repeated
-tests. Note that the program features no state variables, but looks
-back two positions in the input stream. (The following component is
-still ``under construction'': it is not right since it does not have
-values for the first two outputs.)
-
+The following {\clustre} program iteratively tests whether its input stream
+$\mathit{in}$ is an arithmetic progression
+%
 {\small
 \begin{verbatim}
-  I = [in]
-  A = []
-  V = []
-  O = [output = (in - pre in = pre in - pre(pre in))]
-  G = []
+  N = 0 -> pre N + 1
+  isProg = if N <= 1 then
+            true
+           else
+             isProg and (in - pre in = pre in - pre(pre in))
 \end{verbatim}
 }
 
-\section{Code Generation}\label{sec:codegen}
+\section{Compilation and Code Generation}\label{sec:codegen}
+
+We now discuss transformations that
+\begin{description}
+\item [Flatten history] by mapping a {\clustre} program to an
+  equivalent version that looks back at most one step in its history
+\item [Work over serialized data] by invoking decoders on serialized
+  input and encoders to serialize output. This prepares the program to
+  be put in a computational setting where input and output is through
+  byte buffers.
+\end{description}
+
+A chain of theorems will relate the result of these transformations
+back to the original {\clustre} program. Throughout these
+transformation steps the meaning of the component is that it is a
+mathematical function of some kind. Our goal is to do as much
+formalization and proof in the world of mathematical functions
+(shallow embeddings) before eventually moving, in a
+property-preserving way, to CakeML abstract syntax and
+evaluation. Once our (transformed) {\clustre} has been transported to
+the setting of CakeML semantics, we can access imperative features
+such as imperative variables and the CakeML Foreign Function Interface
+(FFI), which we use in order to get input and emit output.
+
+One simple way to describe the transformations is by examining how
+they change the type of environment being used, from stream
+environments to value environments to buffer environments. This is
+revealed in the progression from a stream-oriented step function to a
+value-oriented step function, to a mixed buffer-and-value oriented
+step function.
+
+\subsection{Stream oriented step function}
+
+The semantics of {\clustre} treats component execution as a
+transformation between an initial stream environment and the stream
+environment resulting from $t$ steps of execution:
+\[
+\konst{strmStep} :
+  (\konst{string} \mapsto (\konst{num} \to \konst{value})) \to
+    \konst{component} \to \konst{num} \to (\konst{string} \mapsto (\konst{num} \to  \konst{value}))
+\]
+
+\subsection{Value oriented step function}
+
+Once all history variables have been squashed down to length at most
+one, the program is essentially an imperative program operating over a
+state and can be evaluated with respect to an environment that binds
+variable names to values (thus the time index is not needed):
+\[
+\begin{array}{rcl}
+\konst{stateStep} & : & \konst{component} \to \\
+& &   \underbrace{(\konst{string} \mapsto \konst{value}) * (\konst{string} \mapsto \konst{value})}_{inputs * state}
+  \to
+    \underbrace{(\konst{string} \mapsto \konst{value}) * (\konst{string} \mapsto \konst{value})}_{state * outputs}
+\end{array}
+\]
+\konst{stateStep} takes the current inputs and state and returns a new state and outputs:
+%
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{state.stateStep_def}
+\end{HOLmath}
+
+\subsection{Value-and-buffer oriented step function}
+
+At this point, we can add parsers for the inputs and serializers for
+outputs. To defer the choice of parsers and serializers, we make them
+parameters in the definition of \konst{bufStep}.
+\[
+\begin{array}{rcl}
+\konst{bufStep} & : & (\overbrace{(\konst{value}\to \konst{string}}^{encode}) *
+                       \overbrace{(\konst{string}\to \konst{value}}^{decode})) \to
+\konst{component} \to \\
+& &   \underbrace{(\konst{string} \mapsto \konst{string}) * (\konst{string} \mapsto \konst{value})}_{inputs * state}
+  \to
+    \underbrace{(\konst{string} \mapsto \konst{value}) * (\konst{string} \mapsto \konst{string})}_{state * outputs}
+\end{array}
+\]
+\konst{bufStep} takes the current inputs and state and returns a new state and outputs:
+%
+\begin{HOLmath}
+\HOLthm[m;,def,>>3]{state.bufStep_def}
+\end{HOLmath}
+
+
+
+\section{History squashing}
+
+\section{Attaching decoders and encoders}
+
+\section{Moving to CakeML}
+
+\section{Infinite executions}
+
+We have so far only addressed finite computations stemming from
+{\agree} specifications. However, the intended behavior of components
+generated by {\splat} is that they are perpetually re-invoked by a
+real-time scheduler; thus we are interested in showing that such
+executions are indeed infinite, and in showing properties of the
+infinite executions. The work of \cite{johannes:repeatc} established a
+proof rule for drawing such inferenced and our goal is to automate a
+path from our {\agree} specifications to such theorems.
+
 
 \bibliography{agree}
 

@@ -46,12 +46,21 @@ Definition List_Conj_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Variable definitions (‘eq’ statements)                                    *)
+(* Variable definitions                                                      *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
   stmt = IntStmt string expr
        | BoolStmt string bexpr
+End
+
+(* -------------------------------------------------------------------------- *)
+(* Variable name of a definition                                              *)
+(* -------------------------------------------------------------------------- *)
+
+Definition defName_def :
+ defName (IntStmt s e) = s ∧
+ defName (BoolStmt s b) = s
 End
 
 (*---------------------------------------------------------------------------*)
@@ -72,6 +81,15 @@ Datatype:
                  guarantees  : bexpr list |>
 End
 
+(* -------------------------------------------------------------------------- *)
+(* Declared variables of a component                                          *)
+(* -------------------------------------------------------------------------- *)
+
+Definition varDecs_def :
+  varDecs comp = comp.inports ++ MAP defName (comp.var_defs ++ comp.out_defs)
+End
+
+
 (*---------------------------------------------------------------------------*)
 (* Type of expression values                                                 *)
 (*---------------------------------------------------------------------------*)
@@ -90,19 +108,30 @@ Definition int_of_def :
 End
 
 (* -------------------------------------------------------------------------- *)
-(* An environment is a finite map from port names to value streams            *)
+(* A stream environment is a finite map from port names to value streams      *)
 (* -------------------------------------------------------------------------- *)
 
-Type env = “:string |-> (num -> value)”
+Type strm_env = “:string |-> (num -> value)”
 
 Definition updateEnv_def :
- updateEnv (fmap:env) name value t =
+ updateEnv (fmap:strm_env) name value t =
    let strm = fmap ' name;
        strm' = strm (| t |-> value |)
    in
      fmap |+ (name,strm')
 End
 
+Definition input_of_def :
+ input_of comp env = DRESTRICT env (set comp.inports)
+End
+
+Definition state_of_def :
+ state_of comp env = DRESTRICT env (set (MAP defName comp.var_defs))
+End
+
+Definition output_of_def :
+ output_of comp env = DRESTRICT env (set (MAP defName comp.out_defs))
+End
 
 (*---------------------------------------------------------------------------*)
 (* Value of expression in given environments                                 *)
@@ -162,20 +191,20 @@ Definition stmtListFn_def :
    stmtListFn E stmts t = FOLDL (stmtFn t) E stmts
 End
 
-Definition componentFn_def :
-  componentFn E comp t = stmtListFn E (comp.var_defs ++ comp.out_defs) t
+Definition strmStep_def :
+  strmStep E comp t = stmtListFn E (comp.var_defs ++ comp.out_defs) t
 End
 
 (*---------------------------------------------------------------------------*)
 (* Correctness of component: the effects  of the component model its spec.   *)
 (* We first define a function over t that iterates variable assignments of   *)
-(* the component. Time 0 is when the ports get their first value, so we      *)
-(* have to calculate componentFn there as well.                              *)
+(* the component up to and including time t. Time 0 is when the ports get    *)
+(* their first value, so strmStep is calculated there as well.               *)
 (*---------------------------------------------------------------------------*)
 
-Definition iterateFn_def :
-  iterateFn E comp 0 = componentFn E comp 0 ∧
-  iterateFn E comp (SUC t) = componentFn (iterateFn E comp t) comp (SUC t)
+Definition strmSteps_def :
+  strmSteps E comp 0 = strmStep E comp 0 ∧
+  strmSteps E comp (SUC t) = strmStep (strmSteps E comp t) comp (SUC t)
 End
 
 (*---------------------------------------------------------------------------*)
@@ -230,29 +259,12 @@ Definition exprVarNames_def :
 End
 
 (* -------------------------------------------------------------------------- *)
-(* Variable name of a definition                                              *)
-(* -------------------------------------------------------------------------- *)
-
-Definition defName_def :
- defName (IntStmt s e) = s ∧
- defName (BoolStmt s b) = s
-End
-
-(* -------------------------------------------------------------------------- *)
 (* Variable names in the body of a definition                                 *)
 (* -------------------------------------------------------------------------- *)
 
 Definition def_rhsNames_def :
   def_rhsNames (IntStmt s e) = exprVarNames e ∧
   def_rhsNames (BoolStmt s b) = bexprVarNames b
-End
-
-(* -------------------------------------------------------------------------- *)
-(* Declared variables of a component                                          *)
-(* -------------------------------------------------------------------------- *)
-
-Definition varDecs_def :
-  varDecs comp = comp.inports ++ MAP defName (comp.var_defs ++ comp.out_defs)
 End
 
 (* -------------------------------------------------------------------------- *)
@@ -315,7 +327,7 @@ Definition Component_Correct_def:
   ∀E t.
      Supports E comp ∧ assumsVal E comp t
        ==>
-     guarsVal (iterateFn E comp t) comp t
+     guarsVal (strmSteps E comp t) comp t
 End
 
 (*---------------------------------------------------------------------------*)
@@ -368,27 +380,27 @@ Proof
   >> metis_tac [stmtFn_Stable,MEM_APPEND]
 QED
 
-Theorem componentFn_Stable:
+Theorem strmStep_Stable:
   ∀comp E t s.
      Wellformed comp ∧
      s IN set (comp.inports)
      ⇒
-    (componentFn E comp t ' s) = (E ' s)
+    (strmStep E comp t ' s) = (E ' s)
 Proof
- rw[componentFn_def, stmtListFn_def] >> metis_tac [stmtFn_foldl,SUBSET_REFL]
+ rw[strmStep_def, stmtListFn_def] >> metis_tac [stmtFn_foldl,SUBSET_REFL]
 QED
 
 Theorem Inputs_Stable:
   ∀E comp s.
      Wellformed comp ∧ s IN set (comp.inports)
      ⇒
-    ∀t. (iterateFn E comp t ' s) = (E ' s)
+    ∀t. (strmSteps E comp t ' s) = (E ' s)
 Proof
  rpt gen_tac
   >> strip_tac
   >> Induct
-  >> rw [iterateFn_def]
-  >> metis_tac [componentFn_Stable]
+  >> rw [strmSteps_def]
+  >> metis_tac [strmStep_Stable]
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -408,30 +420,30 @@ Proof
  Induct >> EVAL_TAC >> rw[stmtFn_timeframe]
 QED
 
-Theorem componentFn_timeframe:
- ∀comp E t1 t2. ~(t1=t2) ⇒ ∀s. (componentFn E comp t2 ' s) t1 = (E ' s) t1
+Theorem strmStep_timeframe:
+ ∀comp E t1 t2. ~(t1=t2) ⇒ ∀s. (strmStep E comp t2 ' s) t1 = (E ' s) t1
 Proof
- rw[componentFn_def,stmtListFn_def,stmtFn_foldl_timeframe]
+ rw[strmStep_def,stmtListFn_def,stmtFn_foldl_timeframe]
 QED
 
-Theorem iterateFn_mono_lem[local] :
+Theorem strmSteps_mono_lem[local] :
  !k m E comp s.
-    (iterateFn E comp m ' s) m = (iterateFn E comp (m + k) ' s) m
+    (strmSteps E comp m ' s) m = (strmSteps E comp (m + k) ' s) m
 Proof
  Induct
   >> simp_tac std_ss [ADD_CLAUSES]
-  >> rw_tac std_ss [Once iterateFn_def]
-  >> rw [componentFn_timeframe]
+  >> rw_tac std_ss [Once strmSteps_def]
+  >> rw [strmStep_timeframe]
 QED
 
-Theorem iterateFn_timeframe :
+Theorem strmSteps_timeframe :
  !E comp s t u.
-   t ≤ u ⇒ ((iterateFn E comp u ' s) t = (iterateFn E comp t ' s) t)
+   t ≤ u ⇒ ((strmSteps E comp u ' s) t = (strmSteps E comp t ' s) t)
 Proof
  rpt strip_tac
   >> ‘∃k. u = t + k’ by intLib.ARITH_TAC
   >> rw[]
-  >> metis_tac [ADD_SYM,iterateFn_mono_lem]
+  >> metis_tac [ADD_SYM,strmSteps_mono_lem]
 QED
 
 (*---------------------------------------------------------------------------*)

@@ -118,14 +118,14 @@ Definition comp4_def:
         guarantees := [LtExpr (IntLit 0) (IntVar "output")]|>
 End
 
-val output_effect = EVAL “componentFn E itFact t ' "output" t” |> SIMP_RULE (srw_ss()) [];
-val steps_effect  = EVAL “componentFn E comp4 t ' "steps" t”   |> SIMP_RULE (srw_ss()) [];
+val output_effect = EVAL “strmStep E itFact t ' "output" t” |> SIMP_RULE (srw_ss()) [];
+val steps_effect  = EVAL “strmStep E comp4 t ' "steps" t”   |> SIMP_RULE (srw_ss()) [];
 
 Theorem Vars_Eq[local] :
-  ∀t E. iterateFn E comp4 t ' "steps" t = iterateFn E comp4 t ' "output" t
+  ∀t E. strmSteps E comp4 t ' "steps" t = strmSteps E comp4 t ' "output" t
 Proof
   Induct
-  >> rw [iterateFn_def,steps_effect]
+  >> rw [strmSteps_def,steps_effect]
   >> EVAL_TAC
   >> rw [GSYM comp4_def]
 QED
@@ -171,21 +171,21 @@ Definition itFact_def:
         guarantees := [LtExpr (IntLit 0) (IntVar "output")]|>
 End
 
-val output_effect = EVAL “componentFn E itFact t ' "output" t” |> SIMP_RULE (srw_ss()) [];
-val n_effect      = EVAL “componentFn E itFact t ' "n" t”      |> SIMP_RULE (srw_ss()) [];
-val fact_effect   = EVAL “componentFn E itFact t ' "fact" t”   |> SIMP_RULE (srw_ss()) [];
+val output_effect = EVAL “strmStep E itFact t ' "output" t” |> SIMP_RULE (srw_ss()) [];
+val n_effect      = EVAL “strmStep E itFact t ' "n" t”      |> SIMP_RULE (srw_ss()) [];
+val fact_effect   = EVAL “strmStep E itFact t ' "fact" t”   |> SIMP_RULE (srw_ss()) [];
 
 Theorem Vars_Eq[local] :
- ∀t E. iterateFn E itFact t ' "output" t = iterateFn E itFact t ' "fact" t
+ ∀t E. strmSteps E itFact t ' "output" t = strmSteps E itFact t ' "fact" t
 Proof
-  Induct >> rw [iterateFn_def,output_effect,fact_effect]
+  Induct >> rw [strmSteps_def,output_effect,fact_effect]
 QED
 
 Theorem n_is_N:
-  ∀t E. int_of (iterateFn E itFact t ' "n" t) = int_of_num t
+  ∀t E. int_of (strmSteps E itFact t ' "n" t) = int_of_num t
 Proof
   Induct
-   >> rw [iterateFn_def,n_effect,integerTheory.int_of_num,integerTheory.INT_1,int_of_def]
+   >> rw [strmSteps_def,n_effect,integerTheory.int_of_num,integerTheory.INT_1,int_of_def]
    >> pop_assum kall_tac
    >> intLib.ARITH_TAC
 QED
@@ -200,7 +200,7 @@ Proof
   >> fs [GSYM itFact_def,Vars_Eq,n_is_N]
   >> rw[] >> res_tac
   >> pop_assum mp_tac
-  >> qspec_tac (‘iterateFn E itFact t ' "fact" t’,‘i’)
+  >> qspec_tac (‘strmSteps E itFact t ' "fact" t’,‘i’)
   >> rpt strip_tac
   >> match_mp_tac int_arithTheory.positive_product_implication
   >> intLib.ARITH_TAC
@@ -213,7 +213,7 @@ QED
 val num_mult_int = CONJUNCT1 integerTheory.INT_MUL_CALCULATE;
 
 Theorem itFact_eq_FACT :
- ∀t E. iterateFn E itFact t ' "fact" t = IntValue(&(FACT t))
+ ∀t E. strmSteps E itFact t ' "fact" t = IntValue(&(FACT t))
 Proof
   Induct_on ‘t’
   >> EVAL_TAC
@@ -254,14 +254,14 @@ Definition itFib_def:
       |>
 End
 
-val output_effect = EVAL “componentFn E itFib t ' "output" t” |> SIMP_RULE (srw_ss()) [];
-val x_effect      = EVAL “componentFn E itFib t ' "x" t”      |> SIMP_RULE (srw_ss()) [];
-val y_effect      = EVAL “componentFn E itFib t ' "y" t”      |> SIMP_RULE (srw_ss()) [];
+val output_effect = EVAL “strmStep E itFib t ' "output" t” |> SIMP_RULE (srw_ss()) [];
+val x_effect      = EVAL “strmStep E itFib t ' "x" t”      |> SIMP_RULE (srw_ss()) [];
+val y_effect      = EVAL “strmStep E itFib t ' "y" t”      |> SIMP_RULE (srw_ss()) [];
 
 Theorem Vars_Eq[local] :
-   ∀t E. iterateFn E itFib t ' "output" t = iterateFn E itFib t ' "y" t
+   ∀t E. strmSteps E itFib t ' "output" t = strmSteps E itFib t ' "y" t
 Proof
-  Induct >> rw [iterateFn_def,output_effect,y_effect]
+  Induct >> rw [strmSteps_def,output_effect,y_effect]
 QED
 
 Theorem itFib_Meets_Spec :
@@ -315,9 +315,9 @@ Triviality int_lem = intLib.ARITH_PROVE “i < 0i <=> ~(0i <= i)”;
 
 Theorem output_equal_alert[local] :
  ∀E t.
-    bool_of (iterateFn E sorted t ' "output" t)
+    bool_of (strmSteps E sorted t ' "output" t)
      <=>
-    int_of (iterateFn E sorted t ' "alert" t) = 0
+    int_of (strmSteps E sorted t ' "alert" t) = 0
 Proof
   gen_tac >> Cases_on ‘t’ >> EVAL_TAC
 QED
@@ -332,28 +332,28 @@ Proof
   >> EVAL_TAC
   >> simp [GSYM sorted_def,int_of_def]
   >> rw []
-    >- (qexists_tac ‘SUC t’
-        >> rw[]
-        >> qpat_x_assum ‘x - y < 0i’ mp_tac
-        >> qspec_tac (‘iterateFn E sorted t ' "input" (SUC t)’,‘j’)
-        >> qspec_tac (‘iterateFn E sorted t ' "input" t’,‘i’)
-        >> rw [int_of_def]
-        >> pop_assum mp_tac
-        >> qspec_tac (‘int_of j - int_of i’,‘k’)
-        >> gen_tac >> rpt (pop_assum kall_tac)
-        >> intLib.ARITH_TAC)
-    >- (rw[EQ_IMP_THM]
-        >> rw[]
-          >- (qpat_x_assum ‘~(x - y < 0i)’ mp_tac
-              >> qspec_tac (‘iterateFn E sorted t ' "input" (SUC t)’,‘j’)
-              >> qspec_tac (‘iterateFn E sorted t ' "input" t’,‘i’)
-              >> rw [int_of_def]
-              >> pop_assum mp_tac
-              >> qspec_tac (‘int_of j - int_of i’,‘k’)
-              >> gen_tac >> rpt (pop_assum kall_tac)
-              >> intLib.ARITH_TAC)
-          >- (qpat_x_assum ‘∀n. n ≤ SUC t ⇒ P’ (mp_tac o Q.SPEC ‘n’) >> rw[])
-       )
+ >- (qexists_tac ‘SUC t’
+     >> rw[]
+     >> qpat_x_assum ‘x - y < 0i’ mp_tac
+     >> qspec_tac (‘strmSteps E sorted t ' "input" (SUC t)’,‘j’)
+     >> qspec_tac (‘strmSteps E sorted t ' "input" t’,‘i’)
+     >> rw [int_of_def]
+     >> pop_assum mp_tac
+     >> qspec_tac (‘int_of j - int_of i’,‘k’)
+     >> gen_tac >> rpt (pop_assum kall_tac)
+     >> intLib.ARITH_TAC)
+ >- (rw[EQ_IMP_THM]
+     >> rw[]
+     >- (qpat_x_assum ‘~(x - y < 0i)’ mp_tac
+         >> qspec_tac (‘strmSteps E sorted t ' "input" (SUC t)’,‘j’)
+         >> qspec_tac (‘strmSteps E sorted t ' "input" t’,‘i’)
+         >> rw [int_of_def]
+         >> pop_assum mp_tac
+         >> qspec_tac (‘int_of j - int_of i’,‘k’)
+         >> gen_tac >> rpt (pop_assum kall_tac)
+         >> intLib.ARITH_TAC)
+     >- (qpat_x_assum ‘∀n. n ≤ SUC t ⇒ P’ (mp_tac o Q.SPEC ‘n’) >> rw[])
+    )
 QED
 
 
@@ -390,13 +390,13 @@ Definition divsum_def:
       |>
 End
 
-val divsum_effect = EVAL “componentFn E divsum t ' "divsum" t” |> SIMP_RULE (srw_ss()) [];
-val output_effect = EVAL “componentFn E divsum t ' "output" t” |> SIMP_RULE (srw_ss()) [];
+val divsum_effect = EVAL “strmStep E divsum t ' "divsum" t” |> SIMP_RULE (srw_ss()) [];
+val output_effect = EVAL “strmStep E divsum t ' "output" t” |> SIMP_RULE (srw_ss()) [];
 
 Theorem Vars_Eq[local] :
- ∀t E. iterateFn E divsum t ' "output" t = iterateFn E divsum t ' "divsum" t
+ ∀t E. strmSteps E divsum t ' "output" t = strmSteps E divsum t ' "divsum" t
 Proof
-  Induct >> rw [iterateFn_def,output_effect,divsum_effect]
+  Induct >> rw [strmSteps_def,output_effect,divsum_effect]
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -410,11 +410,9 @@ Proof
  simp [Component_Correct_def]
   >> irule conj_lemma
   >> conj_tac
-  >- (EVAL_TAC >> rw[])
-  >- (disch_tac
-      >> gen_tac
-      >> Induct_on ‘t’
-      >- (EVAL_TAC
+ >- (EVAL_TAC >> rw[])
+ >- (disch_tac >> gen_tac >> Induct_on ‘t’
+     >- (EVAL_TAC
           >> rw [GSYM divsum_def]
           >> ntac 2 (pop_assum mp_tac)
           >> rpt (pop_assum kall_tac)
@@ -423,7 +421,7 @@ Proof
           >> rw []
           >> ‘~(j=0)’ by intLib.ARITH_TAC
           >> rw [integerTheory.int_div])
-      >- (strip_tac
+     >- (strip_tac
           >> ‘assumsVal E divsum t’ by (rpt (pop_assum mp_tac) >> EVAL_TAC >> fs[] >> rw[])
           >> fs[]
           >> pop_assum kall_tac
@@ -449,7 +447,7 @@ Proof
           >> rw []
           >> ‘~(j=0)’ by intLib.ARITH_TAC
           >> rw [integerTheory.int_div])
-     )
+    )
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -488,21 +486,21 @@ val example =
  |> EVAL
  |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
 
-val th0 = EVAL“(iterateFn E recFib 0 ' "output") 0”
-val th1 = EVAL“(iterateFn E recFib 1 ' "output") 1”
-val th2 = EVAL“(iterateFn E recFib 2 ' "output") 2”
-val th3 = EVAL“(iterateFn E recFib 3 ' "output") 3”
-val th4 = EVAL“(iterateFn E recFib 4 ' "output") 4”
-val th5 = EVAL“(iterateFn E recFib 5 ' "output") 5”
-val th6 = EVAL“(iterateFn E recFib 6 ' "output") 6”
+val th0 = EVAL“(strmSteps E recFib 0 ' "output") 0”
+val th1 = EVAL“(strmSteps E recFib 1 ' "output") 1”
+val th2 = EVAL“(strmSteps E recFib 2 ' "output") 2”
+val th3 = EVAL“(strmSteps E recFib 3 ' "output") 3”
+val th4 = EVAL“(strmSteps E recFib 4 ' "output") 4”
+val th5 = EVAL“(strmSteps E recFib 5 ' "output") 5”
+val th6 = EVAL“(strmSteps E recFib 6 ' "output") 6”
 
-val recFib_effect = EVAL “componentFn E recFib t ' "recFib" t” |> SIMP_RULE (srw_ss()) [];
-val output_effect = EVAL “componentFn E recFib t ' "output" t” |> SIMP_RULE (srw_ss()) [];
+val recFib_effect = EVAL “strmStep E recFib t ' "recFib" t” |> SIMP_RULE (srw_ss()) [];
+val output_effect = EVAL “strmStep E recFib t ' "output" t” |> SIMP_RULE (srw_ss()) [];
 
 Theorem Vars_Eq[local] :
- ∀t E. iterateFn E recFib t ' "output" t = iterateFn E recFib t ' "recFib" t
+ ∀t E. strmSteps E recFib t ' "output" t = strmSteps E recFib t ' "recFib" t
 Proof
-  Induct >> rw [iterateFn_def,output_effect,recFib_effect]
+  Induct >> rw [strmSteps_def,output_effect,recFib_effect]
 QED
 
 Theorem recFib_Meets_Spec :
@@ -539,7 +537,7 @@ Definition Fib_def :
 End
 
 Theorem recFib_Sanity:
-  ∀t E. (iterateFn E recFib t ' "output") t = IntValue(&(Fib t))
+  ∀t E. (strmSteps E recFib t ' "output") t = IntValue(&(Fib t))
 Proof
  recInduct Fib_ind
  >> rw[Vars_Eq]
@@ -553,9 +551,9 @@ Proof
 QED
 
 Theorem recFib_Sanity_Below:
-  ∀t n E. n <= t ==> (iterateFn E recFib t ' "output") n = IntValue(&(Fib n))
+  ∀t n E. n <= t ==> (strmSteps E recFib t ' "output") n = IntValue(&(Fib n))
 Proof
- metis_tac [iterateFn_timeframe,recFib_Sanity]
+ metis_tac [strmSteps_timeframe,recFib_Sanity]
 QED
 
 (*===========================================================================*)
@@ -638,13 +636,14 @@ End
 
 val expand_altFib = altFib_def |> SIMP_RULE std_ss [prev_def] ;
 
-val th0 = EVAL“(iterateFn E altFib 0 ' "output") 0”
-val th1 = EVAL“(iterateFn E altFib 1 ' "output") 1”
-val th2 = EVAL“(iterateFn E altFib 2 ' "output") 2”
-val th3 = EVAL“(iterateFn E altFib 3 ' "output") 3”
-val th4 = EVAL“(iterateFn E altFib 4 ' "output") 4”
-val th5 = EVAL“(iterateFn E altFib 5 ' "output") 5”
-val th6 = EVAL“(iterateFn E altFib 6 ' "output") 6”
+val th0 = EVAL“(strmSteps E altFib 0 ' "output") 0”
+val th1 = EVAL“(strmSteps E altFib 1 ' "output") 1”
+val th2 = EVAL“(strmSteps E altFib 2 ' "output") 2”
+val th3 = EVAL“(strmSteps E altFib 3 ' "output") 3”
+val th4 = EVAL“(strmSteps E altFib 4 ' "output") 4”
+val th5 = EVAL“(strmSteps E altFib 5 ' "output") 5”
+val th6 = EVAL“(strmSteps E altFib 6 ' "output") 6”
+val th7 = EVAL“(strmSteps E altFib 7 ' "output") 7”
 
 (*---------------------------------------------------------------------------*)
 (* The following also works:                                                      *)
@@ -730,32 +729,32 @@ Definition uFib_def:
       |>
 End
 
-val th0 = EVAL“(iterateFn E uFib 0 ' "output") 0”
-val th1 = EVAL“(iterateFn E uFib 1 ' "output") 1”
-val th2 = EVAL“(iterateFn E uFib 2 ' "output") 2”
-val th3 = EVAL“(iterateFn E uFib 3 ' "output") 3”
-val th4 = EVAL“(iterateFn E uFib 4 ' "output") 4”
-val th5 = EVAL“(iterateFn E uFib 5 ' "output") 5”
-val th6 = EVAL“(iterateFn E uFib 6 ' "output") 6”
+val th0 = EVAL“(strmSteps E uFib 0 ' "output") 0”
+val th1 = EVAL“(strmSteps E uFib 1 ' "output") 1”
+val th2 = EVAL“(strmSteps E uFib 2 ' "output") 2”
+val th3 = EVAL“(strmSteps E uFib 3 ' "output") 3”
+val th4 = EVAL“(strmSteps E uFib 4 ' "output") 4”
+val th5 = EVAL“(strmSteps E uFib 5 ' "output") 5”
+val th6 = EVAL“(strmSteps E uFib 6 ' "output") 6”
 
 val lem = SIMP_CONV std_ss [] “p = q ⇒ f x p y = f x q y” |> EQT_ELIM;
 
-val A_effect    = “componentFn E uFib t ' "A"” |> EVAL |> SIMP_RULE (srw_ss()) [];
-val uFib_effect = “componentFn E uFib t ' "uFib"” |> EVAL |> SIMP_RULE (srw_ss()) [];
-val X_effect    = “componentFn E uFib t ' "X"” |> EVAL |> SIMP_RULE (srw_ss()) [];
-val output_effect_uFib = “componentFn E uFib t ' "output"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val A_effect    = “strmStep E uFib t ' "A"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val uFib_effect = “strmStep E uFib t ' "uFib"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val X_effect    = “strmStep E uFib t ' "X"” |> EVAL |> SIMP_RULE (srw_ss()) [];
+val output_effect_uFib = “strmStep E uFib t ' "output"” |> EVAL |> SIMP_RULE (srw_ss()) [];
 val output_effect_recFib =
-  “componentFn E recFib t ' "output"”
+  “strmStep E recFib t ' "output"”
    |> EVAL
    |> SIMP_RULE (srw_ss()) [numLib.ARITH_PROVE ``n - 1n -1 = n - 2``];
 
 (*
 Theorem recFib_pass :
- ∀t. (iterateFn E recFib t ' "output") = (iterateFn E uFib t ' "output")
+ ∀t. (strmSteps E recFib t ' "output") = (strmSteps E uFib t ' "output")
 Proof
  Induct
    >- EVAL_TAC
-   >- (rw [iterateFn_def]
+   >- (rw [strmSteps_def]
        >> rw [output_effect_uFib,output_effect_recFib]
        >> EVAL_TAC >> fs[GSYM recFib_def, GSYM uFib_def]
        >> irule lem
@@ -767,20 +766,21 @@ QED
 (* Arithmetic progressions, detection of.                                    *)
 (*                                                                           *)
 (*  inports = [in]                                                           *)
-(*  arithprog = if N ≤ 1 then                                                *)
+(*       N = 0 -> 1 + pre N                                                  *)
+(*  isProg = if N ≤ 1 then                                                   *)
 (*              T                                                            *)
 (*           else                                                            *)
-(*            (in - pre in = pre in - pre(pre in)) and pre arithprog         *)
+(*              pre isProg and (in - pre in = pre in - pre(pre in))          *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
 Definition arithprog_def:
   arithprog =
-    <| inports   := ["in"];
-       var_defs  :=
+    <| inports  := ["in"];
+       var_defs :=
           [IntStmt "N" (FbyExpr (IntLit 0)
                                 (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
-           BoolStmt "arithprog"
+           BoolStmt "isProg"
             (BoolCondExpr
                  (LeqExpr (IntVar "N") (IntLit 1))
                  (BoolLit T)
@@ -788,19 +788,19 @@ Definition arithprog_def:
                     (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
                             (SubExpr (PreExpr (IntVar "in"))
                                      (PreExpr (PreExpr(IntVar "in")))))
-                    (BoolPreExpr (BoolVar "arithprog"))))];
-         out_defs := [BoolStmt "out" (BoolVar "arithprog")];
+                    (BoolPreExpr (BoolVar "isProg"))))];
+         out_defs := [BoolStmt "out" (BoolVar "isProg")];
       assumptions := [];
       guarantees  := []
       |>
 End
 
-val th0 = EVAL“(iterateFn E arithprog 0 ' "out") 0”
-val th1 = EVAL“(iterateFn E arithprog 1 ' "out") 1”
-val th2 = EVAL“(iterateFn E arithprog 2 ' "out") 2”
-val th3 = EVAL“(iterateFn E arithprog 3 ' "out") 3”
-val th4 = EVAL“(iterateFn E arithprog 4 ' "out") 4”
-val th5 = EVAL“(iterateFn E arithprog 5 ' "out") 5”
-val th6 = EVAL“(iterateFn E arithprog 6 ' "out") 6”
+val th0 = EVAL“(strmSteps E isProg 0 ' "out") 0”
+val th1 = EVAL“(strmSteps E isProg 1 ' "out") 1”
+val th2 = EVAL“(strmSteps E isProg 2 ' "out") 2”
+val th3 = EVAL“(strmSteps E isProg 3 ' "out") 3”
+val th4 = EVAL“(strmSteps E isProg 4 ' "out") 4”
+val th5 = EVAL“(strmSteps E isProg 5 ' "out") 5”
+val th6 = EVAL“(strmSteps E isProg 6 ' "out") 6”
 
 val _ = export_theory();
