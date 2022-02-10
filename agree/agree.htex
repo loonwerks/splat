@@ -342,8 +342,7 @@ change it.
 
 \section{Examples}
 
-We now examine some small examples. First is a program to determine
-whether a sequence is sorted.
+We now examine some small examples.
 
 \subsection{Sorted}
 
@@ -364,6 +363,11 @@ between adjacent inputs is detected.
 
 
 \subsection{Divsum}
+
+This example shows the use of assumptions on the input
+stream. Provided that input \konst{i2} is always positive and input
+\konst{i1} is non-negative, the result is always defined (and
+non-negative).
 
 {\small
 \begin{verbatim}
