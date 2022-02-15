@@ -1,0 +1,66 @@
+Arithmetic progressions.
+
+Original code (examplesScript) looks one and two steps back in the input stream:
+
+ inports = [input]
+    N = 0 -> 1 + pre N
+   ap = if N ≤ 1 then
+          T
+        else
+          pre isProg and (input - pre input = pre input - pre(pre input))
+ output = ap
+
+Temporal squashing has removed all nested pre(-) expressions and
+introduced two streams to hold earlier values of the "in" stream:
+
+    N = 0 -> 1 + pre N
+  in2 = 42 -> pre in1
+  in1 = 42 -> pre input
+   ap = if N ≤ 1 then
+         T
+       else
+         pre(ap) and (input - in1 = in1 - in2)
+
+A problem: we have the expression "pre(in)" and there is no defining
+equation for "in". The calculation of in1 requires "pre in" while the
+calculation of ap uses "in". We add a variable to the state in order
+to make this work.
+
+      N = 0 -> 1 + pre N
+    in2 = 42 -> pre in1
+    in1 = 42 -> pre inVar
+  inVar = input
+     ap = if N ≤ 1 then
+            T
+          else
+            pre(ap) and (input - in1 = in1 - in2)
+
+We have now squashed the temporal references to be at most 1 deep. Now
+we can do away with the temporal operators. By adding a variable
+isInit, we can get rid of Fby expressions (leaving only the one
+definining isInit, which will get removed in the next step):
+
+  isInit = T -> F
+    N = if isInit then 0 else 1 + pre N
+  in2 = if isInit then 42 else pre in1
+  in1 = if isInit then 42 else pre inVar
+  inVar = input
+   ap = if N ≤ 1 then
+         T
+       else
+         pre(ap) and (input - in1 = in1 - in2)
+
+We now make the environment explicit and interpret "pre" as the
+identity function and make our desired function (no environment, no
+temporal operators) by transcribing the list of assignments.
+
+  apStep : input * state -> state * output
+
+  apStep ((input), (isInit,N,in2,in1,inVar,ap)) =
+     let N = if isInit then 0 else 1 + N
+         in2 = if isInit then 42 else in1
+         in1 = if isInit then 42 else inVar
+         inVar = input
+         ap = if N ≤ 1 then T else ap and (input - in1 = in1 - in2)
+      in
+        ((F,N,in2,in1,inVar,ap), (ap))

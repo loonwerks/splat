@@ -134,6 +134,7 @@ Definition stateSteps_def :
      in stateStep comp (strmIndex inputs (SUC t),stateE)
 End
 
+
 (*---------------------------------------------------------------------------*)
 (* Running the state stepper for t steps gives the same answers as running   *)
 (* the stream stepper for t steps and looking at the (state,output) just at  *)
@@ -183,6 +184,10 @@ Definition bufStep_def:
         outE' = fmap_map enc outE;
     in (stateE',outE')
 End
+
+(*---------------------------------------------------------------------------*)
+(* Latex support                                                             *)
+(*---------------------------------------------------------------------------*)
 
 val _ = TeX_notation {hol = "FUNION",        TeX = ("\\HOLTokenFmapUnion", 1)};
 val _ = TeX_notation {hol = UTF8.chr 0x228C, TeX = ("\\HOLTokenFmapUnion", 1)};

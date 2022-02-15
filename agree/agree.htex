@@ -426,7 +426,6 @@ showing the state variables):
 \end{verbatim}
 }
 
-
 \subsection{Arithmetic Progression}
 
 An \emph{arithmetic progression} is a sequence of numbers where the
@@ -435,16 +434,9 @@ difference between adjacent elements is constant. For example
 \[
   2,6,10,14, \ldots
 \]
-is an arithmetic progression with a common difference of 4. Formally,
-we can define the adjacency check as follows (where $\mathit{in}$ is
-the input stream):
-%
-\[\mathit{output}(t) =
- \mathtt{if}\; t \leq 1 \;\mathtt{then}\; \konst{true}\; \mathtt{else}\;
- \mathit{in}_t - \mathit{in}_{t-1} = \mathit{in}_{t-1} - \mathit{in}_{t-2}
-\]
-The following {\clustre} program iteratively tests whether its input stream
-$\mathit{in}$ is an arithmetic progression
+is an arithmetic progression with a common difference of 4.  The
+following {\clustre} program incrementally tests whether its input
+stream $\mathit{input}$ is an arithmetic progression:
 %
 {\small
 \begin{verbatim}
@@ -452,16 +444,18 @@ $\mathit{in}$ is an arithmetic progression
   isProg = if N <= 1 then
             true
            else
-             isProg and (in - pre in = pre in - pre(pre in))
+             isProg and (input - pre input = pre input - pre(pre input))
 \end{verbatim}
 }
 
 \section{Compilation and Code Generation}\label{sec:codegen}
 
-We now discuss transformations that
+We now discuss transformations that move from stream-based {\clustre}
+programs to purely extension functions ready to be mapped to CakeML.
+
 \begin{description}
-\item [Flatten history] by mapping a {\clustre} program to an
-  equivalent version that looks back at most one step in its history
+\item [History squashing] maps a {\clustre} program to an
+  equivalent version that looks back at most one step in its history.
 \item [Work over serialized data] by invoking decoders on serialized
   input and encoders to serialize output. This prepares the program to
   be put in a computational setting where input and output is through
@@ -533,15 +527,108 @@ parameters in the definition of \konst{bufStep}.
     \underbrace{(\konst{string} \mapsto \konst{value}) * (\konst{string} \mapsto \konst{string})}_{state * outputs}
 \end{array}
 \]
+
 \konst{bufStep} takes the current inputs and state and returns a new state and outputs:
-%
+
 \begin{HOLmath}
 \HOLthm[m;,def,>>3]{state.bufStep_def}
 \end{HOLmath}
 
+\subsection{Example: Arithmetic Progression Recognizer}
 
+The original {\clustre} program recognizing arithmetic progressions
+looks both one and two steps back in the input stream:
+%
+{\small
+\begin{verbatim}
+  inports = [input]
+  N = 0 -> pre N + 1
+  ap = if N <= 1 then
+         T
+       else
+        ap and (input - pre input = pre input - pre(pre input))
+  output = ap
+\end{verbatim}
+}
 
-\section{History squashing}
+Temporal squashing removes all nested $\konst{pre}(-)$ expressions and
+introduces two streams to hold earlier values of the \konst{input}
+stream: \konst{in2} holds the value of \konst{input} two steps earlier
+and \konst{in1} holds the value of \konst{input} from the previous
+step.
+%
+{\small
+\begin{verbatim}
+    N = 0 -> 1 + pre N
+  in2 = 42 -> pre in1
+  in1 = 42 -> pre input
+   ap = if N <= 1 then
+         T
+       else
+         pre(ap) and (input - in1 = in1 - in2)
+\end{verbatim}
+}
+%
+A problem: the expression $\konst{pre}(\konst{input})$ occurs, but
+there is no defining equation for \konst{input}. (This makes sense
+since the input at this stage of formalization is simply given.) The
+calculation of \konst{in1} requires $\konst{pre}(\konst{input})$ while
+the calculation of \konst{ap} uses \konst{input}. We therefore add a
+variable definition which holds the value of \konst{input} and is thus
+able to have $\konst{pre}(-)$ applied to it.
+%
+{\small
+\begin{verbatim}
+      N = 0 -> 1 + pre N
+    in2 = 42 -> pre in1
+    in1 = 42 -> pre inVar
+  inVar = input
+     ap = if N <= 1 then
+            T
+          else
+            pre(ap) and (input - in1 = in1 - in2)
+\end{verbatim}
+}
+%
+The temporal references now look back exactly one step, and can be
+done away with. By adding a variable \konst{isInit}, we can get rid of \konst{Fby}
+expressions (leaving only the one defining \konst{isInit}, which will get
+removed in the next step):
+%
+{\small
+\begin{verbatim}
+  isInit = T -> F
+    N = if isInit then 0 else 1 + pre N
+  in2 = if isInit then 42 else pre in1
+  in1 = if isInit then 42 else pre inVar
+  inVar = input
+   ap = if N <= 1 then
+         T
+       else
+         pre(ap) and (input - in1 = in1 - in2)
+\end{verbatim}
+}
+%
+We now make the environment explicit and interpret $\konst{pre}(-)$ as
+the identity function. The resulting step function is then a direct
+transcription of the list of assignments.
+%
+{\small
+\begin{verbatim}
+  apStep : input * state -> state * output
+
+  apStep ((input), (isInit,N,in2,in1,inVar,ap)) =
+     let N = if isInit then 0 else 1 + N
+         in2 = if isInit then 42 else in1
+         in1 = if isInit then 42 else inVar
+         inVar = input
+         ap = if N <= 1 then T else ap and (input - in1 = in1 - in2)
+      in
+        ((F,N,in2,in1,inVar,ap), (ap))
+\end{verbatim}
+}
+
+\section{Temporal squashing}
 
 \section{Attaching decoders and encoders}
 
