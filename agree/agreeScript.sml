@@ -462,8 +462,10 @@ val _ = TeX_notation {hol = UTF8.chr 0x21A6, TeX = ("\\HOLTokenMapto", 1)}
 val _ = TeX_notation {hol = "int_of", TeX = ("int\\_of", 6)};
 val _ = TeX_notation {hol = "bool_of", TeX = ("bool\\_of", 7)};
 
-val _ = TeX_notation {hol = "List_Conj", TeX = ("List\\_Conj", 6)};
-val _ = TeX_notation {hol = "Component_Correct", TeX = ("Component\\_Correct", 6)};
-
+val _ = TeX_notation {hol = "List_Conj", TeX = ("List\\_Conj", 9)};
+val _ = TeX_notation {hol = "Component_Correct", TeX = ("Component\\_Correct", 17)};
+val _ = TeX_notation {hol = "input_of", TeX = ("input\\_of", 8)};
+val _ = TeX_notation {hol = "state_of", TeX = ("state\\_of", 8)};
+val _ = TeX_notation {hol = "output_of", TeX = ("output\\_of", 9)};
 
 val _ = export_theory();

@@ -120,11 +120,8 @@ End
 
 Definition stateStep_def :
   stateStep comp (inE,stateE) =
-  let E = FUNION inE stateE ;
-      E' = defListFn E (comp.var_defs ++ comp.out_defs) ;
-      stateE' = DRESTRICT E' (set (MAP defName comp.var_defs)) ;
-      outE    = DRESTRICT E' (set (MAP defName comp.out_defs))
-  in (stateE', outE)
+  let E' = defListFn (FUNION inE stateE) (comp.var_defs ++ comp.out_defs) ;
+  in (state_of comp E', output_of comp E')
 End
 
 Definition stateSteps_def :

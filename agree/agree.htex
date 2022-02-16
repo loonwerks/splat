@@ -108,16 +108,6 @@ will use the following notation to describe a component:
 \end{array}
 \]
 
-%% \begin{remark}
-%% For now, the sets of port variables and program variables are not
-%% explicitly declared in the component declaration; instead, the set of
-%% variables occurring in the component implicitly defines the input port
-%% variables (arguments to \konst{PortVar}), program variables (left-hand
-%% sides of variable assignments), and output port variables (left-hand
-%% sides of output assignments).
-%% \end{remark}
-
-
 \subsection{Expressions, values, and statements}
 
 {\agree} expressions are conventional arithmetic/boolean expressions,
@@ -381,42 +371,14 @@ non-negative).
 
 \subsection{Fibonacci}
 
-The \emph{Fibonacci} sequence proceeds
-%
-\[
-  1,1,2,3,5,8,13, \ldots
-\]
-and is defined recursively as
+The \emph{Fibonacci} sequence proceeds $1,1,2,3,5,8,13, \ldots$ and is defined recursively by
 %
 \[
  \konst{fib}(t) = \mathtt{if}\; t\; \leq 1 \; \mathtt{then}\; 1 \; \mathtt{else}\; \konst{fib}(t-1) + \konst{fib}(t-2)
 \]
-
-\noindent One definition of Fibonacci in {\clustre} is
 %
-{\small
-\begin{verbatim}
-  I = []
-  A = []
-  V = [fib = 1 -> pre(1 -> fib + pre fib)]
-  O = [output = fib]
-  G = [0 <= output]
-\end{verbatim}
-}
-
-The nesting of the \konst{pre} operator is somewhat unnatural,
-compared to the recursive definition above. By making the stream index
-explicit, the usual recursion equation can be represented (only
-showing the state variables):
-%
-{\small
-\begin{verbatim}
-  N = 0 -> pre N + 1
-  fib = if  N <= 1 then 1 else pre fib + pre(pre fib)
-\end{verbatim}
-}
-
-\noindent The efficient iterative version is rendered as follows:
+An iterative version uses two variables to hold the two earlier values
+in the sequence:
 %
 {\small
 \begin{verbatim}
@@ -425,18 +387,39 @@ showing the state variables):
   output = y
 \end{verbatim}
 }
+%
+\noindent What about a recursive presentation? One approach is as follows:
+%
+{\small
+\begin{verbatim}
+  fib = 1 -> pre(1 -> fib + pre fib)
+  output = fib
+\end{verbatim}
+}
+%
+However, this is somewhat unnatural compared to the mathematical
+definition, and it doesn't seem to generalize to a wide variety of
+recursions. By realizing that the stream index can be made explicit,
+the usual recursion equation can be rendered:
+%
+{\small
+\begin{verbatim}
+  N = 0 -> pre N + 1
+  fib = if  N <= 1 then 1 else pre fib + pre(pre fib)
+\end{verbatim}
+}
+%
+This trick, of making the stream index explicit, can be used to help
+define a wide variety of course-of-values recursions.
 
 \subsection{Arithmetic Progression}
 
 An \emph{arithmetic progression} is a sequence of numbers where the
 difference between adjacent elements is constant. For example
-%
-\[
-  2,6,10,14, \ldots
-\]
-is an arithmetic progression with a common difference of 4.  The
-following {\clustre} program incrementally tests whether its input
-stream $\mathit{input}$ is an arithmetic progression:
+$2,6,10,14, \ldots$ is an arithmetic progression with a common
+difference of four.  The following {\clustre} program incrementally
+tests whether its input stream $\mathit{input}$ is an arithmetic
+progression.
 %
 {\small
 \begin{verbatim}
@@ -447,6 +430,12 @@ stream $\mathit{input}$ is an arithmetic progression:
              isProg and (input - pre input = pre input - pre(pre input))
 \end{verbatim}
 }
+%
+The common difference is computed from the first three numbers. An
+interesting aspect of this program is that earlier values of the
+\konst{input} stream need to be tracked, but \konst{input}, being a
+parameter, does not have a defining equation.
+
 
 \section{Compilation and Code Generation}\label{sec:codegen}
 
@@ -488,8 +477,7 @@ transformation between an initial stream environment and the stream
 environment resulting from $t$ steps of execution:
 \[
 \konst{strmStep} :
-  (\konst{string} \mapsto (\konst{num} \to \konst{value})) \to
-    \konst{component} \to \konst{num} \to (\konst{string} \mapsto (\konst{num} \to  \konst{value}))
+  \konst{strm\_env} \to \konst{component} \to \konst{num} \to \konst{strm\_env}
 \]
 
 \subsection{Value oriented step function}
@@ -509,7 +497,7 @@ variable names to values (thus the time index is not needed):
 \konst{stateStep} takes the current inputs and state and returns a new state and outputs:
 %
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{state.stateStep_def}
+\HOLthm[m;,def,>>3,width=75]{state.stateStep_def}
 \end{HOLmath}
 
 \subsection{Value-and-buffer oriented step function}
@@ -531,7 +519,7 @@ parameters in the definition of \konst{bufStep}.
 \konst{bufStep} takes the current inputs and state and returns a new state and outputs:
 
 \begin{HOLmath}
-\HOLthm[m;,def,>>3]{state.bufStep_def}
+\HOLthm[m;,def,>>3,width=75]{state.bufStep_def}
 \end{HOLmath}
 
 \subsection{Example: Arithmetic Progression Recognizer}
@@ -550,7 +538,7 @@ looks both one and two steps back in the input stream:
   output = ap
 \end{verbatim}
 }
-
+%
 Temporal squashing removes all nested $\konst{pre}(-)$ expressions and
 introduces two streams to hold earlier values of the \konst{input}
 stream: \konst{in2} holds the value of \konst{input} two steps earlier
@@ -569,13 +557,14 @@ step.
 \end{verbatim}
 }
 %
-A problem: the expression $\konst{pre}(\konst{input})$ occurs, but
-there is no defining equation for \konst{input}. (This makes sense
-since the input at this stage of formalization is simply given.) The
-calculation of \konst{in1} requires $\konst{pre}(\konst{input})$ while
-the calculation of \konst{ap} uses \konst{input}. We therefore add a
-variable definition which holds the value of \konst{input} and is thus
-able to have $\konst{pre}(-)$ applied to it.
+As mentioned earlier, the expression $\konst{pre}(\konst{input})$
+occurs, but there is no defining equation for \konst{input}. (This
+makes sense since the input at this stage of formalization is simply a
+given parameter.) The calculation of \konst{in1} requires
+$\konst{pre}(\konst{input})$ while the calculation of \konst{ap} uses
+\konst{input}. We therefore add a variable definition $\konst{inVar} =
+\konst{input}$ which holds the value of \konst{input} and is thus able
+to have $\konst{pre}(-)$ applied to it.
 %
 {\small
 \begin{verbatim}

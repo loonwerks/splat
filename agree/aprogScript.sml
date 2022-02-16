@@ -108,8 +108,37 @@ val th5 = EVAL“(strmSteps E iter_arithprog 5 ' "out") 5”
 val th6 = EVAL“(strmSteps E iter_arithprog 6 ' "out") 6”
 ;
 
-Theorem arithprog_equiv:
-  strmStep E arithprog t ' out t = strmStep E iter_arithprog t ' out t
+val arithprog_effect =
+   EVAL “strmStep E arithprog t ' "isProg" t” |> SIMP_RULE (srw_ss()) [];
+
+val iter_arithprog_effect =
+   EVAL “strmStep E iter_arithprog t ' "ap" t” |> SIMP_RULE (srw_ss()) [];
+
+val arithprog_out_effect =
+  EVAL “strmStep E arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
+
+val iter_arithprog_out_effect =
+   EVAL “strmStep E iter_arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
+
+
+Theorem arithprog_Vars_Eq[local] :
+ ∀t E. strmSteps E arithprog t ' "out" t = strmSteps E arithprog t ' "isProg" t
 Proof
- EVAL_TAC >> rw[]
+  Induct >> rw [strmSteps_def,arithprog_effect,arithprog_out_effect]
 QED
+
+Theorem iter_arithprog_Vars_Eq[local] :
+ ∀t E. strmSteps E iter_arithprog t ' "out" t = strmSteps E iter_arithprog t ' "ap" t
+Proof
+  Induct >> rw [strmSteps_def,iter_arithprog_effect,iter_arithprog_out_effect]
+QED
+
+(*
+Theorem arithprog_equiv:
+  strmStep E arithprog t ' "out" t = strmStep E iter_arithprog t ' "out" t
+Proof
+ EVAL_TAC >> rw[arithprog_Vars_Eq,iter_arithprog_Vars_Eq]
+QED
+*)
+
+val _ = export_theory();
