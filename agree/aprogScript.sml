@@ -1,6 +1,38 @@
 (*---------------------------------------------------------------------------*)
 (* Arithmetic progressions, detection of.                                    *)
 (*---------------------------------------------------------------------------*)
+(*---------------------------------------------------------------------------*)
+(* A Clustre program (comp) starts out being defined with reference to an    *)
+(* environment. At first the env is a finite map from variable names to      *)
+(* value streams.                                                            *)
+(*                                                                           *)
+(*   type strmEnv = string |-> (num -> value)                                *)
+(*                                                                           *)
+(* An evaluation step of a component is then a map from an input env to an   *)
+(* output env.                                                               *)
+(*                                                                           *)
+(*   strmStep  : comp -> strmEnv -> strmEnv                                  *)
+(*                                                                           *)
+(* After "temporal squashing" the program---if it looks back in time for the *)
+(* earlier value of a variable---looks back exactly one step. Another way of *)
+(* stating this: all pre(-) expressions are on variables. This means that    *)
+(* the time index on variable references can be eliminated. Consequently,    *)
+(* evaluation is with respect to value environments:                         *)
+(*                                                                           *)
+(*   type valEnv = string |-> value                                          *)
+(*                                                                           *)
+(* We also separate the environment into inputs, outputs, and state vars.    *)
+(* An evaluation step of a component is a map from an (input,state) env pair *)
+(* to a (state,output) pair, where the envs are valEnvs.                     *)
+(*                                                                           *)
+(*   stateStep : comp -> (valEnv * valEnv) -> (valEnv * valEnv)              *)
+(*                                                                           *)
+(* At this point, the environments can be made explicit as parameters to a   *)
+(* function definition.                                                      *)
+(*                                                                           *)
+(*   fnStep : input-tuple * state-tuple -> state-tuple * output-tuple        *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
 
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
@@ -14,18 +46,19 @@ val _ = new_theory "aprog";
 (*---------------------------------------------------------------------------*)
 (* Version with lookback to depths one and two.                              *)
 (*                                                                           *)
-(*  inports = [in]                                                           *)
+(*  inports = [input]                                                        *)
 (*       N = 0 -> 1 + pre N                                                  *)
 (*  isProg = if N ≤ 1 then                                                   *)
 (*              T                                                            *)
 (*           else                                                            *)
-(*              pre isProg and (in - pre in = pre in - pre(pre in))          *)
+(*              pre isProg and                                               *)
+(*                  (input - pre input = pre input - pre(pre input))         *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
 Definition arithprog_def:
   arithprog =
-    <| inports  := ["in"];
+    <| inports  := ["input"];
        var_defs :=
           [IntStmt "N" (FbyExpr (IntLit 0)
                                 (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
@@ -34,9 +67,9 @@ Definition arithprog_def:
                  (LeqExpr (IntVar "N") (IntLit 1))
                  (BoolLit T)
                  (AndExpr
-                    (EqExpr (SubExpr (IntVar "in") (PreExpr (IntVar "in")))
-                            (SubExpr (PreExpr (IntVar "in"))
-                                     (PreExpr (PreExpr(IntVar "in")))))
+                    (EqExpr (SubExpr (IntVar "input") (PreExpr (IntVar "input")))
+                            (SubExpr (PreExpr (IntVar "input"))
+                                     (PreExpr (PreExpr(IntVar "input")))))
                     (BoolPreExpr (BoolVar "isProg"))))];
          out_defs := [BoolStmt "out" (BoolVar "isProg")];
       assumptions := [];
@@ -64,34 +97,34 @@ val th6 = EVAL“(strmSteps E arithprog 6 ' "out") 6”
 (* contain a stream with the above behaviour. The semantics of Fby in        *)
 (* stateScript.sml expresses this.                                           *)
 (*                                                                           *)
-(*  inports = [in,isInit]                                                    *)
+(*  inports = [input,isInit]                                                 *)
 (*     N = if isInit then 0 else 1 + pre N                                   *)
 (*   in2 = if isInit then 42 else pre in1                                    *)
 (*   in1 = if isInit then 42 else pre inVar                                  *)
-(*   inVar = in                                                              *)
+(*   inVar = input                                                           *)
 (*   ap = if N ≤ 1 then                                                      *)
 (*          T                                                                *)
 (*        else                                                               *)
-(*          pre(ap) and (in - in1 = in1 - in2)                               *)
+(*          pre(ap) and (input - in1 = in1 - in2)                            *)
 (*---------------------------------------------------------------------------*)
 
 
 Definition iter_arithprog_def:
   iter_arithprog =
-    <| inports  := ["in"];
+    <| inports  := ["input"];
        var_defs :=
           [IntStmt "N" (FbyExpr (IntLit 0)
                                 (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
            IntStmt "in2" (FbyExpr (IntLit 42) (PreExpr (IntVar "in1")));
-           IntStmt "in1" (FbyExpr (IntLit 42) (PreExpr (IntVar "in")));
-           IntStmt "inVar" (IntVar "in");
+           IntStmt "in1" (FbyExpr (IntLit 42) (PreExpr (IntVar "inVar")));
+           IntStmt "inVar" (IntVar "input");
            BoolStmt "ap"
             (BoolCondExpr
                  (LeqExpr (IntVar "N") (IntLit 1))
                  (BoolLit T)
                  (AndExpr
-                    (EqExpr (SubExpr (IntVar "in") (IntVar "in1"))
-                            (SubExpr (IntVar "in1") (IntVar "in2")))
+                    (EqExpr (SubExpr (IntVar "input") (IntVar "in1"))
+                            (SubExpr (IntVar "in1")   (IntVar "in2")))
                     (BoolPreExpr (BoolVar "ap"))))];
          out_defs := [BoolStmt "out" (BoolVar "ap")];
       assumptions := [];
@@ -108,37 +141,116 @@ val th5 = EVAL“(strmSteps E iter_arithprog 5 ' "out") 5”
 val th6 = EVAL“(strmSteps E iter_arithprog 6 ' "out") 6”
 ;
 
-val arithprog_effect =
+(*--------------------------------------------------------------------------*)
+(* Show that the original program is equivalent to the version with nested  *)
+(* "pre"s squashed out.                                                     *)
+(*--------------------------------------------------------------------------*)
+
+val arithprog_isProg =
    EVAL “strmStep E arithprog t ' "isProg" t” |> SIMP_RULE (srw_ss()) [];
 
-val iter_arithprog_effect =
-   EVAL “strmStep E iter_arithprog t ' "ap" t” |> SIMP_RULE (srw_ss()) [];
-
-val arithprog_out_effect =
+val arithprog_out =
   EVAL “strmStep E arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
 
-val iter_arithprog_out_effect =
+
+val iter_arithprog_ap =
+   EVAL “strmStep E iter_arithprog t ' "ap" t” |> SIMP_RULE (srw_ss()) [];
+
+val iter_arithprog_out =
    EVAL “strmStep E iter_arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
 
 
 Theorem arithprog_Vars_Eq[local] :
  ∀t E. strmSteps E arithprog t ' "out" t = strmSteps E arithprog t ' "isProg" t
 Proof
-  Induct >> rw [strmSteps_def,arithprog_effect,arithprog_out_effect]
+  Induct >> rw [strmSteps_def,arithprog_isProg,arithprog_out]
 QED
 
 Theorem iter_arithprog_Vars_Eq[local] :
  ∀t E. strmSteps E iter_arithprog t ' "out" t = strmSteps E iter_arithprog t ' "ap" t
 Proof
-  Induct >> rw [strmSteps_def,iter_arithprog_effect,iter_arithprog_out_effect]
+  Induct >> rw [strmSteps_def,iter_arithprog_ap,iter_arithprog_out]
 QED
 
-(*
-Theorem arithprog_equiv:
+Theorem equiv1:
   strmStep E arithprog t ' "out" t = strmStep E iter_arithprog t ' "out" t
 Proof
- EVAL_TAC >> rw[arithprog_Vars_Eq,iter_arithprog_Vars_Eq]
+ EVAL_TAC
+  >> rw[arithprog_Vars_Eq,iter_arithprog_Vars_Eq,EQ_IMP_THM]
+  >> rpt (pop_assum mp_tac)
+  >> EVAL_TAC
+  >> rw[]
 QED
-*)
+
+
+(*---------------------------------------------------------------------------*)
+(* "pre-CakeML" logic function version of iter_arithprog. Note that variable *)
+(* in2 is a parameter when it doesn't strictly have to be.                   *)
+(*---------------------------------------------------------------------------*)
+
+Definition aprogFn_def :
+  aprogFn (input,isInit) (N,in2,in1,inVar,ap) =
+    let N = if isInit then 0i else 1 + N    ;
+        in2 = if isInit then 42i else in1   ;
+        in1 = if isInit then 42i else inVar ;
+        inVar = input ;
+        ap = if N ≤ 1 then
+              T
+             else ap ∧ (input - in1 = in1 - in2)
+    in
+      ((N,in2,in1,inVar,ap), ap)
+End
+
+(*---------------------------------------------------------------------------*)
+(* Now interpret iter_arithprog in a setting where the environments are      *)
+(* string |-> value maps, instead of the string |-> value stream maps being  *)
+(* used in agreeScript.                                                      *)
+(*---------------------------------------------------------------------------*)
+
+
+(*---------------------------------------------------------------------------*)
+(* Lemma that state_ap = out_ap. Not used.                                   *)
+(*---------------------------------------------------------------------------*)
+
+Theorem out_eq_ap :
+  ∀inE stateIn stateOut outE.
+      (stateOut,outE) = stateStep iter_arithprog (inE,stateIn)
+  ⇒
+  (outE ' "out") = (stateOut ' "ap")
+Proof
+  EVAL_TAC >> rw[] >> rpt(pop_assum mp_tac) >> rw[]
+QED
+
+Theorem equiv2 :
+  ∀input isInit N in2 in1 inVar ap.
+     let inE = FEMPTY |++ [("input",IntValue input);("isInit", BoolValue isInit)] ;
+         stateIn = FEMPTY
+                   |++ [("N",    IntValue N);
+                        ("in2",  IntValue in2);
+                        ("in1",  IntValue in1);
+                        ("inVar",IntValue inVar);
+                        ("ap",   BoolValue ap)];
+         (stateOut,outE) = stateStep iter_arithprog (inE,stateIn) ;
+         state_N     = int_of(stateOut ' "N");
+         state_in2   = int_of(stateOut ' "in2");
+         state_in1   = int_of(stateOut ' "in1");
+         state_inVar = int_of(stateOut ' "inVar");
+         state_ap    = bool_of(stateOut ' "ap");
+         output_ap   = bool_of(outE ' "out")
+     in
+       ((state_N, state_in2, state_in1, state_inVar, state_ap), output_ap)
+       =
+      aprogFn (input,isInit) (N,in2,in1,inVar,ap)
+Proof
+  rpt gen_tac
+  >> EVAL_TAC
+  >> rw[FUNION_DEF]
+  >> pop_assum mp_tac
+  >> EVAL_TAC
+  >> rw_tac bool_ss [Once integerTheory.INT_ADD_SYM]
+  >> metis_tac[]
+QED
+
+
 
 val _ = export_theory();

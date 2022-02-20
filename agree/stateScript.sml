@@ -72,7 +72,7 @@ Definition evalue_def :
   evalue E (CondExpr b e1 e2) = (if bvalue E b then evalue E e1 else evalue E e2) ∧
   evalue E (PreExpr e)      = evalue E e /\
   evalue E (FbyExpr e1 e2)  =
-      (if bvalue E (BoolVar "_initStep") then evalue E e1 else evalue E e2)
+      (if bvalue E (BoolVar "isInit") then evalue E e1 else evalue E e2)
   /\
   bvalue E (BoolVar s)     = bool_of (E ' s) /\
   bvalue E (BoolLit b)     = b /\
@@ -87,7 +87,7 @@ Definition evalue_def :
   bvalue E (BoolCondExpr b b1 b2) = (if bvalue E b then bvalue E b1 else bvalue E b2) ∧
   bvalue E (BoolPreExpr b) = bvalue E b /\
   bvalue E (BoolFbyExpr b1 b2) =
-      (if bvalue E (BoolVar "_initStep") then bvalue E b1 else bvalue E b2) ∧
+      (if bvalue E (BoolVar "isInit") then bvalue E b1 else bvalue E b2) ∧
   bvalue E (HistExpr b)    = ARB
 Termination
   WF_REL_TAC ‘measure (sum_size (expr_sizeA o SND) (bexpr_sizeA o SND))’
@@ -99,15 +99,16 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition defFn_def :
- defFn E (IntStmt s exp)   = updateState E s (IntValue(evalue E exp)) ∧
- defFn E (BoolStmt s bexp) = updateState E s (BoolValue(bvalue E bexp))
+  defFn E (IntStmt s exp)   = updateState E s (IntValue(evalue E exp)) ∧
+  defFn E (BoolStmt s bexp) = updateState E s (BoolValue(bvalue E bexp))
 End
 
 (*---------------------------------------------------------------------------*)
 (* Sequential accumulation of variable updates.                              *)
 (*---------------------------------------------------------------------------*)
 
-Definition defListFn_def : defListFn E defs = FOLDL defFn E defs
+Definition defListFn_def :
+  defListFn E defs = FOLDL defFn E defs
 End
 
 (*---------------------------------------------------------------------------*)
@@ -138,7 +139,7 @@ End
 (* time t.                                                                   *)
 (*                                                                           *)
 (* This statement is only true if comp is in a form where it looks back at   *)
-(* most one step in its history. And comp has to be wellformed and env has   *)
+(* most one step in its history. Also, comp has to be wellformed and env has *)
 (* to support it, as in agreeTheory.                                         *)
 (*---------------------------------------------------------------------------*)
 
