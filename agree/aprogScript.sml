@@ -85,6 +85,24 @@ val th4 = EVAL“(strmSteps E arithprog 4 ' "out") 4”
 val th5 = EVAL“(strmSteps E arithprog 5 ' "out") 5”
 val th6 = EVAL“(strmSteps E arithprog 6 ' "out") 6”
 
+val arithprog_isProg =
+   EVAL “strmStep E arithprog t ' "isProg" t” |> SIMP_RULE (srw_ss()) [];
+
+val arithprog_out =
+  EVAL “strmStep E arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
+
+Theorem arithprog_Eq_out_isProg[local] :
+ ∀t E. strmStep E arithprog t ' "out" t = strmStep E arithprog t ' "isProg" t
+Proof
+  rw [arithprog_isProg,arithprog_out]
+QED
+
+Theorem arithprog_Vars_Eq[local] :
+ ∀t E. strmSteps E arithprog t ' "out" t = strmSteps E arithprog t ' "isProg" t
+Proof
+  Induct >> rw [strmSteps_def,arithprog_isProg,arithprog_out]
+QED
+
 (*---------------------------------------------------------------------------*)
 (* Iterative version: set up so that lookback is exactly 1. Also, add var    *)
 (* to hold state of input. Also add a supplementary input stream that tells  *)
@@ -98,14 +116,13 @@ val th6 = EVAL“(strmSteps E arithprog 6 ' "out") 6”
 (* stateScript.sml expresses this.                                           *)
 (*                                                                           *)
 (*  inports = [input,isInit]                                                 *)
-(*     N = if isInit then 0 else 1 + pre N                                   *)
-(*   in2 = if isInit then 42 else pre in1                                    *)
-(*   in1 = if isInit then 42 else pre inVar                                  *)
-(*   inVar = input                                                           *)
+(*    N = if isInit then 0 else 1 + pre N                                    *)
 (*   ap = if N ≤ 1 then                                                      *)
 (*          T                                                                *)
 (*        else                                                               *)
-(*          pre(ap) and (input - in1 = in1 - in2)                            *)
+(*          pre(ap) and (input - pre in1 = pre in1 - pre in2)                *)
+(*   in2 = if isInit then 42 else pre in1                                    *)
+(*   in1 = input                                                             *)
 (*---------------------------------------------------------------------------*)
 
 
@@ -115,17 +132,16 @@ Definition iter_arithprog_def:
        var_defs :=
           [IntStmt "N" (FbyExpr (IntLit 0)
                                 (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
-           IntStmt "in2" (FbyExpr (IntLit 42) (PreExpr (IntVar "in1")));
-           IntStmt "in1" (FbyExpr (IntLit 42) (PreExpr (IntVar "inVar")));
-           IntStmt "inVar" (IntVar "input");
            BoolStmt "ap"
             (BoolCondExpr
                  (LeqExpr (IntVar "N") (IntLit 1))
                  (BoolLit T)
                  (AndExpr
-                    (EqExpr (SubExpr (IntVar "input") (IntVar "in1"))
-                            (SubExpr (IntVar "in1")   (IntVar "in2")))
-                    (BoolPreExpr (BoolVar "ap"))))];
+                    (EqExpr (SubExpr (IntVar "input") (PreExpr (IntVar "in1")))
+                            (SubExpr (PreExpr (IntVar "in1")) (PreExpr (IntVar "in2"))))
+                    (BoolPreExpr (BoolVar "ap"))));
+           IntStmt "in2" (FbyExpr (IntLit 42) (PreExpr (IntVar "in1")));
+           IntStmt "in1" (IntVar "input")];
          out_defs := [BoolStmt "out" (BoolVar "ap")];
       assumptions := [];
       guarantees  := []
@@ -146,13 +162,6 @@ val th6 = EVAL“(strmSteps E iter_arithprog 6 ' "out") 6”
 (* "pre"s squashed out.                                                     *)
 (*--------------------------------------------------------------------------*)
 
-val arithprog_isProg =
-   EVAL “strmStep E arithprog t ' "isProg" t” |> SIMP_RULE (srw_ss()) [];
-
-val arithprog_out =
-  EVAL “strmStep E arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
-
-
 val iter_arithprog_ap =
    EVAL “strmStep E iter_arithprog t ' "ap" t” |> SIMP_RULE (srw_ss()) [];
 
@@ -160,10 +169,10 @@ val iter_arithprog_out =
    EVAL “strmStep E iter_arithprog t ' "out" t” |> SIMP_RULE (srw_ss()) [];
 
 
-Theorem arithprog_Vars_Eq[local] :
- ∀t E. strmSteps E arithprog t ' "out" t = strmSteps E arithprog t ' "isProg" t
+Theorem iter_arithprog_Eq_out_ap[local] :
+ ∀t E. strmStep E iter_arithprog t ' "out" t = strmStep E iter_arithprog t ' "ap" t
 Proof
-  Induct >> rw [strmSteps_def,arithprog_isProg,arithprog_out]
+  rw [iter_arithprog_ap,iter_arithprog_out]
 QED
 
 Theorem iter_arithprog_Vars_Eq[local] :
@@ -172,16 +181,40 @@ Proof
   Induct >> rw [strmSteps_def,iter_arithprog_ap,iter_arithprog_out]
 QED
 
+(* Probably needs to be generalized to include more vars.
 Theorem equiv1:
-  strmStep E arithprog t ' "out" t = strmStep E iter_arithprog t ' "out" t
+  ∀E t. strmSteps E arithprog t ' "out" t = strmSteps E iter_arithprog t ' "out" t
 Proof
- EVAL_TAC
-  >> rw[arithprog_Vars_Eq,iter_arithprog_Vars_Eq,EQ_IMP_THM]
-  >> rpt (pop_assum mp_tac)
-  >> EVAL_TAC
-  >> rw[]
+  simp [arithprog_Vars_Eq, iter_arithprog_Vars_Eq]
+  >> Induct_on ‘t’
+  >-  (EVAL_TAC >> rw[])
+  >-  (EVAL_TAC >> rw[GSYM arithprog_def, GSYM iter_arithprog_def]
+       >- (‘t = 0n’ by decide_tac >> rw [] >> EVAL_TAC >> rw[])
+       >-
 QED
+ *)
 
+(* Relates a stream step to a state step.
+    - Think about whether it needs to relate strmSteps and stateSteps
+    - stateIn is taken at time t and so is stateOut. Probably needs to be t and SUC t
+    -
+
+Theorem equiv2 :
+  ∀E E' t inE outE stateIn stateOut.
+    Supports E iter_arithprog ∧
+    inE = strmIndex (input_of iter_arithprog E) t ∧
+    stateIn = strmIndex (state_of iter_arithprog E) t
+    (stateOut,outE) = stateStep iter_arithprog (inE,stateIn)
+    E' = strmStep E iter_arithprog t ∧
+    ⇒
+      (strmIndex (state_of iter_arithprog E') t,
+       strmIndex (output_of iter_arithprog E') t)
+      =
+     (stateOut,outE)
+Proof
+  EVAL_TAC >> rw []
+QED
+*)
 
 (*---------------------------------------------------------------------------*)
 (* "pre-CakeML" logic function version of iter_arithprog. Note that variable *)
@@ -189,16 +222,15 @@ QED
 (*---------------------------------------------------------------------------*)
 
 Definition aprogFn_def :
-  aprogFn (input,isInit) (N,in2,in1,inVar,ap) =
-    let N = if isInit then 0i else 1 + N    ;
-        in2 = if isInit then 42i else in1   ;
-        in1 = if isInit then 42i else inVar ;
-        inVar = input ;
+  aprogFn (input,isInit) (N,ap,in2,in1) =
+    let N = if isInit then 0i else 1 + N ;
         ap = if N ≤ 1 then
               T
-             else ap ∧ (input - in1 = in1 - in2)
+             else ap ∧ (input - in1 = in1 - in2);
+        in2 = if isInit then 42i else in1;
+        in1 = input
     in
-      ((N,in2,in1,inVar,ap), ap)
+      ((N,ap,in2,in1), ap)
 End
 
 (*---------------------------------------------------------------------------*)
@@ -206,7 +238,6 @@ End
 (* string |-> value maps, instead of the string |-> value stream maps being  *)
 (* used in agreeScript.                                                      *)
 (*---------------------------------------------------------------------------*)
-
 
 (*---------------------------------------------------------------------------*)
 (* Lemma that state_ap = out_ap. Not used.                                   *)
@@ -218,34 +249,32 @@ Theorem out_eq_ap :
   ⇒
   (outE ' "out") = (stateOut ' "ap")
 Proof
-  EVAL_TAC >> rw[] >> rpt(pop_assum mp_tac) >> rw[]
+  EVAL_TAC >> rw[] >> rpt(pop_assum mp_tac) >> rw[] >> EVAL_TAC
 QED
 
-Theorem equiv2 :
-  ∀input isInit N in2 in1 inVar ap.
+Theorem equiv3 :
+  ∀input isInit N ap in2 in1.
      let inE = FEMPTY |++ [("input",IntValue input);("isInit", BoolValue isInit)] ;
          stateIn = FEMPTY
                    |++ [("N",    IntValue N);
+                        ("ap",   BoolValue ap);
                         ("in2",  IntValue in2);
-                        ("in1",  IntValue in1);
-                        ("inVar",IntValue inVar);
-                        ("ap",   BoolValue ap)];
+                        ("in1",  IntValue in1)];
          (stateOut,outE) = stateStep iter_arithprog (inE,stateIn) ;
          state_N     = int_of(stateOut ' "N");
+         state_ap    = bool_of(stateOut ' "ap");
          state_in2   = int_of(stateOut ' "in2");
          state_in1   = int_of(stateOut ' "in1");
-         state_inVar = int_of(stateOut ' "inVar");
-         state_ap    = bool_of(stateOut ' "ap");
          output_ap   = bool_of(outE ' "out")
      in
-       ((state_N, state_in2, state_in1, state_inVar, state_ap), output_ap)
+       ((state_N, state_ap,state_in2, state_in1), output_ap)
        =
-      aprogFn (input,isInit) (N,in2,in1,inVar,ap)
+      aprogFn (input,isInit) (N,ap,in2,in1)
 Proof
   rpt gen_tac
   >> EVAL_TAC
   >> rw[FUNION_DEF]
-  >> pop_assum mp_tac
+  >> rpt(pop_assum mp_tac)
   >> EVAL_TAC
   >> rw_tac bool_ss [Once integerTheory.INT_ADD_SYM]
   >> metis_tac[]

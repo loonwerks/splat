@@ -22,7 +22,7 @@ Definition updateState_def :
 End
 
 (*---------------------------------------------------------------------------*)
-(* Map stream env to state                                                   *)
+(* Project stream env to value env at given time                             *)
 (*---------------------------------------------------------------------------*)
 
 Definition strmIndex_def:
