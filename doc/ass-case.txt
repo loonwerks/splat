@@ -1,0 +1,91 @@
+Assurance Case for SPLAT
+==========================
+
+1. Claim: "SPLAT-generated code from AGREE specifications is correct"
+        = "SPLAT-generated code meets its specification"
+        = "Running SPLAT on an AADL/AGREE component specification, if it succeeds,
+           generates an executable that satifies the spec"
+   <---
+     Assume running SPLAT succeeds. Then
+
+   1.1 The initial BriefCase specification can be translated into
+        - The input and output ports of the component
+        - Clustre equations specifying how the component is to executa
+        - An Assume-Guarantee contract, expressed as a pair of formulas in
+	  the AADL/AGREE logic
+       <---
+
+       1.1.1 BriefCase has a well-typed model
+       1.1.2 BriefCase generates JSON file that faithfully represents the AADL/AGREE model.
+       1.1.3 Splat correctly parses the JSON file into a faithful internal representation
+       1.1.4 Splat correctly extracts AGREE specifications from its internal repr. (Overkill?)
+
+
+   1.2 The equations of 1.1 can be automatically checked to establish that they
+       satisfy the AG spec.
+       <---
+         I don't actually know if AGREE will do this! Must check with Eric and Junaid.
+         If it is true, then the evidence will be a successful run of the AGREE
+         model checker. If not, we can establish via HOL4 proof (probably not
+	 automatically.)
+
+
+   1.3 The IO ports and equations of 1.1 can be translated into an equivalent
+       function (Fn) in the HOL logic.
+       <---
+         1.3.1 HOL theorem stating
+
+                 |- Sem(ports,eqns) = Fn
+
+	        proved
+		<---
+		  1.3.1.1 (ports,eqns) mapped to logic datastructure "comp"
+		  1.3.1.2 comp compiled to comp-1 (temporal squashing)
+		  1.3.1.3 comp-1 translated to Fn (symbolic evaluation of Clustre semantics)
+
+
+   1.4 Fn can be translated to an equivalent CakeML program (Ast).
+       <---
+         - Evidence: HOL theorem saying (roughly)
+
+              |- Fn = EVAL_{CakeML} Ast
+
+         - The CakeML toolset provides a proof-producing translation mechanism
+	 that maps logic functions to CakeML abstract syntax.
+
+
+   1.5 Ast can be instrumented to add imperative features needed to
+       maintain state between invocations and to perform IO. The result is Ast-1.
+       Behavior of all finite iterations of Ast-1 meets original contract (HOL4 theorem).
+       <---
+         - Ast has a specific schematic form that allows IO ports to be replaced by
+	   FFI calls to the operating system. Similarly, state variable maintenance
+	   is programmatically reduced to schematic use of ML imperative variables.
+
+         - Theorem is produced characterizing the behavior of Ast-1 as a refinement of
+	   the behavior of Ast. This should be provable based on existing theory
+	   of CakeML FFI library.
+
+         - Result follows from existing theorem about finite iterations of component
+	   behavior.
+
+
+   1.6 Final program (Ast-3) produced by adding HAMR FFI calls and
+       adding outer "do-forever" structure (via CakeML "repeat" combinator)
+       <---
+
+
+   1.7 Ast-3 correctly compiled to executable (Exe)
+       <---
+         CakeML compiler correctness theorem instantiated with Ast-3
+
+   1.8. Extended contract specification holds on infinite executions
+        <---
+	  Automation of Johannes' theory on "repeat" computations instantiated to Ast-3
+
+
+Glossary.
+---------
+
+- Clustre is a stripped down "kernel" version of Lustre. Clustre has a
+  formal semantics (denotational style) defined in the HOL4 theorem prover.
