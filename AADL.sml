@@ -27,21 +27,26 @@ in end;
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp;
 
+ datatype outdec
+   = DataG of string * exp
+   | EventG of string * exp
+   | EDataG of string * exp * exp;
+
  datatype filter
-    = FilterDec   (* (name,ports,decs,ivars,guars) *)
+    = FilterDec   (* (name,ports,decs,ivars,(outdecs,otherGs)) *)
         of qid *
            port list *
            tmdec list *
            (string * ty * exp) list *
-           (string * string * exp) list
+           ((string * string * outdec) list * (string * string * exp) list)
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,guars)  *)
+ datatype monitor  (*  (name,ports,latched,decs,ivars,(outdecs,otherGs))  *)
     = MonitorDec of qid
                  * port list
                  * bool
                  * tmdec list
                  * (string * ty * exp) list
-                 * (string * string * exp) list
+                 * ((string * string * outdec) list * (string * string * exp) list)
 
 type decls =
   (* pkgName *)   string
@@ -882,14 +887,6 @@ fun get_named_props name_equivFn rnames stmts =
     mapfilter prop_of rnames
  end
 
-(*---------------------------------------------------------------------------*)
-(* The temporal logic formula for a monitor is obtained by grabbing a        *)
-(* collection of named GuaranteeStatements in the monitor component, and     *)
-(* building a temporal formula from their conjunction. This will be massaged *)
-(* into a pure temporal formula (moving AGREE boolean operations into TL) and*)
-(* passed to Thomas' translator.                                             *)
-(*---------------------------------------------------------------------------*)
-
 fun get_monitor_port port =
  case port
   of AList [("name", String pname),
@@ -904,6 +901,7 @@ fun get_monitor_port port =
           end
    | otherwise => raise ERR "get_monitor_port" "unexpected port format"
 
+(*
 fun get_spec_names properties =
  let fun get_spec prop =
      if dropString(name_of prop) = "CASE_Properties::Component_Spec"
@@ -914,6 +912,7 @@ fun get_spec_names properties =
  in
    tryfind get_spec properties
  end
+*)
 
 fun get_latched properties =
  let fun getLatch prop =
@@ -922,17 +921,6 @@ fun get_latched properties =
         else raise ERR "get_latched" "expected Monitor_Latched property"
  in tryfind getLatch properties
  end
-
-(*
-fun get_policy policyName jlist =
- let fun property (AList list) =
-          if dropString(assoc "name" list) = policyName then
-            dest_exp (assoc "expr" list)
-          else raise ERR "get_policy" ""
-       | property otherwise = raise ERR "get_policy" ""
- in tryfind property jlist
- end
-*)
 
 fun dest_property_stmt (AList alist) =
     (case (assoc "kind" alist, assoc "name" alist, assoc "expr" alist)
@@ -973,16 +961,69 @@ fun dest_eq_or_property_stmt (AList alist) =
     raise ERR "dest_eq__or_property_stmt" "unexpected syntax"
 ;
 
+(*---------------------------------------------------------------------------*)
+(* Code guarantees (a.k.a "outdecs") have a special shape. Looking for one   *)
+(* of:                                                                       *)
+(*                                                                           *)
+(*   port = e, or                                                            *)
+(*   event port <=> e,                                                       *)
+(*   or                                                                      *)
+(*   if e1 then event(port) and port = e2 else not(event port)               *)
+(*                                                                           *)
+(* Harshly inflexible on the syntax.                                         *)
+(*---------------------------------------------------------------------------*)
+
+fun outdecName (DataG (s,_)) = s
+  | outdecName (EventG (s,_)) = s
+  | outdecName (EDataG (s,_,_)) = s;
+
+fun dest_codeG codeG =
+ let fun is_not_event p e =
+  case e of
+    Unop(Not,Fncall(("","event"),[VarExp p1])) => p = p1
+  | otherwise => false
+ in
+ case codeG
+  of Binop(Equal,e1,e2) => (* event(p) = e, p = e *)
+      (case e1
+        of Fncall(("","event"),[VarExp p]) => EventG(p,e2)
+         | VarExp p => DataG(p,e2)
+         | otherwise => raise ERR "dest_codeG" "unexpected syntax in equality exp")
+   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
+      (case e1
+        of Binop(And,Fncall(("","event"),[VarExp p]),
+                     Binop(Equal,VarExp p1,exp))
+           => (if p=p1 andalso is_not_event p e2 then
+	         EDataG(p,b,exp)
+               else raise ERR "dest_codeG"
+	         "unexpected syntax when looking for event-data output spec")
+         | otherwise => raise ERR "dest_codeG"
+	         "unexpected syntax when looking for event-data output spec")
+   | otherwise => raise ERR "dest_codeG" "unexpected syntax"
+ end;
+
+fun mk_codeG (s1,s2,e) = (s1,s2,dest_codeG e);
+
 fun dest_guar_stmt stmt =
  if dropString (kind_of stmt) = "GuaranteeStatement" then
-    ((dropString (name_of stmt), label_of stmt, dest_exp (expr_of stmt))
+     ((dropString (name_of stmt) handle _ => "",
+      label_of stmt,
+      dest_exp(expr_of stmt))
      handle _ => raise ERR "dest_guar_stmt" "unexpected syntax")
  else raise ERR "dest_guar_stmt" "unexpected syntax"
 ;
 
-fun jname_eq s1 s2 = (dropString s1 = dropString s2)
-
-val constFalse = mk_bool_const "false";
+fun check_outdecs_cover_oports cgs ports =
+ let fun oportName (n,ty,dir,k) = if dir = "out" then n else failwith""
+     val opnames = mapfilter oportName ports
+     val outdecNames = map (fn (_,_,cg) => outdecName cg) cgs
+ in
+    if length opnames = length outdecNames andalso
+       set_eq opnames outdecNames
+    then ()
+    else raise ERR "check_outdecs_cover_oports"
+         "mismatch between output port names and code guarantees"
+ end
 
 fun is_pure_dec json =
   let val id = dropString(kind_of json)
@@ -990,28 +1031,34 @@ fun is_pure_dec json =
   end
   handle HOL_ERR _ => false;
 
+fun get_agree_annex caller comp =
+  case dropList (annexes_of comp)
+   of [x] => x
+    | otherwise => raise ERR caller "unexpected annex structure";
+
+(*---------------------------------------------------------------------------*)
+(* The following functions (get_monitor, get_filter) are essentially the     *)
+(* same now, and I should just do a "get_gadget"                             *)
+(*---------------------------------------------------------------------------*)
+
 fun get_monitor comp =
  let val properties = dropList(properties_of comp)
      val _ = if is_monitor properties then ()
-             else raise ERR "get_monitor" "unable to find MONITOR property"
+             else raise ERR "get_monitor" "unable to find Monitoring property"
+     val is_latched = get_latched properties handle _ => false (* might not be an alert line *)
      val qid = dest_qid (dropString (name_of comp))
      val (pkgName,monName) = qid
      val ports = map get_monitor_port(dropList (features_of comp))
-     val annexL = dropList (annexes_of comp)
-     val annex = (case annexL
-                  of [x] => x
-		   | otherwise => raise ERR "get_monitor" "unexpected annex structure")
-     val codespecNames = get_spec_names properties
-     val is_latched = get_latched properties handle _ => false (* might not be an alert line *)
-     val stmts = get_annex_stmts annex
+     val stmts = get_annex_stmts (get_agree_annex "get_monitor" comp)
      val (jdecs,others) = List.partition is_pure_dec stmts
      val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
-     val eq_stmts   = mapfilter dest_eq_or_property_stmt others
-     val guar_stmts = mapfilter dest_guar_stmt others
-     fun is_code_guar (s,_,_) = Lib.mem s codespecNames
-     val code_guars = filter is_code_guar guar_stmts
+     val eq_stmts = mapfilter dest_eq_or_property_stmt others
+     val all_guar_stmts = mapfilter dest_guar_stmt others
+     val codeGs = mapfilter mk_codeG all_guar_stmts
+     val _ = check_outdecs_cover_oports codeGs ports
+     val otherGs = filter (not o can mk_codeG) all_guar_stmts
  in
-     MonitorDec(qid, ports, is_latched, decs, eq_stmts, code_guars)
+     MonitorDec(qid, ports, is_latched, decs, eq_stmts, (codeGs,otherGs))
  end
  handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
 ;
@@ -1019,23 +1066,20 @@ fun get_monitor comp =
 fun get_filter comp =
  let val properties = dropList(properties_of comp)
      val _ = if is_filter properties then ()
-             else raise ERR "get_filter" "unable to find FILTER property"
+             else raise ERR "get_filter" "unable to find Filtering property"
      val qid = dest_qid (dropString (name_of comp))
      val (pkgName,filtName) = qid
      val ports = map get_monitor_port(dropList (features_of comp))
-     val annexL = dropList (annexes_of comp)
-     val annex = (case annexL
-                  of [x] => x
-		   | otherwise => raise ERR "get_filter" "unexpected annex structure")
-     val codespecNames = get_spec_names properties
-     val stmts = get_annex_stmts annex
+     val stmts = get_annex_stmts (get_agree_annex "get_filter" comp)
      val (jdecs,others) = List.partition is_pure_dec stmts
      val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
      val eq_stmts   = mapfilter dest_eq_or_property_stmt others
-     val guar_stmts = mapfilter dest_guar_stmt others
-     val code_guars = filter (C mem codespecNames o #1) guar_stmts
+     val all_guar_stmts = mapfilter dest_guar_stmt others
+     val codeGs = mapfilter mk_codeG all_guar_stmts
+     val _ = check_outdecs_cover_oports codeGs ports
+     val otherGs = filter (not o can mk_codeG) all_guar_stmts
  in
-     FilterDec(qid, ports, decs, eq_stmts, code_guars)
+     FilterDec(qid, ports, decs, eq_stmts, (codeGs,otherGs))
  end
  handle e => raise wrap_exn "get_filter" "unexpected syntax" e
 ;
@@ -1293,8 +1337,9 @@ val pkgs0 =
     | AList alist => dropList (assoc "modelUnits" alist)
 
 val opkgs = rev (topsort uses pkgs0)
-val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14,pkg15] = opkgs;
-
+val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14,pkg15,
+     pkg16,pkg17,pkg18,pkg19,pkg20,pkg21] = opkgs;
+pkg8;
 val modlist = mapfilter scrape
     [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14];
 

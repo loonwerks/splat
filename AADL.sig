@@ -18,21 +18,28 @@ sig
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp
 
- datatype filter (*  (name,ports,decs,ivars,guars)  *)
+ datatype outdec
+    = DataG of string * exp
+    | EventG of string * exp
+    | EDataG of string * exp * exp;
+
+datatype filter (*  (name,ports,decs,ivars,(codeGs,otherGs))  *)
     = FilterDec
         of qid
         * (string * ty * string * string) list
         * tmdec list
         * (string * ty * exp) list
-        * (string * string * exp) list
+        * ((string * string * codeguar) list * (string * string * exp) list)
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,guars)  *)
-    = MonitorDec of qid
-                 * (string * ty * string * string) list
-                 * bool
-                 * tmdec list
-                 * (string * ty * exp) list
-                 * (string * string * exp) list
+ datatype monitor  (*  (name,ports,latched,decs,ivars,(codeGs,otherGs))  *)
+    = MonitorDec
+       of qid
+        * (string * ty * string * string) list
+        * bool
+        * tmdec list
+        * (string * ty * exp) list
+        * ((string * string * codeguar) list * (string * string * exp) list)
+
 
  type decls =
   (* pkgName *)  string *
