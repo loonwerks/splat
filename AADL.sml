@@ -16,6 +16,7 @@ in end;
  type exp = AST.exp;
  type tyEnv = (ty * ty) list;
  type port = string * ty * string * string
+ type vardec = string * ty * exp
 
  datatype tydec
     = EnumDec of qid * string list
@@ -28,35 +29,39 @@ in end;
     | FnDec of qid * (string * ty) list * ty * exp;
 
  datatype outdec
-   = DataG of string * exp
-   | EventG of string * exp
-   | EDataG of string * exp * exp;
+   = Out_Data of string * exp
+   | Out_Event of string * exp
+   | Out_Event_Data of string * exp * exp;
 
- datatype filter
-    = FilterDec   (* (name,ports,decs,ivars,(outdecs,otherGs)) *)
-        of qid *
-           port list *
-           tmdec list *
-           (string * ty * exp) list *
-           ((string * string * outdec) list * (string * string * exp) list)
+(*---------------------------------------------------------------------------*)
+(* A contract holds all the relevant info scraped from an AGREE decl of      *)
+(* a {filter,monitor,gate}. These are all quite similar from the code gen    *)
+(* perspective so we sweep them all into a unified datatype.                 *)
+(*                                                                           *)
+(* Contract (name,kind,ports,latched,tydecs,tmdecs,ivars,(outdecs,otherGs))  *)
+(*                                                                           *)
+(* It doesn't capture everything that could do into an AGREE contract, eg    *)
+(* assumptions aren't grabbed.                                               *)
+(*---------------------------------------------------------------------------*)
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,(outdecs,otherGs))  *)
-    = MonitorDec of qid
-                 * port list
-                 * bool
-                 * tmdec list
-                 * (string * ty * exp) list
-                 * ((string * string * outdec) list * (string * string * exp) list)
+ datatype contract =
+   ContractDec
+     of qid
+      * string  (* {Filter,Monitor,Gate} *)
+      * port list
+      * bool
+      * tydec list  (* local tydecs *)
+      * tmdec list  (* local tmdecs *)
+      * vardec list (* state vars and temporaries *)
+      * (string * string * outdec) list
+      * (string * string * exp) list
 
-type decls =
-  (* pkgName *)   string
-  (* types *)     * (tydec list *
-  (* consts *)       tmdec list *
-  (* filters *)      filter list *
-  (* monitors *)     monitor list)
-  ;
 
-datatype pkg = Pkg of decls;
+(* Pkg(pkgName, (tydecs,tmdecs,contracts)) *)
+
+type decls = string * (tydec list * tmdec list * contract list);
+
+datatype pkg = Pkg of string * (tydec list * tmdec list * contract list);
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
 
@@ -527,6 +532,7 @@ mk_def pkgName features stmt10;
 fun propName prop = dropString(name_of prop)
 fun propValue prop = value_of (value_of prop) handle _ => value_of prop
 
+(*
 fun is_filter props =
  let fun isaFilter prop =
      (propName prop = "CASE_Properties::Filtering"
@@ -551,17 +557,23 @@ fun is_monitor props =
            ["MONITOR","Monitoring","Gating"]) handle _ => false
  in exists isaMon props
  end
+*)
 
-fun is_filter_new props =
- let fun isaFilter prop =
-       dropString(name_of prop) = "CASE_Properties::Filtering" handle _ => false
- in exists isaFilter props
- end
-
-fun is_monitor_new props =
- let fun isaMon prop =
-          dropString(name_of prop) = "CASE_Properties::Monitoring" handle _ => false
- in exists isaMon props
+fun is_cyber_gadget props =
+ let fun isaGadget prop =
+      (propName prop = "CASE_Properties::Monitoring"
+       orelse
+       propName prop = "CASE_Properties::Gating"
+       orelse
+       propName prop = "CASE_Properties::Filtering"
+       orelse
+       mem (propName prop)
+           ["CASE_Properties::Component_Type","CASE_Properties::COMP_TYPE"]
+       andalso
+       mem (dropString(propValue prop))
+           ["MONITOR","Monitoring","GATE","Gating","FILTER","Filtering"])
+           handle _ => false
+ in exists isaGadget props
  end
 
 (*---------------------------------------------------------------------------*)
@@ -580,8 +592,9 @@ fun mk_comp_defs comp =  (* annex inside package component *)
          val features = dropList (assoc "features" alist) handle _ => []
          val properties = dropList (assoc "properties" alist) handle _ => []
          val annexes = dropList (assoc "annexes" alist)
-     in if is_filter properties orelse is_monitor properties then
-           raise ERR "mk_comp_defs" "treating filters and monitor declarations specially"
+     in if is_cyber_gadget properties then
+           raise ERR "mk_comp_defs"
+          "treating filter, monitor, and gate declarations specially"
         else List.concat(map (mk_annex_defs compName' features) annexes)
      end
    | otherwise => raise ERR "mk_comp_defs" "unexpected annex format"
@@ -901,18 +914,6 @@ fun get_monitor_port port =
           end
    | otherwise => raise ERR "get_monitor_port" "unexpected port format"
 
-(*
-fun get_spec_names properties =
- let fun get_spec prop =
-     if dropString(name_of prop) = "CASE_Properties::Component_Spec"
-     then (map (dropString o value_of)
-              (dropList(value_of(value_of prop)))
-           handle _ => raise ERR "get_guar_names" "")
-     else raise ERR "get_guar_names" ""
- in
-   tryfind get_spec properties
- end
-*)
 
 fun get_latched properties =
  let fun getLatch prop =
@@ -921,24 +922,6 @@ fun get_latched properties =
         else raise ERR "get_latched" "expected Monitor_Latched property"
  in tryfind getLatch properties
  end
-
-fun dest_property_stmt (AList alist) =
-    (case (assoc "kind" alist, assoc "name" alist, assoc "expr" alist)
-       of (String "PropertyStatement", String pname, e) => (pname,dest_exp e)
-        | otherwise => raise ERR "dest_property_stmt" "unexpected syntax")
-  | dest_property_stmt any_other_thing = raise ERR "dest_property_stmt" "unexpected syntax"
-;
-
-fun dest_eq_stmt (AList alist) =
-    (case (assoc "kind" alist, assoc "left" alist, assoc "expr" alist)
-       of (String "EqStatement", List [AList LHS], e) =>
-           let val eqName = dropString(assoc "name" LHS)
-               val lhs_ty = dest_ty (assoc "type" LHS)
-           in (eqName,lhs_ty,dest_exp e)
-           end
-        | otherwise => raise ERR "dest_eq_stmt" "unexpected syntax")
-  | dest_eq_stmt any_other_thing = raise ERR "dest_eq_stmt" "unexpected syntax"
-;
 
 fun dest_eq_or_property_stmt (AList alist) =
  (case assoc "kind" alist
@@ -973,9 +956,9 @@ fun dest_eq_or_property_stmt (AList alist) =
 (* Harshly inflexible on the syntax.                                         *)
 (*---------------------------------------------------------------------------*)
 
-fun outdecName (DataG (s,_)) = s
-  | outdecName (EventG (s,_)) = s
-  | outdecName (EDataG (s,_,_)) = s;
+fun outdecName (Out_Data (s,_)) = s
+  | outdecName (Out_Event(s,_)) = s
+  | outdecName (Out_Event_Data (s,_,_)) = s;
 
 fun dest_codeG codeG =
  let fun is_not_event p e =
@@ -986,15 +969,15 @@ fun dest_codeG codeG =
  case codeG
   of Binop(Equal,e1,e2) => (* event(p) = e, p = e *)
       (case e1
-        of Fncall(("","event"),[VarExp p]) => EventG(p,e2)
-         | VarExp p => DataG(p,e2)
+        of Fncall(("","event"),[VarExp p]) => Out_Event(p,e2)
+         | VarExp p => Out_Data(p,e2)
          | otherwise => raise ERR "dest_codeG" "unexpected syntax in equality exp")
    | Fncall(("","IfThenElse"),[b,e1,e2]) =>
       (case e1
         of Binop(And,Fncall(("","event"),[VarExp p]),
                      Binop(Equal,VarExp p1,exp))
            => (if p=p1 andalso is_not_event p e2 then
-	         EDataG(p,b,exp)
+	         Out_Event_Data(p,b,exp)
                else raise ERR "dest_codeG"
 	         "unexpected syntax when looking for event-data output spec")
          | otherwise => raise ERR "dest_codeG"
@@ -1041,6 +1024,7 @@ fun get_agree_annex caller comp =
 (* same now, and I should just do a "get_gadget"                             *)
 (*---------------------------------------------------------------------------*)
 
+(*
 fun get_monitor comp =
  let val properties = dropList(properties_of comp)
      val _ = if is_monitor properties then ()
@@ -1083,6 +1067,34 @@ fun get_filter comp =
  end
  handle e => raise wrap_exn "get_filter" "unexpected syntax" e
 ;
+*)
+
+fun get_code_contract comp =
+ let val properties = dropList(properties_of comp)
+     val _ = if is_cyber_gadget properties then ()
+             else raise ERR "get_cyber_gadget"
+              "unable to find {Filtering, Monitoring, Gating} property"
+     val is_latched = get_latched properties
+                      handle _ => false (* might not be an alert line *)
+     val qid = dest_qid (dropString (name_of comp))
+     val (pkgName,thrName) = qid
+     val ports = map get_monitor_port(dropList (features_of comp))
+     val stmts = get_annex_stmts (get_agree_annex "get_monitor" comp)
+     val (pdecs,others) = List.partition is_pure_dec stmts
+     val tydecs = []  (* todo ... *)
+     val tmdecs = map (mk_def pkgName []) pdecs  (* consts and fndecs *)
+     val vardecs = mapfilter dest_eq_or_property_stmt others
+     val guardecs = mapfilter dest_guar_stmt others
+     val outdecs = mapfilter mk_codeG guardecs
+     val _ = check_outdecs_cover_oports outdecs ports
+     val otherGs = filter (not o can mk_codeG) guardecs
+ in
+   ContractDec
+     (qid, "Code Contract", ports, is_latched,
+      tydecs, tmdecs, vardecs, outdecs, otherGs)
+ end
+ handle e => raise wrap_exn "get_code_contract" "unexpected syntax" e
+;
 
 fun dest_publist plist =
  let fun dest_with ("with", List wlist) = wlist
@@ -1100,23 +1112,6 @@ fun dest_publist plist =
      List.concat (mapfilter dest_comps plist)
      )
  end
-
-fun get_data_model pkg =
- case pkg
-  of AList [("name", String dmName),
-            ("kind", String "PropertySet"),
-            ("properties", proplist)] => (dmName,proplist)
-  |  otherwise => raise ERR "get_data_model" "unexpected format"
-;
-
-(*
-val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15,
-     c16, c17, c18, c19, c20, c21, c22, c23, c24, c25, c26, c27, c28,
-     c29, c30, c31, c32, c33, c34,c35] = complist;
-
-val [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14]
-   = complist;
-*)
 
 (*---------------------------------------------------------------------------*)
 (* Scoping. A package has a name (pkgName), which is used to help name       *)
@@ -1144,8 +1139,6 @@ fun dest_propertyConst json =
    | otherwise => raise ERR "dest_propertyConst" ""
 
 
-fun decs_of_monitor (MonitorDec(qid, ports, is_latched, decs, eq_stmts, guars)) = decs;
-
 fun scrape pkg =
  case pkg
   of AList (("name", String pkgName) ::
@@ -1155,19 +1148,18 @@ fun scrape pkg =
             val tydecls = get_tydecls pkgName complist
             (* pkg-level annex has no features *)
 	    val annex_fndecls = List.concat(mapfilter (mk_annex_defs pkgName []) annexlist)
-            val comp_fndecls =  List.concat(mapfilter mk_comp_defs complist)
-            val filters = mapfilter get_filter complist
-            val monitors = mapfilter get_monitor complist
+	    val comp_fndecls =  List.concat(mapfilter mk_comp_defs complist)
+            val code_contracts = mapfilter get_code_contract complist
         in
-           (pkgName,(tydecls,annex_fndecls@comp_fndecls,filters, monitors))
+           (pkgName,(tydecls,annex_fndecls@comp_fndecls,code_contracts))
         end
    | AList (("name", String pkgName) ::
             ("kind", String "PropertySet") ::
             ("propertyConstants", List pconsts) :: _)
      => let val const_decls = mapfilter dest_propertyConst pconsts
-        in (pkgName,([], const_decls, [], []))
+        in (pkgName,([], const_decls, []))
         end
-   | AList (("name", String pkgName) :: _) => (pkgName,([], [], [], []))
+   | AList (("name", String pkgName) :: _) => (pkgName,([], [], []))
    | otherwise => raise ERR "scrape" "unexpected format"
 
 fun dest_with ("with", List wlist) = map dropString wlist
@@ -1216,11 +1208,11 @@ fun replace_null_fields declist =
       case tydec
        of RecdDec (qid,flds) => exists (fn (s,ty) => eqTy(ty,null_ty)) flds
         | otherwise => false
-     fun lift_nulls (s, (tydecs,_,_,_)) = filter has_null tydecs
+     fun lift_nulls (s, (tydecs,_,_)) = filter has_null tydecs
      val partial_decs = map dest_recd_dec (List.concat (map lift_nulls declist))
      fun refine pdec module =
        let val (oqid,oflds) = pdec
-           val (pkgName, (tydecs,tmdecs,filters,monitors)) = module
+           val (pkgName, (tydecs,tmdecs,cdecs)) = module
            fun try_extension eflds (s,ty) =
                case assoc1 s eflds
                 of NONE => (s,ty)
@@ -1234,7 +1226,7 @@ fun replace_null_fields declist =
                  else tydec
 	   val tydecs' = map augment tydecs
        in
-         (pkgName, (tydecs',tmdecs,filters,monitors))
+         (pkgName, (tydecs',tmdecs,cdecs))
        end
      fun refine_modules pdec decs = map (refine pdec) decs
  in
@@ -1268,18 +1260,18 @@ fun extend_recd dec (recdMap,decs) =
           dec'::decs)
         end
 
-fun extend_recd_decs (pkgName,(tydecs,fndecs,fdecs,mdecs)) =
+fun extend_recd_decs (pkgName,(tydecs,fndecs,cdecs)) =
  let val recd_assoc_list = mapfilter dest_recd_dec tydecs
      val recdMap = Redblackmap.fromList qid_compare recd_assoc_list
      val (recdMap',tydecs') = rev_itlist extend_recd tydecs (recdMap,[])
  in
-   (pkgName,(rev tydecs',fndecs,fdecs,mdecs))
+   (pkgName,(rev tydecs',fndecs,cdecs))
  end;
 
 fun empty_recd (RecdDec(qid,[])) = true
   | empty_recd otherwise = false
 
-fun empty_pkg (_,(tydecs,[],[],[])) = List.all empty_recd tydecs
+fun empty_pkg (_,(tydecs,[],[])) = List.all empty_recd tydecs
   | empty_pkg otherwise = false;
 
 (*
@@ -1339,12 +1331,12 @@ val pkgs0 =
 val opkgs = rev (topsort uses pkgs0)
 val [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14,pkg15,
      pkg16,pkg17,pkg18,pkg19,pkg20,pkg21] = opkgs;
-pkg8;
+
 val modlist = mapfilter scrape
     [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6,pkg7,pkg8,pkg9,pkg10,pkg11,pkg12,pkg13,pkg14];
 
-scrape pkg15;  (* the only relevant one *)
-
+scrape pkg9;
+scrape pkg10;
 
 val modlist = mapfilter scrape opkgs
 val modlist' = replace_null_fields modlist

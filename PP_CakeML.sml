@@ -7,7 +7,7 @@ type contig = ByteContig.contig;
 type tyenvs = (id -> ty) * (qid -> ty) *  (qid -> ty)
 type port = string * ty * string * string
 type ivar = string * ty * exp
-type guar = string * string * exp;
+type outdec = string * string * AADL.outdec;
 
 val ERR = mk_HOL_ERR "PP_CakeML";
 fun unimplemented s = ERR s "unimplemented";
@@ -1105,31 +1105,22 @@ fun split_fby exp =
 (*---------------------------------------------------------------------------*)
 (* Looking for:                                                              *)
 (*                                                                           *)
-(*  event port <=> e, or                                                     *)
-(*                                                                           *)
+(*  port = e, or                                                             *)
+(*  event port <=> e,                                                        *)
+(*  or                                                                       *)
 (*  if e1 then event(port) and port = e2 else not(event port)                *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun outCode_target (gName,docstring,codeG) =
- case codeG
-  of Binop(Equal,e1,e2) =>
-      (case e1
-        of Fncall(("","event"),[VarExp p]) => p
-         | VarExp p => p
-         | otherwise =>
-             case e2
-              of Fncall(("","event"),[VarExp p]) => p
-              | _ => raise ERR "outCode_target" "unexpected syntax")
-   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
-      (case e1
-        of Binop(And,Fncall(("","event"),[VarExp p]),
-                     Binop(Equal,VarExp p1,exp))
-           => if p=p1 then p
-              else raise ERR "outCode_target" "inconsistent port names"
-         | otherwise => raise ERR "outCode_target" "unexpected syntax")
-   | otherwise => raise ERR "outCode_target" "unexpected syntax";
+fun outCode_target (gName,docstring,outdec) = AADL.outdecName outdec;
 
+fun mk_outExp (gName,docstring,outdec) =
+ case outdec
+   of Out_Data(s,e) => e
+    | Out_Event(s,b) => mk_boolOpt b
+    | Out_Event_Data(s,b,e) => mk_ite (b,mk_Some e,NoneExp)
+
+(*
 fun mk_outExp (gName,docstring,codeG) =
  case codeG
   of Binop(Equal,e1,e2) =>
@@ -1142,6 +1133,7 @@ fun mk_outExp (gName,docstring,codeG) =
         of Binop(And,_,Binop(Equal,_,exp)) => mk_ite (b,mk_Some exp,NoneExp)
          | otherwise => raise ERR "mk_outExp" "unexpected syntax")
    | otherwise => raise ERR "mk_outExp" "unexpected syntax";
+*)
 
 val stateVar = VarExp"state";
 val initStepVar = VarExp"initStep";
@@ -1240,7 +1232,7 @@ val gadget_struct_boilerplate = String.concatWith "\n"
    "val valOf = Option.valOf;"
  ];
 
-fun pp_gadget_struct env (structName,ports,ivars,guars) =
+fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
  let open PolyML
      val depth = ~1
      val ppExp = pp_cake_exp depth structName env
@@ -1317,7 +1309,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
            val newOpts =
              (VarExp"newStateVarOpts", mk_tuple (map mk_Some stateVarExps))
 
-           val outIds = map outCode_target guars
+           val outIds = map outCode_target outdecs
            val outVars = map VarExp outIds
            val outBinds = zip outVars (map mk_outExp guars)
            val outTuple = mk_tuple[VarExp"newStateVarOpts",mk_tuple outVars]
@@ -1378,7 +1370,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
                               (map (PrettyString o mk_inOpt) inportIds)
            val inOptIds = map mk_Opt inportIds
            val inOptVars = map VarExp inOptIds
-           val outIds = map outCode_target guars
+           val outIds = map outCode_target outdecs
            val outVars = map VarExp outIds
            val out_signals = filter is_signal outports
            val out_signalIds = map port_name out_signals
@@ -1392,6 +1384,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
              | is_valof ("","valOf") = true
              | is_valof otherwise = false
 
+FOO.
            fun guarOut (s1,s2,exp) =
              case exp
               of Binop(Equal,e1,e2) =>
@@ -1405,8 +1398,8 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
                   | otherwise => raise ERR "guarOut" "unexpected syntax")
                | otherwise => raise ERR "guarOut" "unexpected syntax"
 
-           fun guar_code guar =
-             let val tgtId = outCode_target guar
+           fun guar_code outdec =
+             let val tgtId = outCode_target outdec
                  val srcVar =
                    (case guarOut guar
                      of Fncall (qid,[arg]) =>
@@ -1441,7 +1434,7 @@ fun pp_gadget_struct env (structName,ports,ivars,guars) =
 
            val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break_2])
            val outputCalls =
-             PrettyBlock(2,true,[], splice spacer (map guar_code guars))
+             PrettyBlock(2,true,[], splice spacer (map guar_code outdecs))
 
        in
 	   PrettyBlock(2,true,[],

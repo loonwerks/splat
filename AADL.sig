@@ -7,6 +7,7 @@ sig
   type exp = AST.exp
   type tyEnv = (ty * ty) list
   type port = string * ty * string * string
+  type vardec = string * ty * exp
 
  datatype tydec
     = EnumDec of qid * string list
@@ -19,34 +20,34 @@ sig
     | FnDec of qid * (string * ty) list * ty * exp
 
  datatype outdec
-    = DataG of string * exp
-    | EventG of string * exp
-    | EDataG of string * exp * exp;
+   = Out_Data of string * exp
+   | Out_Event of string * exp
+   | Out_Event_Data of string * exp * exp;
 
-datatype filter (*  (name,ports,decs,ivars,(codeGs,otherGs))  *)
-    = FilterDec
-        of qid
-        * (string * ty * string * string) list
-        * tmdec list
-        * (string * ty * exp) list
-        * ((string * string * codeguar) list * (string * string * exp) list)
+ (*---------------------------------------------------------------------------*)
+ (* A contract holds all the relevant info scraped from an AGREE decl of      *)
+ (* a {filter,monitor,gate}. These are all quite similar from the code gen    *)
+ (* perspective so we sweep them all into a unified datatype.                 *)
+ (*                                                                           *)
+ (* Contract (name,kind,ports,latched,tydecs,tmdecs,ivars,(outdecs,otherGs))  *)
+ (*                                                                           *)
+ (* It doesn't capture everything that could do into an AGREE contract, eg    *)
+ (* assumptions aren't grabbed.                                               *)
+ (*---------------------------------------------------------------------------*)
 
- datatype monitor  (*  (name,ports,latched,decs,ivars,(codeGs,otherGs))  *)
-    = MonitorDec
-       of qid
-        * (string * ty * string * string) list
-        * bool
-        * tmdec list
-        * (string * ty * exp) list
-        * ((string * string * codeguar) list * (string * string * exp) list)
+ datatype contract =
+   ContractDec
+     of qid
+      * string
+      * port list
+      * bool
+      * tydec list  (* local tydecs *)
+      * tmdec list  (* local tmdecs *)
+      * vardec list (* state vars and temporaries *)
+      * (string * string * outdec) list
+      * (string * string * exp) list
 
-
- type decls =
-  (* pkgName *)  string *
-  (* types *)    (tydec list *
-  (* consts *)    tmdec list *
-  (* filters *)   filter list *
-  (* monitors *)  monitor list)
+ type decls = string * (tydec list * tmdec list * contract list)
 
  datatype pkg = Pkg of decls
 
@@ -63,6 +64,7 @@ datatype filter (*  (name,ports,decs,ivars,(codeGs,otherGs))  *)
  val is_event  :  port -> bool
  val is_data   :  port -> bool
 
+ val outdecName : outdec -> string
  val sort_tydecs : tydec list -> tydec list
  val sort_tmdecs : tmdec list -> tmdec list
 end

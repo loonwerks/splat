@@ -181,6 +181,13 @@ type port    = string * ty * string * string;  (* (id,ty,dir,kind) *)
 type ivardec = string * ty * exp;
 type guar    = string * string * exp;
 
+(*---------------------------------------------------------------------------*)
+(* A gadget is a refined version of AADL.cybe_gadget type. The refinement is *)
+(* mainly that the "support" for the computation in the gadget is pulled in  *)
+(* from earlier AADL package declarations. Thus the tydecs and tmdecs are    *)
+(* filled in.                                                                *)
+(*---------------------------------------------------------------------------*)
+
 datatype gadget =
  Gadget of qid
            * tydec list
@@ -840,8 +847,8 @@ fun parser_struct_of gdt =
 
 fun gadget_struct_of gdt =
 let open AST
-    val Gadget (qid,tydecs,tmdecs,ports,ivars,guars) = gdt
-    val fodder = (snd qid,ports,ivars,guars)
+    val Gadget (qid,tydecs,tmdecs,ports,ivars,odecs) = gdt
+    val fodder = (snd qid,ports,ivars,odecs)
     val env = gadget_tyEnvs gdt
     val pretty = PP_CakeML.pp_gadget_struct env fodder
 in
@@ -939,6 +946,7 @@ fun process_model jsonFile =
  end;
 
 (*
+val jsonFile = "examples/uxaslite.json";
 val jsonFile = "examples/SW.json";
 val jsonFile = "examples/UAS.json";
 val jsonFile = "examples/uxaslite.json";
@@ -946,6 +954,12 @@ val jsonFile = "examples/SimpleFFA.json";
 val jsonFile = "examples/WatchWordServer.json";
 
 val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
+val [gdt1, gdt2] = gdts;
+val [api1,api2] = apis;
+val [p1,p2] = parsers;
+val [defs1,defs2] = defs;
+val [gpp1,gpp2] = gdt_pps;
+
 val [gdt1, gdt2, gdt3] = gdts;
 val [api1,api2,api3] = apis;
 val [p1,p2,p3] = parsers;
@@ -954,6 +968,7 @@ val [gpp1,gpp2,gpp3] = gdt_pps;
 
 export_implementation "tmp" (api1,p1,defs1,gpp1,gdt1);
 export_implementation "tmp" (api2,p2,defs2,gpp2,gdt2);
+
 export_implementation "tmp" (api3,p3,defs3,gpp3,gdt3);
 *)
 

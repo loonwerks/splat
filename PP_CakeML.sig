@@ -42,5 +42,5 @@ sig
 
     val pp_defs_struct : tyenvs -> string * tydec list * tmdec list -> pretty
 
-    val pp_gadget_struct : tyenvs -> string * port list * ivar list * guar list -> pretty
+    val pp_gadget_struct : tyenvs -> string * port list * ivar list * outdec list -> pretty
 end
