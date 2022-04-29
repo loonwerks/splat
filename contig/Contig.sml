@@ -349,7 +349,7 @@ fun substFn E theta path contig =
  in
   case contig
    of Void     => NONE
-    | Basic _  => thetaFn path  (* Should check expected width and actual? *)
+    | Basic _  => thetaFn path
     | Raw _    => thetaFn path
     | Assert b =>
        (case resolveBexp theta path b

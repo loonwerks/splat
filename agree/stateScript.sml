@@ -11,7 +11,7 @@ val _ = new_theory "state";
 (* Conventional notion of state, mapping from name to value. NB: since we    *)
 (* are defining step-wise computation, the temporal operators Pre, Fby, and  *)
 (* Hist are treated differently. Pre is treated as the identity function,    *)
-(* and Fby is treated as a test on an implicit "_initStep" boolean stream,   *)
+(* and Fby is treated as a test on an implicit "initStep" boolean stream,    *)
 (* while Hist is not allowed in the syntax.                                  *)
 (*---------------------------------------------------------------------------*)
 
@@ -28,6 +28,13 @@ End
 Definition strmIndex_def:
   strmIndex (E:string |-> (num -> value)) t = FMAP_MAP2 (\(s,strm). strm t) E
 End
+
+Theorem strmIndex_thm :
+  ∀E t s. FINITE (FDOM E) ∧ s IN FDOM E ⇒ ((strmIndex E t ' s) = (E ' s t))
+Proof
+   rw[strmIndex_def,FMAP_MAP2_def,FUN_FMAP_DEF]
+QED
+
 
 (*---------------------------------------------------------------------------*)
 (* Custom size for expressions used in termination proof of evalue/bvalue    *)

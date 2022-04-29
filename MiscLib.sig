@@ -74,4 +74,5 @@ sig
    val shortcut : tactic
    val intervalWith : (int -> 'a) -> int -> int -> 'a list
    val listBinds : int -> string -> string -> unit
+   val assocFn : (''a * 'b) list -> ''a -> 'b option
 end

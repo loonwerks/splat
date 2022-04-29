@@ -1,4 +1,4 @@
-gopen HolKernel Parse boolLib bossLib BasicProvers
+open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib ASCIInumbersLib;
 
 open pairTheory arithmeticTheory listTheory rich_listTheory pred_setTheory
@@ -7,6 +7,8 @@ open pairTheory arithmeticTheory listTheory rich_listTheory pred_setTheory
 (* For termination of predFn, need to use mlt_list from containerTheory *)
 open finite_mapTheory bagTheory containerTheory;
 open concatPartialTheory;
+
+open mlmapTheory;
 
 (*---------------------------------------------------------------------------*)
 (* Setup basic proof support                                                 *)
@@ -33,20 +35,13 @@ fun qspec q th = th |> Q.SPEC q
 fun qspec_arith q th = qspec q th |> SIMP_RULE arith_ss [];
 fun simpCases_on q = Cases_on q >> fs [] >> rw[];
 
-Theorem SKOLEM_SUBSET :
-  ∀P Q.
-    (∀x. P x ⇒ ∃y. Q x y) ⇔ ∃f. ∀x. P x ⇒ Q x (f x)
-Proof
- metis_tac[]
-QED
-
 Triviality IS_SOME_NEG :
  IS_SOME = \x. ~(x=NONE)
 Proof
   rw [FUN_EQ_THM] >> metis_tac [NOT_IS_SOME_EQ_NONE]
 QED
 
-val _ = new_theory "abscontig";
+val _ = new_theory "contig";
 
 (*---------------------------------------------------------------------------*)
 (* The types of interest: lvals, arithmetic expressions over rvals, boolean  *)
@@ -92,19 +87,9 @@ Datatype:
 End
 
 val contig_size_def = fetch "-" "contig_size_def";
-val lval_mutual_ind = fetch "-" "lval_induction";
-val contig_size_def = fetch "-" "contig_size_def";
-
-val lval_ind =
-  lval_mutual_ind
-     |> Q.SPEC ‘P’
-     |> Q.SPEC ‘K T’
-     |> SIMP_RULE (srw_ss()) []
-     |> Q.GEN ‘P’;
-
 
 (*---------------------------------------------------------------------------*)
-(* No duplicate record fields.                                               *)
+(* No duplicate record fields                                                *)
 (*---------------------------------------------------------------------------*)
 
 Definition wf_contig_def :
@@ -147,7 +132,7 @@ End
 Definition evalExp_def :
  evalExp theta (Loc lval) =
    (case FLOOKUP theta lval
-     of SOME (a,s) => valFn s
+     of SOME s => valFn s
       | NONE => NONE) /\
  evalExp theta (numLit n)  = SOME n /\
  evalExp theta (Add e1 e2) =
@@ -168,7 +153,7 @@ Definition evalBexp_def :
  (evalBexp theta (BLoc lval) =
     case FLOOKUP theta lval
      of NONE => NONE
-      | SOME (a,s) =>
+      | SOME s =>
      case valFn s
       of NONE => NONE
       | SOME n => SOME (~(n = 0n))) /\
@@ -488,8 +473,9 @@ Definition predFn_def :
    of [] => T
     | (lval,Basic a)::t =>
         (case take_drop (atomWidth a) s
-          of NONE => F
-           | SOME (segment,rst) => predFn (t,rst,theta |+ (lval,(a,segment))))
+           of NONE => F
+            | SOME (segment,rst) =>
+              predFn (t, rst, theta |+ (lval,segment)))
    | (lval,Void)::t => F
    | (lval,Assert b)::t =>
        (case evalBexp theta b
@@ -504,11 +490,10 @@ Definition predFn_def :
           | SOME dim =>
             predFn (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
    | (lval, List c)::t =>
-      (case take_drop (atomWidth U8) s
-        of NONE => F
-         | SOME (segment,rst) =>
-              predFn (ListRecd lval c::t, rst,
-                      theta |+ (RecdProj lval "tag",(U8,segment))))
+      (case take_drop 1 s
+           of NONE => F
+            | SOME (segment,rst) =>
+              predFn (ListRecd lval c::t, rst, theta |+ (RecdProj lval "tag",segment)))
    | (lval,Alt bexp c1 c2)::t =>
        case evalBexp theta bexp
         of NONE => F
@@ -544,7 +529,7 @@ Definition matchFn_def :
           | SOME (segment,rst) =>
         if lval IN FDOM theta then
             NONE
-        else matchFn (t, rst, theta |+ (lval,(a,segment))))
+        else matchFn (t, rst, theta |+ (lval,segment)))
    | (lval,Void)::t => NONE
    | (lval,Assert b)::t =>
        (case evalBexp theta b
@@ -559,14 +544,13 @@ Definition matchFn_def :
           | SOME dim =>
              matchFn (MAP (indexFn lval c) (COUNT_LIST dim) ++ t,s,theta))
    | (lval, List c)::t =>
-      (case take_drop (atomWidth U8) s
+      (case take_drop 1 s
            of NONE => NONE
             | SOME (segment,rst) =>
               if RecdProj lval "tag" IN FDOM theta then
                  NONE
               else
-              matchFn (ListRecd lval c::t, rst,
-                       theta |+ (RecdProj lval "tag",(U8,segment))))
+              matchFn (ListRecd lval c::t, rst, theta |+ (RecdProj lval "tag",segment)))
    | (lval,Alt bexp c1 c2)::t =>
        case evalBexp theta bexp
         of NONE => NONE
@@ -583,20 +567,12 @@ Termination
    >> fs [MEM_MAP,MEM_SPLIT,take_drop_thm]
    >> rw[]
    >- metis_tac [atomWidth_pos]
-   >- EVAL_TAC
    >- (Cases_on `y` >> fs[list_size_append,list_size_def,fieldFn_def])
    >- (Cases_on `y` >> fs[list_size_append,list_size_def,indexFn_def])
 End
 
 (*---------------------------------------------------------------------------*)
 (* Apply a substitution to a contig.                                         *)
-(*---------------------------------------------------------------------------*)
-
-(*---------------------------------------------------------------------------*)
-(* Strings indexed by lvals are right size. Every lval in a theta maps to a  *)
-(* (atom,string), and atomWidth(atom) needs to agree with strlen string.     *)
-(* This is enforced by construction in matchFn, but we also have situations  *)
-(* where we have to consider arbitrary well-sized thetas.                    *)
 (*---------------------------------------------------------------------------*)
 
 Definition remaining_lvals_def :
@@ -606,10 +582,10 @@ End
 Definition substFn_def :
  substFn theta (lval,contig) =
   case contig
-   of Basic _ =>
-        (case FLOOKUP theta lval
-          of NONE => NONE
-           | SOME(a,segment) => SOME segment)
+   of Basic a =>
+       (case FLOOKUP theta lval
+         of NONE => NONE
+          | SOME s => if STRLEN s = atomWidth a then SOME s else NONE)
     | Void  => NONE
     | Assert b =>
        (case evalBexp theta b
@@ -629,17 +605,16 @@ Definition substFn_def :
     | List c =>
        (case FLOOKUP theta (RecdProj lval "tag")
          of NONE => NONE
-          | SOME (a,segment) =>
-            if a = U8 ∧ segment = [NilTag] then
-               SOME segment
+          | SOME segment =>
+            if segment = [NilTag] then
+               SOME [NilTag]
             else
-            if a = U8 ∧ segment = [ConsTag] then
+            if segment = [ConsTag] then
              concatPartial
-                 [SOME segment;
+                 [SOME [ConsTag];
                   substFn theta (RecdProj lval "hd",c);
                   substFn theta (RecdProj lval "tl",List c)]
-            else NONE
-       )
+             else NONE)
     | Alt bexp c1 c2 =>
        (case evalBexp theta bexp
          of NONE => NONE
@@ -684,7 +659,7 @@ Proof
 Induct
  >> rw [evalExp_def]
  >> every_case_tac >> fs []
- >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11,FST,SND,PAIR_EQ]
+ >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11]
 QED
 
 Theorem evalBexp_submap :
@@ -698,8 +673,7 @@ Induct
  >> rw [evalBexp_def]
  >> every_case_tac
  >> fs []
- >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11,
-              FST,SND,PAIR_EQ,evalExp_submap]
+ >> metis_tac[FLOOKUP_SUBMAP,NOT_SOME_NONE,SOME_11,evalExp_submap]
 QED
 
 (*---------------------------------------------------------------------------*)
@@ -749,15 +723,15 @@ Proof
  >> simpCases_on ‘worklist’
  >> TRY (Cases_on ‘h’ >> simpCases_on ‘r’)
  >- rw[concatPartial_thm]
- >- (rename1 ‘lval IN FDOM theta’
-     >> simpCases_on ‘take_drop (atomWidth a) s’
+ >- (simpCases_on ‘take_drop (atomWidth a) s’
      >> simpCases_on ‘x’
-     >> qexists_tac ‘q ++ s1’
-     >> gvs[take_drop_thm]
-     >> rw [Once substFn_def,AllCaseEqs()]
-     >> ‘(theta |+ (lval,a,q)) SUBMAP theta'’ by metis_tac [match_submap]
-     >> ‘FLOOKUP (theta |+ (lval,a,q)) lval = SOME (a,q)’ by metis_tac [FLOOKUP_UPDATE]
-     >> ‘FLOOKUP theta' lval = SOME (a,q)’ by metis_tac [FLOOKUP_SUBMAP]
+     >> qexists_tac ‘q' ++ s1’
+     >> ‘s = STRCAT q' (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
+     >> rw []
+     >> rw [Once substFn_def]
+     >> ‘(theta |+ (q,q')) SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘FLOOKUP (theta |+ (q,q')) q = SOME q'’ by metis_tac [FLOOKUP_UPDATE]
+     >> ‘FLOOKUP theta' q = SOME q'’ by metis_tac [FLOOKUP_SUBMAP]
      >> rw[]
      >> fs [concatPartial_thm,take_drop_thm])
  >- (simpCases_on ‘evalBexp theta b’
@@ -778,16 +752,15 @@ Proof
      >> rw []
      >> fs [GSYM (SIMP_RULE std_ss [o_DEF] NOT_EXISTS)]
      >> metis_tac [NOT_EXISTS])
- >- (fs[atomWidth_def]
-     >> simpCases_on ‘take_drop 1 s’
+ >- (simpCases_on ‘take_drop 1 s’
      >> simpCases_on ‘x’
-     >> rename1 ‘(RecdProj lval "tag",(U8,tag))’
+     >> ‘∃tag lval. q' = tag ∧ q = lval’ by metis_tac[] >> ntac 2 (pop_subst_tac)
      >> qexists_tac ‘tag ++ s1’
      >> ‘s = STRCAT tag (STRCAT s1 s2)’ by metis_tac [take_drop_thm]
-     >> ‘(theta |+ (RecdProj lval "tag", (U8,tag))) SUBMAP theta'’ by metis_tac [match_submap]
-     >> ‘FLOOKUP (theta |+ (RecdProj lval "tag",(U8,tag)))
-                 (RecdProj lval "tag") = SOME (U8,tag)’ by metis_tac [FLOOKUP_UPDATE]
-     >> ‘FLOOKUP theta' (RecdProj lval "tag") = SOME (U8,tag)’ by metis_tac [FLOOKUP_SUBMAP]
+     >> ‘(theta |+ (RecdProj lval "tag", tag)) SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘FLOOKUP (theta |+ (RecdProj lval "tag",tag))
+                 (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_UPDATE]
+     >> ‘FLOOKUP theta' (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_SUBMAP]
      >> pop_assum (fn th => popk_tac >> assume_tac th)
      >> rw[Once substFn_def]
      >- (fs [concatPartial_thm,MAP_MAP_o, combinTheory.o_DEF,LAMBDA_PROD,IS_SOME_NEG]
@@ -860,8 +833,19 @@ Proof
  metis_tac [match_lem,optionTheory.THE_DEF]
 QED
 
-Definition arb_labels_def:
-  arb_labels clist = Recd (MAP (\c. (ARB, c)) clist)
+(*
+Theorem match_subst_thmA :
+ !(s:string) theta s2 theta'.
+  matchFn ([(VarName "root",contig)],s,FEMPTY) = SOME (s2,theta')
+    ==>
+    ∃s1. substFn theta' (VarName "root",contig) = SOME s1 ∧
+         STRCAT s1 s2 = s
+Proof
+ metis_tac [match_lem,substWk_def]
+QED
+*)
+Definition arb_label_recd_def:
+  arb_label_recd clist = Recd (MAP (\c. (ARB, c)) clist)
 End
 
 Theorem field_names_ignored:
@@ -899,34 +883,50 @@ Proof
 QED
 
 Triviality map_snd_lem :
-  ∀list x. MAP SND (MAP (\c. (x,c)) list) = list
+∀list x. MAP SND (MAP (\c. (x,c)) list) = list
 Proof
   Induct >> fs []
 QED
 
-(*---------------------------------------------------------------------------*)
-(* Various Contig_Lang equivalences (ad hoc list).                           *)
-(*---------------------------------------------------------------------------*)
+Theorem Recd_flatA :
+ ∀s plist1 plist2 theta fName.
+   s IN Contig_Lang theta (Recd ((fName,Recd plist1)::plist2)) ==>
+   s IN Contig_Lang theta (Recd (plist1 ++ plist2))
+Proof
+ rw [Contig_Lang_def]
+ >> qexists_tac ‘slist' ++ xs’
+ >> rw[] >> metis_tac [LIST_REL_APPEND_suff]
+QED
+
+Theorem Recd_flatB :
+ ∀s fields1 fields2 theta fName.
+    s IN Contig_Lang theta (Recd (fields1 ++ fields2))
+    ==>
+    s IN Contig_Lang theta (Recd ((fName,Recd fields1)::fields2))
+Proof
+ rw [Contig_Lang_def]
+ >> fs [LIST_REL_SPLIT2]
+ >> rw[PULL_EXISTS]
+ >> metis_tac []
+QED
 
 Theorem Recd_flat :
  ∀s plist1 plist2 theta fName.
    s IN Contig_Lang theta (Recd ((fName,Recd plist1)::plist2)) <=>
    s IN Contig_Lang theta (Recd (plist1 ++ plist2))
 Proof
- rw[Contig_Lang_def, EQ_IMP_THM]
- >- (qexists_tac ‘slist' ++ xs’ >> rw[] >> metis_tac [LIST_REL_APPEND_suff])
- >- (fs [LIST_REL_SPLIT2] >> rw[PULL_EXISTS] >> metis_tac [])
+  metis_tac [Recd_flatA,Recd_flatB]
 QED
 
-Theorem Array_flat :
+Theorem Recd_Array_flat :
  ∀s e n c clist theta.
   evalExp theta e = SOME n
    ==>
-   (s IN Contig_Lang theta (arb_labels(Array c e::clist))
+   (s IN Contig_Lang theta (arb_label_recd (Array c e::clist))
     <=>
-    s IN Contig_Lang theta (arb_labels(REPLICATE n c ⧺ clist)))
+    s IN Contig_Lang theta (arb_label_recd (REPLICATE n c ⧺ clist)))
 Proof
- rw[IN_Contig_Lang,arb_labels_def,EQ_IMP_THM,PULL_EXISTS]
+ rw[IN_Contig_Lang,arb_label_recd_def,EQ_IMP_THM,PULL_EXISTS]
  >- (qexists_tac ‘slist' ++ xs’
      >> fs[map_snd_lem]
      >> match_mp_tac LIST_REL_APPEND_suff
@@ -944,29 +944,29 @@ Proof
          >> fs [LENGTH_REPLICATE,IN_DEF]))
 QED
 
-Theorem Alt_flatA :
+Theorem Recd_Alt_flatA :
  ∀s b c1 c2 clist theta.
   evalBexp theta b = SOME T
    ==>
-   (s IN Contig_Lang theta (arb_labels(Alt b c1 c2::clist))
+   (s IN Contig_Lang theta (arb_label_recd (Alt b c1 c2::clist))
     <=>
-    s IN Contig_Lang theta (arb_labels(c1::clist)))
+    s IN Contig_Lang theta (arb_label_recd (c1::clist)))
 Proof
- rw[IN_Contig_Lang,arb_labels_def,EQ_IMP_THM,PULL_EXISTS]
+ rw[IN_Contig_Lang,arb_label_recd_def,EQ_IMP_THM,PULL_EXISTS]
 QED
 
-Theorem Alt_flatB :
+Theorem Recd_Alt_flatB :
  ∀s b c1 c2 clist theta.
   evalBexp theta b = SOME F
    ==>
-   (s IN Contig_Lang theta (arb_labels(Alt b c1 c2::clist))
+   (s IN Contig_Lang theta (arb_label_recd (Alt b c1 c2::clist))
     <=>
-    s IN Contig_Lang theta (arb_labels(c2::clist)))
+    s IN Contig_Lang theta (arb_label_recd (c2::clist)))
 Proof
- rw[IN_Contig_Lang,arb_labels_def,EQ_IMP_THM,PULL_EXISTS]
+ rw[IN_Contig_Lang,arb_label_recd_def,EQ_IMP_THM,PULL_EXISTS]
 QED
 
-Theorem Singleton_Recd :
+Theorem Contig_Singleton_Recd :
  !s theta contig fName.
      s IN Contig_Lang theta (Recd [(fName,contig)])
       <=>
@@ -975,16 +975,13 @@ Proof
  rw [IN_Contig_Lang,PULL_EXISTS]
 QED
 
-(*---------------------------------------------------------------------------*)
-(* Generalized soundness                                                     *)
-(*---------------------------------------------------------------------------*)
 
 Theorem matchFn_wklist_sound :
  !wklist s fmap suffix theta.
    matchFn (wklist,s,fmap) = SOME (suffix, theta)
     ==>
    ∃prefix. (s = prefix ++ suffix) ∧
-             prefix IN Contig_Lang theta (arb_labels(MAP SND wklist))
+             prefix IN Contig_Lang theta (arb_label_recd (MAP SND wklist))
 Proof
  recInduct matchFn_ind
   >> simp_tac list_ss []
@@ -993,26 +990,25 @@ Proof
   >> simp_tac list_ss [Once matchFn_def]
   >> simpCases_on ‘worklist’
   >> TRY (Cases_on ‘h’ >> simpCases_on ‘r’)
-  >- rw [IN_Contig_Lang,arb_labels_def]
+  >- rw [IN_Contig_Lang,arb_label_recd_def]
   >- (simpCases_on ‘take_drop (atomWidth a) s’
       >> simpCases_on ‘x’
-      >> rename1 ‘(lval,(a,slice))’
-      >> qexists_tac ‘slice ++ prefix’
-      >> rw [IN_Contig_Lang,arb_labels_def,PULL_EXISTS]
+      >> qexists_tac ‘q' ++ prefix’
+      >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS]
          >- (imp_res_tac take_drop_thm >> fs [])
          >- (imp_res_tac take_drop_thm
-             >> fs [IN_Contig_Lang,arb_labels_def,PULL_EXISTS,map_snd_lem]
+             >> fs [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
              >> rw[]
              >> metis_tac[]))
   >- (simpCases_on ‘evalBexp theta b’
       >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
       >> ‘evalBexp theta' b = SOME T’ by metis_tac [evalBexp_submap]
-      >> fs[IN_Contig_Lang,arb_labels_def,PULL_EXISTS,map_snd_lem]
+      >> fs[IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
       >> metis_tac[])
   >- (fs[map_snd_fieldFn]
-      >> ‘Contig_Lang theta' (arb_labels(MAP SND l ⧺ MAP SND t)) =
-          Contig_Lang theta' (arb_labels(Recd l::MAP SND t))’
-          by (rw [arb_labels_def,Recd_flat,EXTENSION]
+      >> ‘Contig_Lang theta' (arb_label_recd (MAP SND l ⧺ MAP SND t)) =
+          Contig_Lang theta' (arb_label_recd (Recd l::MAP SND t))’
+          by (rw [arb_label_recd_def,Recd_flat,EXTENSION]
               >> AP_TERM_TAC
               >> match_mp_tac field_names_ignored
               >> rw[map_snd_lem])
@@ -1021,21 +1017,20 @@ Proof
       >> fs[map_snd_indexFn]
       >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
       >> ‘evalExp theta' e = SOME x’ by metis_tac [evalExp_submap]
-      >> ‘Contig_Lang theta' (arb_labels(Array c e::MAP SND t)) =
-          Contig_Lang theta' (arb_labels(REPLICATE x c ⧺ MAP SND t))’
-          by rw [EXTENSION,GSYM Array_flat]
+      >> ‘Contig_Lang theta' (arb_label_recd (Array c e::MAP SND t)) =
+          Contig_Lang theta' (arb_label_recd (REPLICATE x c ⧺ MAP SND t))’
+          by rw [EXTENSION,GSYM Recd_Array_flat]
       >> metis_tac [map_snd_indexFn])
- >- (fs[atomWidth_def]
-     >> simpCases_on ‘take_drop 1 s’
+ >- (simpCases_on ‘take_drop 1 s’
      >> simpCases_on ‘x’
-     >> rename1 ‘(RecdProj lval "tag",(U8,tag))’
+     >> ‘∃tag lval. q' = tag ∧ q = lval’ by metis_tac[] >> ntac 2 (pop_subst_tac)
      >> qexists_tac ‘tag ++ prefix’
      >> ‘s = STRCAT tag (STRCAT prefix suffix)’ by metis_tac [take_drop_thm]
      >> rw[]
-     >> ‘(theta |+ (RecdProj lval "tag", (U8,tag))) SUBMAP theta'’ by metis_tac [match_submap]
-     >> ‘FLOOKUP (theta |+ (RecdProj lval "tag",(U8,tag)))
-                 (RecdProj lval "tag") = SOME (U8,tag)’ by metis_tac [FLOOKUP_UPDATE]
-     >> ‘FLOOKUP theta' (RecdProj lval "tag") = SOME (U8,tag)’ by metis_tac [FLOOKUP_SUBMAP]
+     >> ‘(theta |+ (RecdProj lval "tag", tag)) SUBMAP theta'’ by metis_tac [match_submap]
+     >> ‘FLOOKUP (theta |+ (RecdProj lval "tag",tag))
+                 (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_UPDATE]
+     >> ‘FLOOKUP theta' (RecdProj lval "tag") = SOME tag’ by metis_tac [FLOOKUP_SUBMAP]
      >> pop_assum (fn th => popk_tac >> assume_tac th)
      >> qpat_x_assum ‘matchFn _ = _’ kall_tac
      >> ‘STRLEN tag = 1’ by metis_tac [take_drop_thm]
@@ -1044,7 +1039,7 @@ Proof
      >> qpat_x_assum ‘_ SUBMAP _’ kall_tac
      >> qpat_x_assum ‘prefix IN Contig_Lang _ _’
           (strip_assume_tac o SIMP_RULE (srw_ss())
-           [IN_Contig_Lang,arb_labels_def,ListRecd_def,PULL_EXISTS,map_snd_lem,
+           [IN_Contig_Lang,arb_label_recd_def,ListRecd_def,PULL_EXISTS,map_snd_lem,
             evalExp_def, evalBexp_def])
      >> rw[] >> rfs[option_case_eq] >> fs [] >> rw[]
      >> simpCases_on ‘n1’
@@ -1054,7 +1049,7 @@ Proof
                 >> fs[valFn_def,l2n_def]
                 >> qpat_x_assum ‘_ = 0’ mp_tac
                 >> rw [ORD_CHR_RWT])
-         >> rw [IN_Contig_Lang,arb_labels_def,PULL_EXISTS,map_snd_lem]
+         >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
          >> qexists_tac ‘xs’
          >> qexists_tac ‘[]’
          >> rw [])
@@ -1067,7 +1062,7 @@ Proof
           >> qpat_x_assum ‘valFn tag = _’ kall_tac
           >> qpat_x_assum ‘valFn tag = _’ kall_tac
           >> qpat_x_assum ‘STRLEN tag = _’ kall_tac
-          >> rw [IN_Contig_Lang,arb_labels_def,PULL_EXISTS,map_snd_lem]
+          >> rw [IN_Contig_Lang,arb_label_recd_def,PULL_EXISTS,map_snd_lem]
           >> qexists_tac ‘xs’
           >> qexists_tac ‘STRCAT [ConsTag] s' :: slist'’
           >> rpt conj_tac
@@ -1078,9 +1073,9 @@ Proof
      >> simpCases_on ‘x’
      >> ‘theta SUBMAP theta'’ by metis_tac [match_submap]
      >- (‘evalBexp theta' b = SOME T’ by metis_tac [evalBexp_submap]
-          >> rw [Alt_flatA])
+          >> rw [Recd_Alt_flatA])
      >- (‘evalBexp theta' b = SOME F’ by metis_tac [evalBexp_submap]
-         >> rw [Alt_flatB]))
+         >> rw [Recd_Alt_flatB]))
 QED
 
 Theorem matchFn_sound :
@@ -1092,19 +1087,7 @@ Proof
   rw[]
   >> imp_res_tac (matchFn_wklist_sound |> SIMP_RULE std_ss [])
   >> rw []
-  >> fs [arb_labels_def,Singleton_Recd]
-QED
-
-Theorem matchFn_sound :
- !contig s theta lval.
-   matchFn ([(lval,contig)],s,FEMPTY) = SOME ("", theta)
-    ==>
-   s IN Contig_Lang theta contig
-Proof
-  rw[]
-  >> imp_res_tac (matchFn_wklist_sound |> SIMP_RULE std_ss [])
-  >> rw []
-  >> fs [arb_labels_def,Singleton_Recd]
+  >> fs [arb_label_recd_def,Contig_Singleton_Recd]
 QED
 
 
@@ -1114,82 +1097,15 @@ QED
 (* prove them co-extensive.                                                  *)
 (*---------------------------------------------------------------------------*)
 
-Definition well_sized_def :
-  well_sized theta <=>
-    ∀lval. lval IN FDOM theta
-           ==>
-           STRLEN (SND(theta ' lval)) = atomWidth (FST (theta ' lval))
-End
-
-Theorem well_sized_lookup :
-  ∀theta lval.
-     well_sized theta ∧
-     FLOOKUP theta lval = SOME (a,s)
-    ==>
-     STRLEN s = atomWidth a
-Proof
- rw [well_sized_def,flookup_thm] >> metis_tac [FST,SND]
-QED
-
-Definition lval_append_def :
- lval_append path (VarName s) = RecdProj path s ∧
- lval_append path (RecdProj lval fname) = RecdProj (lval_append path lval) fname ∧
- lval_append path (ArraySub lval dim) = ArraySub (lval_append path lval) dim
-End
-
-Definition path_size_def :
-  path_size (VarName _) = 1 ∧
-  path_size (RecdProj p s) = 1 + path_size p ∧
-  path_size (ArraySub p e) = 1 + path_size p
-End
-
-Theorem path_size_subterm :
-  ∀lv p. path_size p < path_size (lval_append p lv)
-Proof
-Induct \\ rw[path_size_def, lval_append_def]
- \\ pop_assum (mp_tac o Q.ID_SPEC) \\ decide_tac
-QED
-
-Theorem lval_append_acyclic :
-  ∀lv path. lval_append path lv ≠ path
-Proof
-  rw[] \\ disch_then (mp_tac o Q.AP_TERM ‘path_size’)
-  \\ metis_tac[path_size_subterm,decide “x < y ⇒ x ≠ y”]
-QED
-
-Theorem lval_append_11 :
-  ∀p1 p2 lval. lval_append lval p1 = lval_append lval p2 ==> p1 = p2
-Proof
- recInduct lval_ind \\ rw [] \\ Cases_on ‘p2’ \\
- gvs[lval_append_def,lval_append_acyclic] \\ metis_tac[]
-QED
-
-Theorem inj_lval_append :
-  ∀lval s1 s2.  INJ (lval_append lval) s1 UNIV
-Proof
-  simp[INJ_DEF] \\ metis_tac [lval_append_11]
-QED
-
-Theorem inj_lval_append_univs :
-  ∀lval.  INJ (lval_append lval) UNIV UNIV
-Proof
-  simp[INJ_DEF] \\ metis_tac [lval_append_11]
-QED
-
 
 Theorem Equiv1:
   ∀theta lval c s.
-     well_sized theta ∧
-     substFn theta (lval,c) = SOME s
-    ==>
-     s IN Contig_Lang theta c
+    substFn theta (lval,c) = SOME s ==> s IN Contig_Lang theta c
 Proof
   recInduct substFn_ind
-  >> Cases_on ‘contig’
-  >> rw []
+  >> Cases_on ‘contig’ >> rw []
   >> pop_assum mp_tac
   >> rw[Once IN_Contig_Lang,Once substFn_def,concatPartial_SOME,AllCaseEqs()]
-  >- metis_tac [well_sized_lookup]
   >- (qexists_tac
           ‘MAP THE (MAP (\(fName,c). substFn theta (RecdProj lval fName,c)) l)’
       >> rw[]
@@ -1228,6 +1144,13 @@ Proof
        >> rw[])
   >- metis_tac[]
   >- metis_tac[]
+QED
+
+Theorem SKOLEM_SUBSET :
+  ∀P Q.
+    (∀x. P x ⇒ ∃y. Q x y) ⇔ ∃f. ∀x. P x ⇒ Q x (f x)
+Proof
+ metis_tac[]
 QED
 
 Theorem Equiv2 :
@@ -1283,202 +1206,6 @@ Proof
            >>
 
 QED
-(*
-Theorem Equiv2 :
-  ∀theta c s.
-    s IN Contig_Lang theta c ==> ∃theta lval. substFn theta (lval,c) = SOME s
-Proof
- recInduct Contig_Lang_ind >> rpt conj_tac
-  >- (rw[IN_Contig_Lang,substFn_def,AllCaseEqs()]
-      >> qexists_tac ‘FEMPTY |+ (VarName "root", s)’
-      >> EVAL_TAC
-      >> metis_tac[])
-  >- rw[IN_Contig_Lang,substFn_def]
-  >- (rw[IN_Contig_Lang,substFn_def,AllCaseEqs()] >> metis_tac[])
-  >- (rpt gen_tac >> strip_tac >> gen_tac >>
-      rw[IN_Contig_Lang,Once substFn_def,AllCaseEqs(),concatPartial_SOME] >>
-      qexists_tac ‘theta’ >>
-      qpat_x_assum ‘∀s. _’ (mp_tac o Q.SPECL [‘s’,‘[s]’]) >> rw[]
-
-QED
-*)
-
-Theorem Equiv :
-  ∀c.
-    {s | ∃theta. s IN Contig_Lang theta c}
-    =
-    {s | ∃theta. substFn theta (VarName"root",c) = SOME s}
-Proof
- simp [EXTENSION]
-  >> CONV_TAC (RENAME_VARS_CONV ["c","s"])
-  >> recInduct Contig_Lang_ind
-  >- (rw[IN_Contig_Lang,substFn_def,EQ_IMP_THM]
-      >- (qexists_tac ‘FEMPTY |+ (VarName "root", s)’ >> EVAL_TAC >> metis_tac[])
-      >- fs[AllCaseEqs()])
-  >- rw[IN_Contig_Lang,substFn_def,EQ_IMP_THM]
-  >- (rw[IN_Contig_Lang,substFn_def,EQ_IMP_THM,AllCaseEqs()] >> metis_tac[])
-  >- rw[IN_Contig_Lang,substFn_def,EQ_IMP_THM,AllCaseEqs()]
-
- >> metis_tac[])
-QED
-
-(*---------------------------------------------------------------------------*)
-(* Completeness                                                              *)
-(*---------------------------------------------------------------------------*)
-
-
-(*---------------------------------------------------------------------------*)
-(* Path extension is used to relate the satisfying theta from the assumption *)
-(*                                                                           *)
-(*  s IN Contig_Lang theta contig                                            *)
-(*                                                                           *)
-(* with the lval seeding the call to running matchFn:                        *)
-(*                                                                           *)
-(*  matchFn ([(lval,contig)],s,extend_paths lval theta)                      *)
-(*                                                                           *)
-(* The rationale is that the matcher is working relative to a give path.     *)
-(* Initially this will be VarName "root", or some such, but could be anything*)
-(* Since the domain of theta has no such "offset", each elt in fdom(theta)   *)
-(* is extended by lval in the call to matchFn.                               *)
-(*---------------------------------------------------------------------------*)
-
-Definition extend_paths_def :
-  extend_paths path theta = MAP_KEYS (lval_append path) theta
-End
-
-Definition extend_exp_locs_def :
-  extend_exp_locs path (Loc lval) = Loc (lval_append path lval) ∧
-  extend_exp_locs path (numLit n) = numLit n ∧
-  extend_exp_locs path (Add e1 e2) =
-      Add (extend_exp_locs path e1) (extend_exp_locs path e2)
-End
-
-Definition extend_bexp_locs_def :
-  extend_bexp_locs path (boolLit b) = boolLit b ∧
-  extend_bexp_locs path (BLoc lval) = BLoc (lval_append path lval) ∧
-  extend_bexp_locs path (Bnot b) = Bnot (extend_bexp_locs path b) ∧
-  extend_bexp_locs path (Bor b1 b2) =
-      Bor (extend_bexp_locs path b1) (extend_bexp_locs path b2) ∧
-  extend_bexp_locs path (Band b1 b2) =
-      Band (extend_bexp_locs path b1) (extend_bexp_locs path b2) ∧
-  extend_bexp_locs path (Beq e1 e2) =
-      Beq (extend_exp_locs path e1) (extend_exp_locs path e2) ∧
-  extend_bexp_locs path (Blt e1 e2) =
-      Blt (extend_exp_locs path e1) (extend_exp_locs path e2)
-End
-
-val map_keys =   (* unused? *)
-  MAP_KEYS_def
-   |> Q.ISPEC ‘lval_append lval’
-   |> Q.SPEC ‘theta’
-   |> SIMP_RULE (srw_ss()) [inj_lval_append]
-;
-
-val map_keys_thm =
- FLOOKUP_MAP_KEYS_MAPPED
-  |> C MATCH_MP (SPEC_ALL inj_lval_append_univs)
-
-
-Theorem extend_exp_locs :
-  ∀exp lval theta.
-     evalExp (extend_paths lval theta) (extend_exp_locs lval exp) = evalExp theta exp
-Proof
- simp[extend_paths_def] \\ Induct \\ rw[evalExp_def,extend_exp_locs_def,map_keys_thm]
-QED
-
-Theorem extend_bexp_locs :
-  ∀bexp lval theta.
-     evalBexp (extend_paths lval theta) (extend_bexp_locs lval bexp) = evalBexp theta bexp
-Proof
- simp[extend_paths_def] \\ Induct \\
- rw[evalBexp_def,extend_bexp_locs_def,extend_exp_locs,map_keys_thm] \\
- rw[GSYM extend_paths_def,extend_exp_locs]
-QED
-
-Definition extend_contig_locs_def :
-  extend_contig_locs path (Basic a) = Basic a ∧
-  extend_contig_locs path Void      = Void ∧
-  extend_contig_locs path (Assert b) =
-       Assert (extend_bexp_locs path b) ∧
-  extend_contig_locs path (Recd fields) =
-       Recd (MAP (\(fName,c). (fName, extend_contig_locs path c)) fields) ∧
-  extend_contig_locs path (Array c e) =
-       Array (extend_contig_locs path c)
-             (extend_exp_locs path e) ∧
-  extend_contig_locs path (List c) =
-       List (extend_contig_locs path c) ∧
-  extend_contig_locs path (Alt b c1 c2) =
-       Alt (extend_bexp_locs path b)
-           (extend_contig_locs path c1)
-           (extend_contig_locs path c2)
-Termination
- WF_REL_TAC ‘measure (contig_size o SND)’ \\
- rw [contig_size_def,MEM_MAP] \\
- imp_res_tac contig_size_lem \\ decide_tac
-End
-
-Triviality null_lem :
- ∀list. list = [] ∨ ∃e. MEM e list
-Proof
- Cases \\ rw[] >> metis_tac []
-QED
-
-Theorem comp_lem1 :
- !theta contig lval s.
-    s IN Contig_Lang theta contig
-   ==>
-    ∃sigma.
-      matchFn ([(lval,extend_contig_locs lval contig)],s,extend_paths lval theta)
-      =
-      SOME ("", sigma)
-Proof
- recInduct Contig_Lang_ind \\ rpt conj_tac
- >- (rw[IN_Contig_Lang,Once matchFn_def,extend_contig_locs_def,
-        AllCaseEqs(),EXISTS_PROD,take_drop_thm]
-     \\ CONV_TAC (RESORT_EXISTS_CONV
-                   (K [“p_1:string”, “p_2:string”, “sigma:lval |-> atom # string”]))
-     \\ qexists_tac ‘s’ \\ qexists_tac ‘""’ \\ rw[]
-     \\ rw[RIGHT_EXISTS_AND_THM]
-     >- (rw[extend_paths_def,MAP_KEYS_def] \\ metis_tac[lval_append_acyclic])
-     >- rw[matchFn_def])
-
- >- rw[IN_Contig_Lang,matchFn_def,AllCaseEqs(),EXISTS_PROD,
-        extend_paths_def,take_drop_thm,MAP_KEYS_def]
- >- (rw[IN_Contig_Lang,Once matchFn_def,AllCaseEqs(),EXISTS_PROD,
-        take_drop_thm,extend_bexp_locs,extend_contig_locs_def]
-     \\ rw[matchFn_def])
- >- (rpt gen_tac \\ strip_tac \\
-     rw[IN_Contig_Lang,Once matchFn_def,AllCaseEqs(),EXISTS_PROD,
-        take_drop_thm,extend_bexp_locs,extend_contig_locs_def] \\
-     rw[MAP_MAP_o,fieldFn_def] \\ gvs[LIST_REL_EL_EQN] \\
-     mp_tac (null_lem |> Q.ISPEC ‘slist:string list’) \\ rw[]
-     >- (gvs[] >> rw [matchFn_def])
-     >- (‘∃sigmas. EVERY (\n. substFn (EL n sigmas)
-                               (path,SND (EL n fields)) = SOME (EL n slist))
-                         (COUNT_LIST (LENGTH fields))’
-
-gvs [MEM_EL] \\
-         ‘EL n slist IN Contig_Lang theta (EL n (MAP SND fields))’ by metis_tac[] \\
-         qpat_x_assum ‘∀n. _ ==> _’ kall_tac  \\
-         first_x_assum (mp_tac o
-           Q.SPECL [‘EL n slist’, ‘slist’,
-                    ‘EL n (MAP SND (fields:(string#contig)list))’]) \\
-         rw[PULL_EXISTS] \\ first_x_assum drule >> rw[] \\
-         first_x_assum drule >> rw[] \\
-         first_x_assum drule >> rw[] \\
-
-MEM_EL and SUBSET_SKOLEM
-
-         ‘MEM (EL k slist) slist ∧ MEM (EL k ’
-
-LIST_REL_CONJ
-LIST_REL_EL_EQN
-LIST_REL_MAP2
-
-     \\ rw[matchFn_def])
-
-QED
-
 
 
 val _ = export_theory();

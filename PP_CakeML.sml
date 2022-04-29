@@ -1,3 +1,8 @@
+(*---------------------------------------------------------------------------*)
+(* Print various info extractable from a gadget into CakeML source text.     *)
+(* Note. We assume that ivar equations are sorted into dependency order.     *)
+(*---------------------------------------------------------------------------*)
+
 structure PP_CakeML :> PP_CakeML =
 struct
 
@@ -7,10 +12,13 @@ type contig = ByteContig.contig;
 type tyenvs = (id -> ty) * (qid -> ty) *  (qid -> ty)
 type port = string * ty * string * string
 type ivar = string * ty * exp
-type outdec = string * string * AADL.outdec;
 
 val ERR = mk_HOL_ERR "PP_CakeML";
 fun unimplemented s = ERR s "unimplemented";
+
+fun splice x [] = []
+  | splice x [y] = [y]
+  | splice x (h::t) = h::x::splice x t;
 
 fun pp_qid ("",s) = s
   | pp_qid (s1,s2) = String.concat[s1,".",s2];
@@ -39,20 +47,39 @@ fun pp_pkg_qid pkgName (qid as (pkg,s)) =
     pp_qid ("",s)
  else pp_qid ("Defs",s);
 
-fun AppExp elist = Fncall(("","App"), elist);
-fun listLit elts = Fncall(("","List"), elts);
-fun mk_tuple elts = Fncall(("","Tuple"), elts);
 val boolTy = BaseTy BoolTy;
 val dummyTy = NamedTy("","dummyTy");
+
+val unitExp = Fncall(("","unitExp"),[]);
+fun mk_intLit i = ConstExp(IntLit{value=i, kind=AST.Int NONE});
+fun listLit elts = Fncall(("","List"), elts);
+fun mk_tuple elts = Fncall(("","Tuple"), elts);
+
 fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
+fun mk_condExp(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
+fun mk_apiCall (s,args) = Fncall(("","API."^s),args);
+fun mk_encodeCall (tyName,arg) = Fncall(("","Encode."^s),args);
 
 fun letExp binds exp =
     let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
     in Fncall(("","LET"),eqs@[exp])
     end;
 
-fun mk_intLit i = ConstExp(IntLit{value=i, kind=AST.Int NONE});
+val emptyStringVar = VarExp(Lib.quote"");
+
+fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
+
+val NoneExp = ConstExp(IdConst("","None"));
+fun mk_Some e = Fncall(("","Some"),[e])
+fun mk_isSome e = Fncall(("","Option.isSome"),[e])
+fun mk_valOf e = Fncall(("","valOf"),[e])
+
+
+fun mk_comment slist = Fncall(("","Comment"), map VarExp slist);
+
+fun mk_ref e = Fncall(("","Ref"),[e]);
+fun mk_deref e = Fncall(("","!"),[e]);
 
 (*---------------------------------------------------------------------------*)
 (* Translate contig types into AST expressions                               *)
@@ -156,7 +183,7 @@ fun pp_cake_exp depth pkgName env exp =
       | ConstExp (BoolLit false) => PrettyString "False"
       | ConstExp (CharLit c) => PrettyString ("'#"^Char.toString c^"'")
       | ConstExp (StringLit s) => PrettyString (Lib.quote(String.toString s))
-      | ConstExp (IntLit{kind, value}) => PrettyString (Int.toString value)
+      | ConstExp (IntLit{kind,value}) => PrettyString (Int.toString value)
       | ConstExp (FloatLit r) =>
           if Real.sign r < 0 then
             PrettyString (String.concat
@@ -452,12 +479,6 @@ and
     end
 ;
 
-(*---------------------------------------------------------------------------*)
-(* Translate record declarations to datatype declarations. Generate          *)
-(* projection function declarations for each field of each record. This      *)
-(* supports CakeML code generation.                                          *)
-(*---------------------------------------------------------------------------*)
-
 fun pp_tydec depth pkgName tydec =
  let open PolyML
      fun pp_datatype d (id,constrs) =
@@ -504,320 +525,6 @@ fun pp_tydec depth pkgName tydec =
             Semicolon])
  end;
 
-(*---------------------------------------------------------------------------*)
-(* CakeML doesn't have records, so we replace records by single-constructor  *)
-(* datatypes, and implement field accesses by application of projection      *)
-(* functions.                                                                *)
-(*---------------------------------------------------------------------------*)
-
-(*---------------------------------------------------------------------------*)
-(* Replace all record field projections with explicit function calls.        *)
-(*---------------------------------------------------------------------------*)
-
-(*---------------------------------------------------------------------------*)
-(* Type of array elements.                                                   *)
-(*---------------------------------------------------------------------------*)
-
-fun eltyper n tyE ty =
- if n <= 0 then raise ERR "eltype" "too many links chased, maybe circular"
- else
- case ty
-  of ArrayTy(elty,_) => elty
-   | NamedTy qid =>
-       (case tyE qid
-        of SOME ty' => eltyper (n-1) tyE ty'
-         | NONE => raise ERR "eltype" ("Named type not found : "^qid_string qid))
-   | BaseTy _ => raise ERR "eltype" "expected an array type; found BaseTy"
-   | RecdTy(qid,_) => raise ERR "eltype"
-           ("expected an array type; found RecdTy "^qid_string qid)
-
-val eltype = eltyper 12;
-
-(*---------------------------------------------------------------------------*)
-(* Replace field projections in L/Rvals by projection functions              *)
-(*                                                                           *)
-(* tyE maps qids to declared types, varE maps function parameters to their   *)
-(* types, TODO: add an environment for constants, since it is possible to    *)
-(* have  a constant  that is a record, and to access a field of it, etc.     *)
-(*---------------------------------------------------------------------------*)
-
-(*---------------------------------------------------------------------------*)
-(* A record projection function is the concatenation of the record name and  *)
-(* the fieldName, and then "_of"                                             *)
-(*---------------------------------------------------------------------------*)
-
-fun recd_projFn_name tyName fieldName = "proj_"^fieldName^"_"^tyName
-
-fun fieldFn tyE rty fieldName =
- let fun recdtyper n tyE ty =
-       if n <= 0 then
-          raise ERR "recdtyper" "too many links chased, maybe circular"
-       else
-       case ty
-         of RecdTy _ => ty
-          | NamedTy qid =>
-            (case tyE qid
-              of SOME ty' => recdtyper (n-1) tyE ty'
-               | NONE => raise ERR "recdtyper"
-                          ("Named type not found : "^qid_string qid))
-          | otherwise => raise ERR "recdtyper" "not a record type"
- in
-   case recdtyper 12 tyE rty
-    of RecdTy((qid as (pkgName,recdName)),fields)
-        => (case assoc1 fieldName fields
-             of NONE => raise ERR "fieldFn"
-                 ("seeking "^fieldName^" in type "^qid_string qid)
-              | SOME (_,fty) => ((pkgName,recd_projFn_name recdName fieldName),fty))
-     | otherwise => raise ERR "fieldFn" "expected a RecdTy"
- end;
-
-(*---------------------------------------------------------------------------*)
-(* Need to deal with lambda-bound variables, by adding them to varE. This    *)
-(* requires the binding to have a type for the variable.                     *)
-(*---------------------------------------------------------------------------*)
-
-fun proj_intro (E as ((tyE,constE),varE)) exp =
- (case exp
-   of VarExp id =>
-        (case varE id
-          of SOME ty => (exp, ty)
-           | NONE =>
-         case constE id
-          of SOME ty => (exp,ty)
-           | NONE => raise ERR "proj_intro" ("Unable to find identifier "^Lib.quote id))
-    | ArrayIndex(e', i) =>
-       let val (e'', ty) = proj_intro E e'
-       in (ArrayIndex(e'',i),eltype tyE ty)
-       end
-    | RecdProj(e, fldName) =>
-       let val (e', rty) = proj_intro E e
-           val (proj_qid,fty) = fieldFn tyE rty fldName
-       in (Fncall(proj_qid,[e']), fty)
-       end
-    | otherwise => (exp,NamedTy("--","--"))
- )
- handle e =>
-  let val gargle = pp_cake_exp 72 "<PKG>" triv_env : exp -> pretty
-      val pretty = gargle exp
-      val buf = ref []
-      fun addbuf s = buf := s :: !buf
-      val _ = PolyML.prettyPrint (addbuf,72) pretty
-      val expString = String.concat (rev (!buf))
-  in raise wrap_exn "PP_CakeML" ("proj_intro on expression : "^expString)  e
-  end;
-
-fun empty_varE _ = NONE;
-
-fun assocFn alist x =
- case assoc1 x alist
-  of NONE => NONE
-   | SOME (a,b) => SOME b;
-
-fun extendE env (v,u) x =
- case env x
-  of SOME y => SOME y
-   | NONE => if x = v then SOME u else NONE;
-
-fun mergeE env1 env2 x =
-  case env1 x
-   of SOME y => SOME y
-    | NONE => env2 x;
-
-fun dest_varExp (VarExp id) = id
-  | dest_varExp otherwise = raise ERR "dest_varExp" "expected a VarExp";
-
-fun transRval E e =
- case e
-  of ConstExp _ => e
-   | Unop (uop,e')     => Unop(uop,transRval E e')
-   | Binop (bop,e1,e2) => Binop (bop,transRval E e1, transRval E e2)
-   | ArrayExp elist    => ArrayExp (map (transRval E) elist)
-   | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (transRval E) elist)
-   | Fncall(qid as ("","Array_Forall"),elist) =>
-      (case elist
-        of [v,arry,P] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (arry',aty) = proj_intro E arry
-                val elty = eltype tyE aty
-                val id = dest_varExp v
-            in
-              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Forall")
-   | Fncall(qid as ("","Array_Exists"),elist) =>
-      (case elist
-        of [v,arry,P] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (arry',aty) = proj_intro E arry
-                val elty = eltype tyE aty
-                val id = dest_varExp v
-            in
-              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Exists")
-   | Fncall(qid as ("","Array_Foldl"),elist) =>
-      (case elist
-        of [eltVar,accVar,body,arry,init] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (init',accTy) = proj_intro E init
-                val (arry',aty) = proj_intro E arry
-                val elty = eltype tyE aty
-                val eltId = dest_varExp eltVar
-                val accId = dest_varExp accVar
-                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
-                val body' = transRval (E1,varE') body
-            in
-              Fncall(qid,[eltVar,accVar,body',arry',init'])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Foldl")
-   | Fncall(qid as ("","Array_Foldr"),elist) =>
-      (case elist
-        of [eltVar,accVar,body,arry,init] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (init',accTy) = proj_intro E init
-                val (arry',aty) = proj_intro E arry
-                val elty = eltype tyE aty
-                val eltId = dest_varExp eltVar
-                val accId = dest_varExp accVar
-                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
-                val body' = transRval (E1,varE') body
-            in
-              Fncall(qid,[eltVar,accVar,body',arry',init'])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Foldr")
-   | Fncall(qid as ("","Array_Forall_Indices"),elist) =>
-      (case elist
-        of [v,arry,P] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (arry',aty) = proj_intro E arry
-                val indexTy = AST.intTy
-                val id = dest_varExp v
-            in
-              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Forall_Indices")
-   | Fncall(qid as ("","Array_Exist_Indices"),elist) =>
-      (case elist
-        of [v,arry,P] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (arry',aty) = proj_intro E arry
-                val indexTy = AST.intTy
-                val id = dest_varExp v
-            in
-              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Exists_Indices")
-   | Fncall(qid as ("","Array_Foldr_Indices"),elist) =>
-      (case elist
-        of [eltVar,accVar,body,arry,init] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (init',accTy) = proj_intro E init
-                val (arry',aty) = proj_intro E arry
-                val elty = eltype tyE aty
-                val eltId = dest_varExp eltVar
-                val accId = dest_varExp accVar
-                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
-                val body' = transRval (E1,varE') body
-            in
-              Fncall(qid,[eltVar,accVar,body',arry',init'])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Foldr_Indices")
-   | Fncall(qid as ("","Array_Foldl_Indices"),elist) =>
-      (case elist
-        of [eltVar,accVar,body,arry,init] =>
-            let val (E1 as (tyE,constE),varE) = E
-                val (init',accTy) = proj_intro E init
-                val (arry',aty) = proj_intro E arry
-                val elty = eltype tyE aty
-                val eltId = dest_varExp eltVar
-                val accId = dest_varExp accVar
-                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
-                val body' = transRval (E1,varE') body
-            in
-              Fncall(qid,[eltVar,accVar,body',arry',init'])
-            end
-         | otherwise => raise ERR "transRval" "malformed Array_Foldl_Indices")
-   | Fncall(qid,elist)      => Fncall(qid,map (transRval E) elist)
-   | RecdExp(qid,fields)    => RecdExp(qid,map (I##transRval E) fields)
-   | Quantified (q,params,exp) => Quantified (q,params,transRval E exp)
-   | otherwise => fst(proj_intro E e)
-;
-
-(*---------------------------------------------------------------------------*)
-(* Superseded by code in splat.sml                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun tydec_to_ty tydec =
-  case tydec
-   of RecdDec (qid,fields) => RecdTy(qid,fields)
-    | ArrayDec(qid,ty) => ty
-    | EnumDec (qid,_) => NamedTy qid
-    | UnionDec(qid,_) => NamedTy qid
-
-fun mk_tyE pkglist =
- let fun tydecs_of (Pkg(pkgName,(tys,consts,filters,monitors))) = tys
-     val all_tydecs = List.concat (map tydecs_of pkglist)
-     fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
-     val tydec_alist = map mk_tydec_bind all_tydecs
- in assocFn tydec_alist
- end
-
-fun is_const_dec (ConstDec _) = true | is_const_dec other = false;
-
-fun cdecs_of (Pkg(pkgName,(tys,tmdecs,filters,monitors))) =
- let fun filter_consts (FilterDec(_,_,tmdecs,_,_)) =
-         filter is_const_dec tmdecs
-     fun monitor_consts (MonitorDec(_,_,_,tmdecs,_,_)) =
-           filter is_const_dec tmdecs
- in
-  List.concat
-    [filter is_const_dec tmdecs,
-     List.concat (map filter_consts filters),
-     List.concat (map monitor_consts monitors)]
- end;
-
-fun mk_constE pkglist =
- let val all_cdecs = List.concat (map cdecs_of pkglist)
-     val all_const_decs = filter is_const_dec all_cdecs
-     fun mk_const_bind (ConstDec(qid,ty,e)) = (snd qid,ty)
-       | mk_const_bind otherwise = raise ERR "mk_constE" "expected a ConstDec"
-     val alist = map mk_const_bind all_const_decs
- in assocFn alist
- end
-
-fun dest_recd_dec (RecdDec (qid, fields)) = (qid,fields)
-  | dest_recd_dec otherwise = raise ERR "dest_recd_dec" ""
-
-fun mk_recd_projns tys =
- let open AST
-     val recd_tydecs = mapfilter dest_recd_dec tys
-
-     fun mk_proj (tyqid as (pkgName,tyName)) vars ((fieldName,ty),var) =
-         let val fnName = recd_projFn_name tyName fieldName
-         in FnDec((pkgName,fnName),
-                  [("recd", NamedTy tyqid)], ty,
-                  Fncall(("","Record-Projection"),var::vars))
-         end
-     fun mk_projFns (qid,fields) =
-	  let val vars = map (fn i => VarExp("v"^Int.toString i))
-                         (upto 1 (length fields))
-              val field_vars = zip fields vars
-          in map (mk_proj qid vars) field_vars
-          end
-     val projFns = List.concat (map mk_projFns recd_tydecs)
- in
-   projFns
- end
-
-fun dest_recd_projnFn tmdec =
- let fun is_recd_proj_name s = Lib.mem s ["record-projection","Record-Projection"]
- in
- case tmdec
-  of FnDec(qid,[("recd", NamedTy tyqid)], ty, Fncall(("",s),var::vars)) =>
-       if is_recd_proj_name s then SOME(qid,tyqid,var,vars) else NONE
-   | otherwise => NONE
- end
-;
 
 fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
  let open PolyML
@@ -834,6 +541,16 @@ fun pp_projFn depth pkgName (qid,tyqid,var,vars) =
          PrettyString " => ", (pp_cake_exp (depth-1) pkgName triv_env) var,
          Semicolon])
  end;
+
+fun dest_recd_projnFn tmdec =
+ let fun is_recd_proj_name s = Lib.mem s ["record-projection","Record-Projection"]
+ in
+ case tmdec
+  of FnDec(qid,[("recd", NamedTy tyqid)], ty, Fncall(("",s),var::vars)) =>
+       if is_recd_proj_name s then SOME(qid,tyqid,var,vars) else NONE
+   | otherwise => NONE
+ end
+;
 
 fun pp_tmdec depth pkgName env tmdec =
  let open PolyML
@@ -1074,119 +791,24 @@ fun pp_defs_struct env (structName,tydecs,tmdecs) =
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-val unitExp = Fncall(("","unitExp"),[]);
-val emptyString = VarExp(Lib.quote"")
-
-fun localFnExp (name,args,body) = (Fncall(("","FUN"),VarExp name :: args),body)
-
-val NoneExp = ConstExp(IdConst("","None"));
-fun mk_Some e = Fncall(("","Some"),[e])
-fun mk_isSome e = Fncall(("","Option.isSome"),[e])
-fun mk_valOf e = Fncall(("","valOf"),[e])
-
-fun mk_boolOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
-
-fun mk_comment slist = Fncall(("","Comment"), map VarExp slist);
-
-fun mk_ref e = Fncall(("","Ref"),[e]);
-fun mk_deref e = Fncall(("","!"),[e]);
-fun mk_condExp(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
-
-(*---------------------------------------------------------------------------*)
-(* TODO: sort Lustre variables in dependency order. Right now I assume that  *)
-(* has been done by the programmer/system designer.                          *)
-(*---------------------------------------------------------------------------*)
-
 fun split_fby exp =
   case exp
    of Binop(Fby,e1,e2) => (e1,e2)
     | otherwise => (exp,exp);
 
-(*---------------------------------------------------------------------------*)
-(* Looking for:                                                              *)
-(*                                                                           *)
-(*  port = e, or                                                             *)
-(*  event port <=> e,                                                        *)
-(*  or                                                                       *)
-(*  if e1 then event(port) and port = e2 else not(event port)                *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
-
-fun outCode_target (gName,docstring,outdec) = AADL.outdecName outdec;
-
-fun mk_outExp (gName,docstring,outdec) =
- case outdec
-   of Out_Data(s,e) => e
-    | Out_Event(s,b) => mk_boolOpt b
-    | Out_Event_Data(s,b,e) => mk_ite (b,mk_Some e,NoneExp)
-
-(*
-fun mk_outExp (gName,docstring,codeG) =
- case codeG
-  of Binop(Equal,e1,e2) =>
-      (case e1
-        of Fncall(("","event"),_) => mk_boolOpt e2
-         | VarExp p => e2
-         | otherwise => raise ERR "mk_outExp" "unexpected syntax")
-   | Fncall(("","IfThenElse"),[b,e1,e2]) =>
-      (case e1
-        of Binop(And,_,Binop(Equal,_,exp)) => mk_ite (b,mk_Some exp,NoneExp)
-         | otherwise => raise ERR "mk_outExp" "unexpected syntax")
-   | otherwise => raise ERR "mk_outExp" "unexpected syntax";
-*)
-
-val stateVar = VarExp"state";
-val initStepVar = VarExp"initStep";
-
 val stateVal_comment =
- (VarExp"foo",
+ (VarExp "foo",
   mk_comment ["",
 	      "(*--------------------------*)",
               "(* Compute new state values *)",
               "(*--------------------------*)",""]);
 
 val outVal_comment =
- (VarExp"foo",
+ (VarExp "foo",
   mk_comment ["",
 	      "(*-----------------------*)",
               "(* Compute output values *)",
               "(*-----------------------*)", ""]);
-
-(*---------------------------------------------------------------------------*)
-(* Takes a "code guarantee" and generates output code from it. There are 3   *)
-(* possible forms expected for the guarantee, depending on the output port   *)
-(* type.                                                                     *)
-(*                                                                           *)
-(*  1. Event port. The expected form is                                      *)
-(*                                                                           *)
-(*       event(port) = exp                                                   *)
-(*                                                                           *)
-(*     This indicates that port is an event port and it will be set (or not) *)
-(*     according to the value of exp, which is boolean.                      *)
-(*                                                                           *)
-(*  2. Data port. The expected form is                                       *)
-(*                                                                           *)
-(*       port = exp                                                          *)
-(*                                                                           *)
-(*     This indicates that port is a data port and that the value of exp     *)
-(*     will be written to it.                                                *)
-(*                                                                           *)
-(*  3. Event data port. The expected form is                                 *)
-(*                                                                           *)
-(*       if exp1 then                                                        *)
-(*         event (port) and port = exp2                                      *)
-(*       else not (event port)                                               *)
-(*                                                                           *)
-(*     This checks the condition exp1 to see whether an event on port will   *)
-(*     happen, and exp2 gives the output value if so. Note that any input    *)
-(*     event (or event data) port p occurring in exp2 must be guaranteed to  *)
-(*     have an event by event(-) checks in computed in exp1.                 *)
-(*                                                                           *)
-(* In all of 1,2,3, the expressions should not mention any output ports,     *)
-(* i.e. the value to be sent out is determined by a computation over input   *)
-(* ports and state variables only.                                           *)
-(*---------------------------------------------------------------------------*)
-
 
 val comment1 =
   mk_comment ["",
@@ -1199,6 +821,20 @@ val comment2 =
 	      "(*-----------------------*)",
               "(* Compute output values *)",
               "(*-----------------------*)", ""];
+
+(*---------------------------------------------------------------------------*)
+(* Map an outdec to an expression which, when eval'd, will create the value  *)
+(* that will be used to make the output FFI call on the port.                *)
+(*---------------------------------------------------------------------------*)
+
+fun eventOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
+
+fun mk_outExp (Out_Data(s,ty,e)) = e
+  | mk_outExp (Out_Event_Only(s,ty,b)) = eventOpt b
+  | mk_outExp (Out_Event_Data(s,ty,b,e)) = mk_ite (b,mk_Some e,NoneExp)
+
+val stateVar = VarExp "state";
+val initStepVar = VarExp "initStep";
 
 fun ivar_ty (s,ty,exp) = ty;
 fun ivar_name (s,ty,exp) = s;
@@ -1227,6 +863,7 @@ fun ppCond(ppB,pp_e1,pp_e2) =
       Space, PrettyString "else", Space, pp_e2])
  end;
 
+
 val gadget_struct_boilerplate = String.concatWith "\n"
  [ "fun pre x = x;",
    "val valOf = Option.valOf;"
@@ -1248,7 +885,10 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
      val inports = filter is_in_port ports
      val eiports = filter is_event inports
      val outports = filter is_out_port ports
-     fun is_signal port = is_event port andalso not (is_data port)
+
+     val gadgetFnId = "gadgetFn"
+     val inportIds = map port_name inports
+     val inportTyNames = map (ty_name o port_ty) inports
 
      val initState_dec =
        let val initStateTuple = mk_tuple(intervalWith (K NoneExp) 1 (length ivars))
@@ -1282,6 +922,11 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
      val stateVars = VarExp "stateVars"
      val newStateVars = VarExp "newStateVars"
 
+     (* Output port values and alist binding vars to them *)
+     val outIds = map AADL.outdecName outdecs
+     val outVars = map VarExp outIds
+     val outBinds = zip outVars (map mk_outExp outdecs)
+
      val stepFn_dec =
        let val stateBind = (stateVarTuple,stateVars)
            val event_varBinds =
@@ -1309,27 +954,18 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
            val newOpts =
              (VarExp"newStateVarOpts", mk_tuple (map mk_Some stateVarExps))
 
-           val outIds = map outCode_target outdecs
-           val outVars = map VarExp outIds
-           val outBinds = zip outVars (map mk_outExp guars)
            val outTuple = mk_tuple[VarExp"newStateVarOpts",mk_tuple outVars]
        in
          PrettyBlock(2,true,[],
            [PrettyString "fun stepFn inputs stateVars = ", Line_Break,
             PrettyString"let ",
             PrettyBlock(4,true,[],
-             [valBinds (inputBind::stateBind::event_varBinds),
-              Line_Break,
-              ppExp comment1,
-              Line_Break,
-              stepBind,
-              Line_Break,
-              valBind reBind,
-              Line_Break,
-              valBind newOpts,
-              Line_Break,
-              ppExp comment2,
-              Line_Break,
+             [valBinds (inputBind::stateBind::event_varBinds), Line_Break,
+              ppExp comment1, Line_Break,
+              stepBind,       Line_Break,
+              valBind reBind, Line_Break,
+              valBind newOpts,Line_Break,
+              ppExp comment2, Line_Break,
               valBinds outBinds]),
             Space,
             PrettyString "in",
@@ -1338,14 +974,6 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
             PrettyString"end"
           ])
        end
-
-     fun splice x [] = []
-       | splice x [y] = [y]
-       | splice x (h::t) = h::x::splice x t;
-
-     val gadgetFnId = "gadgetFn"
-     val inportIds = map port_name inports
-     val inportTyNames = map (ty_name o port_ty) inports
 
      val parseFn_decs =
        let fun inportParser_dec portId tyName = String.concat
@@ -1365,76 +993,38 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
            val inportVars = map VarExp inportIds
            fun mk_Opt s = s^"Opt"
            fun mk_inOpt id = String.concat
-                 ["val ", mk_Opt id, " = parse_", id, " ()"]
+                               ["val ", mk_Opt id, " = parse_", id, " ()"]
            val inOpt_decs = splice Line_Break
                               (map (PrettyString o mk_inOpt) inportIds)
            val inOptIds = map mk_Opt inportIds
            val inOptVars = map VarExp inOptIds
-           val outIds = map outCode_target outdecs
-           val outVars = map VarExp outIds
            val out_signals = filter is_signal outports
            val out_signalIds = map port_name out_signals
 
-           fun dest_varexp e =
-            case e
-             of VarExp id => id
-	      | otherwise => raise ERR "dest_varexp" "expected a VarExp"
-
 	   fun is_valof ("","Option.valOf") = true
              | is_valof ("","valOf") = true
-             | is_valof otherwise = false
+             | is_valof otherwise = falsen
 
-FOO.
-           fun guarOut (s1,s2,exp) =
-             case exp
-              of Binop(Equal,e1,e2) =>
-                (case e1
-                  of Fncall(("","event"),_) => e2
-                   | VarExp p => e2
-                   | otherwise => raise ERR "guarOut" "unexpected syntax")
-               | Fncall(("","IfThenElse"),[b,e1,e2]) =>
-                (case e1
-                  of Binop(And,_,Binop(Equal,_,e)) => e
-                  | otherwise => raise ERR "guarOut" "unexpected syntax")
-               | otherwise => raise ERR "guarOut" "unexpected syntax"
-
-           fun guar_code outdec =
-             let val tgtId = outCode_target outdec
-                 val srcVar =
-                   (case guarOut guar
-                     of Fncall (qid,[arg]) =>
-                        if is_valof qid andalso
-                           op_mem (curry eqExp) arg inportVars
-                        then arg
-                        else raise ERR "pp_gadget_struct"
-                              "gadgetFn_dec: unexpected output guarantee syntax"
-                      | (v as VarExp _) => v
-                      | otherwise  => raise ERR "pp_gadget_struct"
-                            "gadgetFn_dec: unexpected output guarantee syntax")
-                 val srcId = dest_varexp srcVar
-             in
-              PrettyBlock(0,true,[],
-               ([PrettyString ("case "^tgtId), Line_Break,
-                PrettyString   " of None => ()", Line_Break,
-                PrettyString   "  | Some _ => "]
-               @
-               (if mem tgtId out_signalIds
-                then [PrettyString ("API.send_"^tgtId^" \"\"")]
-                else
-                [Line_Break,
-                 PrettyString ("    let val len = Word8Array.length API."^srcId^"_buffer"),
-                 Line_Break,
-                 PrettyString ("    in API.send_"^tgtId),
-                 Line_Break,
-                 PrettyString ("          (Word8Array.substring API."^srcId^"_buffer 1 (len-1))"),
-                 Line_Break,
-                 PrettyString  "    end"
-                ])))
-             end
+           fun pp_outdec outdec =
+             case outdec
+	      of Out_Data(p,ty,e)
+                  => ppExp (mk_apiCall("send_"^p,[mk_encodeCall(ty,e)])),
+               | Out_Event_Only (p,ty,b)
+                  => ppExp
+                       (mk_condExp
+                          (b,
+                           mk_apiCall("send_"^p,[emptyStringVar]),
+                           unitExp))
+               | Out_Event_Data (p,ty,b,e)
+                  => ppExp
+                       (mk_condExp
+                          (b,
+                           mk_apiCall("send_"^p,[mk_encodeCall(ty,e)]),
+                           unitExp))
 
            val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break_2])
            val outputCalls =
-             PrettyBlock(2,true,[], splice spacer (map guar_code outdecs))
+             PrettyBlock(2,true,[], splice spacer (map outdec_code outdecs))
 
        in
 	   PrettyBlock(2,true,[],
@@ -1464,20 +1054,13 @@ FOO.
     PrettyBlock(0,true,[],
        ([PrettyString ("structure Gadget = "), Line_Break,
          PrettyString "struct", Line_Break_2,
-         PrettyString gadget_struct_boilerplate,
-         Line_Break_2,
-         initState_dec,
-         Line_Break,
-         PrettyString"val theState = Ref initState;",
-	 Line_Break,
-         PrettyString"val initStep = Ref True;",
-         Line_Break_2,
-         stepFn_dec,
-	 Line_Break_2]
-      @ [parseFn_decs]
-      @ [Line_Break_2,
-         gadgetFn_dec,
- 	 Line_Break_2,
+         PrettyString gadget_struct_boilerplate, Line_Break_2,
+         initState_dec, Line_Break,
+         PrettyString"val theState = Ref initState;", Line_Break,
+         PrettyString"val initStep = Ref True;", Line_Break_2,
+         stepFn_dec,   Line_Break_2,
+         parseFn_decs, Line_Break_2,
+         gadgetFn_dec, Line_Break_2,
          PrettyString "end"])
       )
  end;

@@ -322,7 +322,7 @@ End
 
 Definition Component_Correct_def:
   Component_Correct comp
-    ⇔
+    <=>
   Wellformed comp /\
   ∀E t.
      Supports E comp ∧ assumsVal E comp t
@@ -403,9 +403,32 @@ Proof
   >> metis_tac [strmStep_Stable]
 QED
 
+
+(*---------------------------------------------------------------------------*)
+(* There is a special stream---isInit---used by programs to tell if in the   *)
+(* initial step or not. Defined as                                           *)
+(*                                                                           *)
+(*  isInit = T -> F                                                          *)
+(*---------------------------------------------------------------------------*)
+
+Definition isInit_Stream_def :
+   isInit_Stream strm ⇔ ∀n. strm n = BoolValue (n = 0n)
+End
+
+Theorem isInit_Stable:
+  ∀E comp t s.
+    Wellformed comp ∧
+    "isInit" IN set comp.inports ∧
+    isInit_Stream (E ' "isInit")
+     ⇒
+    ∀t. isInit_Stream (strmSteps E comp t ' "isInit")
+Proof
+  metis_tac [Inputs_Stable]
+QED
+
 (*---------------------------------------------------------------------------*)
 (* A sequence of proofs showing that iteration doesn't alter earlier values  *)
-(* in the stream that it generates. Monotonicity?                            *)
+(* in the stream that it generates.                                          *)
 (*---------------------------------------------------------------------------*)
 
 Theorem stmtFn_timeframe :
@@ -444,6 +467,72 @@ Proof
   >> ‘∃k. u = t + k’ by intLib.ARITH_TAC
   >> rw[]
   >> metis_tac [ADD_SYM,strmSteps_mono_lem]
+QED
+
+(*---------------------------------------------------------------------------*)
+(* A sequence of proofs showing that evaluation doesn't change the domain    *)
+(* of the environment.                                                       *)
+(*---------------------------------------------------------------------------*)
+
+Theorem stmtFn_fdom :
+  ∀E stmt t. defName stmt IN FDOM E ⇒ FDOM (stmtFn t E stmt) = FDOM E
+Proof
+  Cases_on ‘stmt’ >> EVAL_TAC >> rw[SUBSET_DEF]
+QED
+
+Theorem stmtFn_foldl_fdom[local]:
+ ∀list E t. EVERY (\stmt. defName stmt IN FDOM E) list
+             ⇒
+            FDOM(FOLDL (stmtFn t) E list) = FDOM E
+Proof
+  Induct
+    >> rw []
+    >> ‘FDOM (stmtFn t E h) = FDOM E’ by metis_tac[stmtFn_fdom]
+    >> ‘EVERY (\stmt. defName stmt IN FDOM (stmtFn t E h)) list’ by rw[]
+    >> metis_tac[]
+QED
+
+Theorem EVERY_SUBSET :
+  ∀P l. EVERY P l <=> set l SUBSET P
+Proof
+  simp [EVERY_MEM,SUBSET_DEF,IN_DEF]
+QED
+
+Theorem strmStep_fdom:
+ ∀comp E t. Supports E comp ⇒ FDOM(strmStep E comp t) = FDOM E
+Proof
+ rw[strmStep_def,stmtListFn_def,Supports_def,varDecs_def]
+ >> irule stmtFn_foldl_fdom
+ >> fs[LIST_TO_SET_MAP,EVERY_SUBSET]
+ >> fs [SUBSET_DEF]
+ >> metis_tac[]
+QED
+
+Theorem strmSteps_fdom :
+ ∀comp E t. Supports E comp ⇒ FDOM(strmSteps E comp t) = FDOM E
+Proof
+ Induct_on ‘t’
+  >> rw [strmSteps_def]
+  >> metis_tac [strmStep_fdom,Supports_def]
+QED
+
+Theorem Supports_strmSteps:
+  ∀E comp. Supports E comp ==> ∀t. Supports (strmSteps E comp t) comp
+Proof
+  rpt strip_tac
+  >> drule strmSteps_fdom
+  >> fs [Supports_def]
+QED
+
+Theorem input_of_stable:
+  ∀E comp t.
+     Wellformed comp ∧ Supports E comp ⇒ input_of comp E = input_of comp (strmSteps E comp t)
+Proof
+ rw [input_of_def,fmap_EXT,FDOM_DRESTRICT]
+  >- rw [strmSteps_fdom]
+  >- (rw [DRESTRICT_DEF]
+      >- metis_tac [Inputs_Stable]
+      >- metis_tac [strmSteps_fdom])
 QED
 
 (*---------------------------------------------------------------------------*)

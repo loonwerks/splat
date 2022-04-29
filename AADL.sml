@@ -29,9 +29,9 @@ in end;
     | FnDec of qid * (string * ty) list * ty * exp;
 
  datatype outdec
-   = Out_Data of string * exp
-   | Out_Event of string * exp
-   | Out_Event_Data of string * exp * exp;
+   = Out_Data of string * ty * exp
+   | Out_Event_Only of string * ty * exp
+   | Out_Event_Data of string * ty * exp * exp;
 
 (*---------------------------------------------------------------------------*)
 (* A contract holds all the relevant info scraped from an AGREE decl of      *)
@@ -65,6 +65,12 @@ datatype pkg = Pkg of string * (tydec list * tmdec list * contract list);
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
 
+fun is_const_dec (ConstDec _) = true
+  | is_const_dec other = false;
+
+fun dest_recd_dec (RecdDec (qid, fields)) = (qid,fields)
+  | dest_recd_dec otherwise = raise ERR "dest_recd_dec" ""
+
 fun port_name (s,ty,dir,kind) = s;
 fun port_ty (id,ty,dir,kind) = ty;
 fun is_in_port (id,ty,"in",kind) = true
@@ -75,6 +81,13 @@ fun is_event (id,ty,dir,"DataPort") = false
   | is_event otherwise = true;
 fun is_data(id,ty,dir,"EventPort") = false
   | is_data otherwise = true;
+
+fun tydec_to_ty tydec =
+  case tydec
+   of RecdDec (qid,fields) => RecdTy(qid,fields)
+    | ArrayDec(qid,ty) => ty
+    | EnumDec (qid,_) => NamedTy qid
+    | UnionDec(qid,_) => NamedTy qid;
 
 (*---------------------------------------------------------------------------*)
 (* Json syntax ops                                                           *)
@@ -141,9 +154,6 @@ fun tydec_qid (EnumDec (qid,_)) = qid
 
 fun tmdec_qid (ConstDec (qid,_,_)) = qid
   | tmdec_qid (FnDec (qid,_,_,_)) = qid
-
-fun filtdec_qid (FilterDec (qid,_,_,_,_)) = qid
-fun mondec_qid (MonitorDec (qid,_,_,_,_,_)) = qid
 
 (* Principled approach, doing a one-for-one mapping between AADL integer types and,
    eventually, HOL types. Not sure how well it will work with all AGREE specs limited
@@ -900,7 +910,7 @@ fun get_named_props name_equivFn rnames stmts =
     mapfilter prop_of rnames
  end
 
-fun get_monitor_port port =
+fun get_contract_port port =
  case port
   of AList [("name", String pname),
             ("kind", String conn_style),
@@ -909,10 +919,10 @@ fun get_monitor_port port =
       => let val ty = (case classif
                         of Null => dest_tyqid "Bool" (* why is Null there? *)
                          | String tyqidstring => dest_tyqid tyqidstring
-                         | other => raise ERR "get_monitor_port" "unexpected type")
+                         | other => raise ERR "get_contract_port" "unexpected type")
           in (pname,ty,flowdir,conn_style)
           end
-   | otherwise => raise ERR "get_monitor_port" "unexpected port format"
+   | otherwise => raise ERR "get_contract_port" "unexpected port format"
 
 
 fun get_latched properties =
@@ -945,47 +955,84 @@ fun dest_eq_or_property_stmt (AList alist) =
 ;
 
 (*---------------------------------------------------------------------------*)
-(* Code guarantees (a.k.a "outdecs") have a special shape. Looking for one   *)
-(* of:                                                                       *)
+(* Takes a "code guarantee" and categorizes it. There are 3 possible forms   *)
+(* expected for a code guarantee, depending on the output port type.         *)
 (*                                                                           *)
-(*   port = e, or                                                            *)
-(*   event port <=> e,                                                       *)
-(*   or                                                                      *)
-(*   if e1 then event(port) and port = e2 else not(event port)               *)
+(*  1. Event port. The expected form is                                      *)
 (*                                                                           *)
-(* Harshly inflexible on the syntax.                                         *)
+(*       event(port) = exp                                                   *)
+(*                                                                           *)
+(*     This indicates that port is an event port and it will be set (or not) *)
+(*     according to the value of exp, which is boolean. Returns              *)
+(*                                                                           *)
+(*       Out_Event_Only(port,exp).                                           *)
+(*                                                                           *)
+(*                                                                           *)
+(*  2. Data port. The expected form is                                       *)
+(*                                                                           *)
+(*       port = exp                                                          *)
+(*                                                                           *)
+(*     This indicates that port is a data port and that the value of exp     *)
+(*     will be written to it. Returns                                        *)
+(*                                                                           *)
+(*        Out_Data(port,exp).                                                *)
+(*                                                                           *)
+(*  3. Event data port. The expected form is                                 *)
+(*                                                                           *)
+(*       if exp1 then                                                        *)
+(*         event (port) and port = exp2                                      *)
+(*       else not (event port)                                               *)
+(*                                                                           *)
+(*     This checks the condition exp1 to see whether an event on port will   *)
+(*     happen, and exp2 gives the output value if so. Note that any input    *)
+(*     event (or event data) port p occurring in exp2 must be guaranteed to  *)
+(*     have an event by event(-) checks in computed in exp1. Returns         *)
+(*                                                                           *)
+(*       Out_Event_Data(port,exp1,exp2).                                     *)
+(*                                                                           *)
+(* In all of 1,2,3, the expressions should not mention any output ports,     *)
+(* i.e. the value to be sent out is determined by a computation over input   *)
+(* ports and state variables only.                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun outdecName (Out_Data (s,_)) = s
-  | outdecName (Out_Event(s,_)) = s
-  | outdecName (Out_Event_Data (s,_,_)) = s;
+fun outdecName (Out_Data (s,_,_)) = s
+  | outdecName (Out_Event_Only(s,_,_)) = s
+  | outdecName (Out_Event_Data (s,_,_,_)) = s;
 
-fun dest_codeG codeG =
- let fun is_not_event p e =
+fun outdecTy (Out_Data (s,ty,_)) = ty
+  | outdecTy (Out_Event_Only(s,ty,_)) = ty
+  | outdecTy (Out_Event_Data (s,ty,_,_)) = ty;
+
+fun is_not_event p e =
   case e of
     Unop(Not,Fncall(("","event"),[VarExp p1])) => p = p1
-  | otherwise => false
- in
+  | otherwise => false;
+
+fun mk_outdec otyEnv codeG =
+ let fun port_type pname =
+        assoc pname otyEnv handle _ =>
+        raise ERR "mk_outdec" (Lib.quote pname^" not found in output ports")
+in
  case codeG
-  of Binop(Equal,e1,e2) => (* event(p) = e, p = e *)
-      (case e1
-        of Fncall(("","event"),[VarExp p]) => Out_Event(p,e2)
-         | VarExp p => Out_Data(p,e2)
-         | otherwise => raise ERR "dest_codeG" "unexpected syntax in equality exp")
+  of Binop(Equal,VarExp p,e)
+       => Out_Data(p,port_type p, e)
+   | Binop(Equal,Fncall(("","event"),[VarExp p]),e)
+       => Out_Event_Only(p,port_type p, e)
+   | Binop other => raise ERR "mk_outdec" "unexpected syntax in equality exp"
    | Fncall(("","IfThenElse"),[b,e1,e2]) =>
       (case e1
         of Binop(And,Fncall(("","event"),[VarExp p]),
                      Binop(Equal,VarExp p1,exp))
            => (if p=p1 andalso is_not_event p e2 then
-	         Out_Event_Data(p,b,exp)
-               else raise ERR "dest_codeG"
-	         "unexpected syntax when looking for event-data output spec")
-         | otherwise => raise ERR "dest_codeG"
-	         "unexpected syntax when looking for event-data output spec")
-   | otherwise => raise ERR "dest_codeG" "unexpected syntax"
+	         Out_Event_Data(p,port_type p, b,exp)
+               else raise ERR "mk_outdec"
+	         "unexpected syntax when looking for event-data output spec(1)")
+         | otherwise => raise ERR "mk_outdec"
+	         "unexpected syntax when looking for event-data output spec(2)")
+   | otherwise => raise ERR "mk_outdec" "unexpected syntax"
  end;
 
-fun mk_codeG (s1,s2,e) = (s1,s2,dest_codeG e);
+fun mk_codeG otyEnv (s1,s2,e) = (s1,s2,mk_outdec otyEnv e);
 
 fun dest_guar_stmt stmt =
  if dropString (kind_of stmt) = "GuaranteeStatement" then
@@ -995,6 +1042,11 @@ fun dest_guar_stmt stmt =
      handle _ => raise ERR "dest_guar_stmt" "unexpected syntax")
  else raise ERR "dest_guar_stmt" "unexpected syntax"
 ;
+
+fun mk_oty_env ports =
+ let fun dest_oport (n,ty,dir,k) = if dir = "out" then (n,ty) else failwith""
+ in mapfilter dest_oport ports
+ end
 
 fun check_outdecs_cover_oports cgs ports =
  let fun oportName (n,ty,dir,k) = if dir = "out" then n else failwith""
@@ -1019,56 +1071,6 @@ fun get_agree_annex caller comp =
    of [x] => x
     | otherwise => raise ERR caller "unexpected annex structure";
 
-(*---------------------------------------------------------------------------*)
-(* The following functions (get_monitor, get_filter) are essentially the     *)
-(* same now, and I should just do a "get_gadget"                             *)
-(*---------------------------------------------------------------------------*)
-
-(*
-fun get_monitor comp =
- let val properties = dropList(properties_of comp)
-     val _ = if is_monitor properties then ()
-             else raise ERR "get_monitor" "unable to find Monitoring property"
-     val is_latched = get_latched properties handle _ => false (* might not be an alert line *)
-     val qid = dest_qid (dropString (name_of comp))
-     val (pkgName,monName) = qid
-     val ports = map get_monitor_port(dropList (features_of comp))
-     val stmts = get_annex_stmts (get_agree_annex "get_monitor" comp)
-     val (jdecs,others) = List.partition is_pure_dec stmts
-     val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
-     val eq_stmts = mapfilter dest_eq_or_property_stmt others
-     val all_guar_stmts = mapfilter dest_guar_stmt others
-     val codeGs = mapfilter mk_codeG all_guar_stmts
-     val _ = check_outdecs_cover_oports codeGs ports
-     val otherGs = filter (not o can mk_codeG) all_guar_stmts
- in
-     MonitorDec(qid, ports, is_latched, decs, eq_stmts, (codeGs,otherGs))
- end
- handle e => raise wrap_exn "get_monitor" "unexpected syntax" e
-;
-
-fun get_filter comp =
- let val properties = dropList(properties_of comp)
-     val _ = if is_filter properties then ()
-             else raise ERR "get_filter" "unable to find Filtering property"
-     val qid = dest_qid (dropString (name_of comp))
-     val (pkgName,filtName) = qid
-     val ports = map get_monitor_port(dropList (features_of comp))
-     val stmts = get_annex_stmts (get_agree_annex "get_filter" comp)
-     val (jdecs,others) = List.partition is_pure_dec stmts
-     val decs = map (mk_def pkgName []) jdecs  (* consts and fndecs *)
-     val eq_stmts   = mapfilter dest_eq_or_property_stmt others
-     val all_guar_stmts = mapfilter dest_guar_stmt others
-     val codeGs = mapfilter mk_codeG all_guar_stmts
-     val _ = check_outdecs_cover_oports codeGs ports
-     val otherGs = filter (not o can mk_codeG) all_guar_stmts
- in
-     FilterDec(qid, ports, decs, eq_stmts, (codeGs,otherGs))
- end
- handle e => raise wrap_exn "get_filter" "unexpected syntax" e
-;
-*)
-
 fun get_code_contract comp =
  let val properties = dropList(properties_of comp)
      val _ = if is_cyber_gadget properties then ()
@@ -1078,16 +1080,17 @@ fun get_code_contract comp =
                       handle _ => false (* might not be an alert line *)
      val qid = dest_qid (dropString (name_of comp))
      val (pkgName,thrName) = qid
-     val ports = map get_monitor_port(dropList (features_of comp))
+     val ports = map get_contract_port(dropList (features_of comp))
      val stmts = get_annex_stmts (get_agree_annex "get_monitor" comp)
      val (pdecs,others) = List.partition is_pure_dec stmts
      val tydecs = []  (* todo ... *)
      val tmdecs = map (mk_def pkgName []) pdecs  (* consts and fndecs *)
      val vardecs = mapfilter dest_eq_or_property_stmt others
      val guardecs = mapfilter dest_guar_stmt others
-     val outdecs = mapfilter mk_codeG guardecs
+     val otyEnv = mk_oty_env ports
+     val outdecs = mapfilter (mk_codeG otyEnv) guardecs
      val _ = check_outdecs_cover_oports outdecs ports
-     val otherGs = filter (not o can mk_codeG) guardecs
+     val otherGs = filter (not o can (mk_codeG otyEnv)) guardecs
  in
    ContractDec
      (qid, "Code Contract", ports, is_latched,
@@ -1312,6 +1315,55 @@ fun called_by (FnDec((_,id),_,_,_)) (FnDec(_,_,_,exp)) =
 
 fun sort_tmdecs list = topsort called_by list;
 
+
+fun mk_tyE pkglist =
+ let fun tydecs_of (Pkg(pkgName,(tys,consts,contracts))) = tys
+     val all_tydecs = List.concat (map tydecs_of pkglist)
+     fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
+     val tydec_alist = map mk_tydec_bind all_tydecs
+ in assocFn tydec_alist
+ end
+
+fun tmdecs_of_contract
+     (ContractDec (qid,s,ports,b,tydecs,tmdecs,vardecs,outdecs,guars)) = tmdecs;
+
+fun cdecs_of (Pkg(pkgName,(tys,tmdecs,contracts))) =
+ let fun contract_consts contract =
+          filter is_const_dec (tmdecs_of_contract contract)
+ in
+  List.concat
+    (filter is_const_dec tmdecs :: map contract_consts contracts)
+ end;
+
+fun mk_constE pkglist =
+ let val all_cdecs = List.concat (map cdecs_of pkglist)
+     val all_const_decs = filter is_const_dec all_cdecs
+     fun mk_const_bind (ConstDec(qid,ty,e)) = (snd qid,ty)
+       | mk_const_bind otherwise = raise ERR "mk_constE" "expected a ConstDec"
+     val alist = map mk_const_bind all_const_decs
+ in assocFn alist
+ end
+
+fun mk_recd_projns tys =
+ let open AST
+     val recd_tydecs = mapfilter dest_recd_dec tys
+
+     fun mk_proj (tyqid as (pkgName,tyName)) vars ((fieldName,ty),var) =
+         let val fnName = recd_projFn_name tyName fieldName
+         in FnDec((pkgName,fnName),
+                  [("recd", NamedTy tyqid)], ty,
+                  Fncall(("","Record-Projection"),var::vars))
+         end
+     fun mk_projFns (qid,fields) =
+	  let val vars = map (fn i => VarExp("v"^Int.toString i))
+                         (upto 1 (length fields))
+              val field_vars = zip fields vars
+          in map (mk_proj qid vars) field_vars
+          end
+     val projFns = List.concat (map mk_projFns recd_tydecs)
+ in
+   projFns
+ end
 
 (*
 fun uses (A as AList (("name", String AName) ::

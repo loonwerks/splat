@@ -234,4 +234,9 @@ sig
   val pp_stmt : int -> stmt -> PolyML.pretty
   val pp_decl : int -> decl -> PolyML.pretty
 
+  val recd_projFn_name : string -> string -> string
+
+  val transRval
+    : ((qid -> ty option) * (id -> ty option)) * (id -> ty option) -> exp -> exp
+
 end

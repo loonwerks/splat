@@ -13,6 +13,10 @@
 \usepackage{amssymb}
 \usepackage{amsbsy}
 
+\usepackage{tikz}
+\usetikzlibrary{shapes}
+\usetikzlibrary{shapes.symbols}
+
 \newcommand{\ie}{\textit{i.e.}}
 \newcommand{\eg}{\textit{e.g.}}
 \newcommand{\etal}{\textit{et al.}}
@@ -24,9 +28,9 @@
 \newcommand{\set}[1]{\ensuremath{\{ {#1} \}}}
 \newcommand{\kstar}[1]{\ensuremath{{#1}^{*}}}
 \newcommand{\Lang}[1]{\ensuremath{{\mathcal L}({#1})}}
-\newcommand{\LangTheta}[1]{\ensuremath{{\mathcal L}_{\theta}({#1})}}
-\newcommand{\SubstTheta}[2]{\ensuremath{\theta\;{#1}\; {#2}}}
+\newcommand{\sem}[1]{\ensuremath{[\![ #1 ]\!]}}
 \newcommand{\itelse}[3]{\mbox{$\mathtt{if}\ {#1}\ \mathtt{then}\ {#2}\ \mathtt{else}\ {#3}$}}
+\newcommand{\aadl}{\textsc{AADL}}
 \newcommand{\agree}{\textsc{AGREE}}
 \newcommand{\splat}{\textsc{SPLAT}}
 \newcommand{\clustre}{\emph{Clustre}}
@@ -634,6 +638,68 @@ infinite executions. The work of \cite{johannes:repeatc} established a
 proof rule for drawing such inferenced and our goal is to automate a
 path from our {\agree} specifications to such theorems.
 
+
+\section{Toolchain}
+
+The code generation toolchain begins with an AADL model in the
+BriefCase environment and ends with a CakeML-generated
+executable. Here are the steps:
+\begin{enumerate}
+\item The user supplements the system {\aadl} model
+  $\konst{MODEL}_\konst{AADL}$ with security components and specifies
+  their behaviour in {\agree} annexes.
+\item $\konst{MODEL}_\konst{AADL}$ is translated to JSON, yielding
+  $\konst{MODEL}_\konst{JSON}$, which is exported to a file.
+\item The \splat{} tool is invoked and reads in
+  $\konst{MODEL}_\konst{JSON}$. (The following steps take place in
+  {\splat}.)
+\item The model is \emph{scraped} for security component declarations
+  and specifications. These are mapped to component ASTs, which are
+  processed independently. Assume we are dealing with a single such
+  AST \konst{comp}. It specifies several things:
+  \begin{itemize}
+  \item the input and output ports (features) of \konst{comp};
+  \item a computation---expressed as a sequence of equations---over
+    the ports and a collection of state variables; and
+  \item an Assume-Guarantee style contract.
+  \end{itemize}
+\item In many cases, the {\agree} model checker can establish that the
+  computation of \konst{comp} satisfies its contract, but note that
+  contracts can be arbitrarily complex. Therefore it can happen that a
+  valid contract is not provable by the model checker. In such cases,
+  our modelling approach can be used to generate formal definitions
+  and goals that can be tackled in an interactive theorem prover. In
+  either eventuality, the toolchain maps \konst{comp} into {\clustre}
+  and uses a formal semantics of {\clustre} to derive a stream-valued
+  function
+  \[
+  \konst{strmFn} : \konst{strmEnv} \to \konst{strmEnv}
+  \]
+  representing the behaviour of the component, where
+  \[
+  \konst{strmEnv} = \konst{string} \mapsto (\konst{nat} \to \konst{value})
+  \]
+\item The next step is to transform \konst{comp} so that the execution
+  looks back at most one time unit in streams. We call this
+  \emph{temporal squashing} (\konst{squash}). A temporally squashed component can
+  only access the current or previous value of any variable, making it
+  similar to an imperative implementation. We expect
+  \[
+  \vdash \sem{\konst{comp}} = \sem{\konst{squash}(\konst{comp})}
+  \]
+  to be provable.
+\item Let $\konst{comp'} = \konst{squash}(\konst{comp})$. From \konst{comp'} we
+\end{enumerate}
+
+\begin{tikzpicture}[auto]
+\node [cloud, draw, cloud puffs = 16, align=left] (SPEC) at (0,0) {Format \\ Specification};
+\node [draw,align=left](TEST) at (-4,0) {test gen. \\ fuzzing};
+\node [draw,align=left] (PROP) at (0,-3.5) {Semantics, \\ properties, proofs};
+\node [draw, align=left] (IMPL) at (4.5,0) {Implementations: \\ recognizers, \\ parsers, \\ encode/decode};
+\draw [->, ultra thick] (SPEC) to (TEST);
+\draw [->, ultra thick] (SPEC) to (PROP)r
+\draw [->, ultra thick] (SPEC) to (IMPL);
+\end{tikzpicture}
 
 \bibliography{agree}
 

@@ -9,8 +9,11 @@ load "intrealSyntax";
 *)
 
 local open
-   AADL regexpLib regexpSyntax realLib realSyntax intrealSyntax PP_CakeML Gen_Contig
+   AADL Gen_Contig
+   (* PP_CakeML *)
 in end
+
+(*   AADL regexpLib regexpSyntax realLib realSyntax intrealSyntax PP_CakeML Gen_Contig *)
 
 val ERR = Feedback.mk_HOL_ERR "splat";
 
@@ -182,10 +185,11 @@ type ivardec = string * ty * exp;
 type guar    = string * string * exp;
 
 (*---------------------------------------------------------------------------*)
-(* A gadget is a refined version of AADL.cybe_gadget type. The refinement is *)
+(* A gadget is a refined version of AADL.contract type. The refinement is    *)
 (* mainly that the "support" for the computation in the gadget is pulled in  *)
-(* from earlier AADL package declarations. Thus the tydecs and tmdecs are    *)
-(* filled in.                                                                *)
+(* from earlier AADL package declarations. Thus the tydecs and tmdecs        *)
+(* provide the background to define the computation specified by the         *)
+(* ivardecs and outdecs.                                                     *)
 (*---------------------------------------------------------------------------*)
 
 datatype gadget =
@@ -194,7 +198,7 @@ datatype gadget =
            * tmdec list
            * port list
            * ivardec list
-           * guar list;
+           * outdec list;
 
 val sort_tydecs = AADL.sort_tydecs
 val sort_tmdecs = AADL.sort_tmdecs;
@@ -204,23 +208,13 @@ fun set_tmdec_pkgName name tmdec =
   of ConstDec((_,s),ty,exp) => ConstDec((name,s),ty,exp)
    | FnDec ((_,s),params,rty,exp) => FnDec ((name,s),params,rty,exp)
 
-fun elim_monitor tydecs tmdecs (MonitorDec mondec) =
- let val (qid,ports,latched,mon_tmdecs,ivardecs,guars) = mondec
-     val mon_tydecs = []
-     val tydecs' = sort_tydecs (tydecs @ mon_tydecs)
-     val mondecs' = map (set_tmdec_pkgName (snd qid)) mon_tmdecs
-     val tmdecs' = sort_tmdecs (tmdecs @ mondecs')
- in Gadget (qid, tydecs', tmdecs', ports,ivardecs,guars)
- end;
-
-fun elim_filter tydecs tmdecs (FilterDec filtdec) =
- let val (qid, ports,filt_tmdecs, ivardecs, guars) = filtdec
-     val filt_tydecs = []
-     val latched = false
-     val tydecs' = sort_tydecs (tydecs @ filt_tydecs)
-     val filtdecs' = map (set_tmdec_pkgName (snd qid)) filt_tmdecs
-     val tmdecs' = sort_tmdecs (tmdecs @ filtdecs')
- in Gadget (qid, tydecs', tmdecs', ports,ivardecs,guars)
+fun elim_contract tydecs tmdecs (ContractDec condec) =
+ let val (qid,_,ports,latched,con_tydecs,con_tmdecs,ivardecs,odecs,guars) = condec
+     val tydecs' = sort_tydecs (tydecs @ con_tydecs)
+     val condecs' = map (set_tmdec_pkgName (snd qid)) con_tmdecs
+     val tmdecs' = sort_tmdecs (tmdecs @ condecs')
+     val outdecs = map #3 odecs
+ in Gadget (qid, tydecs', tmdecs', ports,ivardecs,outdecs)
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -228,31 +222,29 @@ fun elim_filter tydecs tmdecs (FilterDec filtdec) =
 (*---------------------------------------------------------------------------*)
 
 fun configure decls (support,gadgets) =
- let val (pkgName,(tydecs,tmdecs,filtdecs,mondecs)) = decls
+ let val (pkgName,(tydecs,tmdecs,condecs)) = decls
      val (stydecs,stmdecs) = support
      val tydecs' = tydecs @ stydecs
      val tmdecs' = tmdecs @ stmdecs
-     val filter_gadgets = List.map (elim_filter tydecs' tmdecs') filtdecs
-     val monitor_gadgets = List.map (elim_monitor tydecs' tmdecs') mondecs
+     val new = List.map (elim_contract tydecs' tmdecs') condecs
  in
-     ((tydecs',tmdecs'),
-      filter_gadgets @ monitor_gadgets @ gadgets)
+     ((tydecs',tmdecs'), new @ gadgets)
 end
 
 fun mk_gadgets pkgs = snd (rev_itlist configure pkgs (([],[]),[]));
 
-val empty_varE = PP_CakeML.empty_varE;
-val assocFn = PP_CakeML.assocFn;
-val transRval = PP_CakeML.transRval;
-val mk_tyE = PP_CakeML.mk_tyE;
-val mk_constE = PP_CakeML.mk_constE;
-val mk_recd_projns = PP_CakeML.mk_recd_projns;
-val tydec_to_ty = PP_CakeML.tydec_to_ty
+val transRval = AST.transRval;
+val mk_tyE = AADL.mk_tyE;
+val tydec_to_ty = AADL.tydec_to_ty
+val mk_constE = AADL.mk_constE;
+val mk_recd_projns = AADL.mk_recd_projns;
 
 fun catE env1 env2 x =
   case env1 x
    of NONE => env2 x
     | SOME y => SOME y;
+
+fun empty_varE _ = NONE;
 
 fun transRval_dec E tmdec =
  case tmdec
@@ -262,7 +254,12 @@ fun transRval_dec E tmdec =
 ;
 
 fun trans_ivardec E (s,ty,e) = (s,ty,transRval E e)
-fun trans_guar E (s1,s2,e) = (s1,s2,transRval E e)
+
+fun trans_outdec E odec =
+ case odec
+  of Out_Data (s,ty,e) => Out_Data (s,ty,transRval E e)
+   | Out_Event_Only(s,ty,e) => Out_Event_Only(s,ty,transRval E e)
+   | Out_Event_Data(s,ty,b,e) => Out_Event_Data(s,ty,transRval E b,transRval E e)
 
 fun portE ports =
  let fun dest_port (id,ty,_,_) = (id,ty)
@@ -281,14 +278,14 @@ fun ivarE ivars =
 (*---------------------------------------------------------------------------*)
 
 fun transRval_gadget E gadget =
- let val Gadget (qid,tydecs, tmdecs, ports,ivardecs,guars) = gadget
+ let val Gadget (qid,tydecs, tmdecs, ports,ivardecs,outdecs) = gadget
      val tmdecs'  = map (transRval_dec E) tmdecs
      val tmdecs'' = mk_recd_projns tydecs @ tmdecs'
      val varE     = catE (portE ports) (ivarE ivardecs)
      val ivardecs' = map (trans_ivardec (E,varE)) ivardecs
-     val guars'    = map (trans_guar (E,varE)) guars
+     val outdecs'    = map (trans_outdec (E,varE)) outdecs
  in
-    Gadget (qid, tydecs, tmdecs'', ports,ivardecs',guars')
+    Gadget (qid, tydecs, tmdecs'', ports,ivardecs',outdecs')
  end
 
 fun elim_projections tyE tmE gdts = map (transRval_gadget (tyE,tmE)) gdts;
@@ -307,24 +304,33 @@ end;
 
 val trivEnv = ([],[],atomic_width);
 
-fun gadget_qid (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = qid;
-fun gadget_ports (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = ports;
-fun gadget_tydecs (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = tydecs;
-fun gadget_tmdecs (Gadget(qid,tydecs,tmdecs,ports,ivars,guars)) = tmdecs;
+fun gadget_qid (Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs)) = qid;
+fun gadget_ports (Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs)) = ports;
+fun gadget_tydecs (Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs)) = tydecs;
+fun gadget_tmdecs (Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs)) = tmdecs;
+fun gadget_outdecs (Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs)) = outdecs;
 
 fun substExp_tmdec theta tmdec =
  case tmdec
   of ConstDec (qid,ty,e) => ConstDec (qid,ty,substExp theta e)
    | FnDec(qid,params,rty,e) => FnDec(qid,params,rty,substExp theta e)
 fun substExp_ivar theta (s,ty,e) = (s,ty,substExp theta e)
-fun substExp_guar theta (s1,s2,e) = (s1,s2,substExp theta e)
+
+fun substExp_outdec theta outdec =
+ case outdec
+  of Out_Data (s,ty,e) => Out_Data (s,ty,substExp theta e)
+   | Out_Event_Only(s,ty,e) => Out_Event_Only(s,ty,substExp theta e)
+   | Out_Event_Data(s,ty,b,e) =>
+     Out_Event_Data(s,ty,substExp theta b,substExp theta e);
+
+
 fun substExp_gadget theta gdt =
- let val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+ let val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
  in Gadget(qid,tydecs,
            map (substExp_tmdec theta) tmdecs,
            ports,
            map (substExp_ivar theta) ivars,
-           map (substExp_guar theta) guars)
+           map (substExp_outdec theta) outdecs)
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -337,14 +343,20 @@ fun tmdec_qids tmdec set =
   case tmdec
    of ConstDec (qid,ty,exp) => AST.expQids exp (insert qid set)
     | FnDec (qid,parames,rty,exp) => AST.expQids exp (insert qid set);
+
 fun ivardec_qids (s,ty,exp) set = AST.expQids exp set
-fun guar_qids (s1,s2,exp) set = AST.expQids exp set
+
+fun outdec_qids outdec set =
+ case outdec
+  of Out_Data (s,ty,e) => AST.expQids e set
+   | Out_Event_Only(s,ty,e) => AST.expQids e set
+   | Out_Event_Data(s,ty,b,e) => AST.expQids e (AST.expQids e set)
 
 fun gadgetQids gdt set =
- let val Gadget(qid,_,tmdecs,_,ivars,guars) = gdt
+ let val Gadget(qid,_,tmdecs,_,ivars,outdecs) = gdt
      val set1 = itlist tmdec_qids tmdecs set
      val set2 = itlist ivardec_qids ivars set1
-     val set3 = itlist guar_qids guars set2
+     val set3 = itlist outdec_qids outdecs set2
  in set3
  end
 
@@ -359,15 +371,23 @@ fun substQid_tmdec theta tmdec =
       ConstDec (subst_qid theta qid,ty,substQidExp theta exp)
     | FnDec (qid,parames,rty,exp) =>
       FnDec (subst_qid theta qid,parames,rty,substQidExp theta exp)
+
 fun substQid_ivar theta (s,ty,exp) = (s,ty,substQidExp theta exp);
-fun substQid_guar theta (s1,s2,exp) = (s1,s2,substQidExp theta exp);
+
+fun substQid_outdec theta outdec =
+ case outdec
+  of Out_Data (s,ty,e) => Out_Data (s,ty,substQidExp theta e)
+   | Out_Event_Only(s,ty,e) => Out_Event_Only(s,ty,substQidExp theta e)
+   | Out_Event_Data(s,ty,b,e) =>
+      Out_Event_Data(s,ty,substQidExp theta b,substQidExp theta e)
+
 fun substQid_gadget theta gdt =
- let val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+ let val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
  in Gadget(qid,tydecs,
            map (substQid_tmdec theta) tmdecs,
            ports,
            map (substQid_ivar theta) ivars,
-           map (substQid_guar theta) guars)
+           map (substQid_outdec theta) outdecs)
  end;
 
 fun set_Defs_struct gdt =
@@ -393,13 +413,17 @@ fun set_Defs_struct gdt =
 (*---------------------------------------------------------------------------*)
 
 fun corrall_rogue_vars gdt =
- let val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+ let val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      fun free_tmdecV tmdec =
        case tmdec
         of ConstDec (_,_,e) => AST.expVars e
          | FnDec(_,params,_,e) => subtract (AST.expVars e) (map fst params)
      fun free_ivarsV (_,_,e) = AST.expVars e
-     fun free_guarV (_,_,e) = AST.expVars e
+     fun free_outdecV outdec =
+       case outdec
+       of Out_Data (s,ty,e) => AST.expVars e
+        | Out_Event_Only(s,ty,e) => AST.expVars e
+        | Out_Event_Data(s,ty,b,e) => Lib.union (AST.expVars b) (AST.expVars e)
 
      val constNames = map (snd o tmdec_qid) tmdecs
      val portNames = map #1 ports
@@ -408,8 +432,8 @@ fun corrall_rogue_vars gdt =
 
      val tmdec_probs = intersect (bigU (map free_tmdecV tmdecs)) constNames
      val ivar_probs = subtract (bigU (map free_ivarsV ivars)) taken
-     val guar_probs = subtract (bigU (map free_guarV guars)) taken
-     val problems = bigU [tmdec_probs, ivar_probs, guar_probs]
+     val odec_probs = subtract (bigU (map free_outdecV outdecs)) taken
+     val problems = bigU [tmdec_probs, ivar_probs, odec_probs]
  in
    if null problems then
      gdt
@@ -435,7 +459,7 @@ fun constrs_of tydec =
 
 fun set_type_constrs gdt =
  let open AST
-     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      val tycE = List.concat (map constrs_of tydecs)
      val consts = gadgetQids gdt []
      fun equiv (pname,fName) (qname,constrName) = (fName = constrName)
@@ -473,12 +497,18 @@ fun set_type_constrs gdt =
       of ConstDec(qid,ty,exp) => ConstDec(qid,ty,subExp exp)
        | FnDec(qid,params,rty,exp) => FnDec(qid,params,rty,subExp exp)
    fun subIvar (s,ty,exp) = (s,ty,subExp exp)
-   fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
+   fun subOutdec outdec =
+    case outdec
+     of Out_Data (s,ty,e) => Out_Data (s,ty,subExp e)
+      | Out_Event_Only(s,ty,e) => Out_Event_Only(s,ty,subExp e)
+      | Out_Event_Data(s,ty,b,e) =>
+         Out_Event_Data(s,ty,subExp b,subExp e)
+
  in Gadget(qid,tydecs,
 	   map subDec tmdecs,
            ports,
            map subIvar ivars,
-           map subGuar guars)
+           map subOutdec outdecs)
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -550,10 +580,15 @@ fun gadgetIds gdt set =
              end
       fun portIds (name,ty,_,_) set = tyExpIds ty (insert name set);
       fun ivardecIds (s,ty,exp) set = expIds exp (tyExpIds ty (insert s set));
-      fun guarIds (s1,s2,exp) set = expIds exp set;
-      val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+      fun outdecIds outdec set =
+        case outdec
+         of Out_Data (s,ty,e) => expIds e (tyExpIds ty set)
+          | Out_Event_Only(s,ty,e) => expIds e (tyExpIds ty set)
+          | Out_Event_Data(s,ty,b,e) => expIds e (expIds b set)
+
+      val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
  in
-       itlist guarIds guars
+       itlist outdecIds outdecs
         (itlist ivardecIds ivars
           (itlist portIds ports
             (itlist tmdecIds tmdecs
@@ -575,7 +610,7 @@ fun mk_low_qid (qid as (s1,s2)) (acc as (binds,taken)) =
 (*
 fun set_sig_lower_case gdt =
  let open AST
-   val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+   val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
    val gQids = gadgetQids gdt []
    val gIds = gadgetIds gdt []
    val (UC,LC_0) = List.partition is_upper gIds
@@ -620,19 +655,24 @@ fun set_sig_lower_case gdt =
            end
    fun subPort (n,ty,x,y) = (n,subTyExp ty,x,y)
    fun subIvar (s,ty,exp) = (s,subTyExp ty,subExp exp)
-   fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
+   fun subOutdec outdec =
+    case outdec
+     of Out_Data (s,ty,e) => Out_Data (s,ty,subExp e)
+      | Out_Event_Only(s,ty,e) => Out_Event_Only(s,ty,subExp e)
+      | Out_Event_Data(s,ty,b,e) => Out_Event_Data(s,ty,subExp b,subExp e)
+
  in
    Gadget(qid,
           map subTyDec tydecs,
           map subDec tmdecs,
           map subPort ports,
           map subIvar ivars,
-          map subGuar guars)
+          map subOutdec outdecs)
  end;
 
     fun set_ports_and_ivars_lower_case gdt =
      let open AST
-         val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+         val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
          val portNames = map #1 ports
          val ivarNames = map #1 ivars
          val lower = String.map Char.toLower
@@ -648,13 +688,13 @@ fun set_sig_lower_case gdt =
      in Gadget(qid,tydecs,tmdecs,
                map substPort ports,
                map (substIvar theta) ivars,
-               map (substGuar theta) guars)
+               map (substGuar theta) outdecs)
      end;
 *)
 
 fun set_sig_lower_case gdt =
  let open AST
-     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      val mk_low = String.map Char.toLower
      fun mk_low_qid (qid as (s1,s2)) acc =
          if s1 = "" orelse Char.isLower(String.sub(s2,0)) then
@@ -690,18 +730,22 @@ fun set_sig_lower_case gdt =
          | FnDec(qid,params,rty,exp) =>
            FnDec(substFn theta qid,params,rty,subExp exp)
      fun subIvar (s,ty,exp) = (s,ty,subExp exp)
-     fun subGuar (s1,s2,exp) = (s1,s2,subExp exp)
+   fun subOutdec outdec =
+    case outdec
+     of Out_Data (s,ty,e) => Out_Data (s,ty,subExp e)
+      | Out_Event_Only(s,ty,e) => Out_Event_Only(s,ty,subExp e)
+      | Out_Event_Data(s,ty,b,e) => Out_Event_Data(s,ty,subExp b,subExp e)
  in
    Gadget(qid,tydecs,
           map subDec tmdecs,
           ports,
           map subIvar ivars,
-          map subGuar guars)
+          map subOutdec outdecs)
  end;
 
 fun set_ports_and_ivars_lower_case gdt =
  let open AST
-     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      val portNames = map #1 ports
      val ivarNames = map #1 ivars
      val lower = String.map Char.toLower
@@ -713,11 +757,11 @@ fun set_ports_and_ivars_lower_case gdt =
      fun substId s = if Char.isLower(String.sub(s,0)) then s else lower s
      fun substPort (s,ty,dir,kind) = (substId s,ty,dir,kind)
      fun substIvar theta (s,ty,exp) = (substId s,ty,substExp theta exp)
-     fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
- in Gadget(qid,tydecs,tmdecs,
-           map substPort ports,
-           map (substIvar theta) ivars,
-           map (substGuar theta) guars)
+ in
+   Gadget(qid,tydecs,tmdecs,
+          map substPort ports,
+          map (substIvar theta) ivars,
+          map (substExp_outdec theta) outdecs)
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -732,7 +776,7 @@ fun set_ports_and_ivars_lower_case gdt =
 
 fun elim_inport_events gdt =
  let open AST
-     val Gadget(qid,tydecs,tmdecs,ports,ivars,guars) = gdt
+     val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      val inports = filter is_in_port ports
      val eiports = filter is_event inports
      val portNames = map #1 eiports
@@ -741,10 +785,9 @@ fun elim_inport_events gdt =
      val theta1 = map mk_bind1 portNames
      val theta2 = map mk_bind2 portNames
      fun substIvar theta (s,ty,exp) = (s,ty,substExp theta exp)
-     fun substGuar theta (s1,s2,exp) = (s1,s2,substExp theta exp)
  in Gadget(qid,tydecs,tmdecs,ports,
            map (substIvar theta2 o substIvar theta1) ivars,
-           map (substGuar theta2 o substGuar theta1) guars)
+           map (substExp_outdec theta2 o substExp_outdec theta1) outdecs)
  end;
 
 fun gadget_tyE gdt =
@@ -757,7 +800,7 @@ fun gadget_tyE gdt =
 
 fun gadget_tyEnvs gdt =
  let open AST
-     val Gadget (qid, tydecs, tmdecs,ports,ivars,guars) = gdt
+     val Gadget (qid, tydecs, tmdecs,ports,ivars,outdecs) = gdt
      val tyE_0 = gadget_tyE gdt
      fun chase list = list
      val tyE = chase tyE_0
@@ -782,6 +825,11 @@ fun gadget_tyEnvs gdt =
                          ("unknown type abbrev: "^qid_string qid)
     *)
 
+fun get_ports gdt =
+ let val ports = gadget_ports gdt
+ in (filter is_in_port ports,filter is_out_port ports)
+ end
+
 fun defs_struct_of gdt =
  let val tyEnvs = gadget_tyEnvs gdt
      val fodder = ("Defs",gadget_tydecs gdt,gadget_tmdecs gdt)
@@ -789,11 +837,6 @@ fun defs_struct_of gdt =
 in
   pretty
 end
-
-fun get_ports gdt =
- let val ports = gadget_ports gdt
- in (filter is_in_port ports,filter is_out_port ports)
- end
 
 fun API_of (orig_gdt,gdt) =
 let val qid = gadget_qid gdt

@@ -611,5 +611,10 @@ fun listBinds n s1 s2 =
         s1,";\n"])
  end;
 
+fun assocFn alist x =
+ case assoc1 x alist
+  of NONE => NONE
+   | SOME (a,b) => SOME b;
+
 
 end (* MiscLib *)

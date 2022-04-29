@@ -4,9 +4,6 @@ struct
 open Lib Feedback MiscLib AST;
 open ByteContig;
 
-local open PP_CakeML in end;
-
-
 val ERR = mk_HOL_ERR "Gen_Contig";
 
 val default_num_width = 32;  (* bits *)
@@ -105,11 +102,12 @@ fun decoder_of tyE decodeE ty =
           | SOME decoder => decoder)
 ;
 
-val AppExp = PP_CakeML.AppExp;
-val listLit = PP_CakeML.listLit;
+val assocFn = MiscLib.assocFn;
 val tydec_qid = AADL.tydec_qid;
-val tydec_to_ty = PP_CakeML.tydec_to_ty;
-val assocFn = PP_CakeML.assocFn;
+val tydec_to_ty = AADL.tydec_to_ty;
+
+fun AppExp elist = AST.Fncall(("","App"), elist);
+fun listLit elts = AST.Fncall(("","List"), elts);
 
 (*---------------------------------------------------------------------------*)
 (*  fun decode_X ptree =                                                     *)

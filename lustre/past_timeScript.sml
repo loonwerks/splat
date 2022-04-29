@@ -274,9 +274,7 @@ QED
 val Since_def =
  Lustre_Def
    “Since A B = returns S.
-     var X.
-       (S = (B or (A and X))) ∧
-       (X = (const F -> pre S))”;
+       (S = (B -> (B or (A and pre S))))”;
 
 (*---------------------------------------------------------------------------*)
 (* Recursive function modelling Since                                        *)
@@ -284,55 +282,46 @@ val Since_def =
 
 Definition Since_Rec_def :
   (Since_Rec A B 0 ⇔ B 0) ∧
-  (Since_Rec A B (SUC n) ⇔ B n ∨ (A n ∧ Since_Rec A B n))
+  (Since_Rec A B (SUC n) ⇔ B (SUC n) ∨ (A (SUC n) ∧ Since_Rec A B n))
 End
 
-(*---------------------------------------------------------------------------*)
-(* Recall that P and Q are being looked at strictly below t                  *)
-(*---------------------------------------------------------------------------*)
-
 Theorem Since_lr :
- ∀P Q t. Since P Q t ⇒ ∃i. i < t ∧ Q i ∧ ∀j. i < j ∧ j < t ⇒ P j
+ ∀P Q t. Since P Q t ⇒ ∃i. i ≤ t ∧ Q i ∧ ∀j. i < j ∧ j ≤ t ⇒ P j
 Proof
 simp_tac lustre_ss [Since_def]
  >> rpt gen_tac
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘Since_Rec P Q’
-     >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
- >- (rpt strip_tac
-      >> Induct_on ‘t’
-      >> ONCE_ASM_REWRITE_TAC[]
-      >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
-      >> rpt strip_tac
-      >- (WEAKEN_TAC is_forall >> qexists_tac ‘t’ >> simp[])
-      >- (fs []
-          >> qexists_tac ‘i’
-          >> qpat_x_assum ‘∀a. p ⇔ q’ kall_tac
-          >> rw []
-          >> metis_tac [DECIDE “a < SUC b ⇔ a<b ∨ a = b”]))
+ >- (qexists_tac ‘Since_Rec P Q’ >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
+ >- (rpt strip_tac >> Induct_on ‘t’ >> strip_tac
+     >- (fs [] >> metis_tac[])
+     >- (qpat_x_assum ‘$∀ M’ (mp_tac o Q.SPEC ‘SUC t’)
+         >> rw[]
+         >- (qexists_tac ‘SUC t’ >> rw[])
+         >- (res_tac
+            >> qexists_tac ‘i’
+            >> rw []
+            >> metis_tac [arithmeticTheory.LE])))
 QED
 
 Theorem Since_rl :
- ∀P Q t i. i < t ∧ Q i ∧ (∀j. i < j ∧ j < t ⇒ P j) ⇒ Since P Q t
+ ∀P Q t i. i ≤ t ∧ Q i ∧ (∀j. i < j ∧ j ≤ t ⇒ P j) ⇒ Since P Q t
 Proof
 rw_tac lustre_ss [Since_def]
  >> SELECT_ELIM_TAC
  >> conj_tac
- >- (qexists_tac ‘Since_Rec P Q’
-     >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
+ >- (qexists_tac ‘Since_Rec P Q’ >> Induct >> rw [Since_Rec_def,EQ_IMP_THM])
  >- (rpt strip_tac
       >> Induct_on ‘t’
       >> ONCE_ASM_REWRITE_TAC[]
       >> REWRITE_TAC [NOT_LESS_0,NOT_SUC,SUC_SUB1]
       >> rpt strip_tac
-      >> ‘i < t ∨ i = t’ by decide_tac
       >- fs[]
-      >- metis_tac[])
+      >- (‘i ≤ t ∨ i = SUC t’ by decide_tac >- fs[] >- metis_tac[]))
 QED
 
 Theorem Since_thm :
- ∀P Q t. Since P Q t ⇔ ∃i. i < t ∧ Q i ∧ ∀j. i < j ∧ j < t ⇒ P j
+ ∀P Q t. Since P Q t ⇔ ∃i. i ≤ t ∧ Q i ∧ ∀j. i < j ∧ j ≤ t ⇒ P j
 Proof
  metis_tac [Since_lr,Since_rl]
 QED

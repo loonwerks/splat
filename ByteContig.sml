@@ -824,4 +824,106 @@ fun add_enum_decl E (s,bindings) =
 *)
 
 
+(*
+datatype ptree
+  = LEAF of atom * bytes
+  | RECD of (string * ptree) list
+  | ARRAY of ptree list
+
+fun encodeFn E A path contig state =
+ let val (Consts,Decls,atomWidth,valFn,dvalFn) = E
+     val (stk,pos,theta) = state
+     val Asize = Word8Array.length A
+ in
+ case contig
+  of Void => NONE
+   | Basic a =>
+       let val width = atomWidth a
+           val newpos = pos + width
+       in if Asize < newpos then
+          NONE
+          else
+           SOME(LEAF(a, Option.valOf(total_bytes_of A pos width))::stk,
+                newpos,
+                Redblackmap.insert(theta,path,(a,(pos,width))))
+       end
+   | Declared name =>
+       (case assocOpt name Decls
+        of NONE => NONE
+	 | SOME c => parseFn E A path c state)
+   | Raw exp =>
+       (case resolveExp theta path exp
+         of NONE => NONE
+          | SOME exp' =>
+        case evalExp (Consts,theta,valFn) A exp'
+         of NONE => NONE
+          | SOME width =>
+        let val newpos = pos + width
+        in if Asize < newpos then
+              NONE
+           else
+            SOME(LEAF(Blob,Option.valOf(total_bytes_of A pos width))::stk,
+                 newpos,
+                 Redblackmap.insert(theta,path,(Blob,(pos,width))))
+        end)
+   | Assert bexp =>
+       (case resolveBexp theta path bexp
+         of NONE => NONE
+	  | SOME  bexp' =>
+         case evalBexp (Consts,theta,valFn,dvalFn) A bexp'
+          of NONE => NONE
+           | SOME tval =>
+         if tval then SOME state
+         else (print "Assertion failure"; NONE))
+   | Recd fields =>
+       let fun fieldFn fld NONE = NONE
+             | fieldFn (fName,c) (SOME st) = parseFn E A (RecdProj(path,fName)) c st
+          fun is_assert (s,Assert _) = true
+            | is_assert other = false
+          val fields' = filter (not o is_assert) fields
+       in case rev_itlist fieldFn fields (SOME state)
+           of NONE => NONE
+            | SOME (stk',pos',theta') =>
+          case take_drop (length fields') stk'
+           of NONE => NONE
+            | SOME(elts,stk'') =>
+          SOME(RECD (zip (map fst fields') (rev elts))::stk'', pos', theta')
+       end
+   | Array (c,exp) =>
+       let fun indexFn i NONE = NONE
+             | indexFn i (SOME state) = parseFn E A (ArraySub(path,intLit i)) c state
+       in case resolveExp theta path exp
+           of NONE => NONE
+	    | SOME exp' =>
+          case evalExp (Consts,theta,valFn) A exp'
+           of NONE => NONE
+            | SOME dim =>
+          case rev_itlist indexFn (upto 0 (dim - 1)) (SOME state)
+           of NONE => NONE
+            | SOME (stk',pos',theta') =>
+          case take_drop dim stk'
+           of NONE => NONE
+            | SOME(elts,stk'') => SOME(ARRAY (rev elts)::stk'', pos', theta')
+       end
+   | Union choices =>
+       let fun choiceFn(bexp,c) =
+             Option.mapPartial
+               (evalBexp (Consts,theta,valFn,dvalFn) A)
+               (resolveBexp theta path bexp)
+       in case filterOpt choiceFn choices
+           of SOME[(_,c)] => parseFn E A path c state
+            | otherwise => raise ERR "parseFn" "Union: expected exactly one successful choice"
+       end
+ end
+;
+
+fun parse E contig A =
+ case parseFn E A (VarName"root") contig ([],0,empty_lvalMap)
+  of SOME ([ptree],pos,theta) => (ptree,pos,theta)
+   | SOME otherwise => raise ERR "parse" "expected stack of size 1"
+   | NONE => raise ERR "parse" ""
+;
+*)
+
+
 end (* ByteContig *)

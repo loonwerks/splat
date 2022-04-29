@@ -2274,4 +2274,229 @@ val _ = PolyML.addPrettyPrinter (fn i => fn () => fn e => pp_exp i e);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn stmt => pp_stmt i stmt);
 val _ = PolyML.addPrettyPrinter (fn i => fn () => fn decl => pp_decl i decl);
 
+
+(*---------------------------------------------------------------------------*)
+(* Replace all record field projections with explicit function calls.        *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* Type of array elements.                                                   *)
+(*---------------------------------------------------------------------------*)
+
+fun eltyper n tyE ty =
+ if n <= 0 then raise ERR "eltype" "too many links chased, maybe circular"
+ else
+ case ty
+  of ArrayTy(elty,_) => elty
+   | NamedTy qid =>
+       (case tyE qid
+        of SOME ty' => eltyper (n-1) tyE ty'
+         | NONE => raise ERR "eltype" ("Named type not found : "^qid_string qid))
+   | BaseTy _ => raise ERR "eltype" "expected an array type; found BaseTy"
+   | RecdTy(qid,_) => raise ERR "eltype"
+           ("expected an array type; found RecdTy "^qid_string qid)
+
+val eltype = eltyper 12;
+
+(*---------------------------------------------------------------------------*)
+(* Replace field projections in L/Rvals by projection functions              *)
+(*                                                                           *)
+(* tyE maps qids to declared types, varE maps function parameters to their   *)
+(* types, TODO: add an environment for constants, since it is possible to    *)
+(* have  a constant  that is a record, and to access a field of it, etc.     *)
+(*---------------------------------------------------------------------------*)
+
+(*---------------------------------------------------------------------------*)
+(* A record projection function is the concatenation of the record name and  *)
+(* the fieldName, and then "_of"                                             *)
+(*---------------------------------------------------------------------------*)
+
+fun recd_projFn_name tyName fieldName = "proj_"^fieldName^"_"^tyName
+
+fun fieldFn tyE rty fieldName =
+ let fun recdtyper n tyE ty =
+       if n <= 0 then
+          raise ERR "recdtyper" "too many links chased, maybe circular"
+       else
+       case ty
+         of RecdTy _ => ty
+          | NamedTy qid =>
+            (case tyE qid
+              of SOME ty' => recdtyper (n-1) tyE ty'
+               | NONE => raise ERR "recdtyper"
+                          ("Named type not found : "^qid_string qid))
+          | otherwise => raise ERR "recdtyper" "not a record type"
+ in
+   case recdtyper 12 tyE rty
+    of RecdTy((qid as (pkgName,recdName)),fields)
+        => (case assoc1 fieldName fields
+             of NONE => raise ERR "fieldFn"
+                 ("seeking "^fieldName^" in type "^qid_string qid)
+              | SOME (_,fty) => ((pkgName,recd_projFn_name recdName fieldName),fty))
+     | otherwise => raise ERR "fieldFn" "expected a RecdTy"
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Need to deal with lambda-bound variables, by adding them to varE. This    *)
+(* requires the binding to have a type for the variable.                     *)
+(*---------------------------------------------------------------------------*)
+
+fun proj_intro (E as ((tyE,constE),varE)) exp =
+ (case exp
+   of VarExp id =>
+        (case varE id
+          of SOME ty => (exp, ty)
+           | NONE =>
+         case constE id
+          of SOME ty => (exp,ty)
+           | NONE => raise ERR "proj_intro" ("Unable to find identifier "^Lib.quote id))
+    | ArrayIndex(e', i) =>
+       let val (e'', ty) = proj_intro E e'
+       in (ArrayIndex(e'',i),eltype tyE ty)
+       end
+    | RecdProj(e, fldName) =>
+       let val (e', rty) = proj_intro E e
+           val (proj_qid,fty) = fieldFn tyE rty fldName
+       in (Fncall(proj_qid,[e']), fty)
+       end
+    | otherwise => (exp,NamedTy("--","--"))
+ )
+ handle e =>
+  let val pretty = pp_exp 72 exp
+      val buf = ref []
+      fun addbuf s = buf := s :: !buf
+      val _ = PolyML.prettyPrint (addbuf,72) pretty
+      val expString = String.concat (rev (!buf))
+  in raise wrap_exn "AST" ("proj_intro on expression : "^expString)  e
+  end;
+
+fun extendE env (v,u) x =
+ case env x
+  of SOME y => SOME y
+   | NONE => if x = v then SOME u else NONE;
+
+fun mergeE env1 env2 x =
+  case env1 x
+   of SOME y => SOME y
+    | NONE => env2 x;
+
+val dest_varExp = dest_VarExp;
+
+fun transRval E e =
+ case e
+  of ConstExp _ => e
+   | Unop (uop,e')     => Unop(uop,transRval E e')
+   | Binop (bop,e1,e2) => Binop (bop,transRval E e1, transRval E e2)
+   | ArrayExp elist    => ArrayExp (map (transRval E) elist)
+   | ConstrExp(qid,id,elist) => ConstrExp(qid,id,map (transRval E) elist)
+   | Fncall(qid as ("","Array_Forall"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Forall")
+   | Fncall(qid as ("","Array_Exists"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, elty)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Exists")
+   | Fncall(qid as ("","Array_Foldl"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldl")
+   | Fncall(qid as ("","Array_Foldr"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldr")
+   | Fncall(qid as ("","Array_Forall_Indices"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val indexTy = intTy
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Forall_Indices")
+   | Fncall(qid as ("","Array_Exist_Indices"),elist) =>
+      (case elist
+        of [v,arry,P] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (arry',aty) = proj_intro E arry
+                val indexTy = intTy
+                val id = dest_varExp v
+            in
+              Fncall(qid,[v, arry', transRval(E1,extendE varE (id, indexTy)) P])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Exists_Indices")
+   | Fncall(qid as ("","Array_Foldr_Indices"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldr_Indices")
+   | Fncall(qid as ("","Array_Foldl_Indices"),elist) =>
+      (case elist
+        of [eltVar,accVar,body,arry,init] =>
+            let val (E1 as (tyE,constE),varE) = E
+                val (init',accTy) = proj_intro E init
+                val (arry',aty) = proj_intro E arry
+                val elty = eltype tyE aty
+                val eltId = dest_varExp eltVar
+                val accId = dest_varExp accVar
+                val varE' = extendE (extendE varE (eltId, elty)) (accId, accTy)
+                val body' = transRval (E1,varE') body
+            in
+              Fncall(qid,[eltVar,accVar,body',arry',init'])
+            end
+         | otherwise => raise ERR "transRval" "malformed Array_Foldl_Indices")
+   | Fncall(qid,elist)      => Fncall(qid,map (transRval E) elist)
+   | RecdExp(qid,fields)    => RecdExp(qid,map (I##transRval E) fields)
+   | Quantified (q,params,exp) => Quantified (q,params,transRval E exp)
+   | otherwise => fst(proj_intro E e)
+;
+
 end (* AST *)

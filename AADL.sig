@@ -20,9 +20,9 @@ sig
     | FnDec of qid * (string * ty) list * ty * exp
 
  datatype outdec
-   = Out_Data of string * exp
-   | Out_Event of string * exp
-   | Out_Event_Data of string * exp * exp;
+   = Out_Data of string * ty * exp
+   | Out_Event_Only of string * ty * exp
+   | Out_Event_Data of string * ty * exp * exp
 
  (*---------------------------------------------------------------------------*)
  (* A contract holds all the relevant info scraped from an AGREE decl of      *)
@@ -64,7 +64,12 @@ sig
  val is_event  :  port -> bool
  val is_data   :  port -> bool
 
- val outdecName : outdec -> string
  val sort_tydecs : tydec list -> tydec list
  val sort_tmdecs : tmdec list -> tmdec list
+
+ val tydec_to_ty : tydec -> ty
+ val is_const_dec : tmdec -> bool
+ val mk_tyE : pkg list -> qid -> ty option
+ val mk_constE : pkg list -> id -> ty option
+ val mk_recd_projns : tydec list -> tmdec list
 end

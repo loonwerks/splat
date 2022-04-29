@@ -16,12 +16,24 @@ Splat todo list (August 9, 2021)
   then use the HOL type inferencer to get well-typed terms. These can
   then be readily mapped to CakeML, possibly by an Emit_CakeML module.
 
+- Implement auto-gen for encoders (based on contig type specs? Not sure)
+
 - Need to have a discussion on how to specify the correct contig-types
   for a port type. Things that need to be solved:
 
         * varying length arrays
 	* how to map encoded data to datatypes
 	* can AADL handle unbounded lists somehow
+  ===>
+
+   Current thought: leave the model as is and give command-line args
+   to splat that tell it how to handle specific port types, by
+   associating port type names to contig types.  This should allow
+   straightforward encodings for examples that can be directly handled
+   by contig types.  Problem: for types where there is not a direct
+   1-1 mapping from the contig type to the AADL/AGREE type, we can't
+   synthesize the decoder and will need some code. Fortunately, that
+   isn't needed for the ADS-B stuff. But it is needed for UXAS!
 
 - Merge DFA stuff in
 
@@ -34,8 +46,7 @@ Splat todo list (August 9, 2021)
 - Proofs and Formalizations
 
   * completeness
-  * upgrade formalization to have locations be (pos,width) elements
-    rather than slices
+  * upgrade formalization to use (pos,width) locations rather than slices
   * compilation
   * formalized compilation
   * TV-style proofs via symbolic eval. of contig-types
