@@ -13,8 +13,6 @@ local open
    (* PP_CakeML *)
 in end
 
-(*   AADL regexpLib regexpSyntax realLib realSyntax intrealSyntax PP_CakeML Gen_Contig *)
-
 val ERR = Feedback.mk_HOL_ERR "splat";
 
 fun printHelp() =
@@ -167,8 +165,9 @@ fun parse_args args =
 (*                                                                           *)
 (*  ([pkg_1,...,pkg_n],dec)                                                  *)
 (*                                                                           *)
-(*  where the pkg_i are packages used in dec, and dec is a filter, monitor,  *)
-(*  or gate. The pkg_i can be trimmed to be minimal.                         *)
+(*  where the pkg_i are packages used in dec, and dec is an AGREE contract   *)
+(* (currentky labelled as filter, monitor, or gate. The pkg_i can be trimmed *)
+(* to be minimal, but that has not yet been done.                            *)
 (*---------------------------------------------------------------------------*)
 
 fun substFn alist x =
@@ -399,9 +398,10 @@ fun set_Defs_struct gdt =
  end
 
 (*---------------------------------------------------------------------------*)
-(* Unhappily it can happen that identifiers that are the names of constants, *)
-(* and which should be constants, can arrive in the .json as free variables. *)
-(* This manifests as a free variable occurring in one of the following cases *)
+(* Unhappily it can happen that identifiers that *are* the names of          *)
+(* constants, and which *should* be constants, arrive in the .json as free   *)
+(* variables. This manifests as a free variable occurring in one of the      *)
+(* following cases                                                           *)
 (*                                                                           *)
 (*  - the body of a constant or function declaration (tmdecs)                *)
 (*  - in the rhs of an ivar declaration (where the rhs can legitimately have *)
@@ -825,6 +825,7 @@ fun gadget_tyEnvs gdt =
                          ("unknown type abbrev: "^qid_string qid)
     *)
 
+FOO
 fun get_ports gdt =
  let val ports = gadget_ports gdt
  in (filter is_in_port ports,filter is_out_port ports)

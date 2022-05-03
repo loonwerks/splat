@@ -52,6 +52,7 @@ val dummyTy = NamedTy("","dummyTy");
 
 val unitExp = Fncall(("","unitExp"),[]);
 fun mk_intLit i = ConstExp(IntLit{value=i, kind=AST.Int NONE});
+fun mk_stringLit s = ConstExp(StringLit s);
 fun listLit elts = Fncall(("","List"), elts);
 fun mk_tuple elts = Fncall(("","Tuple"), elts);
 
@@ -59,7 +60,7 @@ fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_condExp(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
 fun mk_apiCall (s,args) = Fncall(("","API."^s),args);
-fun mk_encodeCall (tyName,arg) = Fncall(("","Encode."^s),args);
+fun mk_encodeCall (tyName,arg) = Fncall(("","Encode."^tyName),arg);
 
 fun letExp binds exp =
     let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
@@ -442,7 +443,7 @@ fun pp_cake_exp depth pkgName env exp =
       | RecdProj(recd,field) => PrettyBlock(0,false,[],
            [pp_cake_exp (depth-1) pkgName env recd,
             PrettyString".",PrettyString field])
-      | other => PrettyString "<UNKNOWN AST NODE>!?"
+      | other => PretteyString "<UNKNOWN AST NODE>!?"
   end
 and pp_infix d pkgName env (str,e1,e2) =
     let open PolyML
@@ -488,9 +489,9 @@ fun pp_tydec depth pkgName tydec =
                    pp_space_list (pp_cake_ty (d-1) pkgName) tys])
               fun pp_constr_list d list =
                let fun iter [] = []
-                 | iter [x] = [pp_constr (d-1) x]
-                 | iter (h::t) =
-                     pp_constr (d-1) h :: PrettyString" |" :: Space::iter t
+                     | iter [x] = [pp_constr (d-1) x]
+                     | iter (h::t) =
+                        pp_constr (d-1) h :: PrettyString" |" :: Space::iter t
                in
                  PrettyBlock(0,true,[],iter list)
                 end
@@ -829,9 +830,18 @@ val comment2 =
 
 fun eventOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
 
+fun outdecExp (Out_Data(s,ty,e)) =
+     Fncall(("Utils","Out_Data"),[mk_stringLit s,e])
+  | outdecExp (Out_Event_Only(s,ty,b)) =
+     Fncall(("Utils","Out_Event_Only"),[mk_stringLit s,b])
+  | outdecExp (Out_Event_Data(s,ty,b,e)) =
+     Fncall(("Utils","Out_Event_Data"),[mk_stringLit s,b,e])
+
+(*
 fun mk_outExp (Out_Data(s,ty,e)) = e
   | mk_outExp (Out_Event_Only(s,ty,b)) = eventOpt b
   | mk_outExp (Out_Event_Data(s,ty,b,e)) = mk_ite (b,mk_Some e,NoneExp)
+*)
 
 val stateVar = VarExp "state";
 val initStepVar = VarExp "initStep";
@@ -925,7 +935,7 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
      (* Output port values and alist binding vars to them *)
      val outIds = map AADL.outdecName outdecs
      val outVars = map VarExp outIds
-     val outBinds = zip outVars (map mk_outExp outdecs)
+     val outBinds = zip outVars (map outdecExp outdecs)
 
      val stepFn_dec =
        let val stateBind = (stateVarTuple,stateVars)
@@ -998,14 +1008,12 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
                               (map (PrettyString o mk_inOpt) inportIds)
            val inOptIds = map mk_Opt inportIds
            val inOptVars = map VarExp inOptIds
-           val out_signals = filter is_signal outports
-           val out_signalIds = map port_name out_signals
 
 	   fun is_valof ("","Option.valOf") = true
              | is_valof ("","valOf") = true
-             | is_valof otherwise = falsen
+             | is_valof otherwise = false
 
-           fun pp_outdec outdec =
+           fun pp_outdec_effect outdec =
              case outdec
 	      of Out_Data(p,ty,e)
                   => ppExp (mk_apiCall("send_"^p,[mk_encodeCall(ty,e)])),
@@ -1024,7 +1032,7 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
 
            val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break_2])
            val outputCalls =
-             PrettyBlock(2,true,[], splice spacer (map outdec_code outdecs))
+             PrettyBlock(2,true,[], splice spacer (map pp_outdec_effect outdecs))
 
        in
 	   PrettyBlock(2,true,[],

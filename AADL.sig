@@ -2,6 +2,7 @@ signature AADL =
 sig
  include Abbrev
 
+  type id = string
   type qid = string * string
   type ty = AST.ty
   type exp = AST.exp
@@ -57,12 +58,15 @@ sig
  val tydec_qid : tydec -> qid
  val tmdec_qid : tmdec -> qid
 
- val port_name : port -> string
- val port_ty   : port -> ty
+ val outdecName : outdec -> string
+ val outdecTy   : outdec -> ty
+
+ val port_name  : port -> string
+ val port_ty    : port -> ty
  val is_in_port : port -> bool
  val is_out_port: port -> bool
- val is_event  :  port -> bool
- val is_data   :  port -> bool
+ val is_event   : port -> bool
+ val is_data    : port -> bool
 
  val sort_tydecs : tydec list -> tydec list
  val sort_tmdecs : tmdec list -> tmdec list
