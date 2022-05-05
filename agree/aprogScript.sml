@@ -78,18 +78,22 @@ Definition arithprog_def:
       |>
 End
 
-overload_on ("/\\",``AndExpr``);
+(*---------------------------------------------------------------------------*)
+(* Set up some overloading, which will improve readability                   *)
+(*---------------------------------------------------------------------------*)
+
+overload_on ("/\\", ``AndExpr``);
 overload_on ("COND",``BoolCondExpr``);
-overload_on ("=",``EqExpr``);
-overload_on ("pre",``PreExpr``);
-overload_on ("pre",``BoolPreExpr``);
-overload_on ("<=",``LeqExpr``);
-overload_on ("<",``LessExpr``);
-overload_on ("+",``AddExpr``);
-overload_on ("-",``SubExpr``);
-overload_on ("=",``BoolStmt``);
-overload_on ("=",``IntStmt``);
-overload_on ("-->",``FbyExpr``);
+overload_on ("=",   ``EqExpr``);
+overload_on ("pre", ``PreExpr``);
+overload_on ("pre", ``BoolPreExpr``);
+overload_on ("<=",  ``LeqExpr``);
+overload_on ("<",   ``LessExpr``);
+overload_on ("+",   ``AddExpr``);
+overload_on ("-",   ``SubExpr``);
+overload_on ("=",   ``BoolStmt``);
+overload_on ("=",   ``IntStmt``);
+overload_on ("-->", ``FbyExpr``);
 
 
 val th0 = EVAL“(strmSteps E arithprog 0 ' "out") 0”
@@ -196,6 +200,13 @@ Proof
   Induct >> rw [strmSteps_def,itprog_ap,itprog_out]
 QED
 
+(*---------------------------------------------------------------------------*)
+(* Equivalence of original program in strmSteps, with squash program, also   *)
+(* in strmSteps. This is somewhat different than the discussion in the header*)
+(* of this file. Dealing with the finite maps is cumbersome; that will have  *)
+(* be improved in order to see the proof through.                            *)
+(*---------------------------------------------------------------------------*)
+
 Theorem equiv1:
   ∀E t. strmSteps E arithprog t ' "out" t = strmSteps E itprog t ' "out" t
 Proof
@@ -203,13 +214,12 @@ Proof
   >> Induct_on ‘t’
   >> cheat
 
-(* >-  (EVAL_TAC >> rw[])
-   >-  (EVAL_TAC >> rw[GSYM arithprog_def, GSYM itprog_def]
-        >- (‘t = 0n’ by decide_tac >> rw [] >> EVAL_TAC >> rw[])
-        >-
-*)
 QED
 
+(*---------------------------------------------------------------------------*)
+(* Equiv of strmSteps itprog with stateSteps. Expressed in theorem equiv2    *)
+(* below.                                                                    *)
+(*---------------------------------------------------------------------------*)
 
 val expand_Supports = CONV_TAC (STRIP_QUANT_CONV (LAND_CONV (PATH_CONV "lr" EVAL)));
 
