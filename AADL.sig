@@ -20,6 +20,11 @@ sig
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp
 
+ datatype indec
+   = In_Data of string * ty * exp
+   | In_Event_Only of string * ty * exp
+   | In_Event_Data of string * ty * exp * exp;
+
  datatype outdec
    = Out_Data of string * ty * exp
    | Out_Event_Only of string * ty * exp
@@ -46,6 +51,7 @@ sig
       * tmdec list  (* local tmdecs *)
       * vardec list (* state vars and temporaries *)
       * (string * string * outdec) list
+      * (string * string * exp) list
       * (string * string * exp) list
 
  type decls = string * (tydec list * tmdec list * contract list)

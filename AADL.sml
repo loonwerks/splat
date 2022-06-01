@@ -28,6 +28,11 @@ in end;
     = ConstDec of qid * ty * exp
     | FnDec of qid * (string * ty) list * ty * exp;
 
+ datatype indec
+   = In_Data of string * ty * exp
+   | In_Event_Only of string * ty * exp
+   | In_Event_Data of string * ty * exp * exp;
+
  datatype outdec
    = Out_Data of string * ty * exp
    | Out_Event_Only of string * ty * exp
@@ -38,10 +43,9 @@ in end;
 (* a {filter,monitor,gate}. These are all quite similar from the code gen    *)
 (* perspective so we sweep them all into a unified datatype.                 *)
 (*                                                                           *)
-(* Contract (name,kind,ports,latched,tydecs,tmdecs,ivars,(outdecs,otherGs))  *)
+(* ContractDec                                                               *)
+(*   (name,kind,ports,latched,tydecs,tmdecs,vardecs,outdecs,assums,guars)    *)
 (*                                                                           *)
-(* It doesn't capture everything that could do into an AGREE contract, eg    *)
-(* assumptions aren't grabbed.                                               *)
 (*---------------------------------------------------------------------------*)
 
  datatype contract =
@@ -54,7 +58,8 @@ in end;
       * tmdec list  (* local tmdecs *)
       * vardec list (* state vars and temporaries *)
       * (string * string * outdec) list
-      * (string * string * exp) list
+      * (string * string * exp) list   (* assums *)
+      * (string * string * exp) list   (* guars  *)
 
 
 (* Pkg(pkgName, (tydecs,tmdecs,contracts)) *)
@@ -1034,6 +1039,15 @@ in
 
 fun mk_codeG otyEnv (s1,s2,e) = (s1,s2,mk_outdec otyEnv e);
 
+fun dest_assume_stmt stmt =
+ if dropString (kind_of stmt) = "AssumeStatement" then
+     ((dropString (name_of stmt) handle _ => "",
+      label_of stmt,
+      dest_exp(expr_of stmt))
+     handle _ => raise ERR "dest_assume_stmt" "unexpected syntax")
+ else raise ERR "dest_assume_stmt" "unexpected syntax"
+;
+
 fun dest_guar_stmt stmt =
  if dropString (kind_of stmt) = "GuaranteeStatement" then
      ((dropString (name_of stmt) handle _ => "",
@@ -1081,11 +1095,12 @@ fun get_code_contract comp =
      val qid = dest_qid (dropString (name_of comp))
      val (pkgName,thrName) = qid
      val ports = map get_contract_port(dropList (features_of comp))
-     val stmts = get_annex_stmts (get_agree_annex "get_monitor" comp)
+     val stmts = get_annex_stmts (get_agree_annex "get_code_contract" comp)
      val (pdecs,others) = List.partition is_pure_dec stmts
      val tydecs = []  (* todo ... *)
      val tmdecs = map (mk_def pkgName []) pdecs  (* consts and fndecs *)
      val vardecs = mapfilter dest_eq_or_property_stmt others
+     val assums = mapfilter dest_assume_stmt others
      val guardecs = mapfilter dest_guar_stmt others
      val otyEnv = mk_oty_env ports
      val outdecs = mapfilter (mk_codeG otyEnv) guardecs
@@ -1094,7 +1109,7 @@ fun get_code_contract comp =
  in
    ContractDec
      (qid, "Code Contract", ports, is_latched,
-      tydecs, tmdecs, vardecs, outdecs, otherGs)
+      tydecs, tmdecs, vardecs, outdecs, assums, otherGs)
  end
  handle e => raise wrap_exn "get_code_contract" "unexpected syntax" e
 ;
@@ -1325,7 +1340,8 @@ fun mk_tyE pkglist =
  end
 
 fun tmdecs_of_contract
-     (ContractDec (qid,s,ports,b,tydecs,tmdecs,vardecs,outdecs,guars)) = tmdecs;
+   (ContractDec (qid,s,ports,b,tydecs,tmdecs,
+                 vardecs,outdecs,assums,guars)) = tmdecs;
 
 fun cdecs_of (Pkg(pkgName,(tys,tmdecs,contracts))) =
  let fun contract_consts contract =

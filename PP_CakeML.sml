@@ -14,7 +14,10 @@ type port = string * ty * string * string
 type ivar = string * ty * exp
 
 val ERR = mk_HOL_ERR "PP_CakeML";
+
 fun unimplemented s = ERR s "unimplemented";
+
+fun show pp = TextIO.print (PPfns.pp_string pp);
 
 fun splice x [] = []
   | splice x [y] = [y]
@@ -56,11 +59,23 @@ fun mk_stringLit s = ConstExp(StringLit s);
 fun listLit elts = Fncall(("","List"), elts);
 fun mk_tuple elts = Fncall(("","Tuple"), elts);
 
-fun mk_ite(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_condExp(b,e1,e2) = Fncall(("","IfThenElse"),[b,e1,e2]);
 fun mk_assignExp v e = Fncall(("","AssignExp"),[v,e]);
 fun mk_apiCall (s,args) = Fncall(("","API."^s),args);
-fun mk_encodeCall (tyName,arg) = Fncall(("","Encode."^tyName),arg);
+
+(*---------------------------------------------------------------------------*)
+(* Incomplete: need to deal with encoding base types and array types.        *)
+(*---------------------------------------------------------------------------*)
+
+fun ty_name ty =
+ case ty
+  of NamedTy(_,tyName) => tyName
+   | otherwise => raise ERR "ty_name" "Expected a named type";
+
+fun mk_encodeCall (ty,arg) =
+ case AST.namedTypes [ty]
+  of [(pkg,tyName)] => Fncall(("","Encode."^pkg^"_"^tyName),[arg])
+   | otherwise => raise ERR "mk_encodeCall" "expected a NamedTy"
 
 fun letExp binds exp =
     let val eqs = map (fn (a,b) => Binop(Equal,a,b)) binds
@@ -75,7 +90,6 @@ val NoneExp = ConstExp(IdConst("","None"));
 fun mk_Some e = Fncall(("","Some"),[e])
 fun mk_isSome e = Fncall(("","Option.isSome"),[e])
 fun mk_valOf e = Fncall(("","valOf"),[e])
-
 
 fun mk_comment slist = Fncall(("","Comment"), map VarExp slist);
 
@@ -443,7 +457,7 @@ fun pp_cake_exp depth pkgName env exp =
       | RecdProj(recd,field) => PrettyBlock(0,false,[],
            [pp_cake_exp (depth-1) pkgName env recd,
             PrettyString".",PrettyString field])
-      | other => PretteyString "<UNKNOWN AST NODE>!?"
+      | other => PrettyString "<UNKNOWN AST NODE>!?"
   end
 and pp_infix d pkgName env (str,e1,e2) =
     let open PolyML
@@ -828,31 +842,21 @@ val comment2 =
 (* that will be used to make the output FFI call on the port.                *)
 (*---------------------------------------------------------------------------*)
 
-fun eventOpt e = mk_ite(e,mk_Some unitExp,NoneExp)
-
-fun outdecExp (Out_Data(s,ty,e)) =
-     Fncall(("Utils","Out_Data"),[mk_stringLit s,e])
-  | outdecExp (Out_Event_Only(s,ty,b)) =
-     Fncall(("Utils","Out_Event_Only"),[mk_stringLit s,b])
+fun outdecExp (Out_Data(s,ty,e)) = Fncall(("","Port.Data"),[e])
+  | outdecExp (Out_Event_Only(s,ty,b)) = Fncall(("","Port.Event_Only"),[b])
   | outdecExp (Out_Event_Data(s,ty,b,e)) =
-     Fncall(("Utils","Out_Event_Data"),[mk_stringLit s,b,e])
+      Fncall(("","Port.Event_Data"),[mk_condExp(b,mk_Some e,NoneExp)])
 
-(*
-fun mk_outExp (Out_Data(s,ty,e)) = e
-  | mk_outExp (Out_Event_Only(s,ty,b)) = eventOpt b
-  | mk_outExp (Out_Event_Data(s,ty,b,e)) = mk_ite (b,mk_Some e,NoneExp)
-*)
-
-val stateVar = VarExp "state";
-val initStepVar = VarExp "initStep";
-
-fun ivar_ty (s,ty,exp) = ty;
-fun ivar_name (s,ty,exp) = s;
-
-fun ty_name ty =
- case ty
-  of NamedTy(_,tyName) => tyName
-   | otherwise => raise ERR "ty_name" "Expected a named type";
+fun ppCond(ppB,pp_e1,pp_e2) =
+ let open PolyML
+ in
+  PrettyBlock(0,true,[],
+     [PrettyString "if ",
+      PrettyBlock(0,false,[],[ppB]),
+      Space, PrettyString "then", Space,
+      pp_e1, Space,
+      PrettyString "else", Space, pp_e2])
+ end;
 
 fun ppBind ppleft ppright =
  let open PolyML
@@ -862,17 +866,11 @@ fun ppBind ppleft ppright =
       Space, PrettyBlock(0,false,[], [ppright])])
  end;
 
-fun ppCond(ppB,pp_e1,pp_e2) =
- let open PolyML
- in
-  PrettyBlock(0,true,[],
-     [PrettyString "if ",
-      PrettyBlock(0,false,[],[ppB]),
-      Space, PrettyString "then", Space,
-      pp_e1,
-      Space, PrettyString "else", Space, pp_e2])
- end;
+val stateVar = VarExp "state";
+val initStepVar = VarExp "initStep";
 
+fun ivar_ty (s,ty,exp) = ty;
+fun ivar_name (s,ty,exp) = s;
 
 val gadget_struct_boilerplate = String.concatWith "\n"
  [ "fun pre x = x;",
@@ -935,7 +933,6 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
      (* Output port values and alist binding vars to them *)
      val outIds = map AADL.outdecName outdecs
      val outVars = map VarExp outIds
-     val outBinds = zip outVars (map outdecExp outdecs)
 
      val stepFn_dec =
        let val stateBind = (stateVarTuple,stateVars)
@@ -961,10 +958,10 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
              ppBind (ppExp newStateVars)
                     (ppCond(PrettyString"!initStep",initExp, stepExp))
            val reBind = (stateVarTuple, newStateVars)
-           val newOpts =
-             (VarExp"newStateVarOpts", mk_tuple (map mk_Some stateVarExps))
+           val newOpts = (VarExp"newStateVarOpts", mk_tuple (map mk_Some stateVarExps))
+           val outdecs = (VarExp"newOutDecs", mk_tuple(map outdecExp outdecs))
 
-           val outTuple = mk_tuple[VarExp"newStateVarOpts",mk_tuple outVars]
+           val outTuple = mk_tuple[VarExp"newStateVarOpts",VarExp"newOutDecs"]
        in
          PrettyBlock(2,true,[],
            [PrettyString "fun stepFn inputs stateVars = ", Line_Break,
@@ -975,8 +972,7 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
               stepBind,       Line_Break,
               valBind reBind, Line_Break,
               valBind newOpts,Line_Break,
-              ppExp comment2, Line_Break,
-              valBinds outBinds]),
+              valBind outdecs]),
             Space,
             PrettyString "in",
             Space, PrettyString "   ", ppExp outTuple,
@@ -991,12 +987,23 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
                "  let val () = API.fill_", portId, "_buffer ()\n",
                "      val inOpt2 = Parse.parse_", tyName, " API.",portId, "_buffer\n",
                "  in\n",
-               "     Utils.dropOpt \"Parsing of ", portId, "port failed.\" inOpt2\n",
+               "     Utils.dropOpt \"Parsing of ", portId, " input port failed.\" inOpt2\n",
 	       "  end;"]
            val strings = map2 inportParser_dec inportIds inportTyNames
        in
          PrettyString (String.concatWith "\n\n" strings)
        end
+
+     fun pp_outdec_effect outdec =
+       case outdec
+        of Out_Data(p,ty,e)
+            => ppExp (mk_apiCall("send_"^p,[mk_encodeCall(ty,e)]))
+         | Out_Event_Only (p,ty,b)
+            => ppExp (mk_condExp
+                       (b, mk_apiCall("send_"^p,[emptyStringVar]), unitExp))
+         | Out_Event_Data (p,ty,b,e)
+            => ppExp (mk_condExp
+                       (b,mk_apiCall("send_"^p,[mk_encodeCall(ty,e)]),unitExp))
 
      val gadgetFn_dec =
        let val inportIds = map port_name inports
@@ -1009,31 +1016,9 @@ fun pp_gadget_struct env (structName,ports,ivars,outdecs) =
            val inOptIds = map mk_Opt inportIds
            val inOptVars = map VarExp inOptIds
 
-	   fun is_valof ("","Option.valOf") = true
-             | is_valof ("","valOf") = true
-             | is_valof otherwise = false
-
-           fun pp_outdec_effect outdec =
-             case outdec
-	      of Out_Data(p,ty,e)
-                  => ppExp (mk_apiCall("send_"^p,[mk_encodeCall(ty,e)])),
-               | Out_Event_Only (p,ty,b)
-                  => ppExp
-                       (mk_condExp
-                          (b,
-                           mk_apiCall("send_"^p,[emptyStringVar]),
-                           unitExp))
-               | Out_Event_Data (p,ty,b,e)
-                  => ppExp
-                       (mk_condExp
-                          (b,
-                           mk_apiCall("send_"^p,[mk_encodeCall(ty,e)]),
-                           unitExp))
-
            val spacer = PrettyBlock(0,true,[], [Line_Break, PrettyString";", Line_Break_2])
            val outputCalls =
              PrettyBlock(2,true,[], splice spacer (map pp_outdec_effect outdecs))
-
        in
 	   PrettyBlock(2,true,[],
            [PrettyString (String.concat["fun ", gadgetFnId, "() = "]),

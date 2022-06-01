@@ -695,4 +695,38 @@ fun mk_byte_array ptree =
   of ARRAY elts => Utils.byte_array_fromList (List.map mk_byte elts)
    | otherwise  => raise Utils.ERR "mk_byte_array" "";
 
+(*---------------------------------------------------------------------------*)
+(* Parse ports                                                               *)
+(*---------------------------------------------------------------------------*)
+
+fun dataParse p byteA =
+  let val (contig,mk_data) = p
+  in case parseFn parseEnv byteA (VarName"root")
+                  contig ([],0,empty_lvalMap())
+      of Some([ptree],_,_) => Utils.total (Port.Data o mk_data) ptree
+       | otherwise => None
+  end;
+
+fun eventParse byteA =
+  case parseFn parseEnv byteA (VarName"root")
+               bool ([],0,empty_lvalMap())
+    of Some([ptree],_,_) => Utils.total (Port.Event_Only o mk_bool) ptree
+     | otherwise => None
+  end;
+
+fun mk_event_data mk_data ptree =
+ case ptree
+  of RECD[("event",e),("data",d)] => Port.Event_Data (mk_bool e) (mk_data d)
+   | otherwise  => raise Utils.ERR "mk_event_data"
+                     "expected RECD with event and data fields";
+
+fun event_dataParse p byteA =
+  let val (contig,mk_data) = p
+  in case parseFn parseEnv byteA (VarName"root")
+                  (Recd[("event",bool),("data",contig)])
+                  ([],0,empty_lvalMap())
+       of Some([ptree],_,_) => mk_event_data mk_data ptree
+        | otherwise => None
+  end;
+
 end (* ByteContig *)

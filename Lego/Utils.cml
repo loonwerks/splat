@@ -406,5 +406,35 @@ fun double_gte lop rop =
     r
   end;
 
-
 end (* Utils *)
+
+structure Port =
+struct
+
+(*---------------------------------------------------------------------------*)
+(* Datatype for runtime port values                                          *)
+(*---------------------------------------------------------------------------*)
+
+datatype port
+  = Data 'a
+  | Event_Only bool
+  | Event_Data ('a option);
+
+fun event port =
+ case port
+  of Data x => False
+   | Event_Only b => b
+   | Event_Data None => False
+   | Event_Data (Some _) => True;
+
+fun dataOf port =
+ case port
+  of Data x => x
+   | Event_Data (Some x) => x
+   | Event_Only b =>
+       raise Utils.ERR "Port.dataOf" "Event port: carries no data"
+   | Event_Data None =>
+       raise Utils.ERR "Port.dataOf"
+                       "Event-data port: no event, data not present"
+
+end

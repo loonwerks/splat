@@ -8,9 +8,8 @@ open Lib Feedback HolKernel boolLib MiscLib bossLib;
 load "intrealSyntax";
 *)
 
-local open
-   AADL Gen_Contig
-   (* PP_CakeML *)
+local
+  open AADL Gen_Contig PP_CakeML
 in end
 
 val ERR = Feedback.mk_HOL_ERR "splat";
@@ -166,8 +165,8 @@ fun parse_args args =
 (*  ([pkg_1,...,pkg_n],dec)                                                  *)
 (*                                                                           *)
 (*  where the pkg_i are packages used in dec, and dec is an AGREE contract   *)
-(* (currentky labelled as filter, monitor, or gate. The pkg_i can be trimmed *)
-(* to be minimal, but that has not yet been done.                            *)
+(* (currentky labelled as filter, monitor, or gate). The pkg_i can be        *)
+(* trimmed to be minimal, but that has not yet been done.                    *)
 (*---------------------------------------------------------------------------*)
 
 fun substFn alist x =
@@ -208,12 +207,12 @@ fun set_tmdec_pkgName name tmdec =
    | FnDec ((_,s),params,rty,exp) => FnDec ((name,s),params,rty,exp)
 
 fun elim_contract tydecs tmdecs (ContractDec condec) =
- let val (qid,_,ports,latched,con_tydecs,con_tmdecs,ivardecs,odecs,guars) = condec
+ let val (qid,_,ports,latched,con_tydecs,con_tmdecs,vdecs,odecs,A,G) = condec
      val tydecs' = sort_tydecs (tydecs @ con_tydecs)
      val condecs' = map (set_tmdec_pkgName (snd qid)) con_tmdecs
      val tmdecs' = sort_tmdecs (tmdecs @ condecs')
      val outdecs = map #3 odecs
- in Gadget (qid, tydecs', tmdecs', ports,ivardecs,outdecs)
+ in Gadget (qid, tydecs', tmdecs', ports, vdecs, outdecs)
  end;
 
 (*---------------------------------------------------------------------------*)
@@ -412,7 +411,7 @@ fun set_Defs_struct gdt =
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
 
-fun corrall_rogue_vars gdt =
+fun corral_rogue_vars gdt =
  let val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      fun free_tmdecV tmdec =
        case tmdec
@@ -765,29 +764,33 @@ fun set_ports_and_ivars_lower_case gdt =
  end;
 
 (*---------------------------------------------------------------------------*)
-(* Replace all "event inport" syntax by "event_inport" variables. Then       *)
-(* replace all "inport" variables by "valOf inport" calls. If the user has   *)
-(* written a good spec, then this should be fine. If not, it could happen    *)
-(* that a "valOf v" expression gets evaluated but that there isn't a         *)
-(* preceding "event_v" test, and that there is no input event on v. In this  *)
-(* sad case, there will be a runtime test "Option.valOf None" and the gadget *)
-(* will crash.                                                               *)
+(* At runtime input ports are parsed to port values. In the body of the      *)
+(* stepFn, event(p) calls will extract whether or not there's an event on    *)
+(* port p. Port p can also occur where it is not of the form "event(p)". In  *)
+(* that case, the contract is implicitly extracting the data from the port,  *)
+(* and so we replace "p" by a call "dataOf(p)".                               *)
 (*---------------------------------------------------------------------------*)
 
-fun elim_inport_events gdt =
+fun add_inport_data_projns gdt =
  let open AST
      val Gadget(qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      val inports = filter is_in_port ports
      val eiports = filter is_event inports
      val portNames = map #1 eiports
-     fun mk_bind1 s = (Fncall(("","event"),[VarExp s]) |-> VarExp("event_"^s))
-     fun mk_bind2 s = (VarExp s |-> Fncall(("","valOf"),[VarExp s]))
-     val theta1 = map mk_bind1 portNames
-     val theta2 = map mk_bind2 portNames
+     fun mk_bind1 s = (Fncall(("","event"),[VarExp s]) |-> VarExp("event--"^s))
+     fun mk_bind2 s = (VarExp s |-> Fncall(("","Port.dataOf"),[VarExp s]))
+     fun mk_bind3 s = (VarExp("event--"^s) |-> Fncall(("","Port.event"),[VarExp s]))
+     val theta1 = map mk_bind1 portNames  (* move event(p) out of way *)
+     val theta2 = map mk_bind2 portNames  (* do intended replacement *)
+     val theta3 = map mk_bind3 portNames  (* restore event(p) *)
      fun substIvar theta (s,ty,exp) = (s,ty,substExp theta exp)
  in Gadget(qid,tydecs,tmdecs,ports,
-           map (substIvar theta2 o substIvar theta1) ivars,
-           map (substExp_outdec theta2 o substExp_outdec theta1) outdecs)
+           map (substIvar theta3
+                 o substIvar theta2
+                 o substIvar theta1) ivars,
+           map (substExp_outdec theta3
+                 o substExp_outdec theta2
+                 o substExp_outdec theta1) outdecs)
  end;
 
 fun gadget_tyE gdt =
@@ -798,9 +801,17 @@ fun gadget_tyE gdt =
    tydec_alist
  end
 
+(*---------------------------------------------------------------------------*)
+(* gadget_tyEnvs gdt = (varEnv,tyEnv,constEnv) where                         *)
+(*                                                                           *)
+(*  varEnv   : string -> ty  gives the types of variables                    *)
+(*  tyEnv    : qid -> ty     expands NamedTys to their unabbrev'd defns      *)
+(*  constEnv : qid -> ty     gives the return type for constants and fns     *)
+(*---------------------------------------------------------------------------*)
+
 fun gadget_tyEnvs gdt =
  let open AST
-     val Gadget (qid, tydecs, tmdecs,ports,ivars,outdecs) = gdt
+     val Gadget (qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt
      val tyE_0 = gadget_tyE gdt
      fun chase list = list
      val tyE = chase tyE_0
@@ -821,15 +832,18 @@ fun gadget_tyEnvs gdt =
              case assoc1 qid alist
               of SOME (_,NamedTy qid') => chase qid' (n-1)
                | SOME (_, ty) => ty
-               | NONE => raise ERR "rgadget_tyEnvs"
+               | NONE => raise ERR "gadget_tyEnvs"
                          ("unknown type abbrev: "^qid_string qid)
     *)
 
-FOO
 fun get_ports gdt =
  let val ports = gadget_ports gdt
  in (filter is_in_port ports,filter is_out_port ports)
  end
+
+fun apply gdts [] = gdts
+  | apply gdts (f::t) = apply (f gdts) t;
+
 
 fun defs_struct_of gdt =
  let val tyEnvs = gadget_tyEnvs gdt
@@ -898,9 +912,6 @@ let open AST
 in
   pretty
 end
-
-fun apply gdts [] = gdts
-  | apply gdts (f::t) = apply (f gdts) t;
 
 fun getFile path =
   let val istrm = TextIO.openIn path
@@ -974,13 +985,13 @@ fun process_model jsonFile =
      val tmE = mk_constE (map Pkg pkgs)
      val gdts1 = mk_gadgets pkgs
      val gdts = apply gdts1
-                 [map corrall_rogue_vars,
+                 [map corral_rogue_vars,
                   map set_type_constrs,
                   map set_sig_lower_case,
                   map set_ports_and_ivars_lower_case,
                   elim_projections tyE tmE,
                   map set_Defs_struct,
-                  map elim_inport_events]
+                  map add_inport_data_projns]
      val apis = map API_of (zip gdts1 gdts)
      val parser_structs = map parser_struct_of gdts
      val defs_structs = map defs_struct_of gdts
@@ -1004,15 +1015,15 @@ val [p1,p2] = parsers;
 val [defs1,defs2] = defs;
 val [gpp1,gpp2] = gdt_pps;
 
+export_implementation "tmp" (api1,p1,defs1,gpp1,gdt1);
+export_implementation "tmp" (api2,p2,defs2,gpp2,gdt2);
+
+
 val [gdt1, gdt2, gdt3] = gdts;
 val [api1,api2,api3] = apis;
 val [p1,p2,p3] = parsers;
 val [defs1,defs2,defs3] = defs;
 val [gpp1,gpp2,gpp3] = gdt_pps;
-
-export_implementation "tmp" (api1,p1,defs1,gpp1,gdt1);
-export_implementation "tmp" (api2,p2,defs2,gpp2,gdt2);
-
 export_implementation "tmp" (api3,p3,defs3,gpp3,gdt3);
 *)
 
