@@ -691,16 +691,6 @@ executable. Here are the steps:
 \item Let $\konst{comp'} = \konst{squash}(\konst{comp})$. From \konst{comp'} we
 \end{enumerate}
 
-\begin{tikzpicture}[auto]
-\node [cloud, draw, cloud puffs = 16, align=left] (SPEC) at (0,0) {Format \\ Specification};
-\node [draw,align=left](TEST) at (-4,0) {test gen. \\ fuzzing};
-\node [draw,align=left] (PROP) at (0,-3.5) {Semantics, \\ properties, proofs};
-\node [draw, align=left] (IMPL) at (4.5,0) {Implementations: \\ recognizers, \\ parsers, \\ encode/decode};
-\draw [->, ultra thick] (SPEC) to (TEST);
-\draw [->, ultra thick] (SPEC) to (PROP)r
-\draw [->, ultra thick] (SPEC) to (IMPL);
-\end{tikzpicture}
-
 \bibliography{agree}
 
 \end{document}

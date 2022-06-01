@@ -1430,7 +1430,8 @@ Theorem comp_lem1 :
     ∃sigma.
       matchFn ([(lval,extend_contig_locs lval contig)],s,extend_paths lval theta)
       =
-      SOME ("", sigma)
+      SOME ("", sigma) ∧
+      SUBMAP theta sigma
 Proof
  recInduct Contig_Lang_ind \\ rpt conj_tac
  >- (rw[IN_Contig_Lang,Once matchFn_def,extend_contig_locs_def,

@@ -428,7 +428,7 @@ QED
 
 (*---------------------------------------------------------------------------*)
 (* A sequence of proofs showing that iteration doesn't alter earlier values  *)
-(* in the stream that it generates.                                          *)
+(* in the environment it generates.                                          *)
 (*---------------------------------------------------------------------------*)
 
 Theorem stmtFn_timeframe :

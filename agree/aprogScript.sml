@@ -385,11 +385,11 @@ Theorem equiv3 :
                         ("in2",  IntValue in2);
                         ("in1",  IntValue in1)];
          (stateOut,outE) = stateStep itprog (inE,stateIn) ;
-         state_N     = int_of(stateOut ' "N");
-         state_ap    = bool_of(stateOut ' "ap");
-         state_in2   = int_of(stateOut ' "in2");
-         state_in1   = int_of(stateOut ' "in1");
-         output_ap   = bool_of(outE ' "out")
+         state_N   = int_of(stateOut ' "N");
+         state_ap  = bool_of(stateOut ' "ap");
+         state_in2 = int_of(stateOut ' "in2");
+         state_in1 = int_of(stateOut ' "in1");
+         output_ap = bool_of(outE ' "out")
      in
        ((state_N, state_ap,state_in2, state_in1), output_ap)
        =
