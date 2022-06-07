@@ -7,6 +7,7 @@ val _ = intLib.prefer_int();
 
 val _ = new_theory "agree_full";
 
+
 (*---------------------------------------------------------------------------*)
 (* Ports                                                                     *)
 (*---------------------------------------------------------------------------*)
@@ -15,6 +16,38 @@ Datatype:
  port = Data 'a
       | Event_Only 'a
       | Event_Data ('a option)
+End
+
+(*---------------------------------------------------------------------------*)
+(* Expression values                                                         *)
+(*---------------------------------------------------------------------------*)
+
+Datatype:
+  value = BoolValue bool
+        | IntValue int
+	| RecdValue ((string # value) list)
+	| ArrayValue (value list)
+        | PortValue (value port)
+End
+
+Definition intOf_def :
+ intOf (IntValue i) = i
+End
+
+Definition boolOf_def :
+ boolOf (BoolValue b) = b
+End
+
+Definition portOf_def :
+  portOf (PortValue p) = p
+End
+
+Definition recdOf_def :
+  recdOf (RecdValue r) = r
+End
+
+Definition arrayOf_def :
+  arrayOf (ArrayValue a) = a
 End
 
 (*---------------------------------------------------------------------------*)
@@ -125,38 +158,6 @@ Definition List_Conj_def :
    List_Conj blist = FOLDR AndExpr (BoolLit T) blist
 End
 
-(*---------------------------------------------------------------------------*)
-(* Expression values                                                         *)
-(*---------------------------------------------------------------------------*)
-
-Datatype:
-  value = BoolValue bool
-        | IntValue int
-	| RecdValue ((string # value) list)
-	| ArrayValue (value list)
-        | PortValue (value port)
-End
-
-Definition intOf_def :
- intOf (IntValue i) = i
-End
-
-Definition boolOf_def :
- boolOf (BoolValue b) = b
-End
-
-Definition portOf_def :
-  portOf (PortValue p) = p
-End
-
-Definition recdOf_def :
-  recdOf (RecdValue r) = r
-End
-
-Definition arrayOf_def :
-  arrayOf (ArrayValue a) = a
-End
-
 (* -------------------------------------------------------------------------- *)
 (* A stream environment is a finite map from port names to value streams      *)
 (* -------------------------------------------------------------------------- *)
@@ -242,23 +243,6 @@ Termination
 End
 
 (*---------------------------------------------------------------------------*)
-(* Assumptions and guarantees. The use of HistExpr for assumptions means     *)
-(* that, at time t, we can assume that the assumptions hold for all j ≤ t.   *)
-(*---------------------------------------------------------------------------*)
-
-Definition assumsVal_def:
-  assumsVal E comp = exprVal E (HistExpr (List_Conj comp.assumptions))
-End
-
-(*---------------------------------------------------------------------------*)
-(* Evaluate the conjunction of guarantees of the component at time t         *)
-(*---------------------------------------------------------------------------*)
-
-Definition guarsVal_def:
-  guarsVal E comp = exprVal E (List_Conj comp.guarantees)
-End
-
-(*---------------------------------------------------------------------------*)
 (* State variable definitions                                                *)
 (*---------------------------------------------------------------------------*)
 
@@ -303,6 +287,24 @@ End
 Definition outputOf_def :
  outputOf comp env = DRESTRICT env (set (MAP varOf comp.out_defs))
 End
+
+(*---------------------------------------------------------------------------*)
+(* Assumptions and guarantees. The use of HistExpr for assumptions means     *)
+(* that, at time t, we can assume that the assumptions hold for all j ≤ t.   *)
+(*---------------------------------------------------------------------------*)
+
+Definition assumsVal_def:
+  assumsVal E comp = exprVal E (HistExpr (List_Conj comp.assumptions))
+End
+
+(*---------------------------------------------------------------------------*)
+(* Evaluate the conjunction of guarantees of the component at time t         *)
+(*---------------------------------------------------------------------------*)
+
+Definition guarsVal_def:
+  guarsVal E comp = exprVal E (List_Conj comp.guarantees)
+End
+
 
 (*---------------------------------------------------------------------------*)
 (* A statement updates a binding in environment E                            *)
@@ -375,7 +377,7 @@ End
 (* Variable names in any rhs of a component's definitions                     *)
 (* -------------------------------------------------------------------------- *)
 
-FOO
+(*
 Definition rhsNames_def:
  rhsNames comp =
    FOLDL (UNION) {}
@@ -640,6 +642,7 @@ Proof
       >- metis_tac [Inputs_Stable]
       >- metis_tac [strmSteps_fdom])
 QED
+*)
 
 (*---------------------------------------------------------------------------*)
 (* Stuff to help the Latex output look nicer                                 *)

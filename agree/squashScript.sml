@@ -157,6 +157,56 @@ End
 *)
 
 
+Definition squashExpr1_def :
+  squashExpr1 (A,M,elist) e =
+    let (A',M',e') = exprSquash A M e
+     in (A', M',e'::elist)
+End
+
+
+Definition squashExprs_def :
+  squashExprs (A,M) elist = FOLDL squashExpr1 (A,M,[]) elist
+End
+
+Definition squashStmt_def :
+  squashStmt (A,M) (IntStmt s e) =
+    let (A',M',e') = exprSquash A M e
+     in (IntStmt s e'::A, M')
+End
+
+Definition squashStmts_def :
+  squashStmts (A,M) stmts = FOLDL squashStmt (A,M) stmts
+End
+
+Definition squash_comp_def :
+  squash_comp comp =
+  let (var_defs',M)  = squashStmts ([],FEMPTY) comp.var_defs;
+      (out_defs',M') = squashStmts([],M) comp.out_defs
+  in
+    <| inports  := comp.inports;
+       var_defs := var_defs';
+       out_defs  := out_defs';
+       assumptions := comp.assumptions;
+       guarantees := comp.guarantees |>
+End
+
+(* Squash guarantees as well
+
+Definition squash_comp_def :
+  squash_comp comp =
+  let (var_defs',M) = squashStmts ([],FEMPTY) comp.var_defs;
+      (out_defs',M') = squashStmts([],M) comp.out_defs;
+      (guar_defs,M'',guars') = squashExprs ([],M') comp.guarantees
+  in
+    <| inports  := comp.inports;
+       var_defs := var_defs' ++ guar_defs;
+       out_defs  := out_defs';
+       assumptions := comp.assumptions;
+       guarantees := guars' |>
+End
+ *)
+
+
 (*---------------------------------------------------------------------------*)
 (* Algorithm Explanation with two examples that follow                       *)
 (*---------------------------------------------------------------------------*)
@@ -315,5 +365,8 @@ Definition recFib_def:
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
 End
+
+EVAL “squash_comp arithprog”;
+EVAL “squash_comp recFib”;
 
 val _ = export_theory();
