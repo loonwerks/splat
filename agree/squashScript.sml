@@ -1,14 +1,14 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
      arithmeticTheory listTheory pred_setTheory
-     agreeTheory stateTheory string_numTheory;
+     agreeTheory stateTheory ASCIInumbersTheory;
 
 val _ = intLib.prefer_int();
 
 val _ = new_theory "squash";
 
 Definition newAux_def :
-  newAux i = STRCAT "aux" (n2s i)
+  newAux n = STRCAT "aux" (num_to_dec_string n)
 End
 
 (*---------------------------------------------------------------------------*)
@@ -171,7 +171,7 @@ End
 Definition squashStmt_def :
   squashStmt (A,M) (IntStmt s e) =
     let (A',M',e') = exprSquash A M e
-     in (IntStmt s e'::A', M')
+     in (A' ++ [IntStmt s e'], M')
 End
 
 Definition squashStmts_def :
