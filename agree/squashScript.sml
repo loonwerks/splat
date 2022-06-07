@@ -171,7 +171,7 @@ End
 Definition squashStmt_def :
   squashStmt (A,M) (IntStmt s e) =
     let (A',M',e') = exprSquash A M e
-     in (IntStmt s e'::A, M')
+     in (IntStmt s e'::A', M')
 End
 
 Definition squashStmts_def :
