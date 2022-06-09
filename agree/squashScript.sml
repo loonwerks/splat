@@ -152,18 +152,18 @@ End
 *)
 
 Definition squashStmt_def :
-  squashStmt (S,A,M) (IntStmt s e) =
+  squashStmt (IntStmt s e) (S,A,M) =
     let (A',M',e') = exprSquash A M e
      in (IntStmt s e'::S, A', M')
 End
 
 Definition squashStmts_def :
-  squashStmts (S,A,M) stmts = FOLDL squashStmt (S,A,M) stmts
+  squashStmts (S,A,M) stmts = FOLDR squashStmt (S,A,M) stmts
 End
 
 Definition squash_comp_def :
   squash_comp comp =
-  let (var_defs',aux_defs',M)  = squashStmts ([],[],FEMPTY) (REVERSE comp.var_defs);
+  let (var_defs',aux_defs',M)  = squashStmts ([],[],FEMPTY) comp.var_defs;
       (out_defs',aux_out_defs',M') = squashStmts([],[],M) comp.out_defs
   in
     <| inports  := comp.inports;
@@ -262,13 +262,13 @@ Definition recFib_def:
 End
 
 (*---------------------------------------------------------------------------*)
-(* Nesting of "pre" in order to look both 1 and 2 steps back in the          *)
-(* computation. Simulates a recursive Fibonacci                              *)
+(* Deeper Nesting of "pre" in order to look further back and add more        *)
+(* comman sub-expressions.                                                   *)
 (*                                                                           *)
 (*  I = []                                                                   *)
 (*  A = []                                                                   *)
 (*  V = [fib = 1 -> pre(1 -> fib + pre fib)                                  *)
-(*       x = 1 -> pre(1 -> fib + pre fib)                                    *)
+(*       x = 0 -> pre(1 -> pre(1 -> fib + pre fib))                          *)
 (*       y = x -> pre(x -> pre(x) - pre(pre(x)))]                            *)
 (*  O = [output = fib]                                                       *)
 (*  G = [0 ≤ output]                                                         *)
@@ -284,10 +284,11 @@ Definition testInput_def:
                 (PreExpr (FbyExpr (IntLit 1)
                           (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))));
            IntStmt "x"
-             (FbyExpr (IntLit 1)
-                (PreExpr (FbyExpr (IntLit 1)
-                          (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))));
-            IntStmt "y"
+                   (FbyExpr (IntLit 0)
+                    (PreExpr (FbyExpr (IntLit 1)
+                              (PreExpr (FbyExpr (IntLit 1)
+                                                (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))))));
+           IntStmt "y"
              (FbyExpr (IntVar "x")
                 (PreExpr (FbyExpr (IntVar "x")
                                   (SubExpr (PreExpr (IntVar "x")) (PreExpr (PreExpr (IntVar "recFib")))))))];
@@ -297,8 +298,6 @@ Definition testInput_def:
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
 End
-
-
 
 (* bexpr is not yet defined, so arithprog does _not_ work yet *)
 (* EVAL “squash_comp arithprog”;                              *)
