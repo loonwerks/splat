@@ -157,18 +157,31 @@ Definition squashStmt_def :
      in (IntStmt s e'::S, A', M')
 End
 
+(* NOTE: there is going to be a typing issue at some point because the stmnt   *)
+(* needs the type of the aux for the varible reference.                        *)
+Definition squashOutputStmt_def :
+  squashOutputStmt (IntStmt s e) (S,A,M) =
+  let (A',M',e') = exprSquash A M e;
+      s' = newAux (LENGTH A')
+  in if e = e' then
+       (IntStmt s e'::S, A', M')
+     else
+       (IntStmt s (IntVar s')::S, IntStmt s' e'::A', M')  
+End
+
 Definition squashStmts_def :
-  squashStmts (S,A,M) stmts = FOLDR squashStmt (S,A,M) stmts
+  squashStmts fn (S,A,M) stmts = FOLDR fn (S,A,M) stmts
 End
 
 Definition squash_comp_def :
   squash_comp comp =
-  let (var_defs',aux_defs',M)  = squashStmts ([],[],FEMPTY) comp.var_defs;
-      (out_defs',aux_out_defs',M') = squashStmts([],[],M) comp.out_defs
+  let
+    (out_defs,aux_defs,M) = squashStmts squashOutputStmt ([],[],FEMPTY) comp.out_defs;
+    (var_defs,aux_defs',M')  = squashStmts squashStmt ([],aux_defs,M) comp.var_defs;
   in
     <| inports  := comp.inports;
-       var_defs := var_defs' ++ aux_defs';
-       out_defs  := out_defs' ++ aux_out_defs';
+       var_defs := var_defs ++ aux_defs';
+       out_defs  := out_defs;
        assumptions := comp.assumptions;
        guarantees := comp.guarantees |>
 End
@@ -277,7 +290,7 @@ End
 
 Definition testInput_def:
   testInput =
-     <| inports := [];
+     <| inports := [input];
         var_defs :=
           [IntStmt "recFib"
              (FbyExpr (IntLit 1)
@@ -293,7 +306,7 @@ Definition testInput_def:
                 (PreExpr (FbyExpr (IntVar "x")
                                   (SubExpr (PreExpr (IntVar "x")) (PreExpr (PreExpr (IntVar "recFib")))))))];
                           
-         out_defs := [IntStmt "output" (IntVar "recFib")];
+        out_defs := [IntStmt "output" (IntVar "recFib")];
       assumptions := [];
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
