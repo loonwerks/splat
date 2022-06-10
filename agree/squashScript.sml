@@ -60,7 +60,7 @@ Definition exprSquash_def :
        (A', M', e1') = exprSquash A M e1;
        (A'', M'', e2') = exprSquash A' M' e2;
      in
-       (A'', M'', FbyExpr e1' e2'))
+       (A'', M'', CondExpr (BoolVar "init") e1' e2'))
   ∧ exprSquash A M (CondExpr b e1 e2) =
     (let
        (A1, M1, b') = bexprSquash A M b;
@@ -299,12 +299,37 @@ Definition testInput_def:
       |>
 End
 
+(*---------------------------------------------------------------------------*)
+(* Compute the output directly without using variable declarations.          *)
+(*                                                                           *)
+(*  I = [input]                                                              *)
+(*  A = []                                                                   *)
+(*  V = []                                                                   *)
+(*  O = [output = 1 -> pre(1 -> input + pre input)]                          *)
+(*  G = [0 ≤ output]                                                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition outputFib_def:
+  outputFib =
+     <| inports := [];
+        var_defs := [];
+        out_defs := [
+                 IntStmt "output"
+                 (FbyExpr (IntLit 1)
+                  (PreExpr (FbyExpr (IntLit 1)
+                            (AddExpr (IntVar "input") (PreExpr (IntVar "input"))))))];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
+
 (* bexpr is not yet defined, so arithprog does _not_ work yet *)
 (* EVAL “squash_comp arithprog”;                              *)
 
 EVAL “squash_comp recFib”;
-
 EVAL “squash_comp testInput”;
+EVAL “squash_comp outputFib”;
 
 val _ = export_theory();
 
