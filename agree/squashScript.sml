@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
      arithmeticTheory listTheory pred_setTheory
-     agreeTheory stateTheory ASCIInumbersTheory;
+     agreeTheory ASCIInumbersTheory;
 
 val _ = intLib.prefer_int();
 
