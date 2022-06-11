@@ -63,7 +63,7 @@ Definition exprSquash_def :
        (A', M', e1') = exprSquash A M e1;
        (A'', M'', e2') = exprSquash A' M' e2;
      in
-       (A'', M'', FbyExpr e1' e2'))
+       (A'', M'', CondExpr (BoolVar "init") e1' e2'))
   ∧ exprSquash A M (CondExpr b e1 e2) =
     (let
        (A1, M1, b') = bexprSquash A M b;
@@ -160,18 +160,31 @@ Definition squashStmt_def :
      in (IntStmt s e'::S, A', M')
 End
 
+(* NOTE: there is going to be a typing issue at some point because the stmnt   *)
+(* needs the type of the aux for the varible reference.                        *)
+Definition squashOutputStmt_def :
+  squashOutputStmt (IntStmt s e) (S,A,M) =
+  let (A',M',e') = exprSquash A M e;
+      s' = newAux (LENGTH A')
+  in if e = e' then
+       (IntStmt s e'::S, A', M')
+     else
+       (IntStmt s (IntVar s')::S, IntStmt s' e'::A', M')
+End
+
 Definition squashStmts_def :
-  squashStmts (S,A,M) stmts = FOLDR squashStmt (S,A,M) stmts
+  squashStmts fn (S,A,M) stmts = FOLDR fn (S,A,M) stmts
 End
 
 Definition squash_comp_def :
   squash_comp comp =
-  let (var_defs',aux_defs',M)  = squashStmts ([],[],FEMPTY) comp.var_defs;
-      (out_defs',aux_out_defs',M') = squashStmts([],[],M) comp.out_defs
+  let
+    (out_defs,aux_defs,M) = squashStmts squashOutputStmt ([],[],FEMPTY) comp.out_defs;
+    (var_defs,aux_defs',M')  = squashStmts squashStmt ([],aux_defs,M) comp.var_defs;
   in
     <| inports  := comp.inports;
-       var_defs := var_defs' ++ aux_defs';
-       out_defs  := out_defs' ++ aux_out_defs';
+       var_defs := var_defs ++ aux_defs';
+       out_defs  := out_defs;
        assumptions := comp.assumptions;
        guarantees := comp.guarantees |>
 End
@@ -280,7 +293,7 @@ End
 
 Definition testInput_def:
   testInput =
-     <| inports := [];
+     <| inports := [input];
         var_defs :=
           [IntStmt "recFib"
              (FbyExpr (IntLit 1)
@@ -295,8 +308,33 @@ Definition testInput_def:
              (FbyExpr (IntVar "x")
                 (PreExpr (FbyExpr (IntVar "x")
                                   (SubExpr (PreExpr (IntVar "x")) (PreExpr (PreExpr (IntVar "recFib")))))))];
+        out_defs := [IntStmt "output" (IntVar "recFib")];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
 
-         out_defs := [IntStmt "output" (IntVar "recFib")];
+(*---------------------------------------------------------------------------*)
+(* Compute the output directly without using variable declarations.          *)
+(*                                                                           *)
+(*  I = [input]                                                              *)
+(*  A = []                                                                   *)
+(*  V = []                                                                   *)
+(*  O = [output = 1 -> pre(1 -> input + pre input)]                          *)
+(*  G = [0 ≤ output]                                                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition outputFib_def:
+  outputFib =
+     <| inports := [];
+        var_defs := [];
+        out_defs := [
+                 IntStmt "output"
+                 (FbyExpr (IntLit 1)
+                  (PreExpr (FbyExpr (IntLit 1)
+                            (AddExpr (IntVar "input") (PreExpr (IntVar "input"))))))];
+>>>>>>> 92bd742fb82c87aa7c4a7d1aa9d06b7c1c50dc1d
       assumptions := [];
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
@@ -306,8 +344,8 @@ End
 (* EVAL “squash_comp arithprog”;                              *)
 
 EVAL “squash_comp recFib”;
-
 EVAL “squash_comp testInput”;
+EVAL “squash_comp outputFib”;
 
 val _ = export_theory();
 
