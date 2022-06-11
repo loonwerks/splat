@@ -1,7 +1,7 @@
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
      arithmeticTheory listTheory pred_setTheory
-     agreeTheory ASCIInumbersTheory;
+     agreeTheory ASCIInumbersLib;
 
 val _ = intLib.prefer_int();
 
@@ -19,16 +19,14 @@ Definition exprSquash_def :
     exprSquash A M (IntVar s)       = (A, M, IntVar s)
   ∧ exprSquash A M (IntLit i)       = (A, M, IntLit i)
   ∧ exprSquash A M (PreExpr e)      =
-    (let
-       (A', M', e') = exprSquash A M e;
-       s = newAux (LENGTH A');
-       A'' = A' ++ [(IntStmt s e')];
-       M'' = M' |+ (e', (IntVar s));
-     in
-       if e' ∈ FDOM M then
-         (A', M', M' ' e')
-       else
-         (A'', M'', (IntVar s)))
+     (if e ∈ FDOM M then
+       (A, M, M ' e)
+     else
+       (let
+          (A', M', e') = exprSquash A M e;
+          s = newAux (LENGTH A');
+        in
+          ((IntStmt s e')::A', M' |+ (e, (IntVar s)), IntVar s)))
   ∧ exprSquash A M (AddExpr e1 e2)  =
     (let
        (A', M', e1') = exprSquash A M e1;
@@ -73,7 +71,7 @@ Definition exprSquash_def :
        (A'', M'', e2') = exprSquash A' M' e2;
      in
        (A'', M'', CondExpr b' e1' e2'))
-  /\
+  ∧
     bexprSquash A M (BoolVar s) = (A,M,BoolVar s)
   ∧ bexprSquash A M (BoolLit b) = (A,M,BoolLit b)
   ∧ bexprSquash A M (NotExpr b) =
@@ -156,6 +154,29 @@ End
          (A'', M'', (BoolVar s)))
 *)
 
+Definition squashStmt_def :
+  squashStmt (IntStmt s e) (S,A,M) =
+    let (A',M',e') = exprSquash A M e
+     in (IntStmt s e'::S, A', M')
+End
+
+Definition squashStmts_def :
+  squashStmts (S,A,M) stmts = FOLDR squashStmt (S,A,M) stmts
+End
+
+Definition squash_comp_def :
+  squash_comp comp =
+  let (var_defs',aux_defs',M)  = squashStmts ([],[],FEMPTY) comp.var_defs;
+      (out_defs',aux_out_defs',M') = squashStmts([],[],M) comp.out_defs
+  in
+    <| inports  := comp.inports;
+       var_defs := var_defs' ++ aux_defs';
+       out_defs  := out_defs' ++ aux_out_defs';
+       assumptions := comp.assumptions;
+       guarantees := comp.guarantees |>
+End
+
+(* Squash guarantees as well
 
 Definition squashExpr1_def :
   squashExpr1 (A,M,elist) e =
@@ -167,30 +188,6 @@ End
 Definition squashExprs_def :
   squashExprs (A,M) elist = FOLDL squashExpr1 (A,M,[]) elist
 End
-
-Definition squashStmt_def :
-  squashStmt (A,M) (IntStmt s e) =
-    let (A',M',e') = exprSquash A M e
-     in (A' ++ [IntStmt s e'], M')
-End
-
-Definition squashStmts_def :
-  squashStmts (A,M) stmts = FOLDL squashStmt (A,M) stmts
-End
-
-Definition squash_comp_def :
-  squash_comp comp =
-  let (var_defs',M)  = squashStmts ([],FEMPTY) comp.var_defs;
-      (out_defs',M') = squashStmts([],M) comp.out_defs
-  in
-    <| inports  := comp.inports;
-       var_defs := var_defs';
-       out_defs  := out_defs';
-       assumptions := comp.assumptions;
-       guarantees := comp.guarantees |>
-End
-
-(* Squash guarantees as well
 
 Definition squash_comp_def :
   squash_comp comp =
@@ -206,6 +203,113 @@ Definition squash_comp_def :
 End
  *)
 
+
+(*---------------------------------------------------------------------------*)
+(* Version with lookback to depths one and two.                              *)
+(*                                                                           *)
+(*  inports = [input]                                                        *)
+(*       N = 0 -> 1 + pre N                                                  *)
+(*  isProg = if N ≤ 1 then                                                   *)
+(*              T                                                            *)
+(*           else                                                            *)
+(*              pre isProg and                                               *)
+(*                  (input - pre input = pre input - pre(pre input))         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition arithprog_def:
+  arithprog =
+    <| inports  := ["input"];
+       var_defs :=
+          [IntStmt "N" (FbyExpr (IntLit 0)
+                                (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
+           BoolStmt "isProg"
+            (BoolCondExpr
+                 (LeqExpr (IntVar "N") (IntLit 1))
+                 (BoolLit T)
+                 (AndExpr
+                    (EqExpr (SubExpr (IntVar "input") (PreExpr (IntVar "input")))
+                            (SubExpr (PreExpr (IntVar "input"))
+                                     (PreExpr (PreExpr(IntVar "input")))))
+                    (BoolPreExpr (BoolVar "isProg"))))];
+         out_defs := [BoolStmt "out" (BoolVar "isProg")];
+      assumptions := [];
+      guarantees  := []
+      |>
+End
+
+(*---------------------------------------------------------------------------*)
+(* Nesting of "pre" in order to look both 1 and 2 steps back in the          *)
+(* computation. Simulates a recursive Fibonacci                              *)
+(*                                                                           *)
+(*  I = []                                                                   *)
+(*  A = []                                                                   *)
+(*  V = [fib = 1 -> pre(1 -> fib + pre fib)]                                 *)
+(*  O = [output = fib]                                                       *)
+(*  G = [0 ≤ output]                                                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition recFib_def:
+  recFib =
+     <| inports := [];
+        var_defs :=
+          [IntStmt "recFib"
+             (FbyExpr (IntLit 1)
+                (PreExpr (FbyExpr (IntLit 1)
+                         (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))))];
+         out_defs := [IntStmt "output" (IntVar "recFib")];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
+
+(*---------------------------------------------------------------------------*)
+(* Deeper Nesting of "pre" in order to look further back and add more        *)
+(* comman sub-expressions.                                                   *)
+(*                                                                           *)
+(*  I = []                                                                   *)
+(*  A = []                                                                   *)
+(*  V = [fib = 1 -> pre(1 -> fib + pre fib)                                  *)
+(*       x = 0 -> pre(1 -> pre(1 -> fib + pre fib))                          *)
+(*       y = x -> pre(x -> pre(x) - pre(pre(x)))]                            *)
+(*  O = [output = fib]                                                       *)
+(*  G = [0 ≤ output]                                                         *)
+(*                                                                           *)
+(*---------------------------------------------------------------------------*)
+
+Definition testInput_def:
+  testInput =
+     <| inports := [];
+        var_defs :=
+          [IntStmt "recFib"
+             (FbyExpr (IntLit 1)
+                (PreExpr (FbyExpr (IntLit 1)
+                          (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))));
+           IntStmt "x"
+                   (FbyExpr (IntLit 0)
+                    (PreExpr (FbyExpr (IntLit 1)
+                              (PreExpr (FbyExpr (IntLit 1)
+                                                (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))))));
+           IntStmt "y"
+             (FbyExpr (IntVar "x")
+                (PreExpr (FbyExpr (IntVar "x")
+                                  (SubExpr (PreExpr (IntVar "x")) (PreExpr (PreExpr (IntVar "recFib")))))))];
+
+         out_defs := [IntStmt "output" (IntVar "recFib")];
+      assumptions := [];
+       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
+      |>
+End
+
+(* bexpr is not yet defined, so arithprog does _not_ work yet *)
+(* EVAL “squash_comp arithprog”;                              *)
+
+EVAL “squash_comp recFib”;
+
+EVAL “squash_comp testInput”;
+
+val _ = export_theory();
 
 (*---------------------------------------------------------------------------*)
 (* Algorithm Explanation with two examples that follow                       *)
@@ -305,68 +409,3 @@ End
    a_0 | 1 | 1 | 2 | 3 | 5 | 8
 
  *)
-
-(*---------------------------------------------------------------------------*)
-(* Version with lookback to depths one and two.                              *)
-(*                                                                           *)
-(*  inports = [input]                                                        *)
-(*       N = 0 -> 1 + pre N                                                  *)
-(*  isProg = if N ≤ 1 then                                                   *)
-(*              T                                                            *)
-(*           else                                                            *)
-(*              pre isProg and                                               *)
-(*                  (input - pre input = pre input - pre(pre input))         *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
-
-Definition arithprog_def:
-  arithprog =
-    <| inports  := ["input"];
-       var_defs :=
-          [IntStmt "N" (FbyExpr (IntLit 0)
-                                (AddExpr (PreExpr (IntVar "N")) (IntLit 1)));
-           BoolStmt "isProg"
-            (BoolCondExpr
-                 (LeqExpr (IntVar "N") (IntLit 1))
-                 (BoolLit T)
-                 (AndExpr
-                    (EqExpr (SubExpr (IntVar "input") (PreExpr (IntVar "input")))
-                            (SubExpr (PreExpr (IntVar "input"))
-                                     (PreExpr (PreExpr(IntVar "input")))))
-                    (BoolPreExpr (BoolVar "isProg"))))];
-         out_defs := [BoolStmt "out" (BoolVar "isProg")];
-      assumptions := [];
-      guarantees  := []
-      |>
-End
-
-(*---------------------------------------------------------------------------*)
-(* Nesting of "pre" in order to look both 1 and 2 steps back in the          *)
-(* computation. Simulates a recursive Fibonacci                              *)
-(*                                                                           *)
-(*  I = []                                                                   *)
-(*  A = []                                                                   *)
-(*  V = [fib = 1 -> pre(1 -> fib + pre fib)]                                 *)
-(*  O = [output = fib]                                                       *)
-(*  G = [0 ≤ output]                                                         *)
-(*                                                                           *)
-(*---------------------------------------------------------------------------*)
-
-Definition recFib_def:
-  recFib =
-     <| inports := [];
-        var_defs :=
-          [IntStmt "recFib"
-             (FbyExpr (IntLit 1)
-                (PreExpr (FbyExpr (IntLit 1)
-                         (AddExpr (IntVar "recFib") (PreExpr (IntVar "recFib"))))))];
-         out_defs := [IntStmt "output" (IntVar "recFib")];
-      assumptions := [];
-       guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
-      |>
-End
-
-EVAL “squash_comp arithprog”;
-EVAL “squash_comp recFib”;
-
-val _ = export_theory();
