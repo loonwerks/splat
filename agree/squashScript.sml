@@ -293,7 +293,7 @@ End
 
 Definition testInput_def:
   testInput =
-     <| inports := [input];
+     <| inports := ["input"];
         var_defs :=
           [IntStmt "recFib"
              (FbyExpr (IntLit 1)
@@ -308,7 +308,11 @@ Definition testInput_def:
              (FbyExpr (IntVar "x")
                 (PreExpr (FbyExpr (IntVar "x")
                                   (SubExpr (PreExpr (IntVar "x")) (PreExpr (PreExpr (IntVar "recFib")))))))];
-        out_defs := [IntStmt "output" (IntVar "recFib")];
+        out_defs := [IntStmt "output" (IntVar "recFib");
+                     IntStmt "compOutput"
+                             (FbyExpr (IntLit 1)
+                              (PreExpr (FbyExpr (IntLit 1)
+                                        (AddExpr (IntVar "input") (PreExpr (IntVar "input"))))))];
       assumptions := [];
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
@@ -334,7 +338,6 @@ Definition outputFib_def:
                  (FbyExpr (IntLit 1)
                   (PreExpr (FbyExpr (IntLit 1)
                             (AddExpr (IntVar "input") (PreExpr (IntVar "input"))))))];
->>>>>>> 92bd742fb82c87aa7c4a7d1aa9d06b7c1c50dc1d
       assumptions := [];
        guarantees := [LeqExpr (IntLit 0) (IntVar"output")]
       |>
