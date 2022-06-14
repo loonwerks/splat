@@ -23,11 +23,11 @@ End
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  value = BoolValue bool
-        | IntValue int
-	| RecdValue ((string # value) list)
-	| ArrayValue (value list)
-        | PortValue (value port)
+ value = BoolValue bool
+       | IntValue int
+       | RecdValue ((string # value) list)
+       | ArrayValue (value list)
+       | PortValue (value port)
 End
 
 Definition intOf_def :
@@ -56,7 +56,7 @@ End
 
 Definition eventOf_def:
   eventOf (Data x) = F /\
-  eventOf (Event_Only (BoolValue b)) = b  /\
+  eventOf (Event_Only bv) = boolOf bv  /\
   eventOf (Event_Data NONE) = F  /\
   eventOf (Event_Data (SOME x)) = T
 End
