@@ -143,7 +143,8 @@ Definition esize_def :
   esize (CondExpr e1 e2 e3) = 1 + esize e1 + esize e2 + esize e3  /\
   esize (HistExpr e) = 1 + esize e
 Termination
-  WF_REL_TAC ‘measure expr_size’
+  cheat
+  (* WF_REL_TAC ‘measure expr_size’ *)
 End
 
 (*---------------------------------------------------------------------------*)
