@@ -63,7 +63,7 @@ Definition exprSquash_def :
        (A', M', e1') = exprSquash A M e1;
        (A'', M'', e2') = exprSquash A' M' e2;
      in
-       (A'', M'', CondExpr (BoolVar "init") e1' e2'))
+       (A'', M'', CondExpr (BoolVar "isInit") e1' e2'))
   ∧ exprSquash A M (CondExpr b e1 e2) =
     (let
        (A1, M1, b') = bexprSquash A M b;
@@ -182,7 +182,7 @@ Definition squash_comp_def :
     (out_defs,aux_defs,M) = squashStmts squashOutputStmt ([],[],FEMPTY) comp.out_defs;
     (var_defs,aux_defs',M')  = squashStmts squashStmt ([],aux_defs,M) comp.var_defs;
   in
-    <| inports  := comp.inports;
+    <| inports  := "isInit"::comp.inports;
        var_defs := var_defs ++ aux_defs';
        out_defs  := out_defs;
        assumptions := comp.assumptions;
