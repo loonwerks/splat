@@ -49,7 +49,17 @@ Definition exprSquash_def :
   exprSquash A M (EqExpr e1 e2) = binarySquash A M e1 e2 EqExpr          /\
   exprSquash A M (LeqExpr e1 e2) = binarySquash A M e1 e2 LeqExpr        /\
   exprSquash A M (LtExpr e1 e2) = binarySquash A M e1 e2 LtExpr          /\
-  (* exprSquash A M (RecdExpr fields) = ... /\ *)
+  exprSquash A M (RecdExpr fields) =
+  (let
+     fn = \(fields1,A1,M1) (s,e).
+                          (let
+                             (A2,M2,e') = exprSquash A1 M1 e;
+                             fields1' = fields1 ++ [(s,e')];
+                           in
+                             (fields1',A2,M2));
+     (fields',A1,M1) = FOLDL fn ([],A,M) fields;
+   in
+     (A1,M1,RecdExpr fields'))       /\
   exprSquash A M (RecdProj e s) = unarySquash A M e (\e'.RecdProj e' s)  /\
   exprSquash A M (ArrayExpr elist) =
   (let
@@ -61,7 +71,7 @@ Definition exprSquash_def :
                              (elist1',A2,M2));
      (elist',A1,M1) = FOLDL fn ([],A,M) elist;
    in
-        (A1,M1,ArrayExpr elist'))                                        /\
+     (A1,M1,ArrayExpr elist'))                                           /\
   exprSquash A M (ArraySub e1 e2) = binarySquash A M e1 e2 ArraySub      /\
   exprSquash A M (PortEvent e) = unarySquash A M e PortEvent             /\
   exprSquash A M (PortData e) = unarySquash A M e PortData               /\
@@ -218,6 +228,16 @@ End
 
 EVAL “squash_comp recFib”;
 
+(*---------------------------------------------------------------------------*)
+(* Array Expressions                                                         *)
+(*  I = []                                                                   *)
+(*  A = []                                                                   *)
+(*  V = [fib = 1 -> pre(1 -> fib + pre fib);                                 *)
+(*       array = [recFib ; 1 ; 0 -> pre recFib]]                             *)
+(*  O = [output1 = fib ; output2 = array]                                    *)
+(*  G = [0 ≤ output]                                                         *)
+(*---------------------------------------------------------------------------*)
+
 Definition arrayExprInput_def:
   arrayExprInput =
   <| inports := [];
@@ -241,8 +261,39 @@ End
 EVAL “squash_comp arrayExprInput”;
 
 (*---------------------------------------------------------------------------*)
-(* Deeper Nesting of "pre" in order to look further back and add more        *)
-(* comman sub-expressions.                                                   *)
+(* Record Expressions                                                        *)
+(*  I = []                                                                   *)
+(*  A = []                                                                   *)
+(*  V = [fib = 1 -> pre(1 -> fib + pre fib);                                 *)
+(*       recd = [("a",recFib) ; ("b",1) ; ("c",0 -> pre recFib)]]            *)
+(*  O = [output1 = fib ; output2 = array]                                    *)
+(*  G = [0 ≤ output]                                                         *)
+(*---------------------------------------------------------------------------*)
+
+Definition recdExprInput_def:
+  recdExprInput =
+  <| inports := [];
+     var_defs :=
+     [Stmt "recFib"
+      (FbyExpr (IntLit 1)
+       (PreExpr (FbyExpr (IntLit 1)
+                 (AddExpr (Var "recFib") (PreExpr (Var "recFib"))))));
+      Stmt "recd"
+           (RecdExpr [
+               ("a", (Var "recFib"));
+               ("b", (IntLit 1));
+               ("c", (FbyExpr (IntLit 0) (PreExpr (Var "recFib"))))])];
+     out_defs := [Stmt "output1" (Var "recFib");
+                  Stmt "output2" (Var "recd")];
+     assumptions := [];
+     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+  |>
+End
+
+EVAL “squash_comp recdExprInput”;
+        
+(*---------------------------------------------------------------------------*)
+(* Bigger example with more common subexpressions and nesting of pre's       *)
 (*                                                                           *)
 (*  I = [input]                                                              *)
 (*  A = []                                                                   *)
