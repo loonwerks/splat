@@ -51,7 +51,17 @@ Definition exprSquash_def :
   exprSquash A M (LtExpr e1 e2) = binarySquash A M e1 e2 LtExpr          /\
   (* exprSquash A M (RecdExpr fields) = ... /\ *)
   exprSquash A M (RecdProj e s) = unarySquash A M e (\e'.RecdProj e' s)  /\
-  (* exprSquash A M (ArrayExpr elist) = ... *)
+  exprSquash A M (ArrayExpr elist) =
+  (let
+     fn = \(elist1,A1,M1) e.
+                          (let
+                             (A2,M2,e') = exprSquash A1 M1 e;
+                             elist1' = elist1 ++ [e'];
+                           in
+                             (elist1',A2,M2));
+     (elist',A1,M1) = FOLDL fn ([],A,M) elist;
+   in
+        (A1,M1,ArrayExpr elist'))                                        /\
   exprSquash A M (ArraySub e1 e2) = binarySquash A M e1 e2 ArraySub      /\
   exprSquash A M (PortEvent e) = unarySquash A M e PortEvent             /\
   exprSquash A M (PortData e) = unarySquash A M e PortData               /\
@@ -92,6 +102,20 @@ Definition exprSquash_def :
 Termination
   cheat
 End
+
+(*
+exprSquash A M (ArrayExpr elist) =
+  (let
+     fn = \e (elist1,A1,M1).
+                          (let
+                             (A2,M2,e') = exprSquash A1 M1 e;
+                             elist1' = e'::elist1;
+                           in
+                             (elist1',A2,M2));
+     (elist',A1,M1) = FOLDR fn ([],A,M) elist;
+   in
+        (A1,M1,ArrayExpr elist'))
+*)
 
 Definition squashStmt_def :
   squashStmt (Stmt s e) (S,A,M) =
@@ -180,19 +204,41 @@ EVAL “squash_comp arithprog”;
 
 Definition recFib_def:
   recFib =
-     <| inports := [];
-        var_defs :=
-          [Stmt "recFib"
-             (FbyExpr (IntLit 1)
-                (PreExpr (FbyExpr (IntLit 1)
-                         (AddExpr (Var "recFib") (PreExpr (Var "recFib"))))))];
-         out_defs := [Stmt "output" (Var "recFib")];
-      assumptions := [];
-       guarantees := [LeqExpr (IntLit 0) (Var"output")]
-      |>
+  <| inports := [];
+     var_defs :=
+     [Stmt "recFib"
+      (FbyExpr (IntLit 1)
+       (PreExpr (FbyExpr (IntLit 1)
+                 (AddExpr (Var "recFib") (PreExpr (Var "recFib"))))))];
+     out_defs := [Stmt "output" (Var "recFib")];
+     assumptions := [];
+     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+  |>
 End
 
 EVAL “squash_comp recFib”;
+
+Definition arrayExprInput_def:
+  arrayExprInput =
+  <| inports := [];
+     var_defs :=
+     [Stmt "recFib"
+      (FbyExpr (IntLit 1)
+       (PreExpr (FbyExpr (IntLit 1)
+                 (AddExpr (Var "recFib") (PreExpr (Var "recFib"))))));
+      Stmt "array"
+           (ArrayExpr [
+               (Var "recFib");
+               (IntLit 1);
+               (FbyExpr (IntLit 0) (PreExpr (Var "recFib")))])];
+     out_defs := [Stmt "output1" (Var "recFib");
+                  Stmt "output2" (Var "array")];
+     assumptions := [];
+     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+  |>  
+End
+
+EVAL “squash_comp arrayExprInput”;
 
 (*---------------------------------------------------------------------------*)
 (* Deeper Nesting of "pre" in order to look further back and add more        *)
