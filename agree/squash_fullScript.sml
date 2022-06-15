@@ -8,6 +8,19 @@ val _ = intLib.prefer_int();
 val _ = new_theory "squash_full";
 
 (*---------------------------------------------------------------------------*)
+(* Misc. helper lemmas                                                       *)
+(*---------------------------------------------------------------------------*)
+
+Theorem pair_list_lem:
+  ∀list alist blist.
+      UNZIP list = (alist,blist)
+      ==>
+      list_size f blist = list_size (f o SND) list
+Proof
+  simp[UNZIP_MAP] >> Induct >> rw[list_size_def]
+QED
+
+(*---------------------------------------------------------------------------*)
 (* Varible reference for replacing FbyExpr with CondExpr:                    *)
 (*   (FbyExpr e1 e2) = (CondExpr init e1 e2)                                 *)
 (*---------------------------------------------------------------------------*)
@@ -33,99 +46,132 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition exprSquash_def :
-  exprSquash A M (Var s) = (A,M,Var s)                                   /\
-  exprSquash A M (IntLit i)  = (A,M,IntLit i)                            /\
-  exprSquash A M (BoolLit b) = (A,M,BoolLit b)                           /\
-  exprSquash A M (AddExpr e1 e2) = binarySquash A M e1 e2 AddExpr        /\
-  exprSquash A M (SubExpr e1 e2) = binarySquash A M e1 e2 SubExpr        /\
-  exprSquash A M (MultExpr e1 e2) = binarySquash A M e1 e2 MultExpr      /\
-  exprSquash A M (DivExpr e1 e2) = binarySquash A M e1 e2 DivExpr        /\
-  exprSquash A M (ModExpr e1 e2) = binarySquash A M e1 e2  ModExpr       /\
-  exprSquash A M (NotExpr e) = unarySquash A M e NotExpr                 /\
-  exprSquash A M (OrExpr e1 e2) = binarySquash A M e1 e2 OrExpr          /\
-  exprSquash A M (AndExpr e1 e2) = binarySquash A M e1 e2 AndExpr        /\
-  exprSquash A M (ImpExpr e1 e2) = binarySquash A M e1 e2 ImpExpr        /\
-  exprSquash A M (IffExpr e1 e2) = binarySquash A M e1 e2 IffExpr        /\
-  exprSquash A M (EqExpr e1 e2) = binarySquash A M e1 e2 EqExpr          /\
-  exprSquash A M (LeqExpr e1 e2) = binarySquash A M e1 e2 LeqExpr        /\
-  exprSquash A M (LtExpr e1 e2) = binarySquash A M e1 e2 LtExpr          /\
-  exprSquash A M (RecdExpr fields) =
-  (let
-     fn = \(s,e) (fields1,A1,M1).
-                          (let
-                             (A2,M2,e') = exprSquash A1 M1 e;
-                             fields1' = (s,e')::fields1;
-                           in
-                             (fields1',A2,M2));
-     (fields',A1,M1) = FOLDR fn ([],A,M) fields;
-   in
-     (A1,M1,RecdExpr fields'))       /\
-  exprSquash A M (RecdProj e s) = unarySquash A M e (\e'.RecdProj e' s)  /\
-  exprSquash A M (ArrayExpr elist) =
-  (let
-     fn = \e (elist1,A1,M1).
-                          (let
-                             (A2,M2,e') = exprSquash A1 M1 e;
-                             elist1' = e'::elist1;
-                           in
-                             (elist1',A2,M2));
-     (elist',A1,M1) = FOLDR fn ([],A,M) elist;
-   in
-     (A1,M1,ArrayExpr elist'))                                           /\
-  exprSquash A M (ArraySub e1 e2) = binarySquash A M e1 e2 ArraySub      /\
-  exprSquash A M (PortEvent e) = unarySquash A M e PortEvent             /\
-  exprSquash A M (PortData e) = unarySquash A M e PortData               /\
+  exprSquash A M (Var s) = (A,M,Var s)         /\
+  exprSquash A M (IntLit i)  = (A,M,IntLit i)  /\
+  exprSquash A M (BoolLit b) = (A,M,BoolLit b) /\
   exprSquash A M (PreExpr e) =
-  (if e ∈ FDOM M then
-     (A,M,M ' e)
-   else
-     (let
-        (A1,M1,e1) = exprSquash A M e;
-        s = newAux (LENGTH A1);
-        e2 = Var s;
-        A2 = Stmt s e1::A1;
-        M2 = M1 |+ (e,e2);
+    (if e ∈ FDOM M then
+      (A,M,M ' e)
+     else
+      let (A1,M1,e1) = exprSquash A M e;
+          s = newAux (LENGTH A1);
+          e2 = Var s;
+          A2 = Stmt s e1::A1;
+          M2 = M1 |+ (e,e2);
       in
-        (A2,M2,e2)))                                                     /\
-  exprSquash A M (FbyExpr e1 e2) = exprSquash A M (CondExpr init e1 e2)  /\
-  exprSquash A M (CondExpr b e1 e2) = ternarySquash A M b e1 e2 CondExpr /\
-  exprSquash A M (HistExpr e) = unarySquash A M e HistExpr               /\
-
-  unarySquash A M e fn =
-  (let
-     (A1,M1,e') = exprSquash A M e;
-   in
-     (A1,M1,fn e'))                                                      /\
-  binarySquash A M e1 e2 fn = 
-  (let
-     (A1,M1,e1') = exprSquash A M e1;
-     (A2,M2,e2') = exprSquash A1 M1 e2;
-   in
-     (A2,M2,fn e1' e2'))                                                 /\
-  ternarySquash A M e1 e2 e3 fn =
-  (let
-     (A1,M1,e1') = exprSquash A M e1;
-     (A2,M2,e2') = exprSquash A1 M1 e2;
-     (A3,M3,e3') = exprSquash A2 M2 e3;
-   in
-     (A3,M3,fn e1' e2' e3'))
+        (A2,M2,e2))                            /\
+  exprSquash A M (AddExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,AddExpr e1' e2'))                /\
+  exprSquash A M (SubExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,SubExpr e1' e2'))                /\
+  exprSquash A M (MultExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,MultExpr e1' e2'))               /\
+  exprSquash A M (DivExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,DivExpr e1' e2'))                /\
+  exprSquash A M (ModExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,ModExpr e1' e2'))                /\
+  exprSquash A M (NotExpr e)     =
+    (let (A1,M1,e') = exprSquash A M e
+     in (A1,M1,NotExpr e'))                    /\
+  exprSquash A M (OrExpr e1 e2)  =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,OrExpr e1' e2'))                 /\
+  exprSquash A M (AndExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,AndExpr e1' e2'))                /\
+  exprSquash A M (ImpExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,ImpExpr e1' e2'))                /\
+  exprSquash A M (IffExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,IffExpr e1' e2'))                /\
+  exprSquash A M (EqExpr e1 e2)  =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,EqExpr e1' e2'))                  /\
+  exprSquash A M (LeqExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,LeqExpr e1' e2'))                 /\
+  exprSquash A M (LtExpr e1 e2)  =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,LtExpr e1' e2'))                  /\
+  exprSquash A M (ArraySub e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,LtExpr e1' e2'))                  /\
+  exprSquash A M (PortEvent e) =
+    (let (A1,M1,e') = exprSquash A M e
+     in (A1,M1,PortEvent e'))                   /\
+  exprSquash A M (PortData e) =
+    (let (A1,M1,e') = exprSquash A M e
+     in (A1,M1,PortData e'))                    /\
+  exprSquash A M (RecdProj e s) =
+    (let (A1,M1,e') = exprSquash A M e
+     in (A1,M1,RecdProj e' s))                  /\
+  exprSquash A M (HistExpr e) =
+    (let (A1,M1,e') = exprSquash A M e
+     in (A1,M1,HistExpr e'))                    /\
+  exprSquash A M (CondExpr b e1 e2) =
+    (let
+       (A1,M1,b') = exprSquash A M b;
+       (A2,M2,e1') = exprSquash A1 M1 e1;
+       (A3,M3,e2') = exprSquash A2 M2 e2;
+     in
+       (A3,M3,CondExpr b' e1' e2'))             /\
+  exprSquash A M (FbyExpr e1 e2) =
+    (let (A1,M1,e1') = exprSquash A M e1;
+         (A2,M2,e2') = exprSquash A1 M1 e2;
+     in
+       (A2,M2,CondExpr init e1' e2'))           /\
+  exprSquash A M (ArrayExpr elist) =
+    (let (elist',A',M') = exprSquashList A M elist
+     in (A',M',ArrayExpr elist'))               /\
+  exprSquash A M (RecdExpr fields) =
+    (let (fnames,elts) = UNZIP fields;
+         (elist,A',M') = exprSquashList A M elts
+     in (A',M', RecdExpr (MAP2 (,) fnames elist)))
+  /\
+  exprSquashList A M list =
+    FOLDR (\e (elts,A1,M1).
+       let (A2,M2,e') = exprSquash A1 M1 e in (e'::elts, A2, M2))
+      ([],A,M) list
 Termination
-  cheat
+ WF_REL_TAC ‘measure
+              (sum_size (esize o SND o SND)
+                        (list_size esize o SND o SND))’
+ >> rw [esize_def,ETA_THM] >> drule (GSYM pair_list_lem) >> rw[]
 End
 
-(*
-exprSquash A M (ArrayExpr elist) =
-  (let
-     fn = \e (elist1,A1,M1).
-                          (let
-                             (A2,M2,e') = exprSquash A1 M1 e;
-                             elist1' = e'::elist1;
-                           in
-                             (elist1',A2,M2));
-     (elist',A1,M1) = FOLDR fn ([],A,M) elist;
-   in
-        (A1,M1,ArrayExpr elist'))
-*)
+
 
 Definition squashStmt_def :
   squashStmt (Stmt s e) (S,A,M) =
@@ -176,7 +222,7 @@ End
 (*                  (input - pre input = pre input - pre(pre input))         *)
 (*                                                                           *)
 (*---------------------------------------------------------------------------*)
-        
+
 Definition arithprog_def:
   arithprog =
   <| inports  := ["input"];
@@ -255,7 +301,7 @@ Definition arrayExprInput_def:
                   Stmt "output2" (Var "array")];
      assumptions := [];
      guarantees := [LeqExpr (IntLit 0) (Var"output")]
-  |>  
+  |>
 End
 
 EVAL “squash_comp arrayExprInput”;
@@ -289,7 +335,7 @@ Definition recdExprInput_def:
 End
 
 EVAL “squash_comp recdExprInput”;
-        
+
 (*---------------------------------------------------------------------------*)
 (* Bigger example with more common subexpressions and nesting of pre's       *)
 (*                                                                           *)
