@@ -1,0 +1,194 @@
+Notes on the SPLAT implementation.
+-----------------------------------
+
+There are two branches of interest in the SPLAT github repo: master
+and monitors.
+
+  - master :
+
+      Essentially holds SPLAT implementation as of the end of Phase 1
+      of CASE.  Supports DFA-based filters generated from regexp
+      specifications.
+
+  - monitors :
+
+      Holds Phase 2 & 3 implementation. Supports code generation from
+      AGREE contracts.
+
+In due course these will be merged. The following discussion focuses
+on the monitors branch.
+
+
+Implementation language and organization
+----------------------------------------
+
+SPLAT is implemented in HOL4 which is based on the PolyML
+implementation of Standard ML (SML).  The codebase in directory
+"splat" is organized as a collection of SML signature (.sig suffix)
+and structure (.sml suffix) files. A signature file <X>.sig specifies
+the publically accessible types and functions of the corresponding
+<X>.sml implementation.
+
+
+The monitors branch.
+--------------------
+
+ We assume that an AADL/AGREE model has been created in the Formal
+Methods IDE (fmide), and that the fmide user has selected the menu
+item for generating a JSON representatiomn of the model. Suppose that
+model has been successfully to file <name>.json.
+
+ An invocation
+
+  ./splat <name>.json
+
+causes the following sequence of transformations to be taken:
+
+  1. Scraping
+  2. Consolidation
+  3. Synthesis of IO support
+  4. Code generation
+  5. Proof generation
+
+
+1. Scraping (Files: Json/AADL/AST)
+----------------------------------
+
+"Scraping" runs over the JSON representation of the model, looking for
+AGREE contracts that specify components to generate code for. In the
+IDE a user can typically add filters, monitors, and gates. These are
+all treated as instances of a more general notion, which is initially
+represented by an element of the contract datatype, and later, in
+refined form, as a so-called "gadget".
+
+Scraping takes the following steps:
+
+1A. Reading file into JSON format:
+
+     Json.fromFile : string -> Json.json list * substring
+
+1B. Mapping JSON into an element of the "contract" type. We will
+    discuss the contract type further below. For now, notice that a
+    single AADL package can have multiple contracts in it, along with
+    declarations of supporting types and functions. Thus we declare a
+    notion of "pkg", which collects all the types, functions, and
+    contracts of an AADL package.
+
+       type pkg = string * (tydec list * tmdec list * contract list)
+
+    The following function traverses the model and creates a list of
+    pkgs:
+
+       AADL.scrape_pkgs : Json.json -> pkg list
+
+2. Consolidation (Files: Gadget)
+---------------------------------
+
+"Consolidation" compresses the information in a list of packages into
+a list of so-called "gadgets". Each gadget is a self-contained unit
+from which the complete code for a component can be generated.
+
+  Gadget.mk_gadgets : pkg list -> gadget list
+
+ There may be dependencies between packages, so that later packages
+depend on types or functions declared in earlier packages. Function
+"mk_gadgets" essentially drags those definitions forward into the
+local definitions of the contract, thus making each gadget independent
+of the others. Once a gadget has been created, there are a number of
+"passes" (source-to-source transformations) defined over the gadget
+aimed at preparing the gadget for code generation in the chosen target
+language.
+
+Currently the only target language is CakeML. Following are the
+currently implemented passes:
+
+  corral_rogue_vars  : gadget -> gadget
+  set_Defs_struct    : gadget -> gadget
+  set_type_constrs   : gadget -> gadget
+  set_sig_lower_case : gadget -> gadget
+  set_ports_and_ivars_lower_case : gadget -> gadget
+  add_inport_data_projns : gadget -> gadget
+  elim_projections  : (qid -> ty option)
+                      -> (id -> ty option)
+                      -> gadget -> gadget
+
+ * corral_rogue_vars
+
+   - resolve free vars as constants
+
+ * set_Defs_struct
+
+   - sweep all user-defined constants and functions into a single "Defs" structure
+
+ * set_type_constrs
+
+   - replace enums and record expressions by applications of datatype constructor
+
+ * set_sig_lower_case
+
+   - constants and function names need to be lower-cases for CakeML
+
+ * set_ports_and_ivars_lower_case
+
+   - variable names need to be lower-case for CakeML
+
+ * add_inport_data_projns
+
+   - FMIDE supports event(-) calls on inports, but not data(-) calls.
+     Add the required data(-) invocations.
+
+ * elim_projections
+
+   - Record projections of the form <exp>.fieldName are not part of
+     CakeML. Instead, translate such expressions to function
+     application "fieldName_of <exp>". Requires also adding
+     definition of such projection functions to Defs structure.
+
+
+3. Synthesis of IO support (Gen_Contig, Byte_Contig, Bit_Contig)
+----------------------------------------------------------------
+
+SPLAT synthesizes decoders from the AADL types of input ports. This is
+a four part process:
+
+  3A. At code generation time, SPLAT traverses the AADL type of an
+      input port and generates the corresponding contiguity type
+
+  3B. The size of the required input byte array for a port is computed
+      from the contiguity type
+
+  3C. At runtime, the decoder for a port is an application of the contiguity
+      type parser Byte_contig.parseFn to the contiguity type of the port.
+
+  3D. The corresponding parse tree is mapped into the type implementing the port.
+
+
+IN PROGRESS: doing the equivalent for output ports.
+
+
+4. Code Generation
+--------------------
+
+
+5. Theory Generation
+----------------------
+
+Once such a contract is found, it is mapped into an element of the
+"contract" type (declared in strcuture AADL.sml):
+
+ datatype contract =
+   ContractDec
+     of qid           (* (pkgName,compName) *)
+      * string        (* doc string *)
+      * port list     (* all ports of the component *)
+      * bool          (* latched? *)
+      * tydec list    (* local tydecs *)
+      * tmdec list    (* local tmdecs *)
+      * vardec list   (* state vars   *)
+      * (string * string * outdec) list (* output port contents *)
+      * (string * string * exp) list    (* assumptions *)
+      * (string * string * exp) list    (* guarantees *)
+
+This combines with a function that consolidates packages into "gadgets":
+
+   Gadget.mk_gadgets : pkg list -> gadget list
