@@ -1,5 +1,6 @@
 (*===========================================================================*)
-(* Generate ASTs from s-expressions.                                         *)
+(* AST : types, exps, stmts, and decls. Really, only the exps are used in    *)
+(* SPLAT. The rest has been used in earlier projects, such as Guardol.       *)
 (*===========================================================================*)
 
 structure AST :> AST =
@@ -44,8 +45,6 @@ datatype builtin
   | DoubleTy
   | IntTy of numkind
 
-datatype quant = Forall | Exists
-
 datatype ty
   = BaseTy of builtin
   | NamedTy of qid
@@ -62,7 +61,6 @@ and exp
   | RecdProj of exp * id
   | Fncall of qid * exp list
   | ConstrExp of qid * id * exp list
-  | Quantified of quant * (id * ty) list * exp
 
 type vdec = id * ty;
 
@@ -212,8 +210,6 @@ fun tyNumTypes [] = []
                                                (expNumTypes dims)
 and
     expNumTypes [] = []
-  | expNumTypes (Quantified(quant,bvars,e)::t) =
-        union (tyNumTypes (map snd bvars)) (expNumTypes (e::t))
   | expNumTypes (VarExp id::t) = expNumTypes t
   | expNumTypes (ConstExp _::t) = expNumTypes t
   | expNumTypes (Unop (_,e)::t) = expNumTypes (e::t)
@@ -288,8 +284,6 @@ fun expVars (VarExp id) = [id]
   | expVars (RecdProj(e,id)) = expVars e
   | expVars (Fncall(qid,expl)) = bigU (map expVars expl)
   | expVars (ConstrExp(tyqid,id,elist)) = bigU(map expVars elist)
-  | expVars (Quantified(quant,bvars,e)) =
-      bigU [map fst bvars, bigU (map (tyVars o snd) bvars), expVars e]
 and tyVars (BaseTy _) = []
   | tyVars (NamedTy _) = []
   | tyVars (RecdTy(qid,fields)) = bigU(map (tyVars o snd) fields)
@@ -336,7 +330,6 @@ and expFrees scope exp =
    | RecdProj(e,id) => expFrees scope e
    | Fncall(qid,expl) => bigU (map (expFrees scope) expl)
    | ConstrExp(tyqid,id,elist) => bigU(map (expFrees scope) elist)
-   | Quantified(quant,bvars,e) => expFrees (map fst bvars @ scope) e
 
 fun stmtFrees scope stmt =
  case stmt
@@ -394,7 +387,6 @@ fun exp_calls [] acc = acc
   | exp_calls (Fncall(qid,elist)::t) acc = exp_calls (elist@t) (insert qid acc)
   | exp_calls (RecdExp (qid,fields)::t) acc = exp_calls (map snd fields@t) acc
   | exp_calls (RecdProj(e,_)::t) acc = exp_calls (e::t) acc
-  | exp_calls (Quantified(_,_,e)::t) acc = exp_calls (e::t) acc;
 
 (*---------------------------------------------------------------------------*)
 (* What procedures are called in a list of statements.                       *)
@@ -495,11 +487,6 @@ and eqExp epair =
        in qid1=qid2 andalso Lib.all2 eqField fields1' fields2'
        end
    | (RecdProj(e1,i1),RecdProj(e2,i2)) => i1=i2 andalso eqExp(e1,e2)
-   | (Quantified(q1,bvars1,e1),Quantified(q2,bvars2,e2))
-       => let fun eqBvar(s1,ty1) (s2,ty2) = s1=s2 andalso eqTy(ty1,ty2)
-          in q1=q2 andalso eqExp(e1,e2) andalso
-             Lib.all2 eqBvar bvars1 bvars2
-          end
    | (other,wise) => false
 and
   eqField (id1,e1) (id2,e2) = id1=id2 andalso eqExp(e1,e2)
@@ -534,7 +521,6 @@ and
       | Fncall(qid,elist) => Fncall(qid,map (substExp theta) elist)
       | RecdExp (qid,fields) => RecdExp(qid,map (I##substExp theta) fields)
       | RecdProj(e,id) => RecdProj(substExp theta e,id)
-      | Quantified(q,qvars,e) => Quantified(q,qvars,substExp theta e)
 ;
 
 (*---------------------------------------------------------------------------*)
@@ -659,8 +645,6 @@ and substTyExp theta exp =
      | Fncall(qid,elist) => Fncall(qid,map (substTyExp theta) elist)
      | RecdExp(qid,fields) => RecdExp(qid,map (I##substTyExp theta) fields)
      | RecdProj(e,id) => RecdProj(substTyExp theta e,id)
-     | Quantified(quant,bvars,e)
-       => Quantified(quant,map (I##substTyTy theta) bvars, substTyExp theta e)
 
 fun substTyVdec theta (id,ty) = (id,substTyTy theta ty);
 fun substTyParam theta param =
@@ -753,7 +737,6 @@ and substQidExp theta (exp:exp) =
      | RecdExp(qid,fields) =>
          RecdExp(alistFn theta(qid), map (I##substQidExp theta) fields)
      | RecdProj(e,id) => RecdProj(substQidExp theta e,id)
-     | Quantified(q,qvars,e) => Quantified(q,qvars,substQidExp theta e)
 
 fun substQidStmt theta stmt =
  case stmt
@@ -833,7 +816,6 @@ and expIds exp set =
      | Fncall((_,id),elist) => itlist expIds elist (insert id set)
      | RecdExp((_,id),fields) => itlist expIds (map snd fields) (insert id set)
      | RecdProj(e,id) => expIds e (insert id set)
-     | Quantified(q,qvars,e) => expIds e (itlist tyIds (map snd qvars) set)
 
 fun stmtIds stmt set =
  case stmt
@@ -905,7 +887,6 @@ and expQids exp set =
      | Fncall(qid,elist) => itlist expQids elist (insert qid set)
      | RecdExp(qid,fields) => itlist expQids (map snd fields) (insert qid set)
      | RecdProj(e,id) => expQids e set
-     | Quantified(q,qvars,e) => expQids e (itlist tyQids (map snd qvars) set)
 
 fun stmtQids stmt set =
  case stmt
@@ -1151,7 +1132,6 @@ fun elim_imp p =
      | RecdProj(recd,fname) => RecdProj(elim_imp recd,fname)
      | Fncall (qid,args) => Fncall(qid,map elim_imp args)
      | ConstrExp(qid, constr,args) => ConstrExp(qid, constr,map elim_imp args)
-     | Quantified(q,vars,e) => Quantified(q,vars,elim_imp e)
 ;
 
 (*---------------------------------------------------------------------------*)
@@ -1222,8 +1202,6 @@ fun expand1Ty E ty =
      | RecdExp(qid,fields) =>
           RecdExp(qid_map E qid, map (I##expand1TyExp E) fields)
      | RecdProj(e,id) => RecdProj(expand1TyExp E e,id)
-     | Quantified(quant,bvars,e) =>
-         Quantified(quant,map (I##expand1Ty E) bvars, expand1TyExp E e)
 ;
 
 fun expandTyN E n ty =
@@ -1548,15 +1526,6 @@ fun tcTy (env as (abbrEnv,varEnv,constEnv,constrEnv,recdEnv,specEnv):tyenv) ty =
                 (String.concat ["record projection <exp>.", id,
                                ": expected <exp> to have a record type"])
          end
-      | Quantified(quant,bvars,e) =>
-          let fun varEnv' id = (assoc id bvars handle HOL_ERR _ => varEnv id)
-              val env' = (abbrEnv,varEnv',constEnv,constrEnv,recdEnv,specEnv)
-          in
-             List.app (tcTy env) (map snd bvars);
-             check "Quantified"
-                   (tcExp env' e)
-                   (BaseTy BoolTy)
-          end
    end
 
 fun tcStmt E stmt =
@@ -1880,7 +1849,6 @@ fun expTy (env as (varEnv,tyEnv,constEnv)) exp :ty =
    | Binop(GreaterEqual,e1,e2) => boolTy
    | Binop(Less,e1,e2) => boolTy
    | Binop(LessEqual,e1,e2) => boolTy
-   | Quantified(quant,bvars,e) => boolTy
 
    | ConstrExp (qid,c,elist) => tyEnv qid
    | Fncall (qid,elist) => constEnv qid
@@ -2036,12 +2004,6 @@ fun pp_ty depth ty =
             PrettyBlock(0,false,[],
                [gen_pp_list Comma [emptyBreak] (pp_exp (depth-1)) args]),
             PrettyString")"])
-      | Quantified (quant,bvars,body) =>
-          PrettyBlock(2,true,[],
-           [PrettyString(case quant of Forall => "forall " | Exists => "exists "),
-            PrettyBlock(0,false,[],
-               [gen_pp_list Space [] (pp_ty_field (depth-1)) bvars]),
-                pp_exp (depth-1) body])
       | RecdExp (qid,fields) => PrettyBlock(2,true,[],
            [PrettyString(pp_qid qid), PrettyString("["),
             PrettyBlock(0,false,[],
@@ -2493,9 +2455,8 @@ fun transRval E e =
               Fncall(qid,[eltVar,accVar,body',arry',init'])
             end
          | otherwise => raise ERR "transRval" "malformed Array_Foldl_Indices")
-   | Fncall(qid,elist)      => Fncall(qid,map (transRval E) elist)
-   | RecdExp(qid,fields)    => RecdExp(qid,map (I##transRval E) fields)
-   | Quantified (q,params,exp) => Quantified (q,params,transRval E exp)
+   | Fncall(qid,elist) => Fncall(qid,map (transRval E) elist)
+   | RecdExp(qid,fields) => RecdExp(qid,map (I##transRval E) fields)
    | otherwise => fst(proj_intro E e)
 ;
 

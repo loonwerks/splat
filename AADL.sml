@@ -62,11 +62,7 @@ in end;
       * (string * string * exp) list   (* guars  *)
 
 
-(* Pkg(pkgName, (tydecs,tmdecs,contracts)) *)
-
-type decls = string * (tydec list * tmdec list * contract list);
-
-datatype pkg = Pkg of string * (tydec list * tmdec list * contract list);
+type pkg = string * (tydec list * tmdec list * contract list);
 
 val ERR = Feedback.mk_HOL_ERR "AADL";
 
@@ -1292,11 +1288,6 @@ fun empty_recd (RecdDec(qid,[])) = true
 fun empty_pkg (_,(tydecs,[],[])) = List.all empty_recd tydecs
   | empty_pkg otherwise = false;
 
-(*
-fun scrub_pkg (name,(tydecs,tmdecs,fdecs,mdecs)) =
-  (name,(filter (not o empty_recd) tydecs, tmdecs, fdecs, mdecs))
-*)
-
 fun scrape_pkgs json =
  let fun uses (A as AList (("name", String AName) ::
                            ("kind", String "AadlPackage") ::
@@ -1332,7 +1323,7 @@ fun sort_tmdecs list = topsort called_by list;
 
 
 fun mk_tyE pkglist =
- let fun tydecs_of (Pkg(pkgName,(tys,consts,contracts))) = tys
+ let fun tydecs_of (pkgName,(tys,consts,contracts)) = tys
      val all_tydecs = List.concat (map tydecs_of pkglist)
      fun mk_tydec_bind tydec = (tydec_qid tydec,tydec_to_ty tydec)
      val tydec_alist = map mk_tydec_bind all_tydecs
@@ -1343,7 +1334,7 @@ fun tmdecs_of_contract
    (ContractDec (qid,s,ports,b,tydecs,tmdecs,
                  vardecs,outdecs,assums,guars)) = tmdecs;
 
-fun cdecs_of (Pkg(pkgName,(tys,tmdecs,contracts))) =
+fun cdecs_of (pkgName,(tys,tmdecs,contracts)) =
  let fun contract_consts contract =
           filter is_const_dec (tmdecs_of_contract contract)
  in

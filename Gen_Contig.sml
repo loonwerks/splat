@@ -181,7 +181,6 @@ fun decoders tyE tylist =
        if is_recd_ty ty then
           mk_decoder_def tyE decodeE ty::defs
        else defs
-
  in
    List.rev(rev_itlist itFn tylist [])
  end

@@ -35,10 +35,8 @@ sig
  (* a {filter,monitor,gate}. These are all quite similar from the code gen    *)
  (* perspective so we sweep them all into a unified datatype.                 *)
  (*                                                                           *)
- (* Contract (name,kind,ports,latched,tydecs,tmdecs,ivars,(outdecs,otherGs))  *)
+ (* Contract (name,kind,ports,latched,tydecs,tmdecs,ivars,outdecs,A,G)        *)
  (*                                                                           *)
- (* It doesn't capture everything that could do into an AGREE contract, eg    *)
- (* assumptions aren't grabbed.                                               *)
  (*---------------------------------------------------------------------------*)
 
  datatype contract =
@@ -54,12 +52,9 @@ sig
       * (string * string * exp) list
       * (string * string * exp) list
 
- type decls = string * (tydec list * tmdec list * contract list)
+ type pkg = string * (tydec list * tmdec list * contract list)
 
- datatype pkg = Pkg of decls
-
- val scrape : Json.json -> decls
- val scrape_pkgs : Json.json -> decls list
+ val scrape_pkgs : Json.json -> pkg list
 
  val tydec_qid : tydec -> qid
  val tmdec_qid : tmdec -> qid

@@ -46,8 +46,6 @@ sig
     | FloatTy
     | DoubleTy
 
-  datatype quant = Exists | Forall
-
   datatype ty
     = BaseTy of builtin
     | NamedTy of qid
@@ -64,7 +62,6 @@ sig
     | Fncall of qid * exp list
     | RecdExp of qid * (id * exp) list
     | RecdProj of exp * id
-    | Quantified of quant * (id * ty) list * exp
 
   type vdec = id * ty
 
