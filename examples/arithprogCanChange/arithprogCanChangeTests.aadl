@@ -1,0 +1,36 @@
+package arithprogCanChangeTests
+public
+	with Base_Types;
+  renames Base_Types::all;
+  
+  with arithprogCanChange;
+  renames arithprogCanChange::all;
+  
+  process should_outputTrue_when_differenceInSuccessiveInputsConstant
+    features
+      input: in data port Integer;
+      output: out data port Boolean;
+    annex agree {**
+      eq index : Integer = prev(index + 1, 0); 
+       
+      assume "Difference in successive inputs is constant in bands" :
+            ((index <= 1) => true)
+        and ((index >= 2 and index <= 4) => ((input - pre(input)) = (pre(input) - pre(pre(input)))))
+        and ((index = 5) => ((input - pre(input)) != (pre(input) - pre(pre(input)))))
+        and ((index >= 6) => ((input - pre(input)) = (pre(input) - pre(pre(input)))));
+        
+      guarantee "Output is true whenever difference constant and false otherwise" :
+            ((index <= 4) => output)
+        and ((index = 5) => not output)
+        and ((index >= 6) => output);
+    **};
+  end should_outputTrue_when_differenceInSuccessiveInputsConstant;
+  
+  process implementation should_outputTrue_when_differenceInSuccessiveInputsConstant.test
+    subcomponents
+      comp: thread arithprog.Impl;
+    connections
+      c00: port input -> comp.input;
+      c01: port comp.output -> output;
+  end should_outputTrue_when_differenceInSuccessiveInputsConstant.test;  
+end arithprogCanChangeTests;
