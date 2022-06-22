@@ -348,7 +348,7 @@ fun process_model jsonFile =
 (* empty.                                                                    *)
 (*---------------------------------------------------------------------------*)
 
-fun mk_expr e =
+fun mk_expr e =  (* AST.exp -> term *)
  let open AST agree_fullSyntax stringSyntax
      fun not_handled s =
          raise ERR "mk_expr" (Lib.quote s^" not handled")

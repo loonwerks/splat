@@ -27,7 +27,11 @@ implementation of Standard ML (SML).  The codebase in directory
 "splat" is organized as a collection of SML signature (.sig suffix)
 and structure (.sml suffix) files. A signature file <X>.sig specifies
 the publically accessible types and functions of the corresponding
-<X>.sml implementation.
+<X>.sml implementation. SPLAT can be built by invoking
+
+   Holmake
+
+to the shell prompt. We assume some flavor of Unix.
 
 
 The monitors branch.
@@ -36,7 +40,7 @@ The monitors branch.
  We assume that an AADL/AGREE model has been created in the Formal
 Methods IDE (fmide), and that the fmide user has selected the menu
 item for generating a JSON representatiomn of the model. Suppose that
-model has been successfully to file <name>.json.
+model has been successfully written to file <name>.json.
 
  An invocation
 
@@ -58,7 +62,7 @@ causes the following sequence of transformations to be taken:
 AGREE contracts that specify components to generate code for. In the
 IDE a user can typically add filters, monitors, and gates. These are
 all treated as instances of a more general notion, which is initially
-represented by an element of the contract datatype, and later, in
+represented by an element of the "contract" datatype, and later, in
 refined form, as a so-called "gadget".
 
 Scraping takes the following steps:
@@ -67,7 +71,7 @@ Scraping takes the following steps:
 
      Json.fromFile : string -> Json.json list * substring
 
-1B. Mapping JSON into an element of the "contract" type. We will
+1B. Mapping JSON into an element of the contract type. We will
     discuss the contract type further below. For now, notice that a
     single AADL package can have multiple contracts in it, along with
     declarations of supporting types and functions. Thus we declare a
@@ -81,26 +85,27 @@ Scraping takes the following steps:
 
        AADL.scrape_pkgs : Json.json -> pkg list
 
+
 2. Consolidation (Files: Gadget)
 ---------------------------------
 
 "Consolidation" compresses the information in a list of packages into
-a list of so-called "gadgets". Each gadget is a self-contained unit
-from which the complete code for a component can be generated.
+a list of so-called "gadgets".
 
   Gadget.mk_gadgets : pkg list -> gadget list
 
- There may be dependencies between packages, so that later packages
-depend on types or functions declared in earlier packages. Function
-"mk_gadgets" essentially drags those definitions forward into the
-local definitions of the contract, thus making each gadget independent
-of the others. Once a gadget has been created, there are a number of
-"passes" (source-to-source transformations) defined over the gadget
-aimed at preparing the gadget for code generation in the chosen target
-language.
+Each gadget is a self-contained unit from which the complete code for
+a component can be generated.  There may be dependencies between
+packages, so that later packages depend on types or functions declared
+in earlier packages. Function "mk_gadgets" essentially drags those
+definitions forward into the local definitions of the contract, thus
+making each gadget independent of the others.
 
-Currently the only target language is CakeML. Following are the
-currently implemented passes:
+Once a gadget has been created, there are a number of "passes"
+(source-to-source transformations) defined over the gadget aimed at
+preparing the gadget for code generation in the chosen target
+language.  Currently the only target language is CakeML. Following are
+the currently implemented passes:
 
   corral_rogue_vars  : gadget -> gadget
   set_Defs_struct    : gadget -> gadget
@@ -126,7 +131,7 @@ currently implemented passes:
 
  * set_sig_lower_case
 
-   - constants and function names need to be lower-cases for CakeML
+   - constants and function names need to be initial-character-lower-case for CakeML
 
  * set_ports_and_ivars_lower_case
 
@@ -140,9 +145,9 @@ currently implemented passes:
  * elim_projections
 
    - Record projections of the form <exp>.fieldName are not part of
-     CakeML. Instead, translate such expressions to function
-     application "fieldName_of <exp>". Requires also adding
-     definition of such projection functions to Defs structure.
+     CakeML. Instead, elim_projetions translates such expressions to
+     function application "fieldName_of <exp>". Requires also adding
+     definition of such projection functions to the Defs structure.
 
 
 3. Synthesis of IO support (Gen_Contig, Byte_Contig, Bit_Contig)
@@ -154,11 +159,11 @@ a four part process:
   3A. At code generation time, SPLAT traverses the AADL type of an
       input port and generates the corresponding contiguity type
 
-  3B. The size of the required input byte array for a port is computed
+  3B. The size of the required byte array for a port is computed
       from the contiguity type
 
   3C. At runtime, the decoder for a port is an application of the contiguity
-      type parser Byte_contig.parseFn to the contiguity type of the port.
+      type parser (Byte_contig.parseFn) to the contiguity type of the port.
 
   3D. The corresponding parse tree is mapped into the type implementing the port.
 
@@ -188,7 +193,3 @@ Once such a contract is found, it is mapped into an element of the
       * (string * string * outdec) list (* output port contents *)
       * (string * string * exp) list    (* assumptions *)
       * (string * string * exp) list    (* guarantees *)
-
-This combines with a function that consolidates packages into "gadgets":
-
-   Gadget.mk_gadgets : pkg list -> gadget list
