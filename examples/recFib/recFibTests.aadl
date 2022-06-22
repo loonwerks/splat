@@ -1,0 +1,33 @@
+package recFibTests
+public
+	with Base_Types;
+  renames Base_Types::all;
+  
+  with recFib;
+  renames recFib::all;
+  
+  process should_outputNextFibNumber_when_dispatched
+    features
+      output: out data port Integer;
+    annex agree {**
+      eq index : Integer = prev(index + 1, 0);
+      
+      guarantee "First seven numbers of Fib sequence match" :
+            ((index = 0) => (output = 1))
+        and ((index = 1) => (output = 1))
+        and ((index = 2) => (output = 2))
+        and ((index = 3) => (output = 3))
+        and ((index = 4) => (output = 5))
+        and ((index = 5) => (output = 8))
+        and ((index = 6) => (output = 13))
+        and ((index > 7) => true);
+    **};
+  end should_outputNextFibNumber_when_dispatched;
+  
+  process implementation should_outputNextFibNumber_when_dispatched.test
+    subcomponents
+      comp: thread recFib.Impl;
+    connections
+      c00: port comp.output -> output;
+  end should_outputNextFibNumber_when_dispatched.test;
+end recFibTests;

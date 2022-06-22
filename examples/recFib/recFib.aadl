@@ -1,0 +1,30 @@
+package recFib
+public
+  with Base_Types;
+  renames Base_Types::all;
+  
+	with CASE_Properties;
+
+  thread recFib
+    features
+      output: out data port Integer;
+    properties
+      CASE_Properties::Monitoring => 100;
+      CASE_Properties::Monitor_Latched => false;
+    annex agree {**
+      eq fib : Integer = 1 -> pre(1 -> (fib + pre(fib))); 
+                            
+      guarantee "Output is equal to fib" :
+        output = fib;
+    **};
+  end recFib;
+	
+	thread implementation recFib.Impl
+    properties            
+      Dispatch_Protocol => Periodic;
+      Period => 500ms;
+      Compute_Execution_Time => 2ms .. 2ms;
+      Stack_Size => 65536 bytes;
+      Source_text => ("");
+  end recFib.Impl;
+end recFib;
