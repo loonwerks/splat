@@ -1,0 +1,37 @@
+package arithprog
+public
+	with Base_Types;
+  renames Base_Types::all;
+  
+  with CASE_Properties;
+
+  thread arithprog
+  	features
+  		input: in data port Integer;
+      output: out data port Boolean;
+    properties
+      CASE_Properties::Monitoring => 100;
+      CASE_Properties::Monitor_Latched => false;
+    annex agree {**
+      eq N : Integer = prev(N + 1, 0); 
+      eq isProg : Boolean = 
+        if (N <= 1) then
+          true
+        else
+          pre(isProg) and 
+          ((input - pre(input)) = (pre(input) - pre(pre(input))));
+                                                            
+      guarantee "Output is equal to isProg" :
+        output = isProg;
+    **};
+  end arithprog;
+  
+  thread implementation arithProg.Impl
+    properties            
+      Dispatch_Protocol => Periodic;
+      Period => 500ms;
+      Compute_Execution_Time => 2ms .. 2ms;
+      Stack_Size => 65536 bytes;
+      Source_text => ("");
+  end arithProg.Impl;
+end arithprog;
