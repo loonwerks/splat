@@ -21,7 +21,7 @@ Proof
 QED
 
 (*---------------------------------------------------------------------------*)
-(* Varible reference for replacing FbyExpr with CondExpr:                    *)
+(* Variable reference for replacing FbyExpr with CondExpr:                   *)
 (*   (FbyExpr e1 e2) = (CondExpr init e1 e2)                                 *)
 (*---------------------------------------------------------------------------*)
 
@@ -30,7 +30,7 @@ Definition initPortName_def :
 End
 
 Definition init_def :
-  init = Var initPortName
+  init = VarExpr initPortName
 End
 
 (*---------------------------------------------------------------------------*)
@@ -46,7 +46,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition exprSquash_def :
-  exprSquash A M (Var s) = (A,M,Var s)         /\
+  exprSquash A M (VarExpr s) = (A,M,VarExpr s) /\
   exprSquash A M (IntLit i)  = (A,M,IntLit i)  /\
   exprSquash A M (BoolLit b) = (A,M,BoolLit b) /\
   exprSquash A M (PreExpr e) =
@@ -55,7 +55,7 @@ Definition exprSquash_def :
      else
       let (A1,M1,e1) = exprSquash A M e;
           s = newAux (LENGTH A1);
-          e2 = Var s;
+          e2 = VarExpr s;
           A2 = Stmt s e1::A1;
           M2 = M1 |+ (e,e2);
       in
@@ -166,11 +166,12 @@ Definition exprSquash_def :
       ([],A,M) list
 Termination
  WF_REL_TAC ‘measure
-              (sum_size (esize o SND o SND)
-                        (list_size esize o SND o SND))’
- >> rw [esize_def,ETA_THM] >> drule (GSYM pair_list_lem) >> rw[]
+               (sum_size (esize o SND o SND)
+                         (list_size esize o SND o SND))’
+ >> rw [esize_def,ETA_THM]
+ >> drule (GSYM pair_list_lem)
+ >> rw[]
 End
-
 
 
 Definition squashStmt_def :
@@ -190,7 +191,7 @@ Definition squashOutputStmt_def :
     if e = e' then
       (Stmt s e::S,A1,M1)
     else
-      (Stmt s (Var s')::S, Stmt s' e'::A1,M1)
+      (Stmt s (VarExpr s')::S, Stmt s' e'::A1,M1)
 End
 
 Definition squashStmts_def :
@@ -228,23 +229,23 @@ Definition arithprog_def:
   <| inports  := ["input"];
      var_defs :=
      [Stmt "N" (FbyExpr (IntLit 0)
-                (AddExpr (PreExpr (Var "N")) (IntLit 1)));
+                (AddExpr (PreExpr (VarExpr "N")) (IntLit 1)));
       Stmt "isProg"
            (CondExpr
-            (LeqExpr (Var "N") (IntLit 1))
+            (LeqExpr (VarExpr "N") (IntLit 1))
             (BoolLit T)
             (AndExpr
-             (EqExpr (SubExpr (Var "input") (PreExpr (Var "input")))
-              (SubExpr (PreExpr (Var "input"))
-               (PreExpr (PreExpr(Var "input")))))
-             (PreExpr (Var "isProg"))))];
-     out_defs := [Stmt "out" (Var "isProg")];
+             (EqExpr (SubExpr (VarExpr "input") (PreExpr (VarExpr "input")))
+              (SubExpr (PreExpr (VarExpr "input"))
+               (PreExpr (PreExpr(VarExpr "input")))))
+             (PreExpr (VarExpr "isProg"))))];
+     out_defs := [Stmt "out" (VarExpr "isProg")];
      assumptions := [];
      guarantees  := []
   |>
 End
 
-EVAL “squash_comp arithprog”;
+val squashed_arithprog = EVAL “squash_comp arithprog”;
 
 (*---------------------------------------------------------------------------*)
 (* Nesting of "pre" in order to look both 1 and 2 steps back in the          *)
@@ -265,14 +266,14 @@ Definition recFib_def:
      [Stmt "recFib"
       (FbyExpr (IntLit 1)
        (PreExpr (FbyExpr (IntLit 1)
-                 (AddExpr (Var "recFib") (PreExpr (Var "recFib"))))))];
-     out_defs := [Stmt "output" (Var "recFib")];
+                 (AddExpr (VarExpr "recFib") (PreExpr (VarExpr "recFib"))))))];
+     out_defs := [Stmt "output" (VarExpr "recFib")];
      assumptions := [];
-     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+     guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
 End
 
-EVAL “squash_comp recFib”;
+val squashed_recFib = EVAL “squash_comp recFib”;
 
 (*---------------------------------------------------------------------------*)
 (* Array Expressions                                                         *)
@@ -291,20 +292,20 @@ Definition arrayExprInput_def:
      [Stmt "recFib"
       (FbyExpr (IntLit 1)
        (PreExpr (FbyExpr (IntLit 1)
-                 (AddExpr (Var "recFib") (PreExpr (Var "recFib"))))));
+                 (AddExpr (VarExpr "recFib") (PreExpr (VarExpr "recFib"))))));
       Stmt "array"
            (ArrayExpr [
-               (Var "recFib");
+               (VarExpr "recFib");
                (IntLit 1);
-               (FbyExpr (IntLit 0) (PreExpr (Var "recFib")))])];
-     out_defs := [Stmt "output1" (Var "recFib");
-                  Stmt "output2" (Var "array")];
+               (FbyExpr (IntLit 0) (PreExpr (VarExpr "recFib")))])];
+     out_defs := [Stmt "output1" (VarExpr "recFib");
+                  Stmt "output2" (VarExpr "array")];
      assumptions := [];
-     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+     guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
 End
 
-EVAL “squash_comp arrayExprInput”;
+val squashed_arrayExprInput = EVAL “squash_comp arrayExprInput”;
 
 (*---------------------------------------------------------------------------*)
 (* Record Expressions                                                        *)
@@ -325,16 +326,16 @@ Definition recdExprInput_def:
       (RecdExpr [
           ("a", (FbyExpr (IntLit 1)
                  (PreExpr (FbyExpr (IntLit 1)
-                           (AddExpr (Var "recFib") (PreExpr (Var "recFib")))))));
+                           (AddExpr (VarExpr "recFib") (PreExpr (VarExpr "recFib")))))));
           ("b", (IntLit 1));
-          ("c", (FbyExpr (IntLit 0) (PreExpr (Var "recFib"))))])];
-     out_defs := [Stmt "output" (Var "recd")];
+          ("c", (FbyExpr (IntLit 0) (PreExpr (VarExpr "recFib"))))])];
+     out_defs := [Stmt "output" (VarExpr "recd")];
      assumptions := [];
-     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+     guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
 End
 
-EVAL “squash_comp recdExprInput”;
+val squashed_recdExpr = EVAL “squash_comp recdExprInput”;
 
 (*---------------------------------------------------------------------------*)
 (* Bigger example with more common subexpressions and nesting of pre's       *)
@@ -357,24 +358,26 @@ Definition testInput_def:
      [Stmt "fib"
       (FbyExpr (IntLit 1)
        (PreExpr (FbyExpr (IntLit 1)
-                 (AddExpr (Var "Fib") (PreExpr (Var "Fib"))))));
+                 (AddExpr (VarExpr "Fib") (PreExpr (VarExpr "Fib"))))));
       Stmt "x"
            (FbyExpr (IntLit 0)
             (PreExpr (FbyExpr (IntLit 1)
                       (PreExpr (FbyExpr (IntLit 1)
-                                (AddExpr (Var "Fib") (PreExpr (Var "Fib"))))))));
+                                (AddExpr (VarExpr "Fib") (PreExpr (VarExpr "Fib"))))))));
       Stmt "y"
-           (FbyExpr (Var "x")
-            (PreExpr (FbyExpr (Var "x")
-                      (SubExpr (PreExpr (Var "x")) (PreExpr (PreExpr (Var "Fib")))))))];
-     out_defs := [Stmt "output1" (Var "Fib");
+           (FbyExpr (VarExpr "x")
+            (PreExpr (FbyExpr (VarExpr "x")
+                      (SubExpr (PreExpr (VarExpr "x")) (PreExpr (PreExpr (VarExpr "Fib")))))))];
+     out_defs := [Stmt "output1" (VarExpr "Fib");
                   Stmt "output2"
                        (FbyExpr (IntLit 1)
                         (PreExpr (FbyExpr (IntLit 1)
-                                  (AddExpr (Var "input") (PreExpr (Var "input"))))))];
+                                  (AddExpr (VarExpr "input") (PreExpr (VarExpr "input"))))))];
      assumptions := [];
-     guarantees := [LeqExpr (IntLit 0) (Var"output")]
+     guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
 End
 
-EVAL “squash_comp testInput”;
+val squashed_test = EVAL “squash_comp testInput”;
+
+val _ = export_theory();

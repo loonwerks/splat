@@ -1,4 +1,3 @@
-
 open HolKernel Parse boolLib bossLib BasicProvers
      pred_setLib stringLib intLib finite_mapTheory
      arithmeticTheory listTheory pred_setTheory;
@@ -83,7 +82,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Datatype:
-  expr = Var string
+  expr = VarExpr string
        | IntLit int
        | BoolLit bool
        | AddExpr expr expr
@@ -116,7 +115,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition esize_def :
-  esize (Var s) = 0n  /\
+  esize (VarExpr s) = 0n  /\
   esize (IntLit i) = 0  /\
   esize (BoolLit b) = 0  /\
   esize (AddExpr e1 e2) = 1 + esize e1 + esize e2  /\
@@ -143,8 +142,7 @@ Definition esize_def :
   esize (CondExpr e1 e2 e3) = 1 + esize e1 + esize e2 + esize e3  /\
   esize (HistExpr e) = 1 + esize e
 Termination
-  cheat
-  (* WF_REL_TAC ‘measure expr_size’ *)
+  WF_REL_TAC ‘measure expr_size’
 End
 
 (*---------------------------------------------------------------------------*)
@@ -184,12 +182,17 @@ Definition RecdProjValue_def:
       | NONE => ARB
 End
 
+(*---------------------------------------------------------------------------*)
+(* I seem to recall that array indices start at 1 in AGREE. In that case,    *)
+(* applications of ArraySubValue will need attention paid to them.           *)
+(*---------------------------------------------------------------------------*)
+
 Definition ArraySubValue_def:
   ArraySubValue arr i = EL (Num i) arr
 End
 
 Definition exprVal_def :
-  exprVal E (Var s) (t:num) = (E ' s) t /\
+  exprVal E (VarExpr s) (t:num) = (E ' s) t /\
   exprVal E (IntLit i) t    = IntValue i /\
   exprVal E (BoolLit b) t   = BoolValue b /\
   exprVal E (AddExpr e1 e2) t =
@@ -351,8 +354,8 @@ End
 (* Support defs for well-formedness of component                             *)
 (*---------------------------------------------------------------------------*)
 
-Definition exprVars_def :
-  exprVars (Var s) = {s} /\
+Definition exprVar_def :
+  exprVars (VarExpr s) = {s} /\
   exprVars (IntLit i) = {} /\
   exprVars (BoolLit b) = {} /\
   exprVars (AddExpr e1 e2) = exprVars e1 UNION exprVars e2 /\
