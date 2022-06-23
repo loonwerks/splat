@@ -4,7 +4,7 @@ public
 
   with AGREE_PLTL;
   renames AGREE_PLTL::all;
-
+  
   ------------------------------
   -- Bounded Response Monitor --
   ------------------------------
@@ -19,9 +19,11 @@ public
     annex agree {**
       eq rsp : bool = event(response);
       eq req : bool = event(request);
-      
+
+       eq notReqSinceRsp : bool = rsp or 
+                                 ((not req) and (false -> pre(notReqSinceRsp)));                
       assume "One automation request in flight at a time" :
-        true -> (req => pre(Historically(not req) or Since(not req, rsp)));
+        true -> (req => pre(Historically(not req) or notReqSinceRsp));
       
       ------------------------------
       -- Component Implementation --
@@ -29,7 +31,8 @@ public
       const is_latched : bool = true;
       const MAX_LATENCY : int = 1;
       
-      eq isPending : bool = Since(not rsp, req and not rsp);
+      eq isPending : bool = (req and not rsp) or 
+                            ((not rsp) and (false -> pre(isPending)));                            
       eq latency : int = 0 -> (if req then 0 else pre(latency) + 1);
      
       eq policy : bool = (rsp => req) ->

@@ -1,6 +1,6 @@
 {
   "project": "boundedResponse",
-  "date": 1655941077395,
+  "date": 1655942686439,
   "modelUnits": [
     {
       "name": "boundedResponse",
@@ -106,6 +106,53 @@
                       }
                     },
                     {
+                      "kind": "EqStatement",
+                      "left": [
+                        {
+                          "name": "notReqSinceRsp",
+                          "type": {
+                            "kind": "PrimType",
+                            "primType": "bool"
+                          }
+                        }
+                      ],
+                      "expr": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "NamedElmExpr",
+                          "name": "rsp"
+                        },
+                        "op": "or",
+                        "right": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "UnaryExpr",
+                            "operand": {
+                              "kind": "NamedElmExpr",
+                              "name": "req"
+                            },
+                            "op": "not"
+                          },
+                          "op": "and",
+                          "right": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "BoolLitExpr",
+                              "value": "false"
+                            },
+                            "op": "->",
+                            "right": {
+                              "kind": "PreExpr",
+                              "expr": {
+                                "kind": "NamedElmExpr",
+                                "name": "notReqSinceRsp"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    {
                       "kind": "AssumeStatement",
                       "label": "One automation request in flight at a time",
                       "expr": {
@@ -146,26 +193,8 @@
                               },
                               "op": "or",
                               "right": {
-                                "kind": "CallExpr",
-                                "function": {
-                                  "kind": "DoubleDotRef",
-                                  "packageName": "AGREE_PLTL",
-                                  "name": "Since"
-                                },
-                                "args": [
-                                  {
-                                    "kind": "UnaryExpr",
-                                    "operand": {
-                                      "kind": "NamedElmExpr",
-                                      "name": "req"
-                                    },
-                                    "op": "not"
-                                  },
-                                  {
-                                    "kind": "NamedElmExpr",
-                                    "name": "rsp"
-                                  }
-                                ]
+                                "kind": "NamedElmExpr",
+                                "name": "notReqSinceRsp"
                               }
                             }
                           }
@@ -208,14 +237,27 @@
                         }
                       ],
                       "expr": {
-                        "kind": "CallExpr",
-                        "function": {
-                          "kind": "DoubleDotRef",
-                          "packageName": "AGREE_PLTL",
-                          "name": "Since"
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "NamedElmExpr",
+                            "name": "req"
+                          },
+                          "op": "and",
+                          "right": {
+                            "kind": "UnaryExpr",
+                            "operand": {
+                              "kind": "NamedElmExpr",
+                              "name": "rsp"
+                            },
+                            "op": "not"
+                          }
                         },
-                        "args": [
-                          {
+                        "op": "or",
+                        "right": {
+                          "kind": "BinaryExpr",
+                          "left": {
                             "kind": "UnaryExpr",
                             "operand": {
                               "kind": "NamedElmExpr",
@@ -223,23 +265,23 @@
                             },
                             "op": "not"
                           },
-                          {
+                          "op": "and",
+                          "right": {
                             "kind": "BinaryExpr",
                             "left": {
-                              "kind": "NamedElmExpr",
-                              "name": "req"
+                              "kind": "BoolLitExpr",
+                              "value": "false"
                             },
-                            "op": "and",
+                            "op": "->",
                             "right": {
-                              "kind": "UnaryExpr",
-                              "operand": {
+                              "kind": "PreExpr",
+                              "expr": {
                                 "kind": "NamedElmExpr",
-                                "name": "rsp"
-                              },
-                              "op": "not"
+                                "name": "isPending"
+                              }
                             }
                           }
-                        ]
+                        }
                       }
                     },
                     {
@@ -435,7 +477,7 @@
                     }
                   ]
                 },
-                "sourceText": "{**\n      eq rsp : bool = event(response);\n      eq req : bool = event(request);\n      \n      assume \\\"One automation request in flight at a time\\\" :\n        true -> (req => pre(Historically(not req) or Since(not req, rsp)));\n      \n      ------------------------------\n      -- Component Implementation --\n      ------------------------------\n      const is_latched : bool = true;\n      const MAX_LATENCY : int = 1;\n      \n      eq isPending : bool = Since(not rsp, req and not rsp);\n      eq latency : int = 0 -> (if req then 0 else pre(latency) + 1);\n     \n      eq policy : bool = (rsp => req) ->\n                         (    (isPending => latency < MAX_LATENCY)   \n                          and (rsp => (req or pre(isPending))));\n      eq alrt : bool = (not policy) -> \n                       ((is_latched and pre(alrt)) or not policy);\n                              \n      guarantee \\\"Alert port tracks alrt variable\\\" :\n        event(alert) = alrt;\n    **}"
+                "sourceText": "{**\n      eq rsp : bool = event(response);\n      eq req : bool = event(request);\n\n       eq notReqSinceRsp : bool = rsp or \n                                 ((not req) and (false -> pre(notReqSinceRsp)));                \n      assume \\\"One automation request in flight at a time\\\" :\n        true -> (req => pre(Historically(not req) or notReqSinceRsp));\n      \n      ------------------------------\n      -- Component Implementation --\n      ------------------------------\n      const is_latched : bool = true;\n      const MAX_LATENCY : int = 1;\n      \n      eq isPending : bool = (req and not rsp) or \n                            ((not rsp) and (false -> pre(isPending)));                            \n      eq latency : int = 0 -> (if req then 0 else pre(latency) + 1);\n     \n      eq policy : bool = (rsp => req) ->\n                         (    (isPending => latency < MAX_LATENCY)   \n                          and (rsp => (req or pre(isPending))));\n      eq alrt : bool = (not policy) -> \n                       ((is_latched and pre(alrt)) or not policy);\n                              \n      guarantee \\\"Alert port tracks alrt variable\\\" :\n        event(alert) = alrt;\n    **}"
               }
             ]
           },
