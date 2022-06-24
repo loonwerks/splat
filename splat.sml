@@ -390,7 +390,7 @@ fun mk_expr e =  (* AST.exp -> term *)
       | RecdProj (e,s) => mk_RecdProj(mk_expr e, fromMLstring s)
       | Fncall (("","pre"),[e]) => mk_Pre(mk_expr e)
       | Fncall (("","Port.event"),[p]) => mk_PortEvent(mk_expr p)
-      | Fncall (("","Port.data"),[p]) => mk_PortData(mk_expr p)
+      | Fncall (("","Port.dataOf"),[p]) => mk_PortData(mk_expr p)
       | Fncall (("","IfThenElse"),[e1,e2,e3]) => mk_Cond(mk_expr e1,mk_expr e2,mk_expr e3)
       | Fncall (("Defs","historically"),[p]) => mk_Hist(mk_expr p)
       | Fncall (qid,elist) => not_handled ("function call on "^qid_string qid)
@@ -405,14 +405,15 @@ fun gadget_to_component gdt =
      val Gadget (qid,tydecs,tmdecs,ports,ivars,outdecs) = gdt'
      val inportNames = map #1 (filter AADL.is_in_port ports)
      fun mk_var_def (s,ty,e) = mk_stmt(fromMLstring s, mk_expr e)
-     fun mk_out_def (Out_Data (s,ty,e)) = mk_var_def (s,ty, “PortValue (Data ^e)”)
-       | mk_out_def (Out_Event_Only(s,ty,e)) = mk_stmt (fromMLstring s, mk_expr e)
-       | mk_out_def (Out_Event_Data(s,ty,e1,e2)) = mk_stmt (fromMLstring s, mk_expr e)
+     fun mk_out_def (Out_Data (s,ty,e)) = mk_output_data(fromMLstring s,mk_expr e)
+       | mk_out_def (Out_Event_Only(s,ty,e)) = mk_output_event (fromMLstring s, mk_expr e)
+       | mk_out_def (Out_Event_Data(s,ty,e1,e2)) =
+           mk_output_event_data (fromMLstring s, mk_expr e1,mk_expr e2)
  in
    agree_fullSyntax.mk_component
       [("inports",  listSyntax.mk_list (map fromMLstring inportNames,string_ty)),
        ("var_defs", listSyntax.mk_list(map mk_var_def ivars,“:stmt”)),
-       ("out_defs", listSyntax.mk_list(map mk_out_def outdecs,“:stmt”)),
+       ("out_defs", listSyntax.mk_list(map mk_out_def outdecs,“:ostmt”)),
        ("assumptions", listSyntax.mk_nil “:expr”),
        ("guarantees",  listSyntax.mk_nil “:expr”)]
  end
