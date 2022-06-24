@@ -18,7 +18,7 @@ Datatype:
 End
 
 (*---------------------------------------------------------------------------*)
-(* Expression values                                                         *)
+(* Expression values and projections from the value type                     *)
 (*---------------------------------------------------------------------------*)
 
 Datatype:
@@ -263,11 +263,27 @@ Definition bodyOf_def :
 End
 
 (*---------------------------------------------------------------------------*)
+(* Output port definitions                                                   *)
+(*---------------------------------------------------------------------------*)
+
+Datatype:
+  ostmt = Output_Data string expr
+        | Output_Event string expr
+        | Output_Event_Data string expr expr
+End
+
+Definition Output_PortName_def :
+ Output_PortName (Output_Data s exp) = s ∧
+ Output_PortName (Output_Event s exp) = s ∧
+ Output_PortName (Output_Event_Data s e1 e2) = s
+End
+
+(*---------------------------------------------------------------------------*)
 (* A component = (I,V,O,A,G) comprises                                       *)
 (*                                                                           *)
 (*   - A list of input ports          I = [p1; ...; pi]                      *)
 (*   - A list of variable definitions V = [v1 = e1; ...; vn = en]            *)
-(*   - A list of output definitions   O = [o1 = e(n+1); ...; ok = e(n+k)]    *)
+(*   - A list of output definitions   O = [o1 = p1; ...; ok = pk]           *)
 (*   - A list of assumptions          A = [a1,...,ai]                        *)
 (*   - A list of guarantees           G = [g1,...,gj]                        *)
 (*---------------------------------------------------------------------------*)
@@ -275,21 +291,21 @@ End
 Datatype:
   component = <| inports     : string list;
                  var_defs    : stmt list;
-                 out_defs    : stmt list;
+                 out_defs    : ostmt list;
                  assumptions : expr list;
                  guarantees  : expr list |>
 End
 
-Definition inputOf_def :
- inputOf comp env = DRESTRICT env (set comp.inports)
+Definition inputEnv_def :
+ inputEnv comp env = DRESTRICT env (set comp.inports)
 End
 
-Definition stateOf_def :
- stateOf comp env = DRESTRICT env (set (MAP varOf comp.var_defs))
+Definition stateEnv_def :
+ stateEnv comp env = DRESTRICT env (set (MAP varOf comp.var_defs))
 End
 
-Definition outputOf_def :
- outputOf comp env = DRESTRICT env (set (MAP varOf comp.out_defs))
+Definition outputEnv_def :
+ outputEnv comp env = DRESTRICT env (set (MAP Output_PortName comp.out_defs))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -309,7 +325,6 @@ Definition guarsVal_def:
   guarsVal E comp = exprVal E (List_Conj comp.guarantees)
 End
 
-
 (*---------------------------------------------------------------------------*)
 (* A statement updates a binding in environment E                            *)
 (*---------------------------------------------------------------------------*)
@@ -318,17 +333,44 @@ Definition stmtFn_def :
  stmtFn t E (Stmt s exp) = updateEnv E s (exprVal E exp t) t
 End
 
+Definition portVal_def :
+  portVal E (Output_Data s e) t = (s, PortValue (Data(exprVal E e t))) /\
+  portVal E (Output_Event s e) t = (s, PortValue (Event_Only(exprVal E e t))) /\
+  portVal E (Output_Event_Data s e1 e2) t =
+    (s, PortValue
+         (Event_Data
+           (if (exprVal E e1 t = BoolValue T)
+            then SOME (exprVal E e2 t)
+            else NONE)))
+End
+
+Definition ostmtFn_def :
+  ostmtFn E0 t ostmt E =
+    let (s,portval) = portVal E0 ostmt t
+    in updateEnv E s portval t
+End
+
 (*---------------------------------------------------------------------------*)
-(* Sequential accumulation of variable updates.                              *)
+(* One step of component evaluation. State variables are evaluated           *)
+(* sequentially, and then output ports are evaluated in parallel.            *)
 (*---------------------------------------------------------------------------*)
 
 Definition stmtListFn_def :
    stmtListFn E stmts t = FOLDL (stmtFn t) E stmts
 End
 
-Definition strmStep_def :
-  strmStep E comp t = stmtListFn E (comp.var_defs ++ comp.out_defs) t
+Definition ostmtListFn_def :
+   ostmtListFn E ostmts t = FOLDR (ostmtFn E t) E ostmts
 End
+
+Definition strmStep_def :
+  strmStep E comp t =
+      ostmtListFn
+         (stmtListFn E comp.var_defs t)
+         comp.out_defs
+         t
+End
+
 
 (*---------------------------------------------------------------------------*)
 (* Correctness of component: the effects  of the component model its spec.   *)
@@ -346,57 +388,67 @@ End
 (* Declared variables of a component                                          *)
 (* -------------------------------------------------------------------------- *)
 
-Definition varDecs_def :
-  varDecs comp = comp.inports ++ MAP varOf (comp.var_defs ++ comp.out_defs)
+Definition Declared_Vars_def :
+  Declared_Vars comp =
+    comp.inports ++
+    MAP varOf comp.var_defs ++
+    MAP Output_PortName comp.out_defs
 End
 
 (*---------------------------------------------------------------------------*)
 (* Support defs for well-formedness of component                             *)
 (*---------------------------------------------------------------------------*)
 
-Definition exprVar_def :
+Definition exprVars_def :
   exprVars (VarExpr s) = {s} /\
-  exprVars (IntLit i) = {} /\
+  exprVars (IntLit i)  = {} /\
   exprVars (BoolLit b) = {} /\
-  exprVars (AddExpr e1 e2) = exprVars e1 UNION exprVars e2 /\
-  exprVars (SubExpr e1 e2) = exprVars e1 UNION exprVars e2 /\
+  exprVars (AddExpr e1 e2)  = exprVars e1 UNION exprVars e2 /\
+  exprVars (SubExpr e1 e2)  = exprVars e1 UNION exprVars e2 /\
   exprVars (MultExpr e1 e2) = exprVars e1 UNION exprVars e2 /\
-  exprVars (DivExpr e1 e2) = exprVars e1 UNION exprVars e2 /\
-  exprVars (ModExpr e1 e2) = exprVars e1 UNION exprVars e2 /\
-  exprVars (NotExpr b)     = exprVars b /\
-  exprVars (OrExpr b1 b2)  = (exprVars b1 UNION exprVars b2) /\
-  exprVars (AndExpr b1 b2) = (exprVars b1 UNION exprVars b2) /\
-  exprVars (ImpExpr b1 b2) = (exprVars b1 UNION exprVars b2) /\
-  exprVars (IffExpr b1 b2) = (exprVars b1 UNION exprVars b2) /\
-  exprVars (EqExpr e1 e2)  = (exprVars e1 UNION exprVars e2) /\
-  exprVars (LtExpr e1 e2)  = (exprVars e1 UNION exprVars e2) /\
-  exprVars (LeqExpr e1 e2) = (exprVars e1 UNION exprVars e2) /\
-  exprVars (HistExpr b)    = exprVars b /\
-  exprVars (PreExpr e)     = exprVars e /\
-  exprVars (FbyExpr e1 e2) = (exprVars e1 UNION exprVars e2) /\
-  exprVars (CondExpr a b c) = (exprVars a UNION exprVars b UNION exprVars c)
+  exprVars (DivExpr e1 e2)  = exprVars e1 UNION exprVars e2 /\
+  exprVars (ModExpr e1 e2)  = exprVars e1 UNION exprVars e2 /\
+  exprVars (NotExpr b)      = exprVars b /\
+  exprVars (OrExpr b1 b2)   = (exprVars b1 UNION exprVars b2) /\
+  exprVars (AndExpr b1 b2)  = (exprVars b1 UNION exprVars b2) /\
+  exprVars (ImpExpr b1 b2)  = (exprVars b1 UNION exprVars b2) /\
+  exprVars (IffExpr b1 b2)  = (exprVars b1 UNION exprVars b2) /\
+  exprVars (EqExpr e1 e2)   = (exprVars e1 UNION exprVars e2) /\
+  exprVars (LtExpr e1 e2)   = (exprVars e1 UNION exprVars e2) /\
+  exprVars (LeqExpr e1 e2)  = (exprVars e1 UNION exprVars e2) /\
+  exprVars (RecdExpr flds)  = FOLDR (\fld s. exprVars (SND fld) UNION s) {} flds /\
+  exprVars (RecdProj e s)   = exprVars e  /\
+  exprVars (ArrayExpr elts) = FOLDR (\e s. exprVars e UNION s) {} elts  /\
+  exprVars (ArraySub e1 e2) = (exprVars e1 UNION exprVars e2)  /\
+  exprVars (PortEvent e)    = exprVars e  /\
+  exprVars (PortData e)     = exprVars e /\
+  exprVars (PreExpr e)      = exprVars e /\
+  exprVars (FbyExpr e1 e2)  = (exprVars e1 UNION exprVars e2) /\
+  exprVars (CondExpr a b c) = (exprVars a UNION exprVars b UNION exprVars c) /\
+  exprVars (HistExpr b)     = exprVars b
+Termination
+ WF_REL_TAC ‘measure esize’ >> rw [esize_def]
+  >- (Induct_on ‘elts’ >> rw[list_size_def] >> rw[] >> res_tac >> rw[])
+  >- (Induct_on ‘flds’ >> rw[list_size_def] >> rw[] >> res_tac >> rw[])
+End
+
+Definition portVars_def :
+  portVars (Output_Data s e) = exprVars e /\
+  portVars (Output_Event s e) = exprVars e /\
+  portVars (Output_Event_Data s e1 e2) = (exprVars e1 UNION exprVars e2)
 End
 
 (* -------------------------------------------------------------------------- *)
-(* Variable names in any rhs of a component's definitions                     *)
+(* Variables in any rhs of a component's definitions                          *)
 (* -------------------------------------------------------------------------- *)
 
-(*
-Definition rhsNames_def:
- rhsNames comp =
-   FOLDL (UNION) {}
-      (MAP (exprVars o bodyOf) (comp.var_defs ++ comp.out_defs))
+Definition Body_Vars_def:
+ Body_Vars comp =
+   FOLDR (UNION) {}
+      (MAP (exprVars o bodyOf) comp.var_defs ++
+       MAP portVars comp.out_defs)
 End
 
-(* -------------------------------------------------------------------------- *)
-(* Variable names in rhs of defs and in assums + guarantees                   *)
-(* -------------------------------------------------------------------------- *)
-
-Definition compBodyVars_def:
- compBodyVars comp =
-   FOLDL (UNION) {}
-         (MAP exprVars (comp.assumptions ++ comp.guarantees))
-End
 
 (*---------------------------------------------------------------------------*)
 (* A component C is wellformed if                                            *)
@@ -412,9 +464,9 @@ End
 
 Definition Wellformed_def:
  Wellformed comp <=>
-    ALL_DISTINCT (varDecs comp) /\
-    (compOccs comp SUBSET set(varDecs comp)) /\
-    (DISJOINT (set (MAP varOf comp.out_defs)) (rhsNames comp))
+    ALL_DISTINCT (Declared_Vars comp) /\
+    (Body_Vars comp SUBSET set(Declared_Vars comp)) /\
+    (DISJOINT (set (MAP Output_PortName comp.out_defs)) (Body_Vars comp))
 End
 
 (*---------------------------------------------------------------------------*)
@@ -424,7 +476,7 @@ End
 (*---------------------------------------------------------------------------*)
 
 Definition Supports_def:
-  Supports E comp <=> (set (varDecs comp) SUBSET FDOM E)
+  Supports E comp <=> (set (Declared_Vars comp) SUBSET FDOM E)
 End
 
 (*---------------------------------------------------------------------------*)
@@ -437,9 +489,9 @@ Definition Component_Correct_def:
     <=>
   Wellformed comp /\
   ∀E t.
-     Supports E comp ∧ assumsVal E comp t
+     Supports E comp ∧ assumsVal E comp t = BoolValue T
        ==>
-     guarsVal (strmSteps E comp t) comp t
+     guarsVal (strmSteps E comp t) comp t = BoolValue T
 End
 
 (*---------------------------------------------------------------------------*)
@@ -450,15 +502,16 @@ End
 
 Theorem Comp_Vars_Disjoint:
  ∀comp.
-    Wellformed comp ⇒
+    Wellformed comp ==>
      DISJOINT (set (comp.inports)) (set (MAP varOf comp.var_defs)) ∧
-     DISJOINT (set (MAP varOf comp.var_defs)) (set (MAP varOf comp.out_defs)) ∧
-     DISJOINT (set (MAP varOf comp.out_defs)) (set (comp.inports))
+     DISJOINT (set (MAP varOf comp.var_defs)) (set (MAP Output_PortName comp.out_defs)) ∧
+     DISJOINT (set (MAP Output_PortName comp.out_defs)) (set (comp.inports))
 Proof
- rw [Wellformed_def,varDecs_def,ALL_DISTINCT_APPEND,IN_DISJOINT]
+ rw [Wellformed_def,Declared_Vars_def,ALL_DISTINCT_APPEND,IN_DISJOINT]
  >> metis_tac[]
 QED
 
+(*
 Theorem stmtFn_Stable:
   ∀E stmt s.
      Wellformed comp ∧
@@ -487,8 +540,7 @@ Theorem stmtFn_foldl[local]:
     (FOLDL (stmtFn t) E list ' s) = (E ' s)
 Proof
  gen_tac
-  >> Induct
-  >> rw[] >> EVAL_TAC >> rw[]
+  >> Induct >> rw[] >> EVAL_TAC >> rw[]
   >> metis_tac [stmtFn_Stable,MEM_APPEND]
 QED
 
@@ -505,8 +557,8 @@ QED
 Theorem Inputs_Stable:
   ∀E comp s.
      Wellformed comp ∧ s IN set (comp.inports)
-     ⇒
-    ∀t. (strmSteps E comp t ' s) = (E ' s)
+     ==>
+     ∀t. (strmSteps E comp t ' s) = (E ' s)
 Proof
  rpt gen_tac
   >> strip_tac
@@ -613,7 +665,7 @@ QED
 Theorem strmStep_fdom:
  ∀comp E t. Supports E comp ⇒ FDOM(strmStep E comp t) = FDOM E
 Proof
- rw[strmStep_def,stmtListFn_def,Supports_def,varDecs_def]
+ rw[strmStep_def,stmtListFn_def,Supports_def,Declared_Vars_def]
  >> irule stmtFn_foldl_fdom
  >> fs[LIST_TO_SET_MAP,EVERY_SUBSET]
  >> fs [SUBSET_DEF]
