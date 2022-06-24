@@ -1,0 +1,59 @@
+package arithprogTests
+public
+  with Base_Types;
+  renames Base_Types::all;
+  
+  with arithprog;
+  renames arithprog::all;
+  
+	process should_outputTrue_when_differenceInSuccessiveInputsConstant
+    features
+      input: in data port Integer;
+      output: out data port Boolean;
+    annex agree {**
+      eq index : Integer = prev(index + 1, 0); 
+       
+      assume "Difference in successive inputs is constant" :
+            ((index <= 1) => true)
+        and ((index >= 2) => ((input - pre(input)) = (pre(input) - pre(pre(input)))));
+        
+      guarantee "Output is always true" :
+        output = true;
+        
+    **};
+  end should_outputTrue_when_differenceInSuccessiveInputsConstant;
+  
+  process implementation should_outputTrue_when_differenceInSuccessiveInputsConstant.test
+    subcomponents
+      comp: thread arithprog.Impl;
+    connections
+      c00: port input -> comp.input;
+      c01: port comp.output -> output;
+  end should_outputTrue_when_differenceInSuccessiveInputsConstant.test;
+  
+  process should_outputFalseForever_when_differenceInSuccessiveInputsChanges
+    features
+      input: in data port Integer;
+      output: out data port Boolean;
+    annex agree {**
+      eq index : Integer = prev(index + 1, 0); 
+       
+      assume "Difference in successive inputs is not constant" :
+            ((index <= 1) => true)
+        and ((index >= 2) => ((input - pre(input)) != (pre(input) - pre(pre(input)))));
+        
+      guarantee "Output is false forever when difference changes" :
+            ((index = 0) => output)
+        and ((index = 1) => output)
+        and ((index > 1) => not output);
+    **};
+  end should_outputFalseForever_when_differenceInSuccessiveInputsChanges;
+
+  process implementation should_outputFalseForever_when_differenceInSuccessiveInputsChanges.test
+    subcomponents
+      comp: thread arithprog.Impl;
+    connections
+      c00: port input -> comp.input;
+      c01: port comp.output -> output;
+  end should_outputFalseForever_when_differenceInSuccessiveInputsChanges.test;  
+end arithprogTests;

@@ -1,0 +1,4836 @@
+{
+  "project": "arithprogCanChange",
+  "date": 1655941286177,
+  "modelUnits": [
+    {
+      "name": "arithprogCanChange",
+      "kind": "AadlPackage",
+      "public": {
+        "with": [
+          "Base_Types",
+          "CASE_Properties"
+        ],
+        "packageRenames": [
+          {
+            "package": "Base_Types",
+            "rename": "all"
+          }
+        ],
+        "components": [
+          {
+            "name": "arithprogCanChange::arithprog",
+            "localName": "arithprog",
+            "kind": "ComponentType",
+            "category": "thread",
+            "features": [
+              {
+                "name": "input",
+                "kind": "DataPort",
+                "classifier": "Base_Types::Integer",
+                "direction": "in"
+              },
+              {
+                "name": "output",
+                "kind": "DataPort",
+                "classifier": "Base_Types::Boolean",
+                "direction": "out"
+              }
+            ],
+            "properties": [
+              {
+                "name": "CASE_Properties::Monitoring",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 100,
+                  "unit": null
+                }
+              },
+              {
+                "name": "CASE_Properties::Monitor_Latched",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "BooleanLiteral",
+                  "value": false
+                }
+              }
+            ],
+            "annexes": [
+              {
+                "name": "agree",
+                "kind": "AnnexSubclause",
+                "parsedAnnexSubclause": {
+                  "statements": [
+                    {
+                      "kind": "EqStatement",
+                      "left": [
+                        {
+                          "name": "N",
+                          "type": {
+                            "kind": "DoubleDotRef",
+                            "name": "Base_Types::Integer"
+                          }
+                        }
+                      ],
+                      "expr": {
+                        "kind": "PrevExpr",
+                        "delay": {
+                          "kind": "BinaryExpr",
+                          "left": {
+                            "kind": "NamedElmExpr",
+                            "name": "N"
+                          },
+                          "op": "+",
+                          "right": {
+                            "kind": "IntLitExpr",
+                            "value": "1"
+                          }
+                        },
+                        "init": {
+                          "kind": "IntLitExpr",
+                          "value": "0"
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GuaranteeStatement",
+                      "label": "Output true if difference in successive input constant",
+                      "expr": {
+                        "kind": "BinaryExpr",
+                        "left": {
+                          "kind": "NamedElmExpr",
+                          "name": "output"
+                        },
+                        "op": "=",
+                        "right": {
+                          "kind": "IfThenElseExpr",
+                          "if": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "NamedElmExpr",
+                              "name": "N"
+                            },
+                            "op": "<=",
+                            "right": {
+                              "kind": "IntLitExpr",
+                              "value": "1"
+                            }
+                          },
+                          "then": {
+                            "kind": "BoolLitExpr",
+                            "value": "true"
+                          },
+                          "else": {
+                            "kind": "BinaryExpr",
+                            "left": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "NamedElmExpr",
+                                "name": "input"
+                              },
+                              "op": "-",
+                              "right": {
+                                "kind": "PreExpr",
+                                "expr": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "input"
+                                }
+                              }
+                            },
+                            "op": "=",
+                            "right": {
+                              "kind": "BinaryExpr",
+                              "left": {
+                                "kind": "PreExpr",
+                                "expr": {
+                                  "kind": "NamedElmExpr",
+                                  "name": "input"
+                                }
+                              },
+                              "op": "-",
+                              "right": {
+                                "kind": "PreExpr",
+                                "expr": {
+                                  "kind": "PreExpr",
+                                  "expr": {
+                                    "kind": "NamedElmExpr",
+                                    "name": "input"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "sourceText": "{**\n      eq N : Integer = prev(N + 1, 0); \n                                                            \n      guarantee \\\"Output true if difference in successive input constant\\\" :\n        output =\n          if (N <= 1) then\n            true\n          else\n            ((input - pre(input)) = (pre(input) - pre(pre(input))));\n    **}"
+              }
+            ]
+          },
+          {
+            "packageName": "arithprogCanChange",
+            "name": "arithprogCanChange::arithProg.Impl",
+            "localName": "arithProg.Impl",
+            "kind": "ComponentImplementation",
+            "category": "thread",
+            "properties": [
+              {
+                "name": "Thread_Properties::Dispatch_Protocol",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Periodic"
+                }
+              },
+              {
+                "name": "Timing_Properties::Period",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 500,
+                  "unit": "ms"
+                }
+              },
+              {
+                "name": "Timing_Properties::Compute_Execution_Time",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "RangeValue",
+                  "value": {
+                    "min": {
+                      "kind": "IntegerLiteral",
+                      "value": 2,
+                      "unit": "ms"
+                    },
+                    "max": {
+                      "kind": "IntegerLiteral",
+                      "value": 2,
+                      "unit": "ms"
+                    }
+                  }
+                }
+              },
+              {
+                "name": "Memory_Properties::Stack_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 65536,
+                  "unit": "Bytes"
+                }
+              },
+              {
+                "name": "Programming_Properties::Source_Text",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "ListValue",
+                  "value": [
+                    {
+                      "kind": "StringLiteral",
+                      "value": ""
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Base_Types",
+      "kind": "AadlPackage",
+      "public": {
+        "with": [
+          "Data_Model"
+        ],
+        "components": [
+          {
+            "name": "Base_Types::Boolean",
+            "localName": "Boolean",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Boolean"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Integer",
+            "localName": "Integer",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Integer"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Integer_8",
+            "localName": "Integer_8",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Signed"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 1,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Integer_16",
+            "localName": "Integer_16",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Signed"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 2,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Integer_32",
+            "localName": "Integer_32",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Signed"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 4,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Integer_64",
+            "localName": "Integer_64",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Signed"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 8,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Unsigned_8",
+            "localName": "Unsigned_8",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Unsigned"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 1,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Unsigned_16",
+            "localName": "Unsigned_16",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Unsigned"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 2,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Unsigned_32",
+            "localName": "Unsigned_32",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Unsigned"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 4,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Unsigned_64",
+            "localName": "Unsigned_64",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Number_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Unsigned"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 8,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Natural",
+            "localName": "Natural",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Integer",
+            "properties": [
+              {
+                "name": "Data_Model::Integer_Range",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "RangeValue",
+                  "value": {
+                    "min": {
+                      "kind": "IntegerLiteral",
+                      "value": 0,
+                      "unit": null
+                    },
+                    "max": {
+                      "kind": "PropertyConstant",
+                      "value": "Max_Target_Integer"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Float",
+            "localName": "Float",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Float"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Float_32",
+            "localName": "Float_32",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Float",
+            "properties": [
+              {
+                "name": "Data_Model::IEEE754_Precision",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Simple"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 4,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Float_64",
+            "localName": "Float_64",
+            "kind": "ComponentType",
+            "category": "data",
+            "extends": "Base_Types::Float",
+            "properties": [
+              {
+                "name": "Data_Model::IEEE754_Precision",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Double"
+                }
+              },
+              {
+                "name": "Memory_Properties::Data_Size",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "IntegerLiteral",
+                  "value": 8,
+                  "unit": "Bytes"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::Character",
+            "localName": "Character",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "Character"
+                }
+              }
+            ]
+          },
+          {
+            "name": "Base_Types::String",
+            "localName": "String",
+            "kind": "ComponentType",
+            "category": "data",
+            "properties": [
+              {
+                "name": "Data_Model::Data_Representation",
+                "kind": "PropertyAssociation",
+                "value": {
+                  "kind": "EnumerationLiteral",
+                  "value": "String"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Data_Model",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Data_Model::Base_Type",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "data"
+              ]
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Code_Set",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Data_Digits",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Data_Scale",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Data_Representation",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Array",
+              "Boolean",
+              "Character",
+              "Enum",
+              "Float",
+              "Fixed",
+              "Integer",
+              "String",
+              "Struct",
+              "Union"
+            ]
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::MyDimension",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Dimension",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "data port",
+            "event data port",
+            "data access"
+          ]
+        },
+        {
+          "name": "Data_Model::Element_Names",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Enumerators",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::IEEE754_Precision",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Simple",
+              "Double"
+            ]
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Initial_Value",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Integer_Range",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Measurement_Unit",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Number_Representation",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Signed",
+              "Unsigned"
+            ]
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Real_Range",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlReal"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        },
+        {
+          "name": "Data_Model::Representation",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "feature"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "CASE_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "CASE_Properties::Component_Language",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "c",
+              "CakeML"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Component_Spec",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Cache_Timeout",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Cache_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Comm_Driver",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "thread",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Comm_Modality",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "RF",
+              "WIFI",
+              "WIRED_ETHERNET",
+              "SERIAL",
+              "BT",
+              "NFC"
+            ]
+          },
+          "appliesTo": [
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::OS",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "seL4",
+              "Linux",
+              "Android",
+              "LynxOS",
+              "other"
+            ]
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Monitor_Latched",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "system",
+            "process",
+            "thread",
+            "thread group",
+            "device",
+            "abstract"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Trust_Level",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "connection",
+            "port",
+            "feature",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Trust_Level_Confidentiality",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Requires_Data_Confidentiality",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus",
+            "connection"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Trust_Level_Integrity",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Requires_Data_Integrity",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus",
+            "connection"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Trust_Level_Availability",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Requires_Data_Availability",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus",
+            "connection"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Control_Level",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "feature",
+            "connection",
+            "classifier",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Filtering",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Attesting",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Isolating",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "processor",
+            "virtual processor",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Monitoring",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Gating",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Authenticating",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Encrypting",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subcomponent"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Authenticated",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "connection"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Encrypted",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "bus",
+            "virtual bus",
+            "data"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Smart_Component",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Connection_Category",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "ExternalConnections",
+              "InternalConnections"
+            ]
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Component_Category",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "NavigationalSensor",
+              "NavigationalSensorNotDependentOnRadio",
+              "Workstation",
+              "Router",
+              "SmartController",
+              "SmartCamera",
+              "SmartRadio",
+              "Actuator",
+              "SmartActuator",
+              "Sensor",
+              "SmartSensor"
+            ]
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "CASE_Properties::Cost_Behavior",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "No_Changes",
+              "Modify_Software_Allowed",
+              "Replace_Software_Allowed",
+              "Modify_Hardware_Allowed",
+              "Replace_Hardware_Allowed",
+              "No_Cost_Guidance"
+            ]
+          },
+          "appliesTo": [
+            "subcomponent",
+            "System",
+            "Thread",
+            "Thread Group",
+            "Process",
+            "Subprogram",
+            "processor",
+            "virtual processor",
+            "Memory",
+            "device",
+            "bus",
+            "virtual bus"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Timing_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Timing_Properties::Activate_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Activate_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Compute_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "subprogram",
+            "subprogram access",
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Compute_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "subprogram",
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Client_Subprogram_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Deactivate_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Deactivate_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Deadline",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Timing_Properties::First_Dispatch_Time",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Dispatch_Jitter",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Dispatch_Offset",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Finalize_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Finalize_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Initialize_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Initialize_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Load_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Load_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Processor_Capacity",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlReal"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Period",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device",
+            "virtual processor",
+            "virtual bus",
+            "bus"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Recover_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Recover_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Reference_Time",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "device",
+              "processor",
+              "bus",
+              "system",
+              "abstract"
+            ]
+          },
+          "appliesTo": [
+            "device",
+            "processor",
+            "bus",
+            "system",
+            "memory",
+            "virtual bus",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Startup_Deadline",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Startup_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "virtual processor",
+            "processor",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Clock_Jitter",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor",
+            "device",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Clock_Period",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor",
+            "device",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Clock_Period_Range",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "processor",
+            "device",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Process_Swap_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Reference_Processor",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "processor"
+            ]
+          },
+          "appliesTo": [
+            "subprogram",
+            "subprogram group",
+            "thread",
+            "thread group",
+            "process",
+            "device",
+            "system"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Scheduler_Quantum",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Thread_Swap_Execution_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "processor",
+            "system",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Frame_Period",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Timing_Properties::Slot_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Programming_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Programming_Properties::Activate_Entrypoint",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "subprogram classifier"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Activate_Entrypoint_Call_Sequence",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram call sequence"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Activate_Entrypoint_Source_Text",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "virtual processor",
+            "processor"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Compute_Entrypoint",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "subprogram classifier"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "subprogram access",
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Compute_Entrypoint_Call_Sequence",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram call sequence"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "subprogram access",
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Compute_Entrypoint_Source_Text",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "subprogram access",
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Deactivate_Entrypoint",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "subprogram classifier"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Deactivate_Entrypoint_Call_Sequence",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram call sequence"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Deactivate_Entrypoint_Source_Text",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Finalize_Entrypoint",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "subprogram classifier"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Finalize_Entrypoint_Call_Sequence",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram call sequence"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Finalize_Entrypoint_Source_Text",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Initialize_Entrypoint",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "subprogram classifier"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Initialize_Entrypoint_Call_Sequence",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram call sequence"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Initialize_Entrypoint_Source_Text",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Recover_Entrypoint",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "subprogram classifier"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Recover_Entrypoint_Call_Sequence",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram call sequence"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Recover_Entrypoint_Source_Text",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "thread",
+            "device"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Source_Language",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Supported_Source_Languages"
+          },
+          "appliesTo": [
+            "subprogram",
+            "data",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "bus",
+            "device",
+            "processor",
+            "virtual processor",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Source_Name",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "data",
+            "port",
+            "subprogram",
+            "parameter",
+            "virtual bus",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Source_Text",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "data",
+            "port",
+            "subprogram",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual bus",
+            "virtual processor",
+            "memory",
+            "bus",
+            "device",
+            "processor",
+            "parameter",
+            "feature group",
+            "aadl package"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Supported_Source_Language",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Supported_Source_Languages"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Type_Source_Name",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlString"
+          },
+          "appliesTo": [
+            "data",
+            "port",
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Hardware_Description_Source_Text",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlString"
+            }
+          },
+          "appliesTo": [
+            "memory",
+            "bus",
+            "device",
+            "processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Hardware_Source_Language",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "VHDL"
+            ]
+          },
+          "appliesTo": [
+            "memory",
+            "bus",
+            "device",
+            "processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Programming_Properties::Device_Driver",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "abstract implementation"
+            ]
+          },
+          "appliesTo": [
+            "device"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Thread_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Thread_Properties::Dispatch_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Periodic",
+              "Sporadic",
+              "Aperiodic",
+              "Timed",
+              "Hybrid",
+              "Background"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "device",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Dispatch_Trigger",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "port"
+              ]
+            }
+          },
+          "appliesTo": [
+            "device",
+            "thread"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Dispatch_Able",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "thread"
+          ]
+        },
+        {
+          "name": "Thread_Properties::POSIX_Scheduling_Policy",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "SCHED_FIFO",
+              "SCHED_RR",
+              "SCHED_OTHERS"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "thread group"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Priority",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device",
+            "data",
+            "data access"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Criticality",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Time_Slot",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "virtual processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Concurrency_Control_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "None_Specified",
+              "Interrupt_Masking",
+              "Maximum_Priority",
+              "Priority_Inheritance",
+              "Priority_Ceiling",
+              "Spin_Lock",
+              "Semaphore",
+              "Protected_Access"
+            ]
+          },
+          "appliesTo": [
+            "data",
+            "data access"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Urgency",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "port",
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Dequeue_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "OneItem",
+              "MultipleItems",
+              "AllItems"
+            ]
+          },
+          "appliesTo": [
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Dequeued_Items",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "event port",
+            "event data port"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Mode_Transition_Response",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "emergency",
+              "planned"
+            ]
+          },
+          "appliesTo": [
+            "mode transition"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Resumption_Policy",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "restart",
+              "resume"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device",
+            "processor",
+            "memory",
+            "bus",
+            "system",
+            "virtual bus",
+            "virtual processor",
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Active_Thread_Handling_Protocol",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "abort"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Active_Thread_Queue_Handling_Protocol",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "flush",
+              "hold"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Deactivation_Policy",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "inactive",
+              "unload"
+            ]
+          },
+          "appliesTo": [
+            "thread",
+            "process",
+            "virtual processor",
+            "processor"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Runtime_Protection",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "process",
+            "system",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Subprogram_Call_Type",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Synchronous",
+              "SemiSynchronous"
+            ]
+          },
+          "appliesTo": [
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Thread_Properties::Synchronized_Component",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AADL_Project",
+      "kind": "PropertySet",
+      "propertyConstants": [
+        {
+          "name": "AADL_Project::Supported_Classifier_Equivalence_Matches",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ListType",
+              "propertyType": {
+                "kind": "ClassifierType",
+                "classifiers": [
+                  "data",
+                  "bus",
+                  "subprogram",
+                  "subprogram group",
+                  "feature group"
+                ]
+              }
+            }
+          },
+          "value": {
+            "kind": "ListValue",
+            "value": []
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Classifier_Subset_Matches",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ListType",
+              "propertyType": {
+                "kind": "ClassifierType",
+                "classifiers": [
+                  "data",
+                  "bus",
+                  "subprogram",
+                  "subprogram group"
+                ]
+              }
+            }
+          },
+          "value": {
+            "kind": "ListValue",
+            "value": []
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Type_Conversions",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ListType",
+              "propertyType": {
+                "kind": "ClassifierType",
+                "classifiers": [
+                  "data",
+                  "bus",
+                  "subprogram",
+                  "subprogram group"
+                ]
+              }
+            }
+          },
+          "value": {
+            "kind": "ListValue",
+            "value": []
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Classifier_Complement_Matches",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ListType",
+              "propertyType": {
+                "kind": "ClassifierType",
+                "classifiers": [
+                  "feature group"
+                ]
+              }
+            }
+          },
+          "value": {
+            "kind": "ListValue",
+            "value": []
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Aadlinteger",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 4294967296,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Target_Integer",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 4294967296,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Base_Address",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 4294967296,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Memory_Size",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 4294967296,
+            "unit": "Bytes"
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Queue_Size",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 512,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Thread_Limit",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 32,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Time",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 1000,
+            "unit": "hr"
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Urgency",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 12,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Byte_Count",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 4294967296,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Word_Space",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 64,
+            "unit": null
+          }
+        },
+        {
+          "name": "AADL_Project::Max_Volume",
+          "kind": "PropertyConstant",
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "value": {
+            "kind": "IntegerLiteral",
+            "value": 1000,
+            "unit": "GBytesps"
+          }
+        }
+      ],
+      "propertyTypes": [
+        {
+          "name": "AADL_Project::Supported_Active_Thread_Handling_Protocols",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "abort"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Connection_Patterns",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "One_To_One",
+              "All_To_All",
+              "One_To_All",
+              "All_To_One",
+              "Next",
+              "Previous",
+              "Cyclic_Next",
+              "Cyclic_Previous",
+              "Odd_To_Odd",
+              "Even_To_Even",
+              "Next_Next",
+              "Cyclic_Next_Next",
+              "Previous_Previous",
+              "Cyclic_Previous_Previous"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Concurrency_Control_Protocols",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "None_Specified",
+              "Interrupt_Masking",
+              "Maximum_Priority",
+              "Priority_Inheritance",
+              "Priority_Ceiling",
+              "Spin_Lock",
+              "Semaphore",
+              "Protected_Access"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Dispatch_Protocols",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Periodic",
+              "Sporadic",
+              "Aperiodic",
+              "Timed",
+              "Hybrid",
+              "Background"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Queue_Processing_Protocols",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Fifo"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Hardware_Source_Languages",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "VHDL"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Connection_QoS",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "GuaranteedDelivery",
+              "OrderedDelivery",
+              "SecureDelivery"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Scheduling_Protocols",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Static",
+              "Round_Robin_Protocol",
+              "POSIX_1003_HIGHEST_PRIORITY_FIRST_PROTOCOL",
+              "FixedTimeline",
+              "Cooperative",
+              "RMS",
+              "DMS",
+              "EDF",
+              "SporadicServer",
+              "SlackServer",
+              "ARINC653"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Source_Languages",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Ada95",
+              "Ada2005",
+              "C",
+              "Java",
+              "Simulink_6_5",
+              "SCADE"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Distributions",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Fixed",
+              "Poisson"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Supported_Classifier_Substitutions",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Classifier_Match",
+              "Type_Extension",
+              "Signature_Match"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Time",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "AadlInteger"
+          }
+        },
+        {
+          "name": "AADL_Project::Time_Range",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          }
+        },
+        {
+          "name": "AADL_Project::Size",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "AadlInteger"
+          }
+        },
+        {
+          "name": "AADL_Project::Size_Range",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          }
+        },
+        {
+          "name": "AADL_Project::Size_Units",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "bits",
+              "Bytes",
+              "KByte",
+              "MByte",
+              "GByte",
+              "TByte"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Time_Units",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "ps",
+              "ns",
+              "us",
+              "ms",
+              "sec",
+              "min",
+              "hr"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Data_Rate_Units",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "bitsps",
+              "Bytesps",
+              "KBytesps",
+              "MBytesps",
+              "GBytesps"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Data_Volume_Units",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "bitsps",
+              "Bytesps",
+              "KBytesps",
+              "MBytesps",
+              "GBytesps"
+            ]
+          }
+        },
+        {
+          "name": "AADL_Project::Data_Volume",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "AadlInteger"
+          }
+        },
+        {
+          "name": "AADL_Project::Processor_Speed_Units",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "KIPS",
+              "MIPS",
+              "GIPS"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Communication_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Communication_Properties::Fan_Out_Policy",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Broadcast",
+              "RoundRobin",
+              "Selective",
+              "OnDemand"
+            ]
+          },
+          "appliesTo": [
+            "feature"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Connection_Pattern",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ListType",
+              "propertyType": "AADL_Project::Supported_Connection_Patterns"
+            }
+          },
+          "appliesTo": [
+            "connection"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Connection_Set",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "Communication_Properties::Connection_Pair"
+          },
+          "appliesTo": [
+            "connection"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Overflow_Handling_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "DropOldest",
+              "DropNewest",
+              "Error"
+            ]
+          },
+          "appliesTo": [
+            "event port",
+            "event data port",
+            "subprogram access"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Queue_Processing_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Fifo"
+            ]
+          },
+          "appliesTo": [
+            "event port",
+            "event data port",
+            "subprogram access"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Queue_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "event port",
+            "event data port",
+            "subprogram access"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Required_Connection",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "feature"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Timing",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "sampled",
+              "immediate",
+              "delayed"
+            ]
+          },
+          "appliesTo": [
+            "port connection"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Transmission_Type",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "push",
+              "pull"
+            ]
+          },
+          "appliesTo": [
+            "feature",
+            "connection",
+            "bus",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Input_Rate",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Value_Range",
+                "propertyType": {
+                  "kind": "RangeType",
+                  "numberType": {
+                    "kind": "AadlReal"
+                  }
+                }
+              },
+              {
+                "name": "Rate_Unit",
+                "propertyType": {
+                  "kind": "EnumerationType",
+                  "values": [
+                    "PerSecond",
+                    "PerDispatch"
+                  ]
+                }
+              },
+              {
+                "name": "Rate_Distribution",
+                "propertyType": {
+                  "kind": "AADL_Project::Supported_Distributions"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "feature"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Input_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "Communication_Properties::IO_Time_Spec"
+          },
+          "appliesTo": [
+            "feature"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Output_Rate",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Value_Range",
+                "propertyType": {
+                  "kind": "RangeType",
+                  "numberType": {
+                    "kind": "AadlReal"
+                  }
+                }
+              },
+              {
+                "name": "Rate_Unit",
+                "propertyType": {
+                  "kind": "EnumerationType",
+                  "values": [
+                    "PerSecond",
+                    "PerDispatch"
+                  ]
+                }
+              },
+              {
+                "name": "Rate_Distribution",
+                "propertyType": {
+                  "kind": "AADL_Project::Supported_Distributions"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "feature"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Output_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "Communication_Properties::IO_Time_Spec"
+          },
+          "appliesTo": [
+            "feature"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Subprogram_Call_Rate",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Value_Range",
+                "propertyType": {
+                  "kind": "RangeType",
+                  "numberType": {
+                    "kind": "AadlReal"
+                  }
+                }
+              },
+              {
+                "name": "Rate_Unit",
+                "propertyType": {
+                  "kind": "EnumerationType",
+                  "values": [
+                    "PerSecond",
+                    "PerDispatch"
+                  ]
+                }
+              },
+              {
+                "name": "Rate_Distribution",
+                "propertyType": {
+                  "kind": "AADL_Project::Supported_Distributions"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "subprogram access"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Transmission_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Fixed",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              },
+              {
+                "name": "PerByte",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "bus",
+            "system",
+            "device",
+            "processor",
+            "memory",
+            "virtual bus",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Actual_Latency",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "flow",
+            "connection",
+            "virtual bus",
+            "bus",
+            "processor",
+            "virtual processor",
+            "device",
+            "system",
+            "feature",
+            "memory"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Latency",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "flow",
+            "connection",
+            "virtual bus",
+            "bus",
+            "processor",
+            "virtual processor",
+            "device",
+            "system",
+            "feature",
+            "memory"
+          ]
+        },
+        {
+          "name": "Communication_Properties::Data_Rate",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "feature",
+            "connection",
+            "bus",
+            "virtual bus",
+            "system",
+            "processor",
+            "virtual processor",
+            "memory",
+            "device"
+          ]
+        }
+      ],
+      "propertyTypes": [
+        {
+          "name": "Communication_Properties::Connection_Pair",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "src",
+                "propertyType": {
+                  "kind": "ListType",
+                  "propertyType": {
+                    "kind": "AadlInteger"
+                  }
+                }
+              },
+              {
+                "name": "dst",
+                "propertyType": {
+                  "kind": "ListType",
+                  "propertyType": {
+                    "kind": "AadlInteger"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Communication_Properties::IO_Time_Spec",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Offset",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              },
+              {
+                "name": "Time",
+                "propertyType": {
+                  "kind": "Communication_Properties::IO_Reference_Time"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "name": "Communication_Properties::IO_Reference_Time",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "Dispatch",
+              "Start",
+              "Completion",
+              "Deadline",
+              "NoIO",
+              "Dynamic"
+            ]
+          }
+        },
+        {
+          "name": "Communication_Properties::Rate_Spec",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Value_Range",
+                "propertyType": {
+                  "kind": "RangeType",
+                  "numberType": {
+                    "kind": "AadlReal"
+                  }
+                }
+              },
+              {
+                "name": "Rate_Unit",
+                "propertyType": {
+                  "kind": "EnumerationType",
+                  "values": [
+                    "PerSecond",
+                    "PerDispatch"
+                  ]
+                }
+              },
+              {
+                "name": "Rate_Distribution",
+                "propertyType": {
+                  "kind": "AADL_Project::Supported_Distributions"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Memory_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Memory_Properties::Access_Right",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "read_only",
+              "write_only",
+              "read_write",
+              "by_method"
+            ]
+          },
+          "appliesTo": [
+            "data",
+            "bus",
+            "data access",
+            "bus access"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Access_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "First",
+                "propertyType": {
+                  "kind": "Communication_Properties::IO_Time_Spec"
+                }
+              },
+              {
+                "name": "Last",
+                "propertyType": {
+                  "kind": "Communication_Properties::IO_Time_Spec"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "data access",
+            "data"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Allowed_Message_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "bus"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Assign_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Fixed",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              },
+              {
+                "name": "PerByte",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "processor"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Base_Address",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "memory",
+            "data",
+            "data access",
+            "port"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Device_Register_Address",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "port",
+            "feature group"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Read_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Fixed",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              },
+              {
+                "name": "PerByte",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "memory"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Code_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subprogram",
+            "processor",
+            "virtual processor",
+            "virtual bus",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Data_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "feature",
+            "subprogram",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "processor",
+            "virtual processor",
+            "virtual bus",
+            "bus",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Heap_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "subprogram",
+            "thread group",
+            "process",
+            "system",
+            "processor",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Stack_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "subprogram",
+            "processor",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Source_Code_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "subprogram",
+            "processor",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Source_Data_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "data",
+            "feature",
+            "subprogram",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "processor",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Source_Heap_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Source_Stack_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "thread",
+            "subprogram",
+            "processor",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Byte_Count",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "memory"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Memory_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "memory",
+            "system",
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Word_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "memory"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Word_Space",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "memory"
+          ]
+        },
+        {
+          "name": "Memory_Properties::Write_Time",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Fixed",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              },
+              {
+                "name": "PerByte",
+                "propertyType": {
+                  "kind": "AADL_Project::Time_Range"
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "memory"
+          ]
+        }
+      ],
+      "propertyTypes": [
+        {
+          "name": "Memory_Properties::Access_Rights",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "EnumerationType",
+            "values": [
+              "read_only",
+              "write_only",
+              "read_write",
+              "by_method"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Deployment_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Deployment_Properties::Allowed_Processor_Binding_Class",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "processor",
+                "virtual processor",
+                "system",
+                "device",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Processor_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "processor",
+                "virtual processor",
+                "system",
+                "device",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Actual_Processor_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "processor",
+                "virtual processor",
+                "system",
+                "device",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual processor",
+            "device"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Memory_Binding_Class",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "memory",
+                "system",
+                "processor",
+                "virtual processor",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device",
+            "data",
+            "data port",
+            "event data port",
+            "subprogram",
+            "subprogram group",
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Memory_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "memory",
+                "system",
+                "processor",
+                "virtual processor",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "memory",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device",
+            "data",
+            "data port",
+            "event data port",
+            "subprogram",
+            "subprogram group",
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Actual_Memory_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "memory",
+                "system",
+                "processor",
+                "virtual processor",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "memory",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "processor",
+            "virtual processor",
+            "device",
+            "data",
+            "data port",
+            "event data port",
+            "subprogram",
+            "subprogram group"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Connection_Binding_Class",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "processor",
+                "virtual processor",
+                "bus",
+                "virtual bus",
+                "device",
+                "memory",
+                "system",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "feature",
+            "connection",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Connection_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "processor",
+                "virtual processor",
+                "bus",
+                "virtual bus",
+                "device",
+                "memory",
+                "system",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "feature",
+            "connection",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Actual_Connection_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "processor",
+                "virtual processor",
+                "bus",
+                "virtual bus",
+                "device",
+                "memory",
+                "system",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "feature",
+            "connection",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "virtual bus"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Actual_Function_Binding",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "processor",
+                "virtual processor",
+                "bus",
+                "virtual bus",
+                "device",
+                "memory",
+                "system",
+                "process",
+                "thread",
+                "feature",
+                "abstract"
+              ]
+            }
+          },
+          "appliesTo": [
+            "subprogram",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "abstract",
+            "feature"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Subprogram_Call",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "subprogram"
+              ]
+            }
+          },
+          "appliesTo": [
+            "subprogram access"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Actual_Subprogram_Call",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ReferenceType",
+            "references": [
+              "subprogram"
+            ]
+          },
+          "appliesTo": [
+            "subprogram access"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Subprogram_Call_Binding",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "bus",
+                "processor",
+                "device"
+              ]
+            }
+          },
+          "appliesTo": [
+            "subprogram",
+            "thread",
+            "thread group",
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Actual_Subprogram_Call_Binding",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "bus",
+                "processor",
+                "memory",
+                "device"
+              ]
+            }
+          },
+          "appliesTo": [
+            "subprogram"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Provided_Virtual_Bus_Class",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "virtual bus"
+              ]
+            }
+          },
+          "appliesTo": [
+            "bus",
+            "virtual bus",
+            "processor",
+            "virtual processor",
+            "device",
+            "memory",
+            "system"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Required_Virtual_Bus_Class",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "virtual bus"
+              ]
+            }
+          },
+          "appliesTo": [
+            "virtual bus",
+            "connection",
+            "port",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Provided_Connection_Quality_Of_Service",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Supported_Connection_QoS"
+          },
+          "appliesTo": [
+            "bus",
+            "virtual bus",
+            "processor",
+            "virtual processor",
+            "system",
+            "device",
+            "memory"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Required_Connection_Quality_Of_Service",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Supported_Connection_QoS"
+          },
+          "appliesTo": [
+            "port",
+            "connection",
+            "virtual bus",
+            "thread",
+            "thread group",
+            "process",
+            "system",
+            "device"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Not_Collocated",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Targets",
+                "propertyType": {
+                  "kind": "ListType",
+                  "propertyType": {
+                    "kind": "ReferenceType",
+                    "references": [
+                      "data",
+                      "thread",
+                      "process",
+                      "system",
+                      "connection"
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Location",
+                "propertyType": {
+                  "kind": "ClassifierType",
+                  "classifiers": [
+                    "processor",
+                    "memory",
+                    "bus",
+                    "system"
+                  ]
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Collocated",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Targets",
+                "propertyType": {
+                  "kind": "ListType",
+                  "propertyType": {
+                    "kind": "ReferenceType",
+                    "references": [
+                      "data",
+                      "thread",
+                      "process",
+                      "system",
+                      "connection"
+                    ]
+                  }
+                }
+              },
+              {
+                "name": "Location",
+                "propertyType": {
+                  "kind": "ClassifierType",
+                  "classifiers": [
+                    "processor",
+                    "memory",
+                    "bus",
+                    "system"
+                  ]
+                }
+              }
+            ]
+          },
+          "appliesTo": [
+            "process",
+            "system"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Connection_Type",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "EnumerationType",
+              "values": [
+                "Sampled_Data_Connection",
+                "Immediate_Data_Connection",
+                "Delayed_Data_Connection",
+                "Port_Connection",
+                "Data_Access_Connection",
+                "Subprogram_Access_Connection"
+              ]
+            }
+          },
+          "appliesTo": [
+            "bus",
+            "device"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Dispatch_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Supported_Dispatch_Protocols"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Period",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Time_Range"
+          },
+          "appliesTo": [
+            "processor",
+            "system",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Physical_Access_Class",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ClassifierType",
+              "classifiers": [
+                "device",
+                "processor",
+                "memory",
+                "bus"
+              ]
+            }
+          },
+          "appliesTo": [
+            "bus"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Allowed_Physical_Access",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": {
+              "kind": "ReferenceType",
+              "references": [
+                "device",
+                "processor",
+                "memory",
+                "bus"
+              ]
+            }
+          },
+          "appliesTo": [
+            "bus"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Memory_Protocol",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "execute_only",
+              "read_only",
+              "write_only",
+              "read_write"
+            ]
+          },
+          "appliesTo": [
+            "memory"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Runtime_Protection_Support",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Scheduling_Protocol",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "AADL_Project::Supported_Scheduling_Protocols"
+          },
+          "appliesTo": [
+            "virtual processor",
+            "processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Preemptive_Scheduler",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlBoolean"
+          },
+          "appliesTo": [
+            "processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Thread_Limit",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "AadlInteger"
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Priority_Map",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "Deployment_Properties::Priority_Mapping"
+          },
+          "appliesTo": [
+            "processor"
+          ]
+        },
+        {
+          "name": "Deployment_Properties::Priority_Range",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          },
+          "appliesTo": [
+            "processor",
+            "virtual processor"
+          ]
+        }
+      ],
+      "propertyTypes": [
+        {
+          "name": "Deployment_Properties::Priority_Mapping",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RecordType",
+            "fields": [
+              {
+                "name": "Aadl_Priority",
+                "propertyType": {
+                  "kind": "AadlInteger"
+                }
+              },
+              {
+                "name": "RTOS_Priority",
+                "propertyType": {
+                  "kind": "AadlInteger"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Modeling_Properties",
+      "kind": "PropertySet",
+      "properties": [
+        {
+          "name": "Modeling_Properties::Acceptable_Array_Size",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ListType",
+            "propertyType": "Modeling_Properties::Array_Size_Range"
+          },
+          "appliesTo": [
+            "subcomponent",
+            "feature"
+          ]
+        },
+        {
+          "name": "Modeling_Properties::Classifier_Matching_Rule",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Classifier_Match",
+              "Equivalence",
+              "Subset",
+              "Conversion"
+            ]
+          },
+          "appliesTo": [
+            "connection",
+            "component implementation"
+          ]
+        },
+        {
+          "name": "Modeling_Properties::Classifier_Substitution_Rule",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Classifier_Match",
+              "Type_Extension",
+              "Signature_Match"
+            ]
+          },
+          "appliesTo": [
+            "classifier",
+            "subcomponent",
+            "feature"
+          ]
+        },
+        {
+          "name": "Modeling_Properties::Implemented_As",
+          "kind": "Property",
+          "inherit": false,
+          "propertyType": {
+            "kind": "ClassifierType",
+            "classifiers": [
+              "system implementation",
+              "abstract implementation"
+            ]
+          },
+          "appliesTo": [
+            "memory",
+            "bus",
+            "virtual bus",
+            "device",
+            "virtual processor",
+            "processor",
+            "system"
+          ]
+        },
+        {
+          "name": "Modeling_Properties::Prototype_Substitution_Rule",
+          "kind": "Property",
+          "inherit": true,
+          "propertyType": {
+            "kind": "EnumerationType",
+            "values": [
+              "Classifier_Match",
+              "Type_Extension",
+              "Signature_Match"
+            ]
+          },
+          "appliesTo": [
+            "prototype",
+            "classifier"
+          ]
+        }
+      ],
+      "propertyTypes": [
+        {
+          "name": "Modeling_Properties::Array_Size_Range",
+          "kind": "PropertyType",
+          "type": {
+            "kind": "RangeType",
+            "numberType": {
+              "kind": "AadlInteger"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
