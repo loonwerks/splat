@@ -182,16 +182,27 @@ Definition squashStmt_def :
     (Stmt s e'::S,A1,M1)
 End
 
-Definition squashOutputStmt_def :
-  squashOutputStmt (Stmt s e) (S,A,M) =
-  let
-    (A1,M1,e') = exprSquash A M e;
-    s' = newAux (LENGTH A1)
-  in
-    if e = e' then
-      (Stmt s e::S,A1,M1)
-    else
-      (Stmt s (VarExpr s')::S, Stmt s' e'::A1,M1)
+Definition squashOStmt_def :
+  squashOstmt (Output_Event s e) (S,A,M) =
+    (let
+      (S1,A1,M1) = squashStmt (Stmt s e) ([],A,M);
+      e' = bodyOf(HD S1);
+    in
+      (Output_Event s e'::S,A1,M1))                    /\
+  squashOstmt (Output_Data s e) (S,A,M) =
+    (let
+       (S1,A1,M1) = squashStmt (Stmt s e) ([],A,M);
+       e' = bodyOf(HD S1);
+     in
+       (Output_Data s e'::S,A1,M1))                    /\
+  squashOstmt (Output_Event_Data s e1 e2) (S,A,M) =
+    (let
+       (S1,A1,M1) = squashStmt (Stmt s e1) ([],A,M);
+       e1' = bodyOf(HD S1);
+       (S2,A2,M2) = squashStmt (Stmt s e2) ([],A1,M1);
+       e2' = bodyOf(HD S2);
+     in
+       (Output_Event_Data s e1' e2'::S,A2,M2))       
 End
 
 Definition squashStmts_def :
@@ -201,11 +212,11 @@ End
 Definition squash_comp_def :
   squash_comp comp =
   let
-    (out_defs,aux_defs,M) = squashStmts squashOutputStmt ([],[],FEMPTY) comp.out_defs;
-    (var_defs,aux_defs',M')  = squashStmts squashStmt ([],aux_defs,M) comp.var_defs;
+    (out_defs,aux_defs,M) = squashStmts squashOstmt ([],[],FEMPTY) comp.out_defs;
+    (var_defs,aux_defs1,M1) = squashStmts squashStmt ([],aux_defs,M) comp.var_defs;                      
   in
     <| inports  := initPortName::comp.inports;
-       var_defs := var_defs ++ aux_defs';
+       var_defs := var_defs ++ aux_defs1;
        out_defs  := out_defs;
        assumptions := comp.assumptions;
        guarantees := comp.guarantees |>
@@ -239,7 +250,7 @@ Definition arithprog_def:
               (SubExpr (PreExpr (VarExpr "input"))
                (PreExpr (PreExpr(VarExpr "input")))))
              (PreExpr (VarExpr "isProg"))))];
-     out_defs := [Stmt "out" (VarExpr "isProg")];
+     out_defs := [Output_Event "out" (VarExpr "isProg")];
      assumptions := [];
      guarantees  := []
   |>
@@ -267,7 +278,7 @@ Definition recFib_def:
       (FbyExpr (IntLit 1)
        (PreExpr (FbyExpr (IntLit 1)
                  (AddExpr (VarExpr "recFib") (PreExpr (VarExpr "recFib"))))))];
-     out_defs := [Stmt "output" (VarExpr "recFib")];
+     out_defs := [Output_Data "output" (VarExpr "recFib")];
      assumptions := [];
      guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
@@ -298,8 +309,8 @@ Definition arrayExprInput_def:
                (VarExpr "recFib");
                (IntLit 1);
                (FbyExpr (IntLit 0) (PreExpr (VarExpr "recFib")))])];
-     out_defs := [Stmt "output1" (VarExpr "recFib");
-                  Stmt "output2" (VarExpr "array")];
+     out_defs := [Output_Data "output1" (VarExpr "recFib");
+                  Output_Data "output2" (VarExpr "array")];
      assumptions := [];
      guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
@@ -329,7 +340,7 @@ Definition recdExprInput_def:
                            (AddExpr (VarExpr "recFib") (PreExpr (VarExpr "recFib")))))));
           ("b", (IntLit 1));
           ("c", (FbyExpr (IntLit 0) (PreExpr (VarExpr "recFib"))))])];
-     out_defs := [Stmt "output" (VarExpr "recd")];
+     out_defs := [Output_Data "output" (VarExpr "recd")];
      assumptions := [];
      guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
@@ -368,11 +379,11 @@ Definition testInput_def:
            (FbyExpr (VarExpr "x")
             (PreExpr (FbyExpr (VarExpr "x")
                       (SubExpr (PreExpr (VarExpr "x")) (PreExpr (PreExpr (VarExpr "Fib")))))))];
-     out_defs := [Stmt "output1" (VarExpr "Fib");
-                  Stmt "output2"
+     out_defs := [Output_Data "output1" (VarExpr "Fib");
+                  Output_Data "output2"
                        (FbyExpr (IntLit 1)
                         (PreExpr (FbyExpr (IntLit 1)
-                                  (AddExpr (VarExpr "input") (PreExpr (VarExpr "input"))))))];
+                                  (AddExpr (PortData (VarExpr "input")) (PreExpr (PortData (VarExpr "input")))))))];
      assumptions := [];
      guarantees := [LeqExpr (IntLit 0) (VarExpr"output")]
   |>
