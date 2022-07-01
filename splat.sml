@@ -4,10 +4,6 @@
 
 open Lib Feedback HolKernel boolLib MiscLib bossLib;
 
-(*
-load "intrealSyntax";
-*)
-
 local
   open AADL Gadget Gen_Contig PP_CakeML agree_fullSyntax
 in end
@@ -248,70 +244,6 @@ in
   pretty
 end
 
-fun getFile path =
-  let val istrm = TextIO.openIn path
-      val vector = TextIO.inputAll istrm
-      val () = TextIO.closeIn istrm
-  in
-    vector
-  end;
-
-val Utils_Src      = getFile "Lego/Utils.cml";
-val ByteContig_Src = getFile "Lego/ByteContig.cml";
-val basis_ffi_Src  = getFile "Lego/basis_ffi.c";
-val Makefile_Src   = getFile "Lego/Makefile";
-val Control_Src    = getFile "Lego/Control";
-val Make_Sh_Src    = getFile "Lego/make.sh";
-
-(* val Cake_Src       = getFile "Lego/cake.S"; *)
-
-fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
- let open FileSys Gadget AST
-     val (pkgName,compName) = gadget_qid gdt
-     val gadgetName = pkgName^"_"^compName
-     val _ = stdErr_print ("\nProcessing "^qid_string (gadget_qid gdt)^".\n")
-     val invocDir = getDir()
-     val () = stdErr_print ("Invocation dir: "^ invocDir ^ "\n")
-     val gadgetDir = String.concat[dir,"/",gadgetName]
-     val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
-     val _ = stdErr_print ("  Writing basis_ffi.c\n")
-     val ostrm = TextIO.openOut "basis_ffi.c"
-     val () = TextIO.output(ostrm,basis_ffi_Src)
-     val () = TextIO.closeOut ostrm
-     val _ = stdErr_print ("  Writing Makefile\n")
-     val ostrm = TextIO.openOut "Makefile"
-     val () = TextIO.output(ostrm, Makefile_Src)
-     val () = TextIO.closeOut ostrm
-     val _ = stdErr_print ("  Writing make.sh\n")
-     val ostrm = TextIO.openOut "make.sh"
-     val () = TextIO.output(ostrm, Make_Sh_Src)
-     val () = TextIO.closeOut ostrm
-     val _ = OS.Process.system "chmod +x make.sh" handle _ => OS.Process.failure
-     val gadgetFile = gadgetName^".cml"
-     val () = stdErr_print ("  Writing "^gadgetFile^"\n")
-     val ostrm = TextIO.openOut gadgetFile
-     fun add s = TextIO.output(ostrm,s)
-     val () = add Utils_Src
-     val () = add "\n\n"
-     val () = add ByteContig_Src
-     val () = add "\n\n"
-     val () = PPfns.pp_ostrm ostrm defs
-     val () = add "\n\n"
-     val () = PPfns.pp_ostrm ostrm parser
-     val () = add "\n\n"
-     val () = PPfns.pp_ostrm ostrm api
-     val () = add "\n\n"
-     val () = PPfns.pp_ostrm ostrm pp_gdt
-     val () = add "\n\n"
-     val () = add Control_Src
-     val () = add "\n\n"
-     val () = TextIO.closeOut ostrm
-     val () = stdErr_print ("Code written to directory: "^gadgetDir ^ "\n")
-     val () = stdErr_print ("Done.\n")
- in
-  chDir invocDir
- end
-
 fun apply gdts [] = gdts
   | apply gdts (f::t) = apply (f gdts) t;
 
@@ -419,8 +351,135 @@ fun gadget_to_component gdt =
  end
 
 
+fun getFile path =
+  let val istrm = TextIO.openIn path
+      val vector = TextIO.inputAll istrm
+      val () = TextIO.closeIn istrm
+  in
+    vector
+  end;
+
+val Utils_Src      = getFile "Lego/Utils.cml";
+val ByteContig_Src = getFile "Lego/ByteContig.cml";
+val basis_ffi_Src  = getFile "Lego/basis_ffi.c";
+val Makefile_Src   = getFile "Lego/Makefile";
+val Control_Src    = getFile "Lego/Control";
+val Make_Sh_Src    = getFile "Lego/make.sh";
+(* val Cake_Src       = getFile "Lego/cake.S"; *)
+
+fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
+ let open FileSys Gadget AST
+     val (pkgName,compName) = gadget_qid gdt
+     val gadgetName = pkgName^"_"^compName
+     val _ = stdErr_print ("\nProcessing "^qid_string (gadget_qid gdt)^".\n")
+     val invocDir = getDir()
+     val () = stdErr_print ("Invocation dir: "^ invocDir ^ "\n")
+     val gadgetDir = String.concat[dir,"/",gadgetName]
+     val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
+
+     val _ = stdErr_print ("  Writing basis_ffi.c\n")
+     val () = let val ostrm = TextIO.openOut "basis_ffi.c"
+              in TextIO.output(ostrm,basis_ffi_Src);
+                 TextIO.closeOut ostrm
+              end
+
+     val _ = stdErr_print ("  Writing Makefile\n")
+     val () = let val ostrm = TextIO.openOut "Makefile"
+              in TextIO.output(ostrm, Makefile_Src);
+                 TextIO.closeOut ostrm
+              end
+
+     val _ = stdErr_print ("  Writing make.sh\n")
+     val () = let val ostrm = TextIO.openOut "make.sh"
+              in TextIO.output(ostrm, Make_Sh_Src);
+                 TextIO.closeOut ostrm
+              end
+     val _ = OS.Process.system "chmod +x make.sh" handle _ => OS.Process.failure
+
+     val gadget_src = gadgetName^".cml"
+     val _ = stdErr_print ("  Writing "^gadget_src^"\n")
+     val ostrm = TextIO.openOut gadget_src
+     fun put s = TextIO.output(ostrm,s)
+     fun add s = (put s; put "\n\n")
+     fun add_pp pp = (PPfns.pp_ostrm ostrm pp; put "\n\n")
+ in
+    add Utils_Src;
+    add ByteContig_Src;
+    add_pp defs;
+    add_pp parser;
+    add_pp api;
+    add_pp pp_gdt;
+    add Control_Src;
+    TextIO.closeOut ostrm;
+    stdErr_print ("Code written to directory: "^gadgetDir ^ "\n");
+    stdErr_print "Done.\n";
+    chDir invocDir
+ end
+
+(*---------------------------------------------------------------------------*)
+(* Generate HOL script file defining a gadget in the logic. (Could           *)
+(* alternatively create a theory at runtime and do an "export_theory" at     *)
+(* the end.                                                                  *)
+(*---------------------------------------------------------------------------*)
+
+val component_script_prefix =
+ String.concatWith "\n"
+   ["open HolKernel Parse boolLib bossLib BasicProvers",
+    "     pred_setLib stringLib intLib finite_mapTheory",
+    "     arithmeticTheory listTheory pred_setTheory",
+    "     agree_fullTheory;\n",
+    "val _ = intLib.prefer_int();"];
+
+val component_script_suffix = "val _ = export_theory();"
+
+
+fun export_formal_model dir gdt =
+ let open FileSys Gadget AST
+     val invocDir = getDir()
+     val (pkgName,compName) = gadget_qid gdt
+     val gadgetName = pkgName^"_"^compName
+     val gadgetDir = String.concat[dir,"/",gadgetName]
+     val gadgetFile = gadgetName^"Script.sml"
+     val _ = stdErr_print (String.concat
+              ["\nProcessing ", qid_string (gadget_qid gdt),
+               " to generate formal model.\n"])
+     val _ = stdErr_print ("Invocation dir: "^ invocDir ^ "\n")
+     val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
+     val component_tm = gadget_to_component gdt
+     val component_tm_string = Parse.term_to_string component_tm
+     val component_def = String.concatWith "\n"
+           ["Definition "^gadgetName^"_def:",
+            gadgetName^" = ",
+            "   "^component_tm_string,
+            "End"]
+     val new_theory_dec = ("val _ = new_theory "^Lib.quote gadgetName^";")
+
+     val () = stdErr_print ("  Writing "^gadgetFile^"\n")
+     val ostrm = TextIO.openOut gadgetFile
+     fun put s = TextIO.output(ostrm,s)
+     fun add s = (put s; put "\n\n")
+ in
+    add component_script_prefix;
+    add new_theory_dec;
+    add component_def;
+    add component_script_suffix;
+    TextIO.closeOut ostrm;
+    stdErr_print ("Component spec written to directory: "^gadgetDir ^ "\n");
+    stdErr_print "Done.\n";
+    chDir invocDir
+ end
+
+
 (*
 val jsonFile = "examples/uxaslite.json";
+val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
+val [gdt1, gdt2] = gdts;
+export_formal_model "tmp" gdt1; (* Fails cuz support defs not handled *)
+export_formal_model "tmp" gdt2;
+
+
+val comp2 = gadget_to_component gdt2;
+
 val jsonFile = "examples/SW.json";
 val jsonFile = "examples/UAS.json";
 val jsonFile = "examples/uxaslite.json";
@@ -446,12 +505,6 @@ val [gpp1,gpp2,gpp3] = gdt_pps;
 export_implementation "tmp" (api3,p3,defs3,gpp3,gdt3);
 
 listBinds 10 "ivars" "vdec" ;
-*)
-
-(*
-val args = ["examples/uxaslite.json"];
-val thyName = "uxaslite";
-val dir = ".";
 *)
 
 fun zip5 (h1::t1) (h2::t2) (h3::t3) (h4::t4) (h5::t5) =
