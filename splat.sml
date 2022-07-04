@@ -365,6 +365,8 @@ val basis_ffi_Src  = getFile "Lego/basis_ffi.c";
 val Makefile_Src   = getFile "Lego/Makefile";
 val Control_Src    = getFile "Lego/Control";
 val Make_Sh_Src    = getFile "Lego/make.sh";
+val Holmakefile_Src = getFile "Lego/Holmakefile_AGREE";
+
 (* val Cake_Src       = getFile "Lego/cake.S"; *)
 
 fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
@@ -411,15 +413,13 @@ fun export_implementation dir (api,parser,defs,pp_gdt,gdt) =
     add_pp pp_gdt;
     add Control_Src;
     TextIO.closeOut ostrm;
-    stdErr_print ("Code written to directory: "^gadgetDir ^ "\n");
+    stdErr_print ("Code written to directory:\n   "^gadgetDir ^ "\n");
     stdErr_print "Done.\n";
     chDir invocDir
  end
 
 (*---------------------------------------------------------------------------*)
-(* Generate HOL script file defining a gadget in the logic. (Could           *)
-(* alternatively create a theory at runtime and do an "export_theory" at     *)
-(* the end.                                                                  *)
+(* Generate HOL script file defining a gadget in the logic.                  *)
 (*---------------------------------------------------------------------------*)
 
 val component_script_prefix =
@@ -432,50 +432,59 @@ val component_script_prefix =
 
 val component_script_suffix = "val _ = export_theory();"
 
-
-fun export_formal_model dir gdt =
+fun export_formal_model targetDir gdt =
  let open FileSys Gadget AST
-     val invocDir = getDir()
-     val (pkgName,compName) = gadget_qid gdt
+     val gid as (pkgName,compName) = gadget_qid gdt
      val gadgetName = pkgName^"_"^compName
-     val gadgetDir = String.concat[dir,"/",gadgetName]
-     val gadgetFile = gadgetName^"Script.sml"
      val _ = stdErr_print (String.concat
-              ["\nProcessing ", qid_string (gadget_qid gdt),
-               " to generate formal model.\n"])
+               ["\nProcessing ", qid_string gid, " to generate formal model.\n"])
+     val invocDir = getDir()
      val _ = stdErr_print ("Invocation dir: "^ invocDir ^ "\n")
-     val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
-     val component_tm = gadget_to_component gdt
-     val component_tm_string = Parse.term_to_string component_tm
-     val component_def = String.concatWith "\n"
-           ["Definition "^gadgetName^"_def:",
-            gadgetName^" = ",
-            "   "^component_tm_string,
-            "End"]
+     val gadgetDir = String.concat[targetDir,"/",gadgetName]
+     val gadgetFile = gadgetName^"Script.sml"
      val new_theory_dec = ("val _ = new_theory "^Lib.quote gadgetName^";")
+     fun thunk() =
+       let val component_tm = gadget_to_component gdt
+           val component_tm_string = Parse.term_to_string component_tm
+           val component_def = String.concatWith "\n"
+               ["Definition "^gadgetName^"_def:",
+                gadgetName^" = ", "   "^component_tm_string, "End"]
+           val _ = ((mkDir gadgetDir handle _ => ()); chDir gadgetDir)
 
-     val () = stdErr_print ("  Writing "^gadgetFile^"\n")
-     val ostrm = TextIO.openOut gadgetFile
-     fun put s = TextIO.output(ostrm,s)
-     fun add s = (put s; put "\n\n")
+           val _ =
+             let val _ = stdErr_print ("  Writing Holmakefile\n")
+                 val ostrm = TextIO.openOut "Holmakefile"
+             in TextIO.output(ostrm, Holmakefile_Src);
+                TextIO.closeOut ostrm
+             end
+
+           val _ = stdErr_print ("  Writing "^gadgetFile^"\n")
+           val ostrm = TextIO.openOut gadgetFile
+           fun put s = TextIO.output(ostrm,s)
+           fun add s = (put s; put "\n\n")
+       in
+         add component_script_prefix;
+         add new_theory_dec;
+         add component_def;
+         add component_script_suffix;
+         TextIO.closeOut ostrm;
+         stdErr_print
+             ("Component spec written to directory:\n    "^gadgetDir ^ "\n");
+         stdErr_print "Done.\n"
+       end
+       handle e =>
+        stdErr_print (String.concat
+           ["---> Failure when generating formal model for ",AST.qid_string gid,"\n"])
  in
-    add component_script_prefix;
-    add new_theory_dec;
-    add component_def;
-    add component_script_suffix;
-    TextIO.closeOut ostrm;
-    stdErr_print ("Component spec written to directory: "^gadgetDir ^ "\n");
-    stdErr_print "Done.\n";
-    chDir invocDir
+   thunk(); chDir invocDir
  end
-
 
 (*
 val jsonFile = "examples/uxaslite.json";
 val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
 val [gdt1, gdt2] = gdts;
 export_formal_model "tmp" gdt1; (* Fails cuz support defs not handled *)
-export_formal_model "tmp" gdt2;
+export_formal_model "/Users/konradslind/Projects/splat/agree" "tmp" gdt2;
 
 
 val comp2 = gadget_to_component gdt2;
@@ -514,18 +523,19 @@ fun zip5 (h1::t1) (h2::t2) (h3::t3) (h4::t4) (h5::t5) =
 
 fun main () =
  let val _ = stdErr_print "splat: \n"
-     val args = CommandLine.arguments()
-     val jsonFile = parse_args args
+     val jsonFile = parse_args (CommandLine.arguments())
      val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile
      val _ = stdErr_print
              (String.concat
-               ["Found ",
-                Int.toString (List.length gdts),
+               ["Found ", Int.toString (List.length gdts),
                 " CASE security components.\n"])
-     val inputs = zip5 apis parsers defs gdt_pps gdts
      val dir = get_outDir()
-     val () = List.app (export_implementation dir) inputs
   in
+    List.app (export_implementation dir)
+             (zip5 apis parsers defs gdt_pps gdts)
+    ;
+    List.app (export_formal_model dir) gdts
+    ;
     MiscLib.succeed()
  end
  handle e =>
