@@ -1,5 +1,7 @@
 INCLUDES = ./agree $(HOLDIR)/examples/formal-languages/regular
 
+AGREEDIR = $(PWD)/agree
+
 all: $(DEFAULT_TARGETS) splat
 
 .PHONY: all
@@ -7,4 +9,5 @@ all: $(DEFAULT_TARGETS) splat
 EXTRA_CLEANS = splat.o splat splat-mon.o splat-mon
 
 splat : splat.uo
+	echo "INCLUDES = " $(AGREEDIR) > Lego/Holmakefile_AGREE
 	$(protect $(HOLDIR)/bin/buildheap) splat.uo -o $@ --exe main
