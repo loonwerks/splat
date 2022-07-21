@@ -1,0 +1,53 @@
+package statusFilterTests
+public  
+	with statusFilter;
+  renames statusFilter::all;
+  
+  process should_notOutput_when_badId
+    features
+      input: in event data port Status.Impl;
+      output: out event data port Status.Impl;
+    annex agree {**
+      assume "Bad ID" :
+            event(input)
+        and (input.Id = 24);
+        
+      guarantee "Output never fires" :
+        event(output) = false;
+    **};
+  end should_notOutput_when_badID;
+  
+  process implementation should_notOutput_when_badId.test
+    subcomponents
+      comp: thread fltr.Impl;
+    connections
+      c00: port input -> comp.input;
+      c01: port comp.output -> output;
+  end should_notOutput_when_badId.test;
+  
+  process should_output_when_goodIdAndLocation
+    features
+      input: in event data port Status.Impl;
+      output: out event data port Status.Impl;
+    annex agree {**
+      assume "Good input" :
+            event(input)
+        and (input.Id = 42)
+        and (input.Location.Latitude = -90)
+        and (input.Location.Longitude = -180)
+        and (input.Location.Altitude = 10000);
+        
+      guarantee "Output never fires" :
+        event(output) = true;
+    **};
+  end should_output_when_goodIdAndLocation;
+  
+  process implementation should_output_when_goodIdAndLocation.test
+    subcomponents
+      comp: thread fltr.Impl;
+    connections
+      c00: port input -> comp.input;
+      c01: port comp.output -> output;
+  end should_output_when_goodIdAndLocation.test;
+  
+end statusFilterTests;

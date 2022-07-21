@@ -1,0 +1,100 @@
+package statusFilter
+public
+  with Base_Types;
+  renames Base_Types::all;
+
+  with CASE_Properties;
+  
+  --------------
+  -- Waypoint --
+  --------------
+  data Waypoint
+  end Waypoint;
+
+  data implementation Waypoint.Impl
+    subcomponents
+      Latitude: data Integer;
+      Longitude: data Integer;
+      Altitude: data Integer;
+  end Waypoint.Impl;
+  
+  data Status 
+  end Status;
+  
+  data implementation Status.Impl
+  	subcomponents
+  		Id: data Integer;
+  		Location: data Waypoint.Impl; 
+  end Status.Impl;
+  
+  thread fltr
+    features
+      input: in event data port Status.Impl;
+      output: out event data port Status.Impl;
+    properties
+      CASE_Properties::Filtering => 100;
+      CASE_Properties::Component_Spec => ("Output");
+    annex agree {**
+      eq policy : bool = 
+            (input.Id = 42) 
+        and (input.Location.Latitude >= -90 and input.Location.Latitude <= 90)
+        and (input.Location.Longitude >= -180 and input.Location.Longitude <= 180) 
+        and (input.Location.Altitude >= 10000 and input.Location.Altitude <= 15000);
+     
+      guarantee fltr_Output
+        "Filter output is well-formed" :
+        if event(input) and policy then 
+          event(output) and output = input
+        else not event(output);
+    **};
+  end fltr;
+  
+  thread implementation fltr.Impl
+    properties            
+      Dispatch_Protocol => Periodic;
+      Period => 500ms;
+      Compute_Execution_Time => 2ms .. 2ms;
+      Stack_Size => 65536 bytes;
+      Source_text => ("");
+  end fltr.Impl;
+  
+  
+  annex agree {** 
+    const ID : int = 42;
+    fun WELL_FORMED_WAYPOINT(point : Waypoint.Impl) : bool =
+          (point.Latitude >= -90 and point.Latitude <= 90)
+      and (point.Longitude >= -180 and point.Longitude <= 180) 
+      and (point.Altitude >= 10000 and point.Altitude <= 15000);
+    fun WELL_FORMED_ID(id : int) : bool = (id = ID);
+    fun WELL_FORMED(msg : Status.Impl) : bool =
+      WELL_FORMED_ID(msg.Id) and WELL_FORMED_WAYPOINT(msg.Location);
+  **};
+
+  thread fltrFnCall
+  	features
+  		input: in event data port Status.Impl;
+      output: out event data port Status.Impl;
+    properties
+      CASE_Properties::Filtering => 100;
+      CASE_Properties::Component_Spec => ("Output");
+    annex agree {**
+      eq policy : bool = WELL_FORMED(input);
+     
+      guarantee fltr_Output
+        "Filter output is well-formed" :
+        if event(input) and policy then 
+          event(output) and output = input
+        else not event(output);
+    **};
+  end fltrFnCall;
+  
+  thread implementation fltrFnCall.Impl
+    properties            
+      Dispatch_Protocol => Periodic;
+      Period => 500ms;
+      Compute_Execution_Time => 2ms .. 2ms;
+      Stack_Size => 65536 bytes;
+      Source_text => ("");
+  end fltrFnCall.Impl;
+  
+end statusFilter;
