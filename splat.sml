@@ -5,7 +5,7 @@
 open Lib Feedback HolKernel boolLib MiscLib bossLib;
 
 local
-  open AADL Gadget Gen_Contig PP_CakeML agree_fullSyntax
+  open AADL Gadget Gen_Contig PP_CakeML agree_fullSyntax squash_fullTheory
 in end
 
 val ERR = Feedback.mk_HOL_ERR "splat";
@@ -479,41 +479,117 @@ fun export_formal_model targetDir gdt =
    thunk(); chDir invocDir
  end
 
-(*
+(* rec Fib ... bridge proof
+
+val jsonFile = "examples/recFib/json-generated/recFib.json";
+val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonFile
+	   ("Parsing "^jsonFile^" ... ") "succeeded.\n"
+val pkgs = AADL.scrape_pkgs jpkg
+val [fib_gdt] = Gadget.mk_gadgets pkgs;
+val fib_comp_tm = gadget_to_component fib_gdt
+
+open agree_fullTheory;
+type_abbrev ("env", ``:string |-> (num -> value)``);
+
+Definition recFib_comp_def :
+  recFib_comp = ^(gadget_to_component fib_gdt)
+End
+
+val squashed_comp_thm =  (* not used in this form *)
+  recFib_comp_def
+    |> AP_TERM ``squash_comp``
+    |> CONV_RULE (RHS_CONV EVAL);
+
+val squashed_tm = squashed_comp_thm |> concl |> rhs;
+
+(*---------------------------------------------------------------------------*)
+(* Squashed version of fib is equal to the corresponding HOL fn              *)
+(*---------------------------------------------------------------------------*)
+
+Definition fibFn_def:
+   fibFn (isInit:bool,fib:int,a1:int,a0:int) =
+      let
+           fib = if isInit then 1 else a1;
+           a1 = if isInit then 1 else fib + a0;
+           a0 = fib;
+      in
+        (fib,a1,a0)
+End
+
+Theorem IntValue_intOf:
+  ∀iv. IntValue(intOf iv) = iv
+Proof
+ Cases >> rw[intOf_def]
+QED
+
+Theorem prog_eq_holfn:
+ !(E1:env) E2 t isInit fib a1 a0.
+    Supports E1 (squash_comp recFib_comp) /\
+    "isInit" IN FDOM E1 /\
+    isInit_Stream (E1 ' "isInit") /\
+    E2 = strmStep E1 (squash_comp recFib_comp) t /\
+    (a,b,c) = fibFn (boolOf((E1 ' "isInit") t),
+                     intOf ((E1 ' "fib") t),
+                     intOf ((E1 ' "a1") t),
+                     intOf ((E1 ' "a0") t))
+   ==>
+    (E2 ' "output") t = PortValue (Data (IntValue a))
+Proof
+EVAL_TAC >> rw[] >> EVAL_TAC >> rw[] >> fs[]
+ \\
+
+
+QED
+
+rw[Supports_def]
+val tm = last(fst(top_goal()));
+
+
+Theorem equiv3 :
+  !input isInit N ap in2 in1.
+     let inE = FEMPTY |++ [("input",IntValue input);("isInit", BoolValue isInit)] ;
+         stateIn = FEMPTY
+                   |++ [("N",    IntValue N);
+                        ("ap",   BoolValue ap);
+                        ("in2",  IntValue in2);
+                        ("in1",  IntValue in1)];
+         (stateOut,outE) = stateStep itprog (inE,stateIn) ;
+         state_N   = int_of(stateOut ' "N");
+         state_ap  = bool_of(stateOut ' "ap");
+         state_in2 = int_of(stateOut ' "in2");
+         state_in1 = int_of(stateOut ' "in1");
+         output_ap = bool_of(outE ' "out")
+     in
+       ((state_N, state_ap,state_in2, state_in1), output_ap)
+       =
+      aprogFn (input,isInit) (N,ap,in2,in1)
+Proof
+  rpt gen_tac
+  >> EVAL_TAC
+  >> rw[FUNION_DEF]
+  >> rpt(pop_assum mp_tac)
+  >> EVAL_TAC
+  >> rw_tac bool_ss [Once integerTheory.INT_ADD_SYM]
+  >> metis_tac[]
+QED
+
+Other examples
+
 val jsonFile = "examples/uxaslite.json";
 val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
 val [gdt1, gdt2] = gdts;
+val comp2 = gadget_to_component gdt2;
 export_formal_model "tmp" gdt1; (* Fails cuz support defs not handled *)
 export_formal_model "/Users/konradslind/Projects/splat/agree" "tmp" gdt2;
-
-
-val comp2 = gadget_to_component gdt2;
 
 val jsonFile = "examples/SW.json";
 val jsonFile = "examples/UAS.json";
 val jsonFile = "examples/uxaslite.json";
 val jsonFile = "examples/SimpleFFA.json";
 val jsonFile = "examples/WatchWordServer.json";
-
-val (apis,parsers,defs,gdt_pps,gdts) = process_model jsonFile;
-val [gdt1, gdt2] = gdts;
-val [api1,api2] = apis;
-val [p1,p2] = parsers;
-val [defs1,defs2] = defs;
-val [gpp1,gpp2] = gdt_pps;
-
-export_implementation "tmp" (api1,p1,defs1,gpp1,gdt1);
-export_implementation "tmp" (api2,p2,defs2,gpp2,gdt2);
-
-
-val [gdt1, gdt2, gdt3] = gdts;
-val [api1,api2,api3] = apis;
-val [p1,p2,p3] = parsers;
-val [defs1,defs2,defs3] = defs;
-val [gpp1,gpp2,gpp3] = gdt_pps;
-export_implementation "tmp" (api3,p3,defs3,gpp3,gdt3);
-
+val jsonFile = "examples/statusFilter/json-generated/statusFilter.json";
 listBinds 10 "ivars" "vdec" ;
+
 *)
 
 fun zip5 (h1::t1) (h2::t2) (h3::t3) (h4::t4) (h5::t5) =

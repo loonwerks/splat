@@ -63,7 +63,6 @@ End
 Definition dataOf_def:
   dataOf (Data x) = x /\
   dataOf (Event_Data (SOME x)) = x /\
-  dataOf otherwise = ARB
 End
 
 (*---------------------------------------------------------------------------*)
@@ -171,6 +170,10 @@ Definition updateEnv_def :
      fmap |+ (name,strm')
 End
 
+Definition isInit_Stream_def:
+   isInit_Stream strm ⇔ ∀n. strm n = BoolValue (n = 0n)
+End
+
 (*---------------------------------------------------------------------------*)
 (* Value of expression in given environments                                 *)
 (*---------------------------------------------------------------------------*)
@@ -184,7 +187,9 @@ End
 
 (*---------------------------------------------------------------------------*)
 (* I seem to recall that array indices start at 1 in AGREE. In that case,    *)
-(* applications of ArraySubValue will need attention paid to them.           *)
+(* applications of ArraySubValue will to be fixed up . Also need to think    *)
+(* about out-of-bounds array indexing. (Maybe use a list + length pair to    *)
+(* represent an array?                                                       *)
 (*---------------------------------------------------------------------------*)
 
 Definition ArraySubValue_def:
@@ -370,7 +375,6 @@ Definition strmStep_def :
          comp.out_defs
          t
 End
-
 
 (*---------------------------------------------------------------------------*)
 (* Correctness of component: the effects  of the component model its spec.   *)
@@ -569,15 +573,11 @@ QED
 
 
 (*---------------------------------------------------------------------------*)
-(* There is a special stream---isInit---used by programs to tell if in the   *)
-(* initial step or not. Defined as                                           *)
+(* There is a special stream---isInit---used by programs to tell if          *)
+(* execution is in the initial step or not. Defined as                       *)
 (*                                                                           *)
 (*  isInit = T -> F                                                          *)
 (*---------------------------------------------------------------------------*)
-
-Definition isInit_Stream_def :
-   isInit_Stream strm ⇔ ∀n. strm n = BoolValue (n = 0n)
-End
 
 Theorem isInit_Stable:
   ∀E comp t s.

@@ -367,7 +367,7 @@ QED
 (*  O = [output = divsum]                                                    *)
 (*  G = [0 ≤ output]                                                         *)
 (*                                                                           *)
-(* Subtlety: one might think that we could have been written                 *)
+(* Subtlety: one might think that we could have written                      *)
 (*                                                                           *)
 (*  V = []                                                                   *)
 (*  O = [output = (i1 / i2) -> pre output + (i1/i2)]                         *)
