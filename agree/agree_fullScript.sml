@@ -62,7 +62,7 @@ End
 
 Definition dataOf_def:
   dataOf (Data x) = x /\
-  dataOf (Event_Data (SOME x)) = x /\
+  dataOf (Event_Data (SOME x)) = x
 End
 
 (*---------------------------------------------------------------------------*)
@@ -508,7 +508,8 @@ Theorem Comp_Vars_Disjoint:
  ∀comp.
     Wellformed comp ==>
      DISJOINT (set (comp.inports)) (set (MAP varOf comp.var_defs)) ∧
-     DISJOINT (set (MAP varOf comp.var_defs)) (set (MAP Output_PortName comp.out_defs)) ∧
+     DISJOINT (set (MAP varOf comp.var_defs))
+              (set (MAP Output_PortName comp.out_defs)) ∧
      DISJOINT (set (MAP Output_PortName comp.out_defs)) (set (comp.inports))
 Proof
  rw [Wellformed_def,Declared_Vars_def,ALL_DISTINCT_APPEND,IN_DISJOINT]

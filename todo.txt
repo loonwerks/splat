@@ -58,3 +58,22 @@ Splat todo list (August 9, 2021)
 
   * Cong example
   * Ben example
+
+===================================================
+
+July 1, 2022
+
+Status:
+
+- component formal semantics and "temporal squashing" transformation in
+
+    agree/agree_fullScript.sml
+    agree/squash_fullScript.sml
+
+- splat.sml converts gadgets to components
+
+    todo : add command line option to specify agree directory
+         : consider leaving everything in contract type, or add
+	   AG stuff to gadget
+
+- Run transformations etc.

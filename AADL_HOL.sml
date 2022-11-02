@@ -885,7 +885,6 @@ fun pkgs2hol thyName pkgs =
 val thyName = "UAS";
 
 val pkgs as [pkg1,pkg2,pkg3,pkg4,pkg5,pkg6] = scrape_pkgs jpkg;
-val pkglist = map Pkg pkgs;
 val (pkgName,(tydecs,tmdecs,fdecs,mondecs)) = pkg5;
 val [mondec1,mondec2] = mondecs;
 

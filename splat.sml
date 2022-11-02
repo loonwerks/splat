@@ -477,72 +477,189 @@ fun export_formal_model targetDir gdt =
            ["---> Failure when generating formal model for ",AST.qid_string gid,"\n"])
  in
    thunk(); chDir invocDir
+ end;
+
+(*---------------------------------------------------------------------------*)
+(* Map an expr into vanilla HOL. Missing are the following: records, arrays, *)
+(* and ports. Pre, Hist, and Fby have been removed by temporal squashing.    *)
+(*
+     dest_Recd
+     dest_Array
+     dest_RecdProj
+     dest_ArraySub
+     dest_PortData
+     dest_PortEvent
+     dest_Pre --> Error
+     dest_Hist --> Error
+     dest_Fby --> Error
+*)
+
+fun mk_bin_app (a, (b,c)) = Absyn.list_mk_app(a,[b,c])
+
+fun mk_let (s,a1) a2 =
+  let open Absyn
+      val vstruct = to_vstruct(mk_ident s)
+  in mk_bin_app(mk_ident "LET", (mk_lam(vstruct,a2),a1))
+  end
+
+fun absyn_of e =
+ let open stringSyntax Absyn agree_fullSyntax
+ in
+ Absyn.mk_AQ(dest_IntLit e)  handle _ =>
+ Absyn.mk_AQ(dest_BoolLit e) handle _ =>
+ mk_ident (fromHOLstring (dest_Var e)) handle _ =>
+ mk_app(mk_ident "~", absyn_of (dest_Not e)) handle _ =>
+ mk_bin_app(mk_ident "/\\", (absyn_of##absyn_of) (dest_And e))  handle _ =>
+ mk_bin_app(mk_ident "\\/", (absyn_of##absyn_of) (dest_Or e))   handle _ =>
+ mk_bin_app(mk_ident "==>", (absyn_of##absyn_of) (dest_Imp e))  handle _ =>
+ mk_bin_app(mk_ident "=",   (absyn_of##absyn_of) (dest_Eq e))   handle _ =>
+ mk_bin_app(mk_ident "=",   (absyn_of##absyn_of) (dest_Iff e))  handle _ =>
+ mk_bin_app(mk_ident "<",   (absyn_of##absyn_of) (dest_Lt e))   handle _ =>
+ mk_bin_app(mk_ident "<=",  (absyn_of##absyn_of) (dest_Lt e))   handle _ =>
+ mk_bin_app(mk_ident "+",   (absyn_of##absyn_of) (dest_Add e))  handle _ =>
+ mk_bin_app(mk_ident "*",   (absyn_of##absyn_of) (dest_Mult e)) handle _ =>
+ mk_bin_app(mk_ident "-",   (absyn_of##absyn_of) (dest_Sub e))  handle _ =>
+ mk_bin_app(mk_ident "/",   (absyn_of##absyn_of) (dest_Div e))  handle _ =>
+ mk_bin_app(mk_ident "%",   (absyn_of##absyn_of) (dest_Mod e))  handle _ =>
+ list_mk_app
+      (mk_ident"COND",
+       let val (a,b,c) = dest_Cond e
+       in [absyn_of a, absyn_of b, absyn_of c]
+       end)
+ handle _ => raise ERR "absyn_of" "unexpected top-most operator"
+ end;
+
+fun component_to_hol stem tm =
+ let open agree_fullSyntax Absyn Parse
+     val (("inports", inports),
+          ("var_defs",var_defs),
+          ("out_defs", out_defs),
+          ("assumptions", assums),
+          ("guarantees", guars)) = dest_component tm
+     val stateV = map (mk_ident o fst) var_defs
+     val iV = map mk_ident inports
+     val ituple = Absyn.list_mk_pair (iV @ stateV)
+     val otuple = Absyn.list_mk_pair stateV
+     val var_defs' = map (I##absyn_of) var_defs
+     val body = itlist mk_let var_defs' otuple
+     val header = mk_app(mk_ident (stem^"Fn"),ituple)
+     val stepEqn = mk_eq(header,body)
+ in
+   Parse.absyn_to_term (Parse.term_grammar()) stepEqn
  end
 
-(* rec Fib ... bridge proof
+(* rec Fib example
 
 val jsonFile = "examples/recFib/json-generated/recFib.json";
 val ([jpkg],ss) = apply_with_chatter Json.fromFile jsonFile
 	   ("Parsing "^jsonFile^" ... ") "succeeded.\n"
 val pkgs = AADL.scrape_pkgs jpkg
-val [fib_gdt] = Gadget.mk_gadgets pkgs;
-val fib_comp_tm = gadget_to_component fib_gdt
 
-open agree_fullTheory;
-type_abbrev ("env", ``:string |-> (num -> value)``);
+val [fib_gdt] = Gadget.mk_gadgets pkgs;
 
 Definition recFib_comp_def :
   recFib_comp = ^(gadget_to_component fib_gdt)
 End
 
-val squashed_comp_thm =  (* not used in this form *)
+val squashed_recFib_comp =
   recFib_comp_def
     |> AP_TERM ``squash_comp``
     |> CONV_RULE (RHS_CONV EVAL);
 
-val squashed_tm = squashed_comp_thm |> concl |> rhs;
-
 (*---------------------------------------------------------------------------*)
-(* Squashed version of fib is equal to the corresponding HOL fn              *)
+(*   fibFn (isInit,fib,a1,a0) =                                              *)
+(*       (let                                                                *)
+(*          fib = if isInit then 1 else a1;                                  *)
+(*          a1 = if isInit then 1 else fib + a0;                             *)
+(*          a0 = fib                                                         *)
+(*        in                                                                 *)
+(*          (fib,a1,a0)                                                      *)
 (*---------------------------------------------------------------------------*)
 
-Definition fibFn_def:
-   fibFn (isInit:bool,fib:int,a1:int,a0:int) =
-      let
-           fib = if isInit then 1 else a1;
-           a1 = if isInit then 1 else fib + a0;
-           a0 = fib;
-      in
-        (fib,a1,a0)
+val fibFn_def =
+  new_definition
+     ("fibFn_def",
+      component_to_hol "fib" (squashed_recFib_comp |> concl |> rhs))
+;
+
+Definition isIntValue_def :
+ isIntValue v <=> ?i. v = IntValue i
 End
 
+Definition isBoolValue_def :
+ isBoolValue v <=> ?b. v = BoolValue b
+End
+
+Definition isPortValue_def :
+ isPortValue v <=> ?p. v = PortValue p
+End
+
+Definition isRecdValue_def :
+  isRecdValue v <=> ?r. v = RecdValue r
+End
+
+Definition isArrayValue_def :
+  isArrayValue v <=> ?a. v = ArrayValue a
+End
+
+open agree_fullTheory;
+
 Theorem IntValue_intOf:
-  ∀iv. IntValue(intOf iv) = iv
+  !v. isIntValue v ==> IntValue(intOf v) = v
 Proof
- Cases >> rw[intOf_def]
+ Cases >> rw[isIntValue_def,intOf_def]
 QED
 
+
+(*---------------------------------------------------------------------------*)
+(* This is all fairly boilerplate except that we need to know the types of   *)
+(* variables. Note that strmStep is taking its input at time t and also      *)
+(* producing its output at time t.                                           *)
+(*---------------------------------------------------------------------------*)
+
 Theorem prog_eq_holfn:
- !(E1:env) E2 t isInit fib a1 a0.
+ !E1 E2 t isInit fib a1 a0.
     Supports E1 (squash_comp recFib_comp) /\
     "isInit" IN FDOM E1 /\
     isInit_Stream (E1 ' "isInit") /\
-    E2 = strmStep E1 (squash_comp recFib_comp) t /\
-    (a,b,c) = fibFn (boolOf((E1 ' "isInit") t),
-                     intOf ((E1 ' "fib") t),
-                     intOf ((E1 ' "a1") t),
-                     intOf ((E1 ' "a0") t))
+    (!t. isBoolValue ((E1 ' "isInit") t)) /\
+    (!t. isIntValue ((E1 ' "fib") t)) /\
+    (!t. isIntValue ((E1 ' "a1") t)) /\
+    (!t. isIntValue ((E1 ' "a0") t)) /\
+    (!t. isPortValue ((E2 ' "output") t)) /\
+    (fib,a1,a0) =
+      fibFn (boolOf((E1 ' "isInit") t),
+             intOf ((E1 ' "fib") t),
+             intOf ((E1 ' "a1") t),
+             intOf ((E1 ' "a0") t))
    ==>
-    (E2 ' "output") t = PortValue (Data (IntValue a))
+    (strmStep E1 (squash_comp recFib_comp) t ' "output") t
+     =
+    PortValue (Data (IntValue fib))
 Proof
-EVAL_TAC >> rw[] >> EVAL_TAC >> rw[] >> fs[]
- \\
-
-
+ simp[fibFn_def]
+ >> EVAL_TAC
+ >> rw[]
+ >> EVAL_TAC
+ >> rw[]
+ >> fs[boolOf_def]
+ >> metis_tac [intOf_def]
 QED
 
-rw[Supports_def]
-val tm = last(fst(top_goal()));
+fun agree_interpret comp_def =
+ let val squashed_comp_thm =
+       comp_def
+       |> AP_TERM ``squash_comp``
+       |> CONV_RULE (RHS_CONV EVAL)
+     val squashed_tm = squashed_comp_thm |> concl |> rhs
+     val strmStep_tm = “strmStep E ^squashed_tm t”
+     val simplified =
+         strmStep_tm
+         |> SIMP_CONV (srw_ss())
+             [strmStep_def,
+              stmtListFn_def,stmtFn_def,
+              ostmtListFn_def, ostmtFn_def,
+              portVal_def,exprVal_def,updateEnv_def]
 
 
 Theorem equiv3 :
@@ -572,7 +689,9 @@ Proof
   >> rw_tac bool_ss [Once integerTheory.INT_ADD_SYM]
   >> metis_tac[]
 QED
+*)
 
+(*
 Other examples
 
 val jsonFile = "examples/uxaslite.json";

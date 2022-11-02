@@ -85,4 +85,78 @@ val mk_output_event_data = mk_triop Output_Event_Data_const;
 
 fun mk_component fields = TypeBase.mk_record(component_ty, fields)
 
+val AERR = C (mk_HOL_ERR "agree_fullSyntax") "";
+
+val dest_Var = dest_monop Var_const (AERR "dest_Var")
+val dest_IntLit = dest_monop IntLit_const (AERR "dest_IntLit")
+val dest_BoolLit = dest_monop BoolLit_const (AERR "dest_BoolLit")
+val dest_Not = dest_monop Not_const (AERR "dest_Not")
+val dest_Pre = dest_monop Pre_const (AERR "dest_Pre")
+val dest_Hist = dest_monop Hist_const (AERR "dest_Hist")
+val dest_Add = dest_binop Add_const (AERR "dest_Add")
+val dest_Sub = dest_binop Sub_const (AERR "dest_Sub")
+val dest_Mult = dest_binop Mult_const (AERR "dest_Mult")
+val dest_Div = dest_binop Div_const (AERR "dest_Div")
+val dest_Mod = dest_binop Mod_const (AERR "dest_Mod")
+val dest_Or = dest_binop Or_const (AERR "dest_Or")
+val dest_And = dest_binop And_const (AERR "dest_And")
+val dest_Imp = dest_binop Imp_const (AERR "dest_Imp")
+val dest_Iff = dest_binop Iff_const (AERR "dest_Iff")
+val dest_Eq = dest_binop Eq_const (AERR "dest_Eq")
+val dest_Leq = dest_binop Leq_const (AERR "dest_Leq")
+val dest_Lt = dest_binop Lt_const (AERR "dest_Lt")
+val dest_RecdProj = dest_binop RecdProj_const (AERR "dest_RecdProj")
+val dest_ArraySub = dest_binop ArraySub_const (AERR "dest_ArraySub")
+val dest_PortEvent = dest_monop PortEvent_const (AERR "dest_PortEvent")
+val dest_PortData  = dest_monop PortData_const (AERR "dest_PortData")
+val dest_Fby = dest_binop Fby_const (AERR "dest_Fby")
+val dest_Cond = dest_triop Cond_const (AERR "dest_Cond")
+val dest_Recd = dest_monop Recd_const (AERR "dest_Recd")
+val dest_Array = dest_monop Array_const (AERR "dest_Array")
+val dest_stmt = dest_binop Stmt_const (AERR "dest_stmt")
+val dest_output_data = dest_binop Output_Data_const (AERR "dest_output_data")
+val dest_output_event = dest_binop Output_Event_const (AERR "dest_output_event")
+val dest_output_event_data = dest_triop Output_Event_Data_const (AERR "dest_output_event_data")
+
+datatype port
+  = Data of term
+  | Event_Only of term
+  | Event_Data of term * term
+
+fun dest_component tm =
+ let open listSyntax stringSyntax
+     fun dest_strings tm = map fromHOLstring (fst(dest_list tm))
+     fun dest_var_def tm =
+       let val (t1,t2) = dest_stmt tm
+       in (fromHOLstring t1, t2)
+       end
+     fun dest_var_defs tm = map dest_var_def (fst(dest_list tm))
+     fun dest_out_def tm =
+       case total dest_output_data tm
+         of SOME (oport,e) => (fromHOLstring oport, Data e)
+          | NONE =>
+       case total dest_output_event tm
+         of SOME (oport,e) => (fromHOLstring oport,Event_Only e)
+          | NONE =>
+       case total dest_output_event_data tm
+        of SOME (oport,e1,e2) => (fromHOLstring oport, Event_Data (e1,e2))
+         | NONE => raise AERR "dest_component(dest_out_def)"
+     fun dest_out_defs tm = map dest_out_def (fst(dest_list tm))
+ in case Lib.total TypeBase.dest_record tm
+     of NONE => raise AERR "dest_component"
+      | SOME (ty,
+          [("inports", inports),
+           ("var_defs",var_defs),
+	   ("out_defs", out_defs),
+	   ("assumptions", assums),
+	   ("guarantees", guars)]) =>
+        if ty = component_ty
+        then (("inports", dest_strings inports),
+	      ("var_defs",dest_var_defs var_defs),
+              ("out_defs", dest_out_defs out_defs),
+              ("assumptions", fst(dest_list assums)),
+              ("guarantees", fst (dest_list guars)))
+        else raise AERR "dest_component"
+  end
+
 end
